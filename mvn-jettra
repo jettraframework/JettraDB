@@ -1,0 +1,7 @@
+#!/bin/bash
+if [ "$1" = "-jettra" ]; then
+    shift
+fi
+
+# Execute the CLI tool using the local pom.xml
+mvn -q exec:java -Dexec.mainClass="io.jettra.server.cli.PluginCLI" -Dexec.args="$*"
