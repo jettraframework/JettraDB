@@ -1,55 +1,91 @@
-# JettraStoreEngine: The Definitive Architecture & Operations Book
+# JettraStoreEngine: The Definitive Architecture, Development & Operations Book
 **Autonomous Multi-Model Storage Engine with Raft Consensus, LSM-Tree / B-Tree Hybrid Storage, and High-Density Java 25 Virtual Architecture**
 
 ---
 
 ## Table of Contents
 
-- [Chapter 1: Architecture, Core Concepts & JVM 25 Optimizations](#chapter-1-architecture-core-concepts--jvm-25-optimizations)
-- [Chapter 2: Storage Engine Internals & Algorithms (LSM-Tree & B-Tree Hybrid)](#chapter-2-storage-engine-internals--algorithms-lsm-tree--b-tree-hybrid)
+- [Chapter 1: Introduction, Architecture & JVM 25 Optimizations](#chapter-1-introduction-architecture--jvm-25-optimizations)
+  - [1.1 Autonomous & Zero-Dependency Design](#11-autonomous--zero-dependency-design)
+  - [1.2 Java 25 Native Features: Virtual Threads & Compact Object Headers](#12-java-25-native-features-virtual-threads--compact-object-headers)
+  - [1.3 Hybrid LSM-Tree + B-Tree Storage Architecture](#13-hybrid-lsm-tree--b-tree-storage-architecture)
+  - [1.4 Document Versioning & MVCC Change History](#14-document-versioning--mvcc-change-history)
+- [Chapter 2: Storage Engine Internals, Algorithms & Compaction](#chapter-2-storage-engine-internals-algorithms--compaction)
+  - [2.1 The Write Pipeline (WAL & In-Memory MemTable)](#21-the-write-pipeline-wal--in-memory-memtable)
+  - [2.2 The Read Pipeline (Bloom Filters & Sparse B-Tree Index)](#22-the-read-pipeline-bloom-filters--sparse-b-tree-index)
+  - [2.3 LSM Compaction Service & Tombstone Sweeping](#23-lsm-compaction-service--tombstone-sweeping)
+  - [2.4 Placement Driver (PD) & Multi-Raft Groups](#24-placement-driver-pd--multi-raft-groups)
 - [Chapter 3: Installation, Configuration & Property Reference](#chapter-3-installation-configuration--property-reference)
+  - [3.1 Prerequisites & Source Compilation](#31-prerequisites--source-compilation)
+  - [3.2 The `jettrastoreengine.properties` Reference Guide](#32-the-jettrastoreengineproperties-reference-guide)
+  - [3.3 Shell Console Startup Banner](#33-shell-console-startup-banner)
 - [Chapter 4: Multi-Node Clustering & Distributed Raft Consensus](#chapter-4-multi-node-clustering--distributed-raft-consensus)
+  - [4.1 Distributed Raft Protocol & Quorum Replication](#41-distributed-raft-protocol--quorum-replication)
+  - [4.2 Local Multi-Node Cluster Execution from JAR Files](#42-local-multi-node-cluster-execution-from-jar-files)
+  - [4.3 Multi-Server Remote Cluster Deployment](#43-multi-server-remote-cluster-deployment)
 - [Chapter 5: Docker & Docker Compose Multi-Node Orchestration](#chapter-5-docker--docker-compose-multi-node-orchestration)
-- [Chapter 6: The 8 Multi-Model Database Engines & REST APIs](#chapter-6-the-8-multi-model-database-engines--rest-apis)
-  - [6.1 Document Engine (JSON / NoSQL)](#61-document-engine-json--nosql)
-  - [6.2 Vector Engine (AI Embeddings & Cosine ANN)](#62-vector-engine-ai-embeddings--cosine-ann)
+  - [5.1 High-Density `Dockerfile` (Liberica JRE 25 Musl)](#51-high-density-dockerfile-liberica-jre-25-musl)
+  - [5.2 Production 3-Node `docker-compose.yml`](#52-production-3-node-docker-composeyml)
+  - [5.3 Container Lifecycle & Operational Commands](#53-container-lifecycle--operational-commands)
+- [Chapter 6: The 8 Multi-Model Database Engines & Exhaustive APIs](#chapter-6-the-8-multi-model-database-engines--exhaustive-apis)
+  - [6.1 Document Engine (JSON / BSON / NoSQL)](#61-document-engine-json--bson--nosql)
+  - [6.2 Vector Engine (AI Embeddings, Cosine Similarity & ANN)](#62-vector-engine-ai-embeddings-cosine-similarity--ann)
   - [6.3 Graph Engine (Vertices, Edges & Deep Traversal)](#63-graph-engine-vertices-edges--deep-traversal)
-  - [6.4 TimeSeries Engine (IoT, Metrics & Aggregations)](#64-timeseries-engine-iot-metrics--aggregations)
-  - [6.5 Columnar Engine (OLAP & Analytical Projections)](#65-columnar-engine-olap--analytical-projections)
-  - [6.6 KeyValue Engine (Ultra-Low Latency Cache)](#66-keyvalue-engine-ultra-low-latency-cache)
-  - [6.7 Geospatial Engine (2D Coordinates & Haversine Distance)](#67-geospatial-engine-2d-coordinates--haversine-distance)
-  - [6.8 Object Engine (Binary BLOBs & Stream Blocks)](#68-object-engine-binary-blobs--stream-blocks)
-- [Chapter 7: Aggregations Pipeline & Analytical Operations](#chapter-7-aggregations-pipeline--analytical-operations)
-- [Chapter 8: Java Driver Patterns, Repositories & Fluent Query API](#chapter-8-java-driver-patterns-repositories--fluent-query-api)
-- [Chapter 9: End-to-End Business Case: Multi-Model E-Invoicing System](#chapter-9-end-to-end-business-case-multi-model-e-invoicing-system)
-- [Chapter 10: Security, Authentication & Per-Database RBAC](#chapter-10-security-authentication--per-database-rbac)
+  - [6.4 TimeSeries Engine (IoT Telemetry, Metrics & Range Aggregations)](#64-timeseries-engine-iot-telemetry-metrics--range-aggregations)
+  - [6.5 Columnar Engine (OLAP, Analytical Projections & Run-Length Encoding)](#65-columnar-engine-olap-analytical-projections--run-length-encoding)
+  - [6.6 KeyValue Engine (MemTable Cache & Atomic Counters)](#66-keyvalue-engine-memtable-cache--atomic-counters)
+  - [6.7 Geospatial Engine (2D Coordinates, GIS Layers & Haversine Distance)](#67-geospatial-engine-2d-coordinates-gis-layers--haversine-distance)
+  - [6.8 Object Engine (Binary BLOBs, Chunked Blocks & Media Streams)](#68-object-engine-binary-blobs-chunked-blocks--media-streams)
+- [Chapter 7: Aggregations Pipeline & Real-Time Analytics](#chapter-7-aggregations-pipeline--real-time-analytics)
+  - [7.1 Pipeline Stages & Accumulator Operators](#71-pipeline-stages--accumulator-operators)
+  - [7.2 Aggregations via Java Driver & High-Level Methods](#72-aggregations-via-java-driver--high-level-methods)
+  - [7.3 Aggregations via Jettra Shell & REST API](#73-aggregations-via-jettra-shell--rest-api)
+- [Chapter 8: Polyglot Drivers: Java, Python, Go & Multi-Model Transactions](#chapter-8-polyglot-drivers-java-python-go--multi-model-transactions)
+  - [8.1 Java Driver: Typed Repository Pattern & Fluent Query API](#81-java-driver-typed-repository-pattern--fluent-query-api)
+  - [8.2 Multi-Model ACID Transactions in Java](#82-multi-model-acid-transactions-in-java)
+  - [8.3 Python Driver (`jettra-driver`)](#83-python-driver-jettra-driver)
+  - [8.4 Go Driver (`github.com/jettra/jettra-driver-go`)](#84-go-driver-githubcomjettrajettra-driver-go)
+- [Chapter 9: End-to-End Enterprise Domain: Multi-Model E-Invoicing System](#chapter-9-end-to-end-enterprise-domain-multi-model-e-invoicing-system)
+  - [9.1 Domain Entity Definitions with Immutable Java Records](#91-domain-entity-definitions-with-immutable-java-records)
+  - [9.2 Polyglot Multi-Engine Storage Mapping](#92-polyglot-multi-engine-storage-mapping)
+  - [9.3 Complete Code Implementations (Java, Python, Go, cURL)](#93-complete-code-implementations-java-python-go-curl)
+- [Chapter 10: Security, Authentication & Per-Database Scoped RBAC](#chapter-10-security-authentication--per-database-scoped-rbac)
+  - [10.1 Per-Database Role Matrix (RBAC)](#101-per-database-role-matrix-rbac)
+  - [10.2 JettraJWT Authentication & Token Lifecycle](#102-jettrajwt-authentication--token-lifecycle)
+  - [10.3 Password Hashing & SecurityDB Repository Sync](#103-password-hashing--securitydb-repository-sync)
 - [Chapter 11: Web Administration Console (JettraFlux GUI)](#chapter-11-web-administration-console-jettraflux-gui)
+  - [11.1 Native JettraFlux Component Architecture](#111-native-jettraflux-component-architecture)
+  - [11.2 Interactive Database & Object Management Console](#112-interactive-database--object-management-console)
+  - [11.3 User & Per-Database Security Provisioning](#113-user--per-database-security-provisioning)
+  - [11.4 Storage Internals & Swagger OpenAPI Explorer](#114-storage-internals--swagger-openapi-explorer)
 - [Chapter 12: Backups, Snapshot Replication & Disaster Recovery](#chapter-12-backups-snapshot-replication--disaster-recovery)
-- [Appendix A: Keyset Pagination, Subqueries & Tombstones](#appendix-a-keyset-pagination-subqueries--tombstones)
+  - [12.1 Automated Background Backup & Cron Service](#121-automated-background-backup--cron-service)
+  - [12.2 Automatic Restore on Node Boot (`store.restore.auto`)](#122-automatic-restore-on-node-boot-storerestoreauto)
+- [Appendix A: High-Performance Keyset Pagination & Tombstone Sweeping](#appendix-a-high-performance-keyset-pagination--tombstone-sweeping)
 - [Appendix B: JVM 25, Generational ZGC & Compact Object Headers Tuning](#appendix-b-jvm-25-generational-zgc--compact-object-headers-tuning)
 
 ---
 
-# Chapter 1: Architecture, Core Concepts & JVM 25 Optimizations
+# Chapter 1: Introduction, Architecture & JVM 25 Optimizations
 
-`JettraStoreEngine` is a next-generation, cloud-native multi-model database engine designed from the ground up for high concurrency, zero-external-dependency operations, and sub-millisecond data access across diverse operational and analytical workloads.
+`JettraStoreEngine` is an autonomous, high-density, multi-model storage engine engineered natively in Java 25. It unifies 8 distinct operational database models over a single, resilient storage core combining Log-Structured Merge Trees (LSM) and high-speed B-Trees.
 
 ```mermaid
 graph TD
-    Client[Web Browser / REST Client / gRPC] --> NetLayer[Network Layer: JettraServerOrchestrator]
+    Client[Web Browser / REST Client / gRPC / Drivers] --> NetLayer[Network Layer: JettraServerOrchestrator]
     NetLayer --> RestPort["REST DB Port (8086)"]
     NetLayer --> GuiPort["JettraFlux Web Console (50050)"]
     NetLayer --> GrpcPort["Raft Consensus & gRPC (50051)"]
     
     subgraph MultiModelLayer["Multi-Model Engines Layer"]
-        DocumentEngine["1. Document Engine"]
-        VectorEngine["2. Vector Engine"]
-        GraphEngine["3. Graph Engine"]
-        TimeSeriesEngine["4. TimeSeries Engine"]
-        ColumnEngine["5. Columnar Engine"]
-        KeyValueEngine["6. KeyValue Engine"]
-        GeospatialEngine["7. Geospatial Engine"]
-        ObjectEngine["8. Object Engine"]
+        DocumentEngine["1. Document Engine (JSON / NoSQL)"]
+        VectorEngine["2. Vector Engine (AI Embeddings)"]
+        GraphEngine["3. Graph Engine (Vertices & Edges)"]
+        TimeSeriesEngine["4. TimeSeries Engine (IoT Metrics)"]
+        ColumnEngine["5. Columnar Engine (OLAP Analytics)"]
+        KeyValueEngine["6. KeyValue Engine (MemTable Cache)"]
+        GeospatialEngine["7. Geospatial Engine (2D GIS)"]
+        ObjectEngine["8. Object Engine (BLOBs & Streams)"]
     end
     
     RestPort --> MultiModelLayer
@@ -64,89 +100,112 @@ graph TD
     RaftCluster --> StorageCore
 ```
 
-### Key Architectural Pillars
+### 1.1 Autonomous & Zero-Dependency Design
+Traditional multi-node databases mandate external dependencies like Apache ZooKeeper, Consul, etcd, or heavy C native bindings. `JettraStoreEngine` operates completely self-contained:
+- Embedded Raft consensus engine handles elections and log replication natively.
+- Zero JNI / native dynamic libraries required: 100% pure Java 25 portability across Linux (Musl & Glibc), macOS, and Windows.
+- Minimal footprint: Single shaded JAR of ~20MB running on high-efficiency runtime containers.
 
-1. **Autonomous & Self-Contained**: No external daemon (like Zookeeper, etcd, or external C libraries) is required. Everything runs inside a single, unified JVM runtime.
-2. **Java 25 Native Performance**:
-   - **Virtual Threads (Project Loom)**: Every inbound HTTP and gRPC request executes on lightweight virtual threads, scaling effortlessly to hundreds of thousands of concurrent connections.
-   - **Compact Object Headers (JEP 450)**: Reduces 64-bit object header overhead from 96/128 bits down to 64 bits, cutting memory usage by 15%–25% and maximizing L1/L2 CPU cache density.
-   - **Preview Primitive Class Records**: Zero-allocation value transformations for byte buffers and vector arithmetic.
-3. **Multi-Model Native**: Rather than translating relational tables into JSON, 8 specialized engines execute natively on top of the same optimized storage blocks.
+### 1.2 Java 25 Native Features: Virtual Threads & Compact Object Headers
+`JettraStoreEngine` leverages Java 25 cutting-edge capabilities:
+- **Virtual Threads (Project Loom)**: Eliminates thread-pool saturation. Inbound REST requests, gRPC streams, and background compaction pipelines spawn lightweight virtual threads that consume negligible memory and yield on I/O.
+- **Compact Object Headers (JEP 450)**: By reducing 64-bit object headers from 96/128 bits to 64 bits, memory density improves by up to 25%, drastically enhancing CPU L1/L2 cache locality for hot MemTables.
+- **Generational ZGC**: Eliminates garbage collection stop-the-world pauses, guaranteeing sub-millisecond tail latencies even under massive write bursts.
+
+### 1.3 Hybrid LSM-Tree + B-Tree Storage Architecture
+To resolve the classical trade-off between write throughput (LSM) and random read latency (B-Tree):
+- **Write Path**: Incoming writes hit the Write-Ahead Log (sequential append) and active in-memory MemTable ($O(\log N)$).
+- **Read Path**: Reads check the MemTable, then consult in-memory Bloom filters ($O(1)$) and binary search sparse B-Tree block indices in `.jettra` / `.sst` files.
+
+### 1.4 Document Versioning & MVCC Change History
+Every update in `JettraStoreEngine` is append-only with an incremental monotonic version timestamp. This provides native **Point-In-Time Recovery (PITR)** and change history without requiring trigger tables or shadow audit logs.
 
 ---
 
-# Chapter 2: Storage Engine Internals & Algorithms (LSM-Tree & B-Tree Hybrid)
+# Chapter 2: Storage Engine Internals, Algorithms & Compaction
 
-The storage subsystem in `JettraStoreEngine` combines the write throughput of **Log-Structured Merge Trees (LSM)** with the instant random-read latency of **B-Trees**.
+```mermaid
+graph LR
+    subgraph Ingestion["Write Ingestion"]
+        Req[Write Request] --> WAL[Write-Ahead Log *.wal]
+        Req --> MemTable[Active MemTable]
+    end
 
-### Write Pipeline (Append & Buffer)
-1. **Write-Ahead Log (WAL)**: Every mutate operation (`PUT`, `DELETE`, `INSERT`) is first sequentially appended to disk in the WAL file (`*.wal`). Sequential I/O delivers millions of writes per second with zero disk seeking.
-2. **MemTable**: Concurrently, the record is placed into an in-memory `ConcurrentSkipListMap` (the active MemTable).
-3. **Flushing & SSTables**: When the active MemTable reaches the memory threshold (default 64MB), it is made immutable and background virtual threads flush it to disk as an immutable SSTable (`*.sst`) accompanied by a sparse B-Tree index (`*.idx`).
+    subgraph MemoryTier["Memory Tier"]
+        MemTable -->|Threshold 64MB| ImmMemTable[Immutable MemTable]
+    end
 
-### Read Pipeline (Multi-Tier Lookup)
-1. **MemTable Lookup**: Checked first in memory ($O(\log N)$).
-2. **Bloom Filter Verification**: If not in memory, a per-SSTable Bloom filter validates presence in $O(1)$ to prevent unnecessary disk seeks.
-3. **Sparse B-Tree Index**: Binary searches the block offset in the SSTable file.
-4. **Direct Block Read**: Reads the exact compressed data chunk.
+    subgraph DiskTier["Disk Tier (SSTables)"]
+        ImmMemTable -->|Flush| SST0[Level 0 SSTable + .idx]
+        SST0 -->|Compaction| SST1[Level 1 B-Tree Merged SSTable]
+    end
+```
 
-### LSM Compaction Service
-As updates and deletions occur, background compaction threads merge multiple SSTable segments into consolidated B-Tree indexed files, purging obsolete versions and tombstones to maintain $O(\log N)$ lookup performance.
+### 2.1 The Write Pipeline (WAL & In-Memory MemTable)
+1. **Append to WAL**: The transaction writes sequentially to disk. Because writes are sequential, disk head movement is eliminated and modern NVMe SSDs achieve near-bus throughput.
+2. **Insert into MemTable**: The key-value record is placed into a thread-safe `ConcurrentSkipListMap`.
+3. **Acknowledgment**: Once written to WAL and MemTable (or quorum-replicated via Raft), the write is acknowledged.
+
+### 2.2 The Read Pipeline (Bloom Filters & Sparse B-Tree Index)
+1. **MemTable Check**: Most recent updates are found immediately in memory ($O(\log N)$).
+2. **Bloom Filter Verification**: If not in active/immutable MemTables, Bloom filters verify if the key exists in on-disk SSTables with $<1\%$ false-positive rate.
+3. **Sparse Index Lookup**: The `.idx` file contains sparse B-Tree offsets (one entry every 4KB or 64KB block).
+4. **Direct Block Retrieval**: Only the matching compressed block is loaded into RAM and decompressed.
+
+### 2.3 LSM Compaction Service & Tombstone Sweeping
+Over time, multiple SSTable files accumulate on disk. The background compaction worker:
+- Performs multi-way merge sort across SSTable levels.
+- Discards duplicate older versions superseded by newer timestamps.
+- Completely sweeps away deleted records marked with **Tombstone** bytes.
+- Produces a single, tightly packed, highly balanced B-Tree SSTable.
+
+### 2.4 Placement Driver (PD) & Multi-Raft Groups
+For large-scale sharded deployments:
+- **Placement Driver (PD)** acts as the cluster coordinator, tracking node health heartbeats, shard boundary allocations, and automatic partition rebalancing.
+- **Multi-Raft Groups**: Multiple consensus groups run concurrently, allowing different collections or shards to elect distinct leaders and parallelize throughput across physical nodes.
 
 ---
 
 # Chapter 3: Installation, Configuration & Property Reference
 
-### Prerequisites
-- **JDK 25** (with `--enable-preview` flag enabled)
-- **Maven 3.9+**
-- Linux (Ubuntu, Debian, RHEL, Alpine) or macOS / Windows
+### 3.1 Prerequisites & Source Compilation
+- **JDK 25** (with `--enable-preview` enabled)
+- **Apache Maven 3.9+**
 
-### Building from Source
 ```bash
+# Clone and build
 git clone https://github.com/avbravo/JettraStoreEngine.git
 cd JettraStoreEngine
 mvn clean install -DskipTests
 ```
 
-### Configuration File: `jettrastoreengine.properties`
-Place `jettrastoreengine.properties` in the root execution directory:
+### 3.2 The `jettrastoreengine.properties` Reference Guide
 
 ```properties
-# ------------------------------------------------------------------------------
-# Node Identification & Storage Root
-# ------------------------------------------------------------------------------
+# ==============================================================================
+# JETTRA STORE ENGINE - CORE CONFIGURATION
+# ==============================================================================
+
+# 1. Node Identification & Storage Root
 jettra.node.id=node1
 jettra.data.dir=~/data/node1
 
-# ------------------------------------------------------------------------------
-# Network Ports
-# ------------------------------------------------------------------------------
-# Database REST API Port
-jettra.node.port=8086
+# 2. Network Ports
+jettra.node.port=8086        # Database REST API Port
+jettra.gui.port=50050        # JettraFlux Web Management Console Port
+jettra.grpc.port=50051       # Raft Consensus & Cluster gRPC Port
 
-# JettraFlux Web Management Console Port
-jettra.gui.port=50050
-
-# Consensus / gRPC Cluster Synchronization Port
-jettra.grpc.port=50051
-
-# ------------------------------------------------------------------------------
-# Distributed Cluster & Consensus Peers
-# ------------------------------------------------------------------------------
-# Comma-separated list of host:port for Raft quorum
+# 3. Distributed Raft Consensus Peers (comma-separated list of host:port)
 jettra.cluster.peers=127.0.0.1:50051,127.0.0.1:50053,127.0.0.1:50055
 
-# ------------------------------------------------------------------------------
-# Backup & Disaster Recovery
-# ------------------------------------------------------------------------------
-store.restore.auto=false
-store.backup.enabled=true
+# 4. Backup, Snapshots & Disaster Recovery
+store.restore.auto=false     # Automatically restore latest snapshot on boot
+store.backup.enabled=false   # Enable scheduled background backup snapshots
 store.backup.interval.minutes=1440
 ```
 
-### Startup Console Banner
-When starting `App.java`, the system prints a comprehensive property summary:
+### 3.3 Shell Console Startup Banner
+When launching `JettraStoreEngine`, the orchestrator reads all properties and prints a structured diagnostic table:
 
 ```text
 ==================================================================================
@@ -160,7 +219,7 @@ When starting `App.java`, the system prints a comprehensive property summary:
   • gRPC / Consensus Port (jettra.grpc.port): 50051
   • Cluster Peers (jettra.cluster.peers):     127.0.0.1:50051
   • Auto-Restore (store.restore.auto):        false
-  • Auto-Backup (store.backup.enabled):       true (Interval: 1440 min)
+  • Auto-Backup (store.backup.enabled):       false (Interval: 1440 min)
   --------------------------------------------------------------------------------
   [Web Management & Console URLs]:
   • Web Management UI (GUI):                  http://localhost:50050/ (or /dashboard)
@@ -180,7 +239,10 @@ When starting `App.java`, the system prints a comprehensive property summary:
 
 # Chapter 4: Multi-Node Clustering & Distributed Raft Consensus
 
-`JettraStoreEngine` implements an embedded **Raft Consensus Protocol** for automated leader election, continuous state replication, and split-brain tolerance.
+### 4.1 Distributed Raft Protocol & Quorum Replication
+`JettraStoreEngine` uses an embedded implementation of the Raft Consensus Protocol:
+- **Leader Election**: When a node detects missing heartbeats from the leader, it increments its term and transitions to `CANDIDATE`. It requests votes; upon securing a majority quorum ($\lfloor N/2 \rfloor + 1$), it becomes `LEADER`.
+- **Log Replication**: Every mutation (`PUT`, `DELETE`) received by the leader is serialized into an `AppendEntries` RPC sent to all followers. When acknowledged by a quorum, the entry is committed locally and to followers.
 
 ```mermaid
 sequenceDiagram
@@ -189,27 +251,26 @@ sequenceDiagram
     participant Follower1 as Node 2 (Follower)
     participant Follower2 as Node 3 (Follower)
 
-    Client->>Leader: Write Request (PUT key:val)
-    Leader->>Leader: Append Entry to Local WAL
-    par Log Replication
-        Leader->>Follower1: AppendEntries RPC (port 50051)
-        Leader->>Follower2: AppendEntries RPC (port 50051)
+    Client->>Leader: POST /api/document/customers/c1
+    Leader->>Leader: Write to local WAL
+    par Parallel Raft RPCs
+        Leader->>Follower1: AppendEntries(Term 1, Index 42, "PUT c1 ...")
+        Leader->>Follower2: AppendEntries(Term 1, Index 42, "PUT c1 ...")
     end
-    Follower1-->>Leader: Ack Success
-    Follower2-->>Leader: Ack Success
-    Note over Leader: Quorum Reached (2 of 3 acks)
+    Follower1-->>Leader: ACK (Success)
+    Follower2-->>Leader: ACK (Success)
+    Note over Leader: Quorum Reached (3 of 3)
     Leader->>Leader: Commit to Storage Core
     Leader-->>Client: 200 OK (Committed)
 ```
 
-## 4.1 Multi-Node Cluster Installation & Execution from JAR Files
+---
 
-You can execute a multi-node cluster either on a **single local host** (using distinct port numbers and storage directories) or across **multiple physical / virtual servers** in a network.
+## 4.2 Local Multi-Node Cluster Execution from JAR Files
 
-### Scenario A: Local 3-Node Cluster on Single Machine
+You can test a complete distributed 3-node cluster on a single developer machine by isolating ports and working directories.
 
-#### 1. Directory Structure Setup
-Create isolated working directories for each node:
+### 1. Directory Structure Setup
 ```bash
 mkdir -p cluster/node1 cluster/node2 cluster/node3
 cp target/JettraStoreEngine-1.0-SNAPSHOT.jar cluster/node1/
@@ -217,9 +278,9 @@ cp target/JettraStoreEngine-1.0-SNAPSHOT.jar cluster/node2/
 cp target/JettraStoreEngine-1.0-SNAPSHOT.jar cluster/node3/
 ```
 
-#### 2. Configuration Files
+### 2. Node Configuration Files
 
-##### `cluster/node1/jettrastoreengine.properties`
+#### `cluster/node1/jettrastoreengine.properties`
 ```properties
 jettra.node.id=node1
 jettra.data.dir=./data
@@ -227,11 +288,9 @@ jettra.node.port=8086
 jettra.gui.port=50050
 jettra.grpc.port=50051
 jettra.cluster.peers=127.0.0.1:50051,127.0.0.1:50053,127.0.0.1:50055
-store.restore.auto=false
-store.backup.enabled=false
 ```
 
-##### `cluster/node2/jettrastoreengine.properties`
+#### `cluster/node2/jettrastoreengine.properties`
 ```properties
 jettra.node.id=node2
 jettra.data.dir=./data
@@ -239,11 +298,9 @@ jettra.node.port=8087
 jettra.gui.port=50052
 jettra.grpc.port=50053
 jettra.cluster.peers=127.0.0.1:50051,127.0.0.1:50053,127.0.0.1:50055
-store.restore.auto=false
-store.backup.enabled=false
 ```
 
-##### `cluster/node3/jettrastoreengine.properties`
+#### `cluster/node3/jettrastoreengine.properties`
 ```properties
 jettra.node.id=node3
 jettra.data.dir=./data
@@ -251,12 +308,11 @@ jettra.node.port=8088
 jettra.gui.port=50054
 jettra.grpc.port=50055
 jettra.cluster.peers=127.0.0.1:50051,127.0.0.1:50053,127.0.0.1:50055
-store.restore.auto=false
-store.backup.enabled=false
 ```
 
-#### 3. Execution Script (`start-cluster.sh`)
-Create `cluster/start-cluster.sh`:
+### 3. Startup & Shutdown Helper Scripts
+
+#### `cluster/start-cluster.sh`
 ```bash
 #!/usr/bin/env bash
 echo "Starting JettraStoreEngine 3-Node Cluster..."
@@ -273,72 +329,37 @@ cd node3 && java --enable-preview -jar JettraStoreEngine-1.0-SNAPSHOT.jar > node
 echo "Node 3 started on REST:8088, GUI:50054, Raft:50055 (PID: $!)"
 cd ..
 
-echo "Cluster startup complete! Access GUIs at:"
-echo " - Node 1 GUI: http://localhost:50050/"
-echo " - Node 2 GUI: http://localhost:50052/"
-echo " - Node 3 GUI: http://localhost:50054/"
+echo "Cluster is running! Access GUIs at:"
+echo " - Node 1: http://localhost:50050/"
+echo " - Node 2: http://localhost:50052/"
+echo " - Node 3: http://localhost:50054/"
 ```
 
-#### 4. Shutdown Script (`stop-cluster.sh`)
+#### `cluster/stop-cluster.sh`
 ```bash
 #!/usr/bin/env bash
-echo "Stopping JettraStoreEngine Cluster..."
+echo "Stopping JettraStoreEngine cluster..."
 fuser -k 50051/tcp 50053/tcp 50055/tcp 8086/tcp 8087/tcp 8088/tcp 50050/tcp 50052/tcp 50054/tcp || true
-echo "All nodes stopped."
+echo "Cluster nodes stopped."
 ```
 
 ---
 
-### Scenario B: Multi-Node Cluster on Distinct Physical / Virtual Machines
+## 4.3 Multi-Server Remote Cluster Deployment
 
-When deploying on 3 separate servers with IPs `192.168.1.10`, `192.168.1.11`, `192.168.1.12`:
+When deploying across 3 physical or virtual machines (`192.168.1.10`, `192.168.1.11`, `192.168.1.12`):
 
-1. **Deploy the JAR on each server**:
-   ```bash
-   scp target/JettraStoreEngine-1.0-SNAPSHOT.jar user@192.168.1.10:/opt/jettra/
-   scp target/JettraStoreEngine-1.0-SNAPSHOT.jar user@192.168.1.11:/opt/jettra/
-   scp target/JettraStoreEngine-1.0-SNAPSHOT.jar user@192.168.1.12:/opt/jettra/
-   ```
-
-2. **Configure `/opt/jettra/jettrastoreengine.properties` on each machine**:
-   - **Server 1 (`192.168.1.10`)**:
-     ```properties
-     jettra.node.id=node1
-     jettra.data.dir=/var/lib/jettra/data
-     jettra.node.port=8086
-     jettra.gui.port=50050
-     jettra.grpc.port=50051
-     jettra.cluster.peers=192.168.1.10:50051,192.168.1.11:50051,192.168.1.12:50051
-     ```
-   - **Server 2 (`192.168.1.11`)**:
-     ```properties
-     jettra.node.id=node2
-     jettra.data.dir=/var/lib/jettra/data
-     jettra.node.port=8086
-     jettra.gui.port=50050
-     jettra.grpc.port=50051
-     jettra.cluster.peers=192.168.1.10:50051,192.168.1.11:50051,192.168.1.12:50051
-     ```
-   - **Server 3 (`192.168.1.12`)**:
-     ```properties
-     jettra.node.id=node3
-     jettra.data.dir=/var/lib/jettra/data
-     jettra.node.port=8086
-     jettra.gui.port=50050
-     jettra.grpc.port=50051
-     jettra.cluster.peers=192.168.1.10:50051,192.168.1.11:50051,192.168.1.12:50051
-     ```
-
-3. **Run on each server as a Systemd Service or Direct Process**:
-   ```bash
-   java --enable-preview -jar /opt/jettra/JettraStoreEngine-1.0-SNAPSHOT.jar
-   ```
+1. Copy the JAR to `/opt/jettra/` on each server.
+2. In `/opt/jettra/jettrastoreengine.properties`:
+   - Set `jettra.node.id` to `node1`, `node2`, `node3`.
+   - Set `jettra.cluster.peers=192.168.1.10:50051,192.168.1.11:50051,192.168.1.12:50051`.
+3. Start the node on each server using `java --enable-preview -jar JettraStoreEngine-1.0-SNAPSHOT.jar` or register as a `systemd` service.
 
 ---
 
 # Chapter 5: Docker & Docker Compose Multi-Node Orchestration
 
-### 1. High-Density Container `Dockerfile` (Liberica JRE 25 Musl)
+### 5.1 High-Density `Dockerfile` (Liberica JRE 25 Musl)
 
 Using the official lightweight `bellsoft/liberica-runtime-container:jre-25-stream-musl` image for optimal memory footprint, Alpine/Musl compatibility, and Java 25 Compact Object Headers support:
 
@@ -355,9 +376,7 @@ EXPOSE 8086 50050 50051
 ENTRYPOINT ["java", "--enable-preview", "-jar", "app.jar"]
 ```
 
-### 2. 3-Node Cluster `docker-compose.yml`
-
-Create `docker-compose.yml` in the project root:
+### 5.2 Production 3-Node `docker-compose.yml`
 
 ```yaml
 version: '3.8'
@@ -442,58 +461,61 @@ services:
     restart: unless-stopped
 ```
 
-### 3. Cluster Commands with Docker Compose
+### 5.3 Container Lifecycle & Operational Commands
 
 ```bash
-# 1. Build and package the project JAR first
+# 1. Compile project JAR
 mvn clean package -DskipTests
 
-# 2. Build and launch the 3-node cluster in the background
+# 2. Build image and launch the 3-node cluster
 docker compose up -d --build
 
-# 3. View live cluster logs across all 3 nodes
+# 3. View aggregate live cluster logs
 docker compose logs -f
 
-# 4. Check cluster status
+# 4. View container status
 docker compose ps
 
-# 5. Stop cluster and preserve volumes
+# 5. Stop cluster preserving storage volumes
 docker compose down
 
-# 6. Stop cluster and reset data volumes
+# 6. Reset all storage volumes
 docker compose down -v
 ```
 
 ---
 
-# Chapter 6: The 8 Multi-Model Database Engines & REST APIs
+# Chapter 6: The 8 Multi-Model Database Engines & Exhaustive APIs
 
-`JettraStoreEngine` hosts 8 purpose-built database engines over a shared, high-throughput storage engine.
+`JettraStoreEngine` embeds 8 purpose-built database engines over a shared, high-throughput storage core.
 
 ---
 
-## 6.1 Document Engine (JSON / NoSQL)
-- **Use Case**: Hierarchical JSON records, schema-flexible document catalogs, and e-commerce models.
+## 6.1 Document Engine (JSON / BSON / NoSQL)
+- **Use Case**: Hierarchical JSON records, schema-flexible document catalogs, and e-commerce models with validation rules.
 - **REST Endpoints**:
   - `POST /api/document/{collection}/{id}` : Insert or update document.
   - `GET  /api/document/{collection}/{id}` : Read document by ID.
-  - `DELETE /api/document/{collection}/{id}` : Delete document.
+  - `DELETE /api/document/{collection}/{id}` : Delete document (writes tombstone).
 
 ```bash
-# Insert a customer document
+# Insert customer document
 curl -X POST http://localhost:8086/api/document/customers/cust_101 \
   -H "Content-Type: application/json" \
   -d '{"name": "Alice Corp", "tier": "Enterprise", "credits": 5000}'
+
+# Read document
+curl -X GET http://localhost:8086/api/document/customers/cust_101
 ```
 
 ---
 
-## 6.2 Vector Engine (AI Embeddings & Cosine ANN)
+## 6.2 Vector Engine (AI Embeddings, Cosine Similarity & ANN)
 - **Use Case**: Semantic search, LLM Retrieval-Augmented Generation (RAG), and recommendation embeddings.
-- **Data Model**: `float[]` high-dimensional vector embeddings with metadata.
+- **Data Model**: High-dimensional `float[]` vector embeddings with attached metadata payloads.
 - **REST Endpoints**:
-  - `POST /api/model/vector/insert` : Insert embedding with metadata payload.
-  - `POST /api/model/vector/search` : Top-K Approximate Nearest Neighbor (ANN) by Cosine similarity.
+  - `POST /api/model/vector/insert` : Insert embedding with metadata.
+  - `POST /api/model/vector/search` : Top-K Approximate Nearest Neighbor (ANN) query.
 
 ```bash
 # Insert a 4-dimensional vector embedding
@@ -504,6 +526,15 @@ curl -X POST http://localhost:8086/api/model/vector/insert \
     "id": "vec_99",
     "vector": [0.12, 0.45, 0.88, 0.31],
     "metadata": {"title": "LSM Compaction Guide", "author": "Jettra Team"}
+  }'
+
+# Query nearest neighbors by Cosine similarity
+curl -X POST http://localhost:8086/api/model/vector/search \
+  -H "Content-Type: application/json" \
+  -d '{
+    "collection": "kb_articles",
+    "queryVector": [0.10, 0.44, 0.85, 0.30],
+    "topK": 5
   }'
 ```
 
@@ -522,11 +553,22 @@ curl -X POST http://localhost:8086/api/model/vector/insert \
 curl -X POST http://localhost:8086/api/model/graph/node \
   -H "Content-Type: application/json" \
   -d '{"graph": "social_net", "id": "user_1", "data": {"name": "Bob", "role": "Engineer"}}'
+
+# Create relation edge
+curl -X POST http://localhost:8086/api/model/graph/edge \
+  -H "Content-Type: application/json" \
+  -d '{
+    "graph": "social_net",
+    "from": "user_1",
+    "to": "user_2",
+    "label": "FOLLOWS",
+    "properties": {"since": "2026-01-15", "weight": 1.0}
+  }'
 ```
 
 ---
 
-## 6.4 TimeSeries Engine (IoT, Metrics & Aggregations)
+## 6.4 TimeSeries Engine (IoT Telemetry, Metrics & Range Aggregations)
 - **Use Case**: Server telemetry, IoT sensor feeds, financial tick-by-tick logs.
 - **Data Model**: Time-stamped metrics with indexed dimension tags.
 - **REST Endpoints**:
@@ -534,7 +576,7 @@ curl -X POST http://localhost:8086/api/model/graph/node \
   - `GET  /api/model/timeseries/range` : Query range $[T_{start}, T_{end}]$.
 
 ```bash
-# Ingest IoT temperature sensor data
+# Ingest IoT sensor data
 curl -X POST http://localhost:8086/api/model/timeseries/insert \
   -H "Content-Type: application/json" \
   -d '{
@@ -546,67 +588,131 @@ curl -X POST http://localhost:8086/api/model/timeseries/insert \
 
 ---
 
-## 6.5 Columnar Engine (OLAP & Analytical Projections)
+## 6.5 Columnar Engine (OLAP, Analytical Projections & Run-Length Encoding)
 - **Use Case**: Data warehousing, columnar aggregations, and business intelligence.
 - **Data Model**: Column families stored in contiguous columnar arrays.
 - **REST Endpoints**:
   - `POST /api/model/column/row` : Insert row vector.
   - `GET  /api/model/column/row?table={tbl}&key={k}` : Read row by key.
 
+```bash
+curl -X POST http://localhost:8086/api/model/column/row \
+  -H "Content-Type: application/json" \
+  -d '{
+    "table": "orders_fact",
+    "key": "order_9901",
+    "columns": {"customer_id": 101, "total": 450.00, "status": "COMPLETED"}
+  }'
+```
+
 ---
 
-## 6.6 KeyValue Engine (Ultra-Low Latency Cache)
-- **Use Case**: User session storage, token caching, feature flags.
+## 6.6 KeyValue Engine (MemTable Cache & Atomic Counters)
+- **Use Case**: User session storage, token caching, feature flags, distributed counters.
 - **REST Endpoints**:
   - `POST /api/model/keyvalue/set` : Put key/value.
   - `GET  /api/model/keyvalue/get?namespace={ns}&key={k}` : Get value.
 
+```bash
+curl -X POST http://localhost:8086/api/model/keyvalue/set \
+  -H "Content-Type: application/json" \
+  -d '{"namespace": "session_cache", "key": "sess_tok_abc", "value": "{\"uid\":\"admin\",\"exp\":1724184000}"}'
+```
+
 ---
 
-## 6.7 Geospatial Engine (2D Coordinates & Haversine Distance)
+## 6.7 Geospatial Engine (2D Coordinates, GIS Layers & Haversine Distance)
 - **Use Case**: Delivery tracking, geo-fencing, distance radius calculations.
 - **REST Endpoints**:
   - `POST /api/model/geospatial/insert` : Register lat/lon point.
   - `GET  /api/model/geospatial/point?layer={layer}&id={id}` : Retrieve geo point.
 
+```bash
+curl -X POST http://localhost:8086/api/model/geospatial/insert \
+  -H "Content-Type: application/json" \
+  -d '{
+    "layer": "stores_panama",
+    "id": "store_albrook",
+    "latitude": 8.9745,
+    "longitude": -79.5532,
+    "metadata": {"name": "Albrook Mall Branch", "open": true}
+  }'
+```
+
 ---
 
-## 6.8 Object Engine (Binary BLOBs & Stream Blocks)
-- **Use Case**: File storage, image assets, serialized model weights.
+## 6.8 Object Engine (Binary BLOBs, Chunked Blocks & Media Streams)
+- **Use Case**: Large file storage, signed XML documents, images, serialized model weights.
 - **REST Endpoints**:
   - `POST /api/model/object/save` : Store binary/JSON payload.
   - `GET  /api/model/object/get?bucket={b}&id={id}` : Retrieve object.
 
+```bash
+curl -X POST http://localhost:8086/api/model/object/save \
+  -H "Content-Type: application/json" \
+  -d '{
+    "bucket": "invoices_pdf",
+    "id": "inv_2026_01.pdf",
+    "className": "PdfDocument",
+    "state": {"checksum": "sha256_99a8", "sizeBytes": 1048576, "base64": "JVBERi0xLjQK..."}
+  }'
+```
+
 ---
 
-# Chapter 7: Aggregations Pipeline & Analytical Operations
+# Chapter 7: Aggregations Pipeline & Real-Time Analytics
 
-`JettraStoreEngine` supports multi-stage aggregation pipelines across collections and columnar families.
+### 7.1 Pipeline Stages & Accumulator Operators
 
-### Summary of Aggregation Operators
+`JettraStoreEngine` supports multi-stage analytics pipelines processed with Virtual Threads:
 
-| Operator | Purpose | Example |
+| Operator | Description | Example Syntax |
 | :--- | :--- | :--- |
-| **`$match`** | Filters documents based on query criteria. | `{"$match": {"status": "ACTIVE"}}` |
-| **`$group`** | Groups documents by a key and executes accumulators. | `{"$group": {"_id": "$category", "total": {"$sum": "$price"}}}` |
-| **`$sum`** | Computes the arithmetic sum of numeric values. | `{"$sum": "$order_total"}` |
-| **`$avg`** | Computes the statistical average of a field. | `{"$avg": "$response_time_ms"}` |
-| **`$min` / `$max`** | Identifies extreme bounds in a dataset. | `{"$min": "$latency"}`, `{"$max": "$latency"}` |
-| **`$count`** | Returns the count of documents matching the pipeline stage. | `{"$count": "active_users"}` |
+| **`$match`** | Filters documents matching conditions. | `{"$match": {"status": "ACTIVE"}}` |
+| **`$group`** | Groups documents by identifier. | `{"$group": {"_id": "$category", "total": {"$sum": "$price"}}}` |
+| **`$sum`** | Computes the arithmetic sum of a numeric field. | `{"$sum": "$order_total"}` |
+| **`$avg`** | Computes the mathematical average. | `{"$avg": "$response_time"}` |
+| **`$min` / `$max`** | Finds the minimum / maximum value. | `{"$min": "$price"}`, `{"$max": "$price"}` |
+| **`$count`** | Counts the number of matched documents. | `{"$count": "total_records"}` |
 
-### REST Aggregation Pipeline
-`POST /api/document/{collection}/aggregate`
+### 7.2 Aggregations via Java Driver & High-Level Methods
 
+```java
+// 1. High-level single-stage aggregations
+Long totalCount = client.count("customers").await().indefinitely();
+Double totalSales = repository.sum("amount").await().indefinitely();
+Double avgPrice = repository.avg("price", "{category: 'electronics'}").await().indefinitely();
+
+// 2. Full Multi-Stage Aggregation Pipeline
+String pipeline = """
+[
+  {"$match": {"category": "electronics"}},
+  {"$group": {
+      "_id": "$brand",
+      "totalInventory": {"$sum": "$stock"},
+      "avgPrice": {"$avg": "$price"}
+  }}
+]
+""";
+
+List<Object> results = client.aggregate("products", pipeline).await().indefinitely();
+```
+
+### 7.3 Aggregations via Jettra Shell & REST API
+
+#### Jettra Shell
+```bash
+mongo db.sales.aggregate([{$group: {_id: null, total: {$sum: '$amount'}}}])
+mongo db.users.aggregate([{$match: {city: 'Panama'}}, {$group: {_id: null, avgAge: {$avg: '$age'}}}])
+```
+
+#### REST Endpoint: `POST /api/v1/document/{collection}/aggregate`
 ```json
 [
   {
-    "$match": { "category": "electronics" }
-  },
-  {
     "$group": {
-      "_id": "$brand",
-      "totalInventory": { "$sum": "$stock" },
-      "avgPrice": { "$avg": "$price" }
+      "_id": "$category",
+      "count": { "$count": {} }
     }
   }
 ]
@@ -614,142 +720,240 @@ curl -X POST http://localhost:8086/api/model/timeseries/insert \
 
 ---
 
-# Chapter 8: Java Driver Patterns, Repositories & Fluent Query API
+# Chapter 8: Polyglot Drivers: Java, Python, Go & Multi-Model Transactions
 
-### 8.1 Typed Repository Pattern
-Define your data models cleanly as immutable **Java Records**:
+### 8.1 Java Driver: Typed Repository Pattern & Fluent Query API
 
+```xml
+<dependency>
+    <groupId>com.jettra</groupId>
+    <artifactId>JettraStoreDriverJava</artifactId>
+    <version>1.0-SNAPSHOT</version>
+</dependency>
+```
+
+#### Typed Repository with Immutable Records
 ```java
+import com.jettra.driver.JettraClient;
 import com.jettra.driver.java.JettraRepository;
 import java.util.Optional;
 
-public record Planet(String id, String name, double mass, boolean hasRings) {}
+public record Persona(String id, String nombre, int edad) {}
 
-public class RepositoryDemo {
+public class Main {
     public static void main(String[] args) {
-        JettraClient client = new JettraClient("127.0.0.1", 8086);
-        client.connect();
+        JettraClient client = JettraClient.builder()
+            .host("localhost").port(8086)
+            .credentials("admin", "admin").build();
+            
+        JettraRepository<Persona> repo = client.repository(Persona.class, "DOCUMENT", "personas");
         
-        JettraRepository<Planet> planetRepo = client.repository(Planet.class, "DOCUMENT", "planets");
+        // Insert
+        repo.save("P001", new Persona("P001", "Alice", 28));
         
-        // Save Record
-        Planet mars = new Planet("p_001", "Mars", 0.107, false);
-        planetRepo.save(mars.id(), mars);
-        
-        // Read Record
-        Optional<Planet> retrieved = planetRepo.findById("p_001");
-        retrieved.ifPresent(p -> System.out.println("Found planet: " + p.name()));
+        // Find
+        Optional<Persona> p = repo.findById("P001");
+        p.ifPresent(persona -> System.out.println("Retrieved: " + persona.nombre()));
     }
 }
 ```
 
-### 8.2 Repository Pattern with Interfaces
+#### Fluent Query API
+```java
+client.database("ecommerce").collection("users")
+      .filter(eq("status", "ACTIVE"))
+      .sort(asc("createdAt"))
+      .limit(50)
+      .execute();
+```
+
+### 8.2 Multi-Model ACID Transactions in Java
+
+`JettraStoreEngine` allows combining document writes and KV cache decrements in an atomic transaction block:
 
 ```java
-public interface UserRepository {
-    void save(User user);
-    Optional<User> findById(String id);
-    List<User> findByActive(boolean active);
+client.transaction(tx -> {
+    Factura factura = new Factura("F-100", "C-500", List.of(
+        new LineaFactura("A-1", 2, 50.0),
+        new LineaFactura("A-2", 1, 100.0)
+    ));
+    
+    // 1. Save Document Invoice
+    tx.database("sales").collection("facturas").insert(factura);
+    
+    // 2. Decrement inventory in KeyValue engine
+    tx.database("sales").kv("stock").decrement("A-1", 2);
+    tx.database("sales").kv("stock").decrement("A-2", 1);
+});
+```
+
+### 8.3 Python Driver (`jettra-driver`)
+
+```bash
+pip install jettra-driver
+```
+
+```python
+from jettra import JettraClient
+
+client = JettraClient(host="localhost", port=8086, username="admin", password="admin")
+db = client.database("library_db")
+books = db.collection("books")
+
+# Insert
+books.insert({"id": "B101", "title": "Clean Code", "author": "Robert C. Martin"})
+
+# Find
+book = books.find_by_id("B101")
+print("Found book:", book["title"])
+```
+
+### 8.4 Go Driver (`github.com/jettra/jettra-driver-go`)
+
+```bash
+go get github.com/jettra/jettra-driver-go
+```
+
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/jettra/jettra-driver-go/jettra"
+)
+
+type Book struct {
+    ID     string `json:"id"`
+    Title  string `json:"title"`
+    Author string `json:"author"`
 }
 
-public class UserRepositoryImpl implements UserRepository {
-    private final JettraRepository<User> repo;
-    
-    public UserRepositoryImpl(JettraClient client) {
-        this.repo = client.repository(User.class, "DOCUMENT", "users");
-    }
-    
-    @Override
-    public void save(User user) { repo.save(user.id(), user); }
-    
-    @Override
-    public Optional<User> findById(String id) { return repo.findById(id); }
-    
-    @Override
-    public List<User> findByActive(boolean active) {
-        return repo.query("{active: " + active + "}");
-    }
+func main() {
+    client := jettra.NewClient("http://localhost:8086", "admin", "admin")
+    col := client.Database("library_db").Collection("books")
+
+    b := Book{ID: "B1", Title: "Distributed Systems", Author: "Tanenbaum"}
+    col.Insert(b)
+
+    var result Book
+    col.FindByID("B1", &result)
+    fmt.Printf("Retrieved book: %s by %s\n", result.Title, result.Author)
 }
 ```
 
 ---
 
-# Chapter 9: End-to-End Business Case: Multi-Model E-Invoicing System
+# Chapter 9: End-to-End Enterprise Domain: Multi-Model E-Invoicing System
 
-This chapter demonstrates how an entire enterprise billing and electronic invoicing system leverages **all 8 engines natively** in `JettraStoreEngine`.
+This chapter details the complete e-invoicing (`facturacion`) domain model mapped simultaneously across all 8 multi-model engines.
 
-### 9.1 Domain Model Definition (Java Records)
+### 9.1 Domain Entity Definitions with Immutable Java Records
 
 ```java
+package com.jettra.facturacion.model;
+
 import java.time.LocalDate;
 import java.util.List;
 
-public enum TipoIdentificacion { CEDULA, NIT, PASAPORTE, RUC }
+// 1. IDENTIFICATION ENUMS
+public enum TipoIdentificacion { CEDULA_CIUDADANIA, NIT, PASAPORTE, RUC }
 public enum EstadoFactura { BORRADOR, EMITIDA, PAGADA, ANULADA }
-public enum MetodoPago { EFECTIVO, TARJETA_CREDITO, TRANSFERENCIA, CREDITO }
+public enum MetodoPago { EFECTIVO, TARJETA_CREDITO, TRANSFERENCIA_BANCARIA, CREDITO }
 
-public record Direccion(String calle, String ciudad, String pais) {}
+// 2. LOCATION & PARTY RECORDS
+public record Direccion(String calle, String ciudad, String estadoProvincia, String codigoPostal, String pais) {}
 
 public record Contribuyente(
     String id,
     TipoIdentificacion tipoId,
     String nombreLegal,
     String email,
-    Direccion direccion
+    Direccion direccion,
+    String telefono
 ) {}
 
+// 3. PRODUCT & TAX RECORDS
 public record ImpuestoCategoria(String codigo, String nombre, double porcentaje) {}
 
 public record Producto(
     String sku,
     String nombre,
+    String descripcion,
     double precioUnitario,
     ImpuestoCategoria impuesto
 ) {}
 
+// 4. TRANSACTION LINES & COMPUTATIONS
 public record LineaFactura(
     int numeroLinea,
     Producto producto,
     double cantidad,
     double porcentajeDescuento
 ) {
-    public double subtotalNeto() { return (producto.precioUnitario() * cantidad) * (1.0 - porcentajeDescuento / 100.0); }
+    public LineaFactura {
+        if (cantidad <= 0) throw new IllegalArgumentException("Quantity must be positive");
+        if (porcentajeDescuento < 0 || porcentajeDescuento > 100) throw new IllegalArgumentException("Invalid discount");
+    }
+
+    public double subtotalBruto() { return producto.precioUnitario() * cantidad; }
+    public double montoDescuento() { return subtotalBruto() * (porcentajeDescuento / 100.0); }
+    public double subtotalNeto() { return subtotalBruto() - montoDescuento(); }
     public double montoImpuesto() { return subtotalNeto() * (producto.impuesto().porcentaje() / 100.0); }
     public double totalLinea() { return subtotalNeto() + montoImpuesto(); }
 }
 
-public record TotalesFactura(double totalNeto, double totalImpuestos, double granTotal) {}
+// 5. TOTALS & ROOT INVOICE
+public record TotalesFactura(
+    double totalBruto,
+    double totalDescuentos,
+    double totalNeto,
+    double totalImpuestos,
+    double granTotal
+) {}
 
 public record Factura(
     String numeroFactura,
-    String claveAcceso,
+    String claveAccesoElectronica,
     LocalDate fechaEmision,
+    LocalDate fechaVencimiento,
     Contribuyente emisor,
     Contribuyente receptor,
     List<LineaFactura> lineas,
     MetodoPago metodoPago,
     EstadoFactura estado
-) {}
+) {
+    public Factura { lineas = List.copyOf(lineas); }
+
+    public TotalesFactura calcularTotales() {
+        double bruto = 0, descuentos = 0, impuestos = 0;
+        for (LineaFactura l : lineas) {
+            bruto += l.subtotalBruto();
+            descuentos += l.montoDescuento();
+            impuestos += l.montoImpuesto();
+        }
+        return new TotalesFactura(bruto, descuentos, bruto - descuentos, impuestos, (bruto - descuentos) + impuestos);
+    }
+}
 ```
 
-### 9.2 Polyglot Architecture Mapping
+### 9.2 Polyglot Multi-Engine Storage Mapping
 
-| Component | Storage Engine | Purpose |
-| :--- | :--- | :--- |
-| **Facturas & Contribuyentes** | `DOCUMENT` | Full hierarchical JSON invoice persistence with schema validation. |
-| **Búsqueda Semántica de Ítems** | `VECTOR` | 1536d embeddings for product discovery and automated catalog grouping. |
-| **Red de Clientes & Proveedores** | `GRAPH` | Social knowledge graph for supply chain fraud detection and relationships. |
-| **Métricas de Facturación** | `TIMESERIES` | High-frequency telemetry of invoice issuance per second/minute. |
-| **Reportes Fiscales Mensuales** | `COLUMN` | Columnar OLAP aggregations for tax declarations (`SUM`, `AVG`). |
-| **Sesiones & Locks de Factura** | `KEYVALUE` | Ultra-low latency memory locks during invoice electronic signing. |
-| **Geolocalización de Entregas** | `GEOSPATIAL` | GPS delivery validation and tax jurisdiction mapping. |
-| **XML Firmado & PDFs (BLOBs)** | `OBJECT` | Secure, chunked block storage for cryptographic XML files and PDF receipts. |
+| Invoice Domain Aspect | Engine | Storage Target | Rationale |
+| :--- | :--- | :--- | :--- |
+| **Factura & Clientes** | `DOCUMENT` | `coll:facturas:{id}` | Nested JSON hierarchy with declarative validation. |
+| **Búsqueda Semántica de Ítems** | `VECTOR` | `vec:items:{sku}` | 1536d OpenAI embeddings for product catalog discovery. |
+| **Red de Clientes / Proveedores** | `GRAPH` | `graph:network:node:{id}` | Knowledge graph for supply chain fraud detection. |
+| **Métricas de Facturación** | `TIMESERIES` | `ts:invoicing_throughput` | High-frequency telemetry of invoice volume. |
+| **Reportes Fiscales Mensuales** | `COLUMN` | `col:facturas_olap:{id}` | Fast columnar projections for tax declarations. |
+| **Locks de Firma Electrónica** | `KEYVALUE` | `kv:signing_locks:{id}` | Ultra-low latency memory locks during signing. |
+| **Geolocalización de Entregas** | `GEOSPATIAL` | `geo:delivery_points:{id}` | GPS validation against jurisdictional tax boundaries. |
+| **XML Firmado & PDFs (BLOBs)** | `OBJECT` | `obj:invoices_pdf:{id}` | Cryptographic block storage for signed receipts. |
 
 ---
 
-# Chapter 10: Security, Authentication & Per-Database RBAC
+# Chapter 10: Security, Authentication & Per-Database Scoped RBAC
 
-### Per-Database Access Control Architecture
+### 10.1 Per-Database Role Matrix (RBAC)
 `JettraStoreEngine` enforces Role-Based Access Control (RBAC) scoped at the individual database and engine level:
 
 | Role Name | Scope | Permissions |
@@ -759,13 +963,13 @@ public record Factura(
 | **`READ_ONLY`** | Database-Specific | Query & Scan: Read-only access for analysts and reporting tools. |
 | **`MANAGER`** | Global / Node | Operational: Trigger WAL snapshots, cluster health, and backups. |
 
-### JWT Token Generation
-Authenticate via `POST /api/auth/login` to obtain an HMAC-SHA256 bearer token:
-```bash
-curl -X POST http://localhost:8086/api/auth/login \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "username=admin&password=admin"
-```
+### 10.2 JettraJWT Authentication & Token Lifecycle
+1. **Authentication**: `POST /api/auth/login` with username & password.
+2. **Signature**: HMAC-SHA256 token generated with 1-hour expiration.
+3. **Transmission**: `Authorization: Bearer <token>` header on subsequent requests.
+
+### 10.3 Password Hashing & SecurityDB Repository Sync
+Passwords in `JCredential` are hashed using salted SHA-256 and stored securely in `JettraSecurityDB` (embedded SQLite / Memory engine) with automated schema verification on boot.
 
 ---
 
@@ -773,50 +977,57 @@ curl -X POST http://localhost:8086/api/auth/login \
 
 The Web Console runs on `jettra.gui.port` (default `50050`) built entirely with **JettraFlux**:
 
-### Available Web Routes
-1. **`/login`**: Secure authentication view with credential hints.
-2. **`/dashboard`** (or `/`): Real-time JVM heap metrics, CPU, disk usage, active engine cards, and backup trigger.
-3. **`/engines`**: Interactive database and object creation console for all 8 multi-model engines with live result previews.
-4. **`/users`**: Per-database user provisioning, role assignments, credential management, and JWT token policy viewer.
-5. **`/components`**: LSM-Tree/B-Tree engine internals, active `.jettra` disk file listing, and Raft consensus status.
-6. **`/swagger-ui`**: Interactive OpenAPI explorer for testing all REST endpoints directly in the browser.
+### 11.1 Native JettraFlux Component Architecture
+- Built with responsive widgets (`Scaffold`, `Left`, `Top`, `Card`, `StatCard`, `Datatable`, `ThemeChanged`, `Avatar`).
+- Modern glassmorphism theme with dynamic dark mode switching.
+
+### 11.2 Interactive Database & Object Management Console
+Enables direct operations in `http://localhost:50050/engines`:
+- **Database Provisioning**: Create collections, graphs, time-series streams, and vector namespaces.
+- **Record CRUD Operations**: Create and query records for all 8 engines with live JSON response inspectors.
+
+### 11.3 User & Per-Database Security Provisioning
+Enables administrative management in `http://localhost:50050/users`:
+- Provision user accounts with per-database scope assignment (e.g. `customers_db` on `DOCUMENT`, `gis_layers` on `GEOSPATIAL`, or `*` for all).
+- Assign granular roles (`DB_ADMIN`, `READ_WRITE`, `READ_ONLY`, `MANAGER`).
+
+### 11.4 Storage Internals & Swagger OpenAPI Explorer
+- **`/components`**: Inspect active `.jettra` disk files, MemTable heap usage, and Raft consensus peer status.
+- **`/swagger-ui`**: Embedded OpenAPI explorer for testing all database REST endpoints directly in the browser.
 
 ---
 
 # Chapter 12: Backups, Snapshot Replication & Disaster Recovery
 
-### Manual Backup via REST API
-```bash
-curl -X POST http://localhost:8086/api/backup
+### 12.1 Automated Background Backup & Cron Service
+Configure automatic timestamped snapshots in `jettrastoreengine.properties`:
+```properties
+store.backup.enabled=true
+store.backup.interval.minutes=1440
 ```
+`BackupManager` creates consistent ZIP archives containing all active `.wal`, `.sst`, `.jettra`, and metadata files without blocking live client transactions.
 
-### Auto-Restore on Node Boot
-Enable automatic disaster recovery in `jettrastoreengine.properties`:
+### 12.2 Automatic Restore on Node Boot (`store.restore.auto`)
 ```properties
 store.restore.auto=true
 ```
-When enabled, `BackupManager` scans the storage root on boot, extracts the latest timestamped `.zip` snapshot archive, and restores all `.wal`, `.sst`, and `.jettra` files seamlessly before starting network listeners.
+When enabled, `BackupManager` scans the storage root on boot, extracts the latest snapshot archive, and restores the storage state before initializing network sockets.
 
 ---
 
-# Appendix A: Keyset Pagination, Subqueries & Tombstones
+# Appendix A: High-Performance Keyset Pagination & Tombstone Sweeping
 
-### 1. High-Performance Keyset Pagination
-Never use legacy `OFFSET` for large datasets. Use index-assisted keyset pagination ($O(\log N)$):
+### Keyset Pagination ($O(\log N)$)
+Never use `OFFSET` for high-volume datasets. Keyset pagination searches the B-Tree index starting immediately after the last seen identifier:
 ```sql
-FIND IN invoices WHERE status = 'EMITIDA' AFTER id 'INV_2026_09999' LIMIT 50;
+FIND IN facturas WHERE estado = 'EMITIDA' AFTER id 'INV_2026_09999' LIMIT 50;
 ```
-
-### 2. Deletions via Tombstones
-Deletes append an immutable Tombstone marker to the WAL and MemTable. The SSTable compaction process eventually sweeps away dead disk records during background merging.
 
 ---
 
 # Appendix B: JVM 25, Generational ZGC & Compact Object Headers Tuning
 
-### Production JVM Launch Flags
-For maximum throughput and deterministic sub-millisecond GC pauses:
-
+### Production JVM Launch Command
 ```bash
 java --enable-preview \
   -XX:+UseZGC \
