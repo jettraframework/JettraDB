@@ -5,39 +5,58 @@ import com.jettra.store.engine.core.JettraStorageEngine;
 import com.jettra.store.engine.models.DocumentEngine;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.IOException;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
-import java.io.IOException;
-import com.jettra.store.engine.wui.JettraWUIAdminPage;
+import com.jettra.store.engine.web.StoreComponentsPage;
+import com.jettra.store.engine.web.StoreDashboardPage;
+import com.jettra.store.engine.web.StoreEnginesPage;
+import com.jettra.store.engine.web.StoreLoginPage;
+import com.jettra.store.engine.web.StoreUsersPage;
 import java.util.HashMap;
 import java.util.Map;
 
 /**
  * Orchestrates the network interfaces for JettraStorageEngine.
  * Bootstraps JettraServer, mounts JettraRest and JettraGRPC endpoints,
- * and configures JettraJWT authentication.
+ * and configures JettraJWT authentication and JettraFlux Web Console.
  */
 public class JettraServerOrchestrator {
     
     private final JettraStorageEngine engine;
     private final int restPort;
     private final int grpcPort;
+    private final int guiPort;
     private final AuthManager authManager;
     private io.jettra.server.JettraServer jettraServer;
+    private io.jettra.server.JettraServer jettraGuiServer;
     
     public JettraServerOrchestrator(JettraStorageEngine engine, int restPort, int grpcPort) {
+        this(engine, restPort, grpcPort, 50050);
+    }
+
+    public JettraServerOrchestrator(JettraStorageEngine engine, int restPort, int grpcPort, int guiPort) {
         this.engine = engine;
         this.restPort = restPort;
         this.grpcPort = grpcPort;
+        this.guiPort = guiPort;
         this.authManager = new AuthManager();
     }
     
     public void start() {
         System.out.println("Starting JettraServerOrchestrator...");
-        System.out.println("REST/GraphQL Port: " + restPort);
-        System.out.println("gRPC Port: " + grpcPort);
+        System.out.println("REST API Port: " + restPort);
+        System.out.println("GUI Web Port:  " + guiPort);
+        System.out.println("gRPC Port:     " + grpcPort);
         
-        // Initialize JettraServer instance
+        // 1. Initialize Handlers and Pages
+        StoreDashboardPage dashboardPage = new StoreDashboardPage(engine);
+        StoreEnginesPage enginesPage = new StoreEnginesPage(engine);
+        StoreUsersPage usersPage = new StoreUsersPage(engine, authManager);
+        StoreComponentsPage componentsPage = new StoreComponentsPage(engine);
+        StoreLoginPage loginPage = new StoreLoginPage(authManager);
+
+        // 2. Initialize REST API Server instance
         jettraServer = new io.jettra.server.JettraServer();
         jettraServer.setPort(restPort);
         
@@ -50,14 +69,57 @@ public class JettraServerOrchestrator {
         // Universal Model endpoint
         jettraServer.addHandler("/api/model/", new ModelRestController(engine, authManager));
         
-        // Serve WUI Portal
-        jettraServer.addHandler("/wui", new JettraWUIAdminPage(engine));
-        
         // Backup API
         jettraServer.addHandler("/api/backup", new BackupHandler(engine));
         
-        // Start server
+        // Also register Web Console on restPort
+        jettraServer.addHandler("/", dashboardPage);
+        jettraServer.addHandler("/dashboard", dashboardPage);
+        jettraServer.addHandler("/wui", dashboardPage);
+        jettraServer.addHandler("/engines", enginesPage);
+        jettraServer.addHandler("/users", usersPage);
+        jettraServer.addHandler("/components", componentsPage);
+        jettraServer.addHandler("/login", loginPage);
+        jettraServer.addHandler("/swagger-ui", io.jettra.flux.complex.SwaggerUIPage.class);
+
+        // Start REST API server
         jettraServer.start();
+        
+        // 3. Initialize and Serve JettraFlux Web Management Console on guiPort
+        if (guiPort == restPort) {
+            jettraGuiServer = jettraServer;
+        } else {
+            jettraGuiServer = new io.jettra.server.JettraServer();
+            jettraGuiServer.setPort(guiPort);
+            jettraGuiServer.addHandler("/", dashboardPage);
+            jettraGuiServer.addHandler("/dashboard", dashboardPage);
+            jettraGuiServer.addHandler("/wui", dashboardPage);
+            jettraGuiServer.addHandler("/engines", enginesPage);
+            jettraGuiServer.addHandler("/users", usersPage);
+            jettraGuiServer.addHandler("/components", componentsPage);
+            jettraGuiServer.addHandler("/login", loginPage);
+            jettraGuiServer.addHandler("/swagger-ui", io.jettra.flux.complex.SwaggerUIPage.class);
+            jettraGuiServer.start();
+        }
+        
+        // Shell Startup Banner with Web Console URLs
+        System.out.println();
+        System.out.println("==================================================================================");
+        System.out.println("                   JETTRA STORE ENGINE - WEB CONSOLE ACTIVE                       ");
+        System.out.println("==================================================================================");
+        System.out.println("  Web Management UI (GUI): http://localhost:" + guiPort + "/ (or /dashboard, /wui)");
+        System.out.println("  Multi-Model Engines:     http://localhost:" + guiPort + "/engines");
+        System.out.println("  Users & Security:        http://localhost:" + guiPort + "/users");
+        System.out.println("  Cluster & Internals:     http://localhost:" + guiPort + "/components");
+        System.out.println("  Swagger OpenAPI:         http://localhost:" + guiPort + "/swagger-ui");
+        System.out.println("  --------------------------------------------------------------------------------");
+        System.out.println("  REST Database API:       http://localhost:" + restPort + "/api/");
+        System.out.println("  REST Multi-Model API:    http://localhost:" + restPort + "/api/model/");
+        System.out.println("  REST Document API:       http://localhost:" + restPort + "/api/document/");
+        System.out.println("  gRPC Cluster Port:       " + grpcPort);
+        System.out.println("  Default Credentials:     admin / admin  (or super-user / superUserZ)");
+        System.out.println("==================================================================================");
+        System.out.println();
         
         // TODO: Mount JettraGRPC services
     }
@@ -66,6 +128,9 @@ public class JettraServerOrchestrator {
         System.out.println("Stopping JettraServerOrchestrator...");
         if (jettraServer != null) {
             jettraServer.stop();
+        }
+        if (jettraGuiServer != null && jettraGuiServer != jettraServer) {
+            jettraGuiServer.stop();
         }
     }
 

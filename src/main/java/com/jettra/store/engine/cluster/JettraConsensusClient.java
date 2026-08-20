@@ -42,15 +42,28 @@ public class JettraConsensusClient {
     }
 
     public boolean sendCommand(String command) {
-        try (Socket socket = new Socket(host, port);
-             PrintWriter out = new PrintWriter(socket.getOutputStream(), true, StandardCharsets.UTF_8);
-             BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8))) {
-            
-            out.println(command);
-            String response = in.readLine();
-            return "OK".equals(response);
+        // Try configured host first
+        if (trySend(this.host, this.port, command)) {
+            return true;
+        }
+        // Fallback to localhost if different
+        if (!"127.0.0.1".equals(this.host) && !"localhost".equalsIgnoreCase(this.host)) {
+            return trySend("127.0.0.1", this.port, command);
+        }
+        return false;
+    }
+
+    private boolean trySend(String targetHost, int targetPort, String command) {
+        try (Socket socket = new Socket()) {
+            socket.connect(new java.net.InetSocketAddress(targetHost, targetPort), 1000);
+            socket.setSoTimeout(1000);
+            try (PrintWriter out = new PrintWriter(socket.getOutputStream(), true, StandardCharsets.UTF_8);
+                 BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8))) {
+                out.println(command);
+                String response = in.readLine();
+                return "OK".equals(response);
+            }
         } catch (Exception e) {
-            e.printStackTrace();
             return false;
         }
     }

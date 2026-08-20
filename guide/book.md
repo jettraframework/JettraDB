@@ -37,6 +37,7 @@ Para configurar un clúster, debes declarar las direcciones de los pares (peers)
 ```properties
 jettra.node.id=node1
 jettra.data.dir=/data/node1
+jettra.gui.port=50050
 jettra.node.port=8080
 jettra.grpc.port=50051
 jettra.cluster.peers=192.168.1.100:50051,192.168.1.101:50051,192.168.1.102:50051

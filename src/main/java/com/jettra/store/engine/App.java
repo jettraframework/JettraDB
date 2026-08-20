@@ -108,10 +108,11 @@ public class App {
         // ---------------------------------------------------------
         
         // 2. Initialize Network Servers
-        int restPort = Integer.parseInt(props.getProperty("jettra.node.port", System.getenv().getOrDefault("JETTRA_DB_PORT", "8080")));
+        int restPort = Integer.parseInt(props.getProperty("jettra.node.port", System.getenv().getOrDefault("JETTRA_DB_PORT", "8086")));
+        int guiPort = Integer.parseInt(props.getProperty("jettra.gui.port", System.getenv().getOrDefault("JETTRA_GUI_PORT", "50050")));
         int grpcPort = Integer.parseInt(props.getProperty("jettra.grpc.port", System.getenv().getOrDefault("JETTRA_GRPC_PORT", "50051")));
         
-        JettraServerOrchestrator serverOrchestrator = new JettraServerOrchestrator(storageEngine, restPort, grpcPort);
+        JettraServerOrchestrator serverOrchestrator = new JettraServerOrchestrator(storageEngine, restPort, grpcPort, guiPort);
         serverOrchestrator.start();
         
         // 3. Register Shutdown Hook

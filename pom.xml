@@ -16,7 +16,7 @@
         <jettra.gprc.version>1.0.0-SNAPSHOT</jettra.gprc.version>
         <jettra.rules.version>1.0.0-SNAPSHOT</jettra.rules.version>
         <jettra.appserver.version>1.0.0-SNAPSHOT</jettra.appserver.version>
-        <jettra.wui.version>1.0.0-SNAPSHOT</jettra.wui.version>
+        <jettra.flux.version>1.0.0-SNAPSHOT</jettra.flux.version>
         <jettra.report.version>1.0.0-SNAPSHOT</jettra.report.version>
         <jettra.rest.version>1.0.0-SNAPSHOT</jettra.rest.version>
         <jettra.json.version>1.0.0-SNAPSHOT</jettra.json.version>
@@ -40,8 +40,8 @@
         
         <dependency>
             <groupId>io.jettra</groupId>
-            <artifactId>JettraWUI</artifactId>
-            <version>${jettra.wui.version}</version>
+            <artifactId>JettraFlux</artifactId>
+            <version>${jettra.flux.version}</version>
         </dependency>
         <dependency>
             <groupId>io.jettra</groupId>
