@@ -1,50 +1,80 @@
 version: '3.8'
 
+networks:
+  jettra-net:
+    driver: bridge
+
+volumes:
+  node1-data:
+  node2-data:
+  node3-data:
+
 services:
   jettra-node1:
-    build: .
-    container_name: jettra_node1
-    volumes:
-      - ./config/node1.properties:/app/jettrastoreengine.properties
-      - jettra_data1:/data
+    image: jettra/store-engine:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: jettra-node1
+    environment:
+      - JETTRA_NODE_ID=node1
+      - JETTRA_DATA_DIR=/data/node1
+      - JETTRA_DB_PORT=8086
+      - JETTRA_GUI_PORT=50050
+      - JETTRA_GRPC_PORT=50051
+      - JETTRA_CLUSTER_PEERS=jettra-node1:50051,jettra-node2:50051,jettra-node3:50051
     ports:
-      - "8080:8080"
-      - "50051:50051"
+      - "8086:8086"    # REST Database API
+      - "50050:50050"  # JettraFlux Web Console
+      - "50051:50051"  # Raft Consensus & gRPC
+    volumes:
+      - node1-data:/data/node1
     networks:
-      - jettra_net
+      - jettra-net
     restart: unless-stopped
 
   jettra-node2:
-    build: .
-    container_name: jettra_node2
-    volumes:
-      - ./config/node2.properties:/app/jettrastoreengine.properties
-      - jettra_data2:/data
+    image: jettra/store-engine:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: jettra-node2
+    environment:
+      - JETTRA_NODE_ID=node2
+      - JETTRA_DATA_DIR=/data/node2
+      - JETTRA_DB_PORT=8086
+      - JETTRA_GUI_PORT=50050
+      - JETTRA_GRPC_PORT=50051
+      - JETTRA_CLUSTER_PEERS=jettra-node1:50051,jettra-node2:50051,jettra-node3:50051
     ports:
-      - "8081:8081"
-      - "50052:50052"
+      - "8087:8086"    # REST Database API
+      - "50052:50050"  # JettraFlux Web Console
+      - "50053:50051"  # Raft Consensus & gRPC
+    volumes:
+      - node2-data:/data/node2
     networks:
-      - jettra_net
+      - jettra-net
     restart: unless-stopped
 
   jettra-node3:
-    build: .
-    container_name: jettra_node3
-    volumes:
-      - ./config/node3.properties:/app/jettrastoreengine.properties
-      - jettra_data3:/data
+    image: jettra/store-engine:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: jettra-node3
+    environment:
+      - JETTRA_NODE_ID=node3
+      - JETTRA_DATA_DIR=/data/node3
+      - JETTRA_DB_PORT=8086
+      - JETTRA_GUI_PORT=50050
+      - JETTRA_GRPC_PORT=50051
+      - JETTRA_CLUSTER_PEERS=jettra-node1:50051,jettra-node2:50051,jettra-node3:50051
     ports:
-      - "8082:8082"
-      - "50053:50053"
+      - "8088:8086"    # REST Database API
+      - "50054:50050"  # JettraFlux Web Console
+      - "50055:50051"  # Raft Consensus & gRPC
+    volumes:
+      - node3-data:/data/node3
     networks:
-      - jettra_net
+      - jettra-net
     restart: unless-stopped
-
-volumes:
-  jettra_data1:
-  jettra_data2:
-  jettra_data3:
-
-networks:
-  jettra_net:
-    driver: bridge

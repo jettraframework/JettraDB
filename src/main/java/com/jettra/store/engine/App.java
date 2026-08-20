@@ -112,7 +112,7 @@ public class App {
         int guiPort = Integer.parseInt(props.getProperty("jettra.gui.port", System.getenv().getOrDefault("JETTRA_GUI_PORT", "50050")));
         int grpcPort = Integer.parseInt(props.getProperty("jettra.grpc.port", System.getenv().getOrDefault("JETTRA_GRPC_PORT", "50051")));
         
-        JettraServerOrchestrator serverOrchestrator = new JettraServerOrchestrator(storageEngine, restPort, grpcPort, guiPort);
+        JettraServerOrchestrator serverOrchestrator = new JettraServerOrchestrator(storageEngine, restPort, grpcPort, guiPort, props);
         serverOrchestrator.start();
         
         // 3. Register Shutdown Hook

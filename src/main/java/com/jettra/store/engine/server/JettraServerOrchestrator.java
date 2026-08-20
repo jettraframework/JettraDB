@@ -28,18 +28,24 @@ public class JettraServerOrchestrator {
     private final int grpcPort;
     private final int guiPort;
     private final AuthManager authManager;
+    private final java.util.Properties props;
     private io.jettra.server.JettraServer jettraServer;
     private io.jettra.server.JettraServer jettraGuiServer;
     
     public JettraServerOrchestrator(JettraStorageEngine engine, int restPort, int grpcPort) {
-        this(engine, restPort, grpcPort, 50050);
+        this(engine, restPort, grpcPort, 50050, new java.util.Properties());
     }
 
     public JettraServerOrchestrator(JettraStorageEngine engine, int restPort, int grpcPort, int guiPort) {
+        this(engine, restPort, grpcPort, guiPort, new java.util.Properties());
+    }
+
+    public JettraServerOrchestrator(JettraStorageEngine engine, int restPort, int grpcPort, int guiPort, java.util.Properties props) {
         this.engine = engine;
         this.restPort = restPort;
         this.grpcPort = grpcPort;
         this.guiPort = guiPort;
+        this.props = props != null ? props : new java.util.Properties();
         this.authManager = new AuthManager();
     }
     
@@ -102,22 +108,39 @@ public class JettraServerOrchestrator {
             jettraGuiServer.start();
         }
         
-        // Shell Startup Banner with Web Console URLs
+        // Shell Startup Banner with Web Console URLs and Properties Report
+        String nodeId = props.getProperty("jettra.node.id", "node1");
+        String dataDir = props.getProperty("jettra.data.dir", engine.getStorageDir().toString());
+        String peers = props.getProperty("jettra.cluster.peers", "127.0.0.1:" + grpcPort);
+        String restoreAuto = props.getProperty("store.restore.auto", "false");
+        String backupEnabled = props.getProperty("store.backup.enabled", "false");
+        String backupInterval = props.getProperty("store.backup.interval.minutes", "1440");
+
         System.out.println();
         System.out.println("==================================================================================");
         System.out.println("                   JETTRA STORE ENGINE - WEB CONSOLE ACTIVE                       ");
         System.out.println("==================================================================================");
-        System.out.println("  Web Management UI (GUI): http://localhost:" + guiPort + "/ (or /dashboard, /wui)");
-        System.out.println("  Multi-Model Engines:     http://localhost:" + guiPort + "/engines");
-        System.out.println("  Users & Security:        http://localhost:" + guiPort + "/users");
-        System.out.println("  Cluster & Internals:     http://localhost:" + guiPort + "/components");
-        System.out.println("  Swagger OpenAPI:         http://localhost:" + guiPort + "/swagger-ui");
+        System.out.println("  [Configured Properties (jettrastoreengine.properties)]:");
+        System.out.printf("  • Node ID (jettra.node.id):                 %s%n", nodeId);
+        System.out.printf("  • Data Directory (jettra.data.dir):         %s%n", dataDir);
+        System.out.printf("  • REST Database Port (jettra.node.port):    %d%n", restPort);
+        System.out.printf("  • Web Management Port (jettra.gui.port):    %d%n", guiPort);
+        System.out.printf("  • gRPC / Consensus Port (jettra.grpc.port): %d%n", grpcPort);
+        System.out.printf("  • Cluster Peers (jettra.cluster.peers):     %s%n", peers);
+        System.out.printf("  • Auto-Restore (store.restore.auto):        %s%n", restoreAuto);
+        System.out.printf("  • Auto-Backup (store.backup.enabled):       %s (Interval: %s min)%n", backupEnabled, backupInterval);
         System.out.println("  --------------------------------------------------------------------------------");
-        System.out.println("  REST Database API:       http://localhost:" + restPort + "/api/");
-        System.out.println("  REST Multi-Model API:    http://localhost:" + restPort + "/api/model/");
-        System.out.println("  REST Document API:       http://localhost:" + restPort + "/api/document/");
-        System.out.println("  gRPC Cluster Port:       " + grpcPort);
-        System.out.println("  Default Credentials:     admin / admin  (or super-user / superUserZ)");
+        System.out.println("  [Web Management & Console URLs]:");
+        System.out.printf("  • Web Management UI (GUI):                  http://localhost:%d/ (or /dashboard)%n", guiPort);
+        System.out.printf("  • Multi-Model Database Engines:             http://localhost:%d/engines%n", guiPort);
+        System.out.printf("  • Users & Security (Per-Database RBAC):     http://localhost:%d/users%n", guiPort);
+        System.out.printf("  • Cluster Topology & Internals:             http://localhost:%d/components%n", guiPort);
+        System.out.printf("  • Swagger OpenAPI Explorer:                 http://localhost:%d/swagger-ui%n", guiPort);
+        System.out.println("  --------------------------------------------------------------------------------");
+        System.out.println("  [REST Database APIs]:");
+        System.out.printf("  • REST Universal Multi-Model API:           http://localhost:%d/api/model/%n", restPort);
+        System.out.printf("  • REST Document Engine API:                 http://localhost:%d/api/document/%n", restPort);
+        System.out.println("  • Default Admin Credentials:                admin / admin  (or super-user / superUserZ)");
         System.out.println("==================================================================================");
         System.out.println();
         
