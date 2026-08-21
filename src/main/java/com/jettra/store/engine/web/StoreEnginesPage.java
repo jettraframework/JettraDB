@@ -150,7 +150,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
         Widget engineNavPills = createEngineNavPills(selectedEngine);
         Widget dbProvisionBar = createDatabaseProvisionBar(selectedEngine, targetDb);
-        Widget editRecordCard = (editId != null && !editId.isBlank()) ? createEditRecordCard(selectedEngine, targetDb, editId) : Paragraph.of("");
+        Widget editRecordModal = (editId != null && !editId.isBlank()) ? createEditRecordModal(selectedEngine, targetDb, editId) : Paragraph.of("");
         Widget versionHistoryModal = (historyId != null && !historyId.isBlank()) ? createVersionHistoryModal(selectedEngine, targetDb, historyId) : Paragraph.of("");
         Widget typeSpecificCrudCard = createTypeSpecificCrudCard(selectedEngine, targetDb, queryResultDisplay);
         Widget liveObjectsExplorer = createLiveObjectsExplorer(selectedEngine, targetDb, filterQuery);
@@ -159,10 +159,10 @@ public class StoreEnginesPage extends StoreTemplatePage {
         return Column.of(
             titleBlock,
             alertWidget,
+            editRecordModal,
             versionHistoryModal,
             engineNavPills,
             dbProvisionBar,
-            editRecordCard,
             typeSpecificCrudCard,
             liveObjectsExplorer,
             engineMatrix
@@ -549,7 +549,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
         ).modifier(new io.jettra.flux.core.Modifier().style("justify-content: space-between; align-items: center;"))).modifier(new io.jettra.flux.core.Modifier().cssClass("store-card").style("margin-bottom: 20px; padding: 14px 20px;"));
     }
 
-    private Widget createEditRecordCard(String engineKey, String targetDb, String editId) {
+    private Widget createEditRecordModal(String engineKey, String targetDb, String editId) {
         String actionUrl = JettraServer.resolvePath("/engines?engine=" + engineKey + "&target_db=" + targetDb);
         String currentVal = executeTypeSpecificQuery(engineKey, targetDb, editId, Map.of());
         if (currentVal == null || currentVal.trim().isEmpty() || currentVal.equals("{}")) {
@@ -565,95 +565,101 @@ public class StoreEnginesPage extends StoreTemplatePage {
         if (currentVal == null) currentVal = "{}";
 
         StringBuilder sb = new StringBuilder();
-        sb.append("<div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;'>\n");
-        sb.append("  <h3 style='margin:0; font-size:18px; color:#38bdf8; display:flex; align-items:center; gap:8px;'>\n");
-        sb.append("    <i class='fas fa-edit'></i> Edit Record: <span style='color:#f8fafc;'>").append(escapeHtml(editId)).append("</span>\n");
-        sb.append("  </h3>\n");
-        sb.append("  <a href='").append(actionUrl).append("' class='btn-action btn-secondary' style='font-size:12px;'><i class='fas fa-times'></i> Cancel</a>\n");
-        sb.append("</div>\n");
+        sb.append("<div class='espresso-modal-overlay' style='display: flex; position: fixed; z-index: 1050; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.75); backdrop-filter: blur(6px); justify-content: center; align-items: center;'>\n");
+        sb.append("  <div class='espresso-modal-content store-card' style='background: #0f172a; padding: 24px; border: 1px solid #38bdf8; border-radius: 14px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.9); max-width: 720px; width: 95%; max-height: 85vh; overflow-y: auto; position: relative;'>\n");
 
-        sb.append("<p style='font-size:13px; color:#94a3b8; margin-bottom:16px;'>Modify the object contents below. Saving will generate a new historical version with timestamp tracking.</p>\n");
+        sb.append("    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:12px;'>\n");
+        sb.append("      <h3 style='margin:0; font-size:18px; color:#38bdf8; display:flex; align-items:center; gap:8px;'>\n");
+        sb.append("        <i class='fas fa-edit'></i> Edit Record: <span style='color:#f8fafc;'>").append(escapeHtml(editId)).append("</span>\n");
+        sb.append("      </h3>\n");
+        sb.append("      <a href='").append(actionUrl).append("' class='btn-action btn-secondary' style='font-size:12px;'><i class='fas fa-times'></i> Close</a>\n");
+        sb.append("    </div>\n");
 
-        sb.append("<form method='POST' action='").append(actionUrl).append("'>\n");
-        sb.append("  <input type='hidden' name='action' value='edit_object' />\n");
-        sb.append("  <input type='hidden' name='target_id' value='").append(escapeHtml(editId)).append("' />\n");
+        sb.append("    <p style='font-size:13px; color:#94a3b8; margin-bottom:16px;'>Modify the object contents below. Saving will generate a new historical version with timestamp tracking.</p>\n");
+
+        sb.append("    <form method='POST' action='").append(actionUrl).append("'>\n");
+        sb.append("      <input type='hidden' name='action' value='edit_object' />\n");
+        sb.append("      <input type='hidden' name='target_id' value='").append(escapeHtml(editId)).append("' />\n");
 
         switch (engineKey) {
             case "KEYVALUE" -> {
-                sb.append("  <div class='form-group'>\n");
-                sb.append("    <label class='form-label'>String Value</label>\n");
-                sb.append("    <input type='text' name='kv_value' class='form-input' value='").append(escapeHtml(currentVal)).append("' required />\n");
-                sb.append("  </div>\n");
+                sb.append("      <div class='form-group'>\n");
+                sb.append("        <label class='form-label'>String Value</label>\n");
+                sb.append("        <input type='text' name='kv_value' class='form-input' value='").append(escapeHtml(currentVal)).append("' required />\n");
+                sb.append("      </div>\n");
             }
             case "VECTOR" -> {
-                sb.append("  <div class='form-group'>\n");
-                sb.append("    <label class='form-label'>Vector Coordinates (floats)</label>\n");
-                sb.append("    <input type='text' name='vector_coords' class='form-input' value='0.1, 0.2, 0.3' required />\n");
-                sb.append("  </div>\n");
-                sb.append("  <div class='form-group'>\n");
-                sb.append("    <label class='form-label'>Vector Metadata (JSON)</label>\n");
-                sb.append("    <textarea name='vector_meta' class='form-input' rows='4'>").append(escapeHtml(currentVal)).append("</textarea>\n");
-                sb.append("  </div>\n");
+                sb.append("      <div class='form-group'>\n");
+                sb.append("        <label class='form-label'>Vector Coordinates (floats)</label>\n");
+                sb.append("        <input type='text' name='vector_coords' class='form-input' value='0.1, 0.2, 0.3' required />\n");
+                sb.append("      </div>\n");
+                sb.append("      <div class='form-group'>\n");
+                sb.append("        <label class='form-label'>Vector Metadata (JSON)</label>\n");
+                sb.append("        <textarea name='vector_meta' class='form-input' rows='4'>").append(escapeHtml(currentVal)).append("</textarea>\n");
+                sb.append("      </div>\n");
             }
             case "GRAPH" -> {
-                sb.append("  <div class='form-group'>\n");
-                sb.append("    <label class='form-label'>Node Properties (JSON)</label>\n");
-                sb.append("    <textarea name='node_props' class='form-input' rows='5'>").append(escapeHtml(currentVal)).append("</textarea>\n");
-                sb.append("  </div>\n");
+                sb.append("      <div class='form-group'>\n");
+                sb.append("        <label class='form-label'>Node Properties (JSON)</label>\n");
+                sb.append("        <textarea name='node_props' class='form-input' rows='5'>").append(escapeHtml(currentVal)).append("</textarea>\n");
+                sb.append("      </div>\n");
             }
             case "TIMESERIES" -> {
-                sb.append("  <div class='form-group'>\n");
-                sb.append("    <label class='form-label'>Telemetry Metrics (JSON)</label>\n");
-                sb.append("    <textarea name='ts_tags' class='form-input' rows='5'>").append(escapeHtml(currentVal)).append("</textarea>\n");
-                sb.append("  </div>\n");
+                sb.append("      <div class='form-group'>\n");
+                sb.append("        <label class='form-label'>Telemetry Metrics (JSON)</label>\n");
+                sb.append("        <textarea name='ts_tags' class='form-input' rows='5'>").append(escapeHtml(currentVal)).append("</textarea>\n");
+                sb.append("      </div>\n");
             }
             case "COLUMN" -> {
-                sb.append("  <div class='form-group'>\n");
-                sb.append("    <label class='form-label'>Column Values (JSON)</label>\n");
-                sb.append("    <textarea name='col_data' class='form-input' rows='5'>").append(escapeHtml(currentVal)).append("</textarea>\n");
-                sb.append("  </div>\n");
+                sb.append("      <div class='form-group'>\n");
+                sb.append("        <label class='form-label'>Column Values (JSON)</label>\n");
+                sb.append("        <textarea name='col_data' class='form-input' rows='5'>").append(escapeHtml(currentVal)).append("</textarea>\n");
+                sb.append("      </div>\n");
             }
             case "GEOSPATIAL" -> {
-                sb.append("  <div style='display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;'>\n");
-                sb.append("    <div><label class='form-label'>Latitude</label><input type='text' name='geo_lat' class='form-input' value='8.98' required /></div>\n");
-                sb.append("    <div><label class='form-label'>Longitude</label><input type='text' name='geo_lon' class='form-input' value='-79.52' required /></div>\n");
-                sb.append("  </div>\n");
-                sb.append("  <div class='form-group'>\n");
-                sb.append("    <label class='form-label'>Geo Properties (JSON)</label>\n");
-                sb.append("    <textarea name='geo_meta' class='form-input' rows='4'>").append(escapeHtml(currentVal)).append("</textarea>\n");
-                sb.append("  </div>\n");
+                sb.append("      <div style='display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;'>\n");
+                sb.append("        <div><label class='form-label'>Latitude</label><input type='text' name='geo_lat' class='form-input' value='8.98' required /></div>\n");
+                sb.append("        <div><label class='form-label'>Longitude</label><input type='text' name='geo_lon' class='form-input' value='-79.52' required /></div>\n");
+                sb.append("      </div>\n");
+                sb.append("      <div class='form-group'>\n");
+                sb.append("        <label class='form-label'>Geo Properties (JSON)</label>\n");
+                sb.append("        <textarea name='geo_meta' class='form-input' rows='4'>").append(escapeHtml(currentVal)).append("</textarea>\n");
+                sb.append("      </div>\n");
             }
             case "OBJECT" -> {
-                sb.append("  <div class='form-group'>\n");
-                sb.append("    <label class='form-label'>Object Payload (JSON)</label>\n");
-                sb.append("    <textarea name='obj_payload' class='form-input' rows='5'>").append(escapeHtml(currentVal)).append("</textarea>\n");
-                sb.append("  </div>\n");
+                sb.append("      <div class='form-group'>\n");
+                sb.append("        <label class='form-label'>Object Payload (JSON)</label>\n");
+                sb.append("        <textarea name='obj_payload' class='form-input' rows='5'>").append(escapeHtml(currentVal)).append("</textarea>\n");
+                sb.append("      </div>\n");
             }
             case "RECORDS" -> {
-                sb.append("  <div class='form-group'>\n");
-                sb.append("    <label class='form-label'>Record Schema / Class Name</label>\n");
-                sb.append("    <input type='text' name='rec_class' class='form-input' value='RecordModel' required />\n");
-                sb.append("  </div>\n");
-                sb.append("  <div class='form-group'>\n");
-                sb.append("    <label class='form-label'>Record Data (JSON)</label>\n");
-                sb.append("    <textarea name='rec_payload' class='form-input' rows='5'>").append(escapeHtml(currentVal)).append("</textarea>\n");
-                sb.append("  </div>\n");
+                sb.append("      <div class='form-group'>\n");
+                sb.append("        <label class='form-label'>Record Schema / Class Name</label>\n");
+                sb.append("        <input type='text' name='rec_class' class='form-input' value='RecordModel' required />\n");
+                sb.append("      </div>\n");
+                sb.append("      <div class='form-group'>\n");
+                sb.append("        <label class='form-label'>Record Data (JSON)</label>\n");
+                sb.append("        <textarea name='rec_payload' class='form-input' rows='5'>").append(escapeHtml(currentVal)).append("</textarea>\n");
+                sb.append("      </div>\n");
             }
             default -> { // DOCUMENT
-                sb.append("  <div class='form-group'>\n");
-                sb.append("    <label class='form-label'>Document JSON Body</label>\n");
-                sb.append("    <textarea name='doc_payload' class='form-input' rows='7'>").append(escapeHtml(currentVal)).append("</textarea>\n");
-                sb.append("  </div>\n");
+                sb.append("      <div class='form-group'>\n");
+                sb.append("        <label class='form-label'>Document JSON Body</label>\n");
+                sb.append("        <textarea name='doc_payload' class='form-input' rows='7'>").append(escapeHtml(currentVal)).append("</textarea>\n");
+                sb.append("      </div>\n");
             }
         }
 
-        sb.append("  <div style='display:flex; gap:10px; margin-top:16px;'>\n");
-        sb.append("    <button type='submit' class='btn-action btn-primary'><i class='fas fa-save'></i> Save Changes (New Version)</button>\n");
-        sb.append("    <a href='").append(actionUrl).append("' class='btn-action btn-secondary'>Cancel</a>\n");
-        sb.append("  </div>\n");
-        sb.append("</form>\n");
+        sb.append("      <div style='display:flex; justify-content:flex-end; gap:10px; margin-top:20px; border-top:1px solid rgba(255,255,255,0.08); padding-top:14px;'>\n");
+        sb.append("        <a href='").append(actionUrl).append("' class='btn-action btn-secondary'>Cancel</a>\n");
+        sb.append("        <button type='submit' class='btn-action btn-primary'><i class='fas fa-save'></i> Save Changes (New Version)</button>\n");
+        sb.append("      </div>\n");
+        sb.append("    </form>\n");
 
-        return Div.of(Paragraph.of(sb.toString())).modifier(new io.jettra.flux.core.Modifier().cssClass("store-card").style("margin-bottom:24px; border: 1px solid #3b82f6;"));
+        sb.append("  </div>\n");
+        sb.append("</div>\n");
+
+        return Paragraph.of(sb.toString());
     }
 
     private Widget createVersionHistoryModal(String engineKey, String targetDb, String historyId) {
@@ -756,9 +762,9 @@ public class StoreEnginesPage extends StoreTemplatePage {
         sb.append("    <div>\n");
         sb.append("      <label class='form-label'>ID Strategy</label>\n");
         sb.append("      <select name='id_mode' class='form-input' style='background:#0f172a; color:#38bdf8; border:1px solid rgba(255,255,255,0.1);'>\n");
-        sb.append("        <option value='MANUAL'>1. Manual ID</option>\n");
+        sb.append("        <option value='UUID' selected>3. Composite UUID (Host+Time+DB+Entropy)</option>\n");
         sb.append("        <option value='AUTOINCREMENT'>2. Auto-increment Sequence</option>\n");
-        sb.append("        <option value='UUID'>3. Composite UUID (Host+Time+DB+Entropy)</option>\n");
+        sb.append("        <option value='MANUAL'>1. Manual ID</option>\n");
         sb.append("      </select>\n");
         sb.append("    </div>\n");
         sb.append("    <div>\n");
