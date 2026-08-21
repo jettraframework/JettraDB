@@ -79,6 +79,14 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                         alertMessage = "Database '" + cleanDb + "' successfully initialized with component [" + eng + "]!";
                         alertType = "badge-active";
                     }
+                } else if ("rename_db".equalsIgnoreCase(action)) {
+                    String oldDb = params.get("old_db");
+                    String newDb = params.get("new_db");
+                    if (oldDb != null && newDb != null && !newDb.isBlank()) {
+                        int migrated = renameDatabase(oldDb.trim(), newDb.trim());
+                        alertMessage = "Database '" + oldDb + "' renamed to '" + newDb + "' (" + migrated + " keys migrated).";
+                        alertType = "badge-active";
+                    }
                 } else if ("drop_db".equalsIgnoreCase(action)) {
                     String targetDb = params.get("target_db");
                     if (targetDb != null && !targetDb.isBlank()) {
@@ -209,9 +217,10 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                 .append("    </div>\n")
                 .append("    <div style='display:flex; gap:8px; flex-wrap:wrap;'>\n")
                 .append("      <button onclick=\"openAddComponentModal('").append(dbName).append("')\" class='btn-action btn-primary' style='padding:6px 12px; font-size:12px;'><i class='fas fa-plus'></i> Add Component / Record</button>\n")
+                .append("      <button onclick=\"openRenameDbModal('").append(dbName).append("')\" class='btn-action btn-secondary' style='padding:6px 12px; font-size:12px; color:#38bdf8;'><i class='fas fa-pen'></i> Rename</button>\n")
                 .append("      <button onclick=\"openAssignUserModal('").append(dbName).append("')\" class='btn-action btn-secondary' style='padding:6px 12px; font-size:12px;'><i class='fas fa-user-plus'></i> Assign User</button>\n")
                 .append("      <button onclick=\"toggleEntitiesViewer('").append(dbName).append("')\" class='btn-action btn-secondary' style='padding:6px 12px; font-size:12px;'><i class='fas fa-list'></i> Inspect Entities (").append(objCount).append(")</button>\n")
-                .append("      <a href='").append(JettraServer.resolvePath("/engines?engine=RECORDS&db=" + dbName)).append("' class='btn-action btn-secondary' style='padding:6px 12px; font-size:12px;'><i class='fas fa-search'></i> Explore Data</a>\n")
+                .append("      <a href='").append(JettraServer.resolvePath("/engines?engine=RECORDS&target_db=" + dbName)).append("' class='btn-action btn-secondary' style='padding:6px 12px; font-size:12px;'><i class='fas fa-search'></i> Explore Data</a>\n")
                 .append("      <button onclick=\"confirmDropDb('").append(dbName).append("')\" class='btn-action btn-danger' style='padding:6px 10px; font-size:12px;' title='Drop Database'><i class='fas fa-trash'></i></button>\n")
                 .append("    </div>\n")
                 .append("  </div>\n");
@@ -437,6 +446,33 @@ public class StoreDatabasesPage extends StoreTemplatePage {
             "  </div>\n" +
             "</div>\n";
 
+        // Rename Database Modal
+        String renameDbModalHtml =
+            "<div id='renameDbModal' class='espresso-modal-overlay' style='display:none; position:fixed; z-index:1050; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); justify-content:center; align-items:center;'>\n" +
+            "  <div class='store-card' style='max-width:480px; width:90%; background:#0f172a; border:1px solid rgba(56,189,248,0.4); border-radius:14px; padding:24px;'>\n" +
+            "    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;'>\n" +
+            "      <div style='display:flex; align-items:center; gap:8px;'><i class='fas fa-pen' style='color:#38bdf8;'></i><h3 style='margin:0; font-size:17px; font-weight:700;'>Rename Database</h3></div>\n" +
+            "      <button type='button' onclick=\"closeModal('renameDbModal')\" class='btn-action btn-secondary' style='padding:4px 8px;'><i class='fas fa-times'></i></button>\n" +
+            "    </div>\n" +
+            "    <form method='POST' action='" + JettraServer.resolvePath("/databases") + "'>\n" +
+            "      <input type='hidden' name='action' value='rename_db'/>\n" +
+            "      <input type='hidden' name='old_db' id='renameOldDbInput'/>\n" +
+            "      <div style='margin-bottom:14px;'>\n" +
+            "        <label style='display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;'>Current Database Name:</label>\n" +
+            "        <input type='text' id='renameOldDbDisplay' disabled style='width:100%; padding:10px 12px; background:#1e293b; border:1px solid rgba(255,255,255,0.1); border-radius:8px; color:#94a3b8; font-size:14px; box-sizing:border-box;'/>\n" +
+            "      </div>\n" +
+            "      <div style='margin-bottom:18px;'>\n" +
+            "        <label style='display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;'>New Database Name:</label>\n" +
+            "        <input type='text' name='new_db' placeholder='e.g. inventory_prod_db' required style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:8px; color:#f8fafc; font-size:14px; box-sizing:border-box;'/>\n" +
+            "      </div>\n" +
+            "      <div style='display:flex; justify-content:flex-end; gap:10px;'>\n" +
+            "        <button type='button' onclick=\"closeModal('renameDbModal')\" class='btn-action btn-secondary'>Cancel</button>\n" +
+            "        <button type='submit' class='btn-action btn-primary'><i class='fas fa-save'></i> Rename Database</button>\n" +
+            "      </div>\n" +
+            "    </form>\n" +
+            "  </div>\n" +
+            "</div>\n";
+
         // Hidden forms and scripts
         String jsHtml =
             "<form id='dropDbForm' method='POST' action='" + JettraServer.resolvePath("/databases") + "' style='display:none;'>\n" +
@@ -449,6 +485,11 @@ public class StoreDatabasesPage extends StoreTemplatePage {
             "</form>\n" +
             "<script>\n" +
             "function openCreateDbModal() { document.getElementById('createDbModal').style.display='flex'; }\n" +
+            "function openRenameDbModal(db) {\n" +
+            "  document.getElementById('renameOldDbInput').value = db;\n" +
+            "  document.getElementById('renameOldDbDisplay').value = db;\n" +
+            "  document.getElementById('renameDbModal').style.display='flex';\n" +
+            "}\n" +
             "function openAddComponentModal(db) {\n" +
             "  document.getElementById('modalTargetDbLabel').innerText = db;\n" +
             "  document.getElementById('modalTargetDbInput').value = db;\n" +
@@ -504,9 +545,29 @@ public class StoreDatabasesPage extends StoreTemplatePage {
             statGrid,
             Paragraph.of("<h2 style='font-size:20px; font-weight:700; margin:24px 0 16px 0;'><i class='fas fa-layer-group' style='color:#f43f5e; margin-right:8px;'></i> Provisioned Database Instances & Internal Components</h2>"),
             Paragraph.of(dbHtml.toString()),
-            Paragraph.of(modalsHtml),
+            Paragraph.of(modalsHtml + renameDbModalHtml),
             Paragraph.of(jsHtml)
         );
+    }
+
+    private int renameDatabase(String oldDb, String newDb) {
+        if (oldDb == null || newDb == null || oldDb.equalsIgnoreCase(newDb)) return 0;
+        String cleanNewDb = newDb.trim().toLowerCase().replaceAll("[^a-z0-9_]", "_");
+        String[] prefixes = {"rec:", "doc:", "vec:", "graph:", "ts:", "col:", "kv:", "geo:", "obj:", ""};
+        int count = 0;
+        for (String p : prefixes) {
+            String dbPrefix = p + oldDb + ":";
+            Map<String, byte[]> keys = engine.getStorageCore().scanPrefix(dbPrefix);
+            for (Map.Entry<String, byte[]> e : keys.entrySet()) {
+                String oldKey = e.getKey();
+                String keyId = oldKey.substring(dbPrefix.length());
+                String newKey = p + cleanNewDb + ":" + keyId;
+                engine.getStorageCore().put(newKey, e.getValue(), System.currentTimeMillis());
+                engine.getStorageCore().delete(oldKey, System.currentTimeMillis());
+                count++;
+            }
+        }
+        return count;
     }
 
     private Map<String, DatabaseMetadata> discoverDatabases() {
@@ -560,7 +621,7 @@ public class StoreDatabasesPage extends StoreTemplatePage {
 
     private int purgeDatabase(String targetDb) {
         int count = 0;
-        String[] prefixes = {"rec:", "doc:", "vec:", "graph:", "ts:", "col:", "kv:", "geo:", "obj:"};
+        String[] prefixes = {"rec:", "doc:", "vec:", "graph:", "ts:", "col:", "kv:", "geo:", "obj:", ""};
         for (String p : prefixes) {
             String dbPrefix = p + targetDb + ":";
             Map<String, byte[]> keys = engine.getStorageCore().scanPrefix(dbPrefix);

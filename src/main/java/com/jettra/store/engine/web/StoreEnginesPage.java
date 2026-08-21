@@ -5,6 +5,7 @@ import com.jettra.store.engine.core.IdGenerator.IdMode;
 import com.jettra.store.engine.core.JettraStorageEngine;
 import com.jettra.store.engine.core.LsmBTreeHybrid.RecordVersion;
 import com.jettra.store.engine.models.*;
+import com.jettra.store.engine.query.JettraQueryEngine;
 import com.sun.net.httpserver.HttpExchange;
 import io.jettra.flux.core.Widget;
 import io.jettra.flux.widgets.*;
@@ -26,17 +27,20 @@ import java.util.List;
 /**
  * Interactive Type-Specific Database and Object Administrator for all 9 Multi-Model Storage Engines in JettraStoreEngine.
  * Provides specialized management interfaces for Document, KeyValue, Vector, Graph, TimeSeries, Column,
- * Geospatial, Object, and Records engines, with full CRUD, editing, versioning with diffs and restorations,
+ * Geospatial, Object, and Records engines, with full CRUD, database administration (Create/Rename/Drop DB),
+ * Advanced Query Studio (JQL & Java 25 Lambda Stream Fluent API), versioning with diffs and restorations,
  * real-time filtering, and multi-format export (Excel, CSV, PDF) using JettraReport.
  */
 @NoLoginRequired
 public class StoreEnginesPage extends StoreTemplatePage {
 
     private final JettraStorageEngine engine;
+    private final JettraQueryEngine queryEngine;
     private final JettraJson jsonParser = new JettraJson();
 
     public StoreEnginesPage(JettraStorageEngine engine) {
         this.engine = engine;
+        this.queryEngine = new JettraQueryEngine(engine);
     }
 
     @Override
@@ -63,10 +67,12 @@ public class StoreEnginesPage extends StoreTemplatePage {
         String editId = params != null ? params.get("edit_id") : null;
         String historyId = params != null ? params.get("view_history") : null;
         String filterQuery = params != null ? params.get("filter") : "";
+        String queryInputText = params != null ? params.get("query_string") : null;
 
         String alertMessage = "";
         String alertType = "badge-active";
         String queryResultDisplay = "";
+        JettraQueryEngine.QueryResult advancedQueryResult = null;
 
         // Handle POST Operations
         if ("POST".equalsIgnoreCase(exchange.getRequestMethod())) {
@@ -75,8 +81,42 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 String targetId = params != null ? params.get("target_id") : "";
 
                 if ("create_db".equalsIgnoreCase(action)) {
-                    alertMessage = "Database / Namespace '" + targetDb + "' successfully initialized for " + selectedEngine + " engine!";
-                    alertType = "badge-active";
+                    String newDbName = params.get("target_db");
+                    if (newDbName != null && !newDbName.isBlank()) {
+                        targetDb = newDbName.trim().toLowerCase().replaceAll("[^a-z0-9_]", "_");
+                        String initialEngine = params.getOrDefault("initial_engine", selectedEngine);
+                        String pfx = getPrefixForEngine(initialEngine);
+                        String initKey = pfx + targetDb + ":init_01";
+                        String initPayload = "{\"status\":\"ACTIVE\",\"createdAt\":" + System.currentTimeMillis() + ",\"model\":\"" + initialEngine + "\"}";
+                        engine.getStorageCore().put(initKey, initPayload.getBytes(StandardCharsets.UTF_8), System.currentTimeMillis());
+                        alertMessage = "Database / Namespace '" + targetDb + "' successfully initialized with [" + initialEngine + "] model!";
+                        alertType = "badge-active";
+                    }
+                } else if ("rename_db".equalsIgnoreCase(action)) {
+                    String oldDb = params.get("old_db_name");
+                    String newDb = params.get("new_db_name");
+                    if (oldDb != null && newDb != null && !newDb.isBlank()) {
+                        int migrated = renameDatabase(oldDb.trim(), newDb.trim());
+                        targetDb = newDb.trim().toLowerCase().replaceAll("[^a-z0-9_]", "_");
+                        alertMessage = "Database '" + oldDb + "' renamed to '" + targetDb + "' (" + migrated + " records migrated successfully)!";
+                        alertType = "badge-active";
+                    }
+                } else if ("drop_db".equalsIgnoreCase(action)) {
+                    String toDrop = params.get("target_db");
+                    if (toDrop != null && !toDrop.isBlank()) {
+                        int purged = purgeDatabase(toDrop.trim());
+                        targetDb = getDefaultDbForEngine(selectedEngine);
+                        alertMessage = "Database '" + toDrop + "' dropped permanently (" + purged + " keys purged).";
+                        alertType = "badge-raft";
+                    }
+                } else if ("run_advanced_query".equalsIgnoreCase(action)) {
+                    String q = params.get("query_string");
+                    if (q != null && !q.isBlank()) {
+                        queryInputText = q.trim();
+                        advancedQueryResult = queryEngine.execute(queryInputText, targetDb);
+                        alertMessage = "Advanced query executed in " + advancedQueryResult.executionTimeMs() + " ms (" + advancedQueryResult.totalMatched() + " matched / " + advancedQueryResult.totalScanned() + " scanned)";
+                        alertType = "badge-active";
+                    }
                 } else if ("insert_object".equalsIgnoreCase(action)) {
                     executeTypeSpecificInsert(selectedEngine, targetDb, params);
                     alertMessage = "Object '" + targetId + "' successfully created/updated and new version persisted in " + selectedEngine + " [" + targetDb + "]!";
@@ -133,9 +173,10 @@ public class StoreEnginesPage extends StoreTemplatePage {
         Widget titleBlock = Row.of(
             Column.of(
                 Paragraph.of("<h1 style='margin: 0; font-size: 26px; font-weight: 700;'><i class='fas fa-database' style='color:#38bdf8; margin-right:8px;'></i> Multi-Model Database & Objects Administrator</h1>"),
-                Paragraph.of("<p style='margin: 4px 0 0 0; color: #94a3b8; font-size: 14px;'>Administer databases, edit records, inspect full version histories with diffs, and export via JettraReport across all 9 engines.</p>")
+                Paragraph.of("<p style='margin: 4px 0 0 0; color: #94a3b8; font-size: 14px;'>Administer databases (Create/Rename/Drop), run advanced JQL and Java stream queries, inspect version histories, and export via JettraReport.</p>")
             ),
             Row.of(
+                Paragraph.of("<a href='" + JettraServer.resolvePath("/databases") + "' class='btn-action btn-secondary' style='margin-right:8px;'><i class='fas fa-server'></i> Databases Console</a>"),
                 Paragraph.of("<a href='" + JettraServer.resolvePath("/dashboard") + "' class='btn-action btn-secondary'><i class='fas fa-arrow-left'></i> Dashboard</a>")
             ).modifier(new io.jettra.flux.core.Modifier().style("align-items: center;"))
         ).modifier(new io.jettra.flux.core.Modifier().style("justify-content: space-between; align-items: center; margin-bottom: 24px;"));
@@ -150,9 +191,11 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
         Widget engineNavPills = createEngineNavPills(selectedEngine);
         Widget dbProvisionBar = createDatabaseProvisionBar(selectedEngine, targetDb);
+        Widget dbManagementModals = createDatabaseManagementModals(selectedEngine, targetDb);
         Widget insertRecordModal = createInsertRecordModal(selectedEngine, targetDb);
         Widget editRecordModal = (editId != null && !editId.isBlank()) ? createEditRecordModal(selectedEngine, targetDb, editId) : Paragraph.of("");
         Widget versionHistoryModal = (historyId != null && !historyId.isBlank()) ? createVersionHistoryModal(selectedEngine, targetDb, historyId) : Paragraph.of("");
+        Widget advancedQueryStudio = createAdvancedQueryStudio(selectedEngine, targetDb, advancedQueryResult, queryInputText);
         Widget queryLookupCard = createQueryLookupCard(selectedEngine, targetDb, queryResultDisplay);
         Widget liveObjectsExplorer = createLiveObjectsExplorer(selectedEngine, targetDb, filterQuery);
         Widget engineMatrix = createEngineMatrixTable();
@@ -160,11 +203,13 @@ public class StoreEnginesPage extends StoreTemplatePage {
         return Column.of(
             titleBlock,
             alertWidget,
+            dbManagementModals,
             insertRecordModal,
             editRecordModal,
             versionHistoryModal,
             engineNavPills,
             dbProvisionBar,
+            advancedQueryStudio,
             queryLookupCard,
             liveObjectsExplorer,
             engineMatrix
@@ -532,9 +577,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
         if (defaultDb != null && !defaultDb.isBlank()) {
             discoveredDbs.add(defaultDb);
         }
-        String prefix = switch (engineKey.toUpperCase()) {
-            case "RECORDS" -> "rec:"; case "VECTOR" -> "vec:"; case "GRAPH" -> "graph:"; case "TIMESERIES" -> "ts:"; case "COLUMN" -> "col:"; case "KEYVALUE" -> "kv:"; case "GEOSPATIAL" -> "geo:"; case "OBJECT" -> "obj:"; default -> "";
-        };
+        String prefix = getPrefixForEngine(engineKey);
         Map<String, byte[]> scanned = engine.getStorageCore().scanPrefix(prefix);
         for (String k : scanned.keySet()) {
             String rest = prefix.isEmpty() ? k : k.substring(prefix.length());
@@ -545,10 +588,195 @@ public class StoreEnginesPage extends StoreTemplatePage {
         StringBuilder options = new StringBuilder();
         for (String d : discoveredDbs) options.append("<option value='").append(d).append("'").append(d.equals(currentDb) ? " selected" : "").append(">").append(d).append("</option>\n");
 
-        return Div.of(Row.of(
-            Column.of(Paragraph.of("<div style='font-size:14px; font-weight:600; color:#f8fafc;'><i class='fas fa-folder-open' style='color:#38bdf8; margin-right:6px;'></i> Active DB: <span style='color:#38bdf8;'>" + currentDb + "</span></div>")),
-            Paragraph.of("<form method='POST' action='" + JettraServer.resolvePath("/engines?engine=" + engineKey) + "' style='display:flex; gap:8px;'><input type='hidden' name='action' value='create_db' /><select onchange=\"window.location.href='" + JettraServer.resolvePath("/engines?engine=" + engineKey + "&target_db=") + "' + this.value\" style='padding:6px; background:#0f172a; border-radius:6px; color:#38bdf8; border: 1px solid rgba(255,255,255,0.1);'>" + options + "</select><input type='text' name='target_db' class='form-input' style='width:140px;' placeholder='New DB Name' /><button type='submit' class='btn-action btn-primary'><i class='fas fa-plus'></i> Add DB</button></form>")
-        ).modifier(new io.jettra.flux.core.Modifier().style("justify-content: space-between; align-items: center;"))).modifier(new io.jettra.flux.core.Modifier().cssClass("store-card").style("margin-bottom: 20px; padding: 14px 20px;"));
+        StringBuilder sb = new StringBuilder();
+        sb.append("<div style='display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;'>\n");
+        sb.append("  <div style='display:flex; align-items:center; gap:10px;'>\n");
+        sb.append("    <i class='fas fa-database' style='color:#38bdf8; font-size:16px;'></i>\n");
+        sb.append("    <span style='font-size:14px; font-weight:600; color:#f8fafc;'>Active Database:</span>\n");
+        sb.append("    <select onchange=\"window.location.href='").append(JettraServer.resolvePath("/engines?engine=" + engineKey + "&target_db=")).append("' + this.value\" style='padding:6px 12px; background:#0f172a; border-radius:6px; color:#38bdf8; font-weight:600; border: 1px solid rgba(56,189,248,0.3);'>\n");
+        sb.append(options);
+        sb.append("    </select>\n");
+        sb.append("  </div>\n");
+
+        sb.append("  <div style='display:flex; align-items:center; gap:8px;'>\n");
+        // DB Admin action buttons (Create, Rename, Drop)
+        sb.append("    <button type='button' class='btn-action btn-primary' onclick=\"document.getElementById('create_db_modal').showModal();\" style='font-size:12px; padding:6px 12px;'><i class='fas fa-folder-plus'></i> Create DB</button>\n");
+        sb.append("    <button type='button' class='btn-action btn-secondary' onclick=\"document.getElementById('rename_db_modal').showModal();\" style='font-size:12px; padding:6px 12px; color:#38bdf8;'><i class='fas fa-pen'></i> Rename DB</button>\n");
+        sb.append("    <button type='button' class='btn-action btn-secondary' onclick=\"document.getElementById('drop_db_modal').showModal();\" style='font-size:12px; padding:6px 12px; color:#ef4444; border-color:rgba(239,68,68,0.3);'><i class='fas fa-trash-alt'></i> Drop DB</button>\n");
+        sb.append("  </div>\n");
+        sb.append("</div>\n");
+
+        return Div.of(Paragraph.of(sb.toString())).modifier(new io.jettra.flux.core.Modifier().cssClass("store-card").style("margin-bottom: 20px; padding: 14px 20px;"));
+    }
+
+    private Widget createDatabaseManagementModals(String engineKey, String currentDb) {
+        String actionUrl = JettraServer.resolvePath("/engines?engine=" + engineKey + "&target_db=" + currentDb);
+        StringBuilder sb = new StringBuilder();
+
+        // 1. Create DB Modal
+        sb.append("<dialog id='create_db_modal' style='border: 1px solid rgba(56,189,248,0.4); border-radius: 14px; padding: 0; background: #0f172a; color: #f8fafc; max-width: 520px; width: 90%; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.9); backdrop-filter: blur(8px); margin:auto;'>\n");
+        sb.append("  <div style='padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.08); display: flex; justify-content: space-between; align-items: center;'>\n");
+        sb.append("    <div style='display:flex; align-items:center; gap:8px;'><i class='fas fa-folder-plus' style='color:#38bdf8;'></i><h3 style='margin:0; font-size:16px; font-weight:700;'>Create New Database</h3></div>\n");
+        sb.append("    <button type='button' class='btn-action btn-secondary' style='padding:4px 8px; font-size:12px;' onclick=\"document.getElementById('create_db_modal').close();\"><i class='fas fa-times'></i></button>\n");
+        sb.append("  </div>\n");
+        sb.append("  <form method='POST' action='").append(actionUrl).append("' style='padding: 20px;'>\n");
+        sb.append("    <input type='hidden' name='action' value='create_db' />\n");
+        sb.append("    <div class='form-group'>\n");
+        sb.append("      <label class='form-label'>Database / Namespace Name</label>\n");
+        sb.append("      <input type='text' name='target_db' class='form-input' placeholder='e.g. ecommerce_db, analytics_2026' required />\n");
+        sb.append("    </div>\n");
+        sb.append("    <div class='form-group'>\n");
+        sb.append("      <label class='form-label'>Initial Engine Storage Model</label>\n");
+        sb.append("      <select name='initial_engine' class='form-input' style='background:#0f172a; color:#38bdf8;'>\n");
+        for (String eng : new String[]{"DOCUMENT", "KEYVALUE", "VECTOR", "GRAPH", "TIMESERIES", "COLUMN", "GEOSPATIAL", "OBJECT", "RECORDS"}) {
+            sb.append("        <option value='").append(eng).append("'").append(eng.equalsIgnoreCase(engineKey) ? " selected" : "").append(">").append(eng).append("</option>\n");
+        }
+        sb.append("      </select>\n");
+        sb.append("    </div>\n");
+        sb.append("    <div style='display:flex; justify-content:flex-end; gap:10px; margin-top:20px;'>\n");
+        sb.append("      <button type='button' class='btn-action btn-secondary' onclick=\"document.getElementById('create_db_modal').close();\">Cancel</button>\n");
+        sb.append("      <button type='submit' class='btn-action btn-primary'><i class='fas fa-plus'></i> Initialize Database</button>\n");
+        sb.append("    </div>\n");
+        sb.append("  </form>\n");
+        sb.append("</dialog>\n");
+
+        // 2. Rename DB Modal
+        sb.append("<dialog id='rename_db_modal' style='border: 1px solid rgba(56,189,248,0.4); border-radius: 14px; padding: 0; background: #0f172a; color: #f8fafc; max-width: 520px; width: 90%; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.9); backdrop-filter: blur(8px); margin:auto;'>\n");
+        sb.append("  <div style='padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.08); display: flex; justify-content: space-between; align-items: center;'>\n");
+        sb.append("    <div style='display:flex; align-items:center; gap:8px;'><i class='fas fa-pen' style='color:#38bdf8;'></i><h3 style='margin:0; font-size:16px; font-weight:700;'>Rename Active Database</h3></div>\n");
+        sb.append("    <button type='button' class='btn-action btn-secondary' style='padding:4px 8px; font-size:12px;' onclick=\"document.getElementById('rename_db_modal').close();\"><i class='fas fa-times'></i></button>\n");
+        sb.append("  </div>\n");
+        sb.append("  <form method='POST' action='").append(actionUrl).append("' style='padding: 20px;'>\n");
+        sb.append("    <input type='hidden' name='action' value='rename_db' />\n");
+        sb.append("    <input type='hidden' name='old_db_name' value='").append(escapeHtml(currentDb)).append("' />\n");
+        sb.append("    <div class='form-group'>\n");
+        sb.append("      <label class='form-label'>Current Database Name</label>\n");
+        sb.append("      <input type='text' class='form-input' value='").append(escapeHtml(currentDb)).append("' disabled />\n");
+        sb.append("    </div>\n");
+        sb.append("    <div class='form-group'>\n");
+        sb.append("      <label class='form-label'>New Database Name</label>\n");
+        sb.append("      <input type='text' name='new_db_name' class='form-input' placeholder='Enter new DB name...' required />\n");
+        sb.append("    </div>\n");
+        sb.append("    <p style='font-size:12px; color:#94a3b8; margin:0 0 16px 0;'><i class='fas fa-info-circle'></i> All records and model keys will be safely migrated to the new database name.</p>\n");
+        sb.append("    <div style='display:flex; justify-content:flex-end; gap:10px;'>\n");
+        sb.append("      <button type='button' class='btn-action btn-secondary' onclick=\"document.getElementById('rename_db_modal').close();\">Cancel</button>\n");
+        sb.append("      <button type='submit' class='btn-action btn-primary'><i class='fas fa-save'></i> Rename Database</button>\n");
+        sb.append("    </div>\n");
+        sb.append("  </form>\n");
+        sb.append("</dialog>\n");
+
+        // 3. Drop DB Modal
+        sb.append("<dialog id='drop_db_modal' style='border: 1px solid rgba(239,68,68,0.5); border-radius: 14px; padding: 0; background: #0f172a; color: #f8fafc; max-width: 520px; width: 90%; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.9); backdrop-filter: blur(8px); margin:auto;'>\n");
+        sb.append("  <div style='padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.08); display: flex; justify-content: space-between; align-items: center;'>\n");
+        sb.append("    <div style='display:flex; align-items:center; gap:8px;'><i class='fas fa-exclamation-triangle' style='color:#ef4444;'></i><h3 style='margin:0; font-size:16px; font-weight:700; color:#ef4444;'>Drop Database</h3></div>\n");
+        sb.append("    <button type='button' class='btn-action btn-secondary' style='padding:4px 8px; font-size:12px;' onclick=\"document.getElementById('drop_db_modal').close();\"><i class='fas fa-times'></i></button>\n");
+        sb.append("  </div>\n");
+        sb.append("  <form method='POST' action='").append(actionUrl).append("' style='padding: 20px;'>\n");
+        sb.append("    <input type='hidden' name='action' value='drop_db' />\n");
+        sb.append("    <input type='hidden' name='target_db' value='").append(escapeHtml(currentDb)).append("' />\n");
+        sb.append("    <p style='font-size:14px; color:#f8fafc; margin-bottom:12px;'>Are you sure you want to permanently drop database <b>").append(escapeHtml(currentDb)).append("</b>?</p>\n");
+        sb.append("    <p style='font-size:12px; color:#ef4444; background:rgba(239,68,68,0.1); padding:10px; border-radius:8px; border:1px solid rgba(239,68,68,0.3); margin-bottom:20px;'><i class='fas fa-radiation-alt'></i> This action is irreversible. All collections, documents, records, vectors, and version histories in this database will be purged from the storage engine.</p>\n");
+        sb.append("    <div style='display:flex; justify-content:flex-end; gap:10px;'>\n");
+        sb.append("      <button type='button' class='btn-action btn-secondary' onclick=\"document.getElementById('drop_db_modal').close();\">Cancel</button>\n");
+        sb.append("      <button type='submit' class='btn-action' style='background:#ef4444; color:white; font-weight:600; padding:8px 16px; border-radius:8px; cursor:pointer;'><i class='fas fa-trash-alt'></i> Drop Database Permanently</button>\n");
+        sb.append("    </div>\n");
+        sb.append("  </form>\n");
+        sb.append("</dialog>\n");
+
+        return Paragraph.of(sb.toString());
+    }
+
+    private Widget createAdvancedQueryStudio(String engineKey, String targetDb, JettraQueryEngine.QueryResult advancedQueryResult, String queryInputText) {
+        String actionUrl = JettraServer.resolvePath("/engines?engine=" + engineKey + "&target_db=" + targetDb);
+        StringBuilder sb = new StringBuilder();
+
+        sb.append("<div class='store-card' style='margin-bottom: 24px; border: 1px solid rgba(56,189,248,0.3); background: rgba(15, 23, 42, 0.85);'>\n");
+
+        // Header
+        sb.append("  <div style='display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:12px;'>\n");
+        sb.append("    <div style='display:flex; align-items:center; gap:10px;'>\n");
+        sb.append("      <div style='width:36px; height:36px; border-radius:8px; background:rgba(56,189,248,0.15); display:flex; align-items:center; justify-content:center; color:#38bdf8; font-size:16px;'><i class='fas fa-code'></i></div>\n");
+        sb.append("      <div>\n");
+        sb.append("        <h3 style='margin:0; font-size:16px; font-weight:700; color:#f8fafc;'>Advanced Query Studio (JQL & Java Stream Fluent API)</h3>\n");
+        sb.append("        <p style='margin:0; font-size:12px; color:#94a3b8;'>Execute declarative JettraQueryLanguage (JQL) or Java 25 lambda stream fluent pipelines on database: <span style='color:#38bdf8;'>").append(escapeHtml(targetDb)).append("</span></p>\n");
+        sb.append("      </div>\n");
+        sb.append("    </div>\n");
+
+        // Presets selector
+        sb.append("    <div style='display:flex; gap:8px; align-items:center;'>\n");
+        sb.append("      <span style='font-size:12px; color:#94a3b8;'>Presets:</span>\n");
+        sb.append("      <select id='queryPresets' onchange=\"if(this.value){ document.getElementById('queryInput').value = this.value; }\" style='padding:5px 10px; background:#0f172a; border-radius:6px; color:#38bdf8; font-size:12px; border:1px solid rgba(255,255,255,0.1);'>\n");
+        sb.append("        <option value=''>-- Select Example Query Template --</option>\n");
+        sb.append("        <option value=\"FROM ").append(targetDb).append(" WHERE status = 'ACTIVE' ORDER BY score DESC LIMIT 10\">[JQL] Status Filter & Sort</option>\n");
+        sb.append("        <option value=\"SELECT name, email, score FROM ").append(targetDb).append(" WHERE score >= 80 LIMIT 20\">[JQL] Field Projection</option>\n");
+        sb.append("        <option value=\"FROM ").append(targetDb).append(" WHERE name LIKE '%John%'\">[JQL] Text Pattern Search</option>\n");
+        sb.append("        <option value=\"stream().filter(d -> d.get('status').equals('ACTIVE')).sorted((a,b) -> b.getInt('score') - a.getInt('score')).limit(10)\">[Java Stream] Filter + Sort + Limit</option>\n");
+        sb.append("        <option value=\"stream().filter(d -> d.contains('email')).map(d -> d.get('email')).limit(15)\">[Java Stream] Key Exists & Projection</option>\n");
+        sb.append("      </select>\n");
+        sb.append("    </div>\n");
+        sb.append("  </div>\n");
+
+        // Form
+        String defaultQuery = queryInputText != null && !queryInputText.isBlank() ? queryInputText : "FROM " + targetDb + " WHERE status = 'ACTIVE' ORDER BY score DESC LIMIT 10";
+        sb.append("  <form method='POST' action='").append(actionUrl).append("'>\n");
+        sb.append("    <input type='hidden' name='action' value='run_advanced_query' />\n");
+        sb.append("    <div style='margin-bottom:12px;'>\n");
+        sb.append("      <textarea id='queryInput' name='query_string' class='form-input' style='font-family:monospace; font-size:13px; min-height:85px; background:#0a0f1d; color:#38bdf8; line-height:1.5; border: 1px solid rgba(56,189,248,0.25);'>").append(escapeHtml(defaultQuery)).append("</textarea>\n");
+        sb.append("    </div>\n");
+        sb.append("    <div style='display:flex; justify-content:space-between; align-items:center;'>\n");
+        sb.append("      <div style='font-size:12px; color:#64748b;'><i class='fas fa-lightbulb' style='color:#facc15;'></i> Tip: Use <code>FROM [db] WHERE ...</code> for JQL or <code>stream().filter(...)</code> for Java fluent API.</div>\n");
+        sb.append("      <div style='display:flex; gap:8px;'>\n");
+        sb.append("        <button type='button' class='btn-action btn-secondary' onclick=\"document.getElementById('queryInput').value='FROM ").append(targetDb).append(" LIMIT 50';\" style='font-size:12px;'>Clear / Reset</button>\n");
+        sb.append("        <button type='submit' class='btn-action btn-primary' style='padding:6px 18px; font-size:13px;'><i class='fas fa-play'></i> Run Query</button>\n");
+        sb.append("      </div>\n");
+        sb.append("    </div>\n");
+        sb.append("  </form>\n");
+
+        // Results
+        if (advancedQueryResult != null) {
+            sb.append("  <div style='margin-top:20px; border-top:1px solid rgba(255,255,255,0.08); padding-top:16px;'>\n");
+            sb.append("    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;'>\n");
+            sb.append("      <div style='display:flex; align-items:center; gap:12px;'>\n");
+            sb.append("        <span class='store-badge badge-active'><i class='fas fa-bolt'></i> ").append(advancedQueryResult.executionTimeMs()).append(" ms</span>\n");
+            sb.append("        <span class='store-badge badge-engine'>Engine: ").append(advancedQueryResult.queryType()).append("</span>\n");
+            sb.append("        <span style='font-size:13px; color:#94a3b8;'>Scanned: <b>").append(advancedQueryResult.totalScanned()).append("</b> | Matched: <b style='color:#38bdf8;'>").append(advancedQueryResult.totalMatched()).append("</b> items</span>\n");
+            sb.append("      </div>\n");
+            sb.append("    </div>\n");
+
+            if (advancedQueryResult.rows().isEmpty()) {
+                sb.append("    <div style='background:rgba(0,0,0,0.3); border-radius:8px; padding:16px; text-align:center; color:#94a3b8; font-size:13px;'>No matching records found for query.</div>\n");
+            } else {
+                sb.append("    <div class='table-responsive' style='max-height:360px; overflow-y:auto; border:1px solid rgba(255,255,255,0.06); border-radius:8px;'>\n");
+                sb.append("      <table class='jettra-table' style='margin:0;'>\n");
+                sb.append("        <thead>\n");
+                sb.append("          <tr>\n");
+                sb.append("            <th style='width:20%;'>ID</th>\n");
+                sb.append("            <th style='width:15%;'>DB / Engine</th>\n");
+                sb.append("            <th style='width:55%;'>Payload & Projection</th>\n");
+                sb.append("            <th style='width:10%; text-align:center;'>Version</th>\n");
+                sb.append("          </tr>\n");
+                sb.append("        </thead>\n");
+                sb.append("        <tbody>\n");
+                for (JettraQueryEngine.QueryResultRow r : advancedQueryResult.rows()) {
+                    String preview = r.rawPayload();
+                    if (preview != null && preview.length() > 110) preview = preview.substring(0, 110) + "...";
+                    sb.append("          <tr>\n");
+                    sb.append("            <td><b>").append(escapeHtml(r.id())).append("</b></td>\n");
+                    sb.append("            <td><span class='store-badge badge-engine'>").append(r.database()).append(" / ").append(r.engineType()).append("</span></td>\n");
+                    sb.append("            <td><code style='font-size:11px;'>").append(escapeHtml(preview)).append("</code></td>\n");
+                    sb.append("            <td style='text-align:center;'><span class='store-badge' style='background:rgba(139,92,246,0.2); color:#c084fc;'>v").append(r.versionCount()).append("</span></td>\n");
+                    sb.append("          </tr>\n");
+                }
+                sb.append("        </tbody>\n");
+                sb.append("      </table>\n");
+                sb.append("    </div>\n");
+            }
+            sb.append("  </div>\n");
+        }
+
+        sb.append("</div>\n");
+
+        return Paragraph.of(sb.toString());
     }
 
     private Widget createEditRecordModal(String engineKey, String targetDb, String editId) {
@@ -1122,11 +1350,64 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 "      <tr><td><i class='fas fa-table' style='color:#f97316; margin-right:6px;'></i> <b>COLUMN</b></td><td>OLAP Big Data Aggregations</td><td>Column Vectors & Run-Length</td><td>Raft Sync</td><td><code>/api/model/column/*</code></td><td><span class='store-badge badge-active'>ACTIVE</span></td></tr>\n" +
                 "      <tr><td><i class='fas fa-globe-americas' style='color:#14b8a6; margin-right:6px;'></i> <b>GEOSPATIAL</b></td><td>Spatial Coordinates, Radius, GIS</td><td>Geohash / QuadTree</td><td>Raft Sync</td><td><code>/api/model/geospatial/*</code></td><td><span class='store-badge badge-active'>ACTIVE</span></td></tr>\n" +
                 "      <tr><td><i class='fas fa-archive' style='color:#a855f7; margin-right:6px;'></i> <b>OBJECT</b></td><td>Binary BLOBs, Serialized Stream Files</td><td>Chunked Block Store</td><td>Raft Sync</td><td><code>/api/model/object/*</code></td><td><span class='store-badge badge-active'>ACTIVE</span></td></tr>\n" +
-                "      <tr><td><i class='fas fa-id-card' style='color:#f43f5e; margin-right:6px;'></i> <b>RECORDS</b></td><td>Immutable Java 25 Records, Component Validation</td><td>Compact Object Headers (rec:)</td><td>Raft Sync</td><td><code>/api/model/records/*</code></td><td><span class='store-badge badge-active'>ACTIVE</span></td></tr>\n" +
                 "    </tbody>\n" +
                 "  </table>\n" +
                 "</div>"
             )
         ).modifier(new io.jettra.flux.core.Modifier().cssClass("store-card"));
+    }
+
+    private int renameDatabase(String oldDb, String newDb) {
+        if (oldDb == null || newDb == null || oldDb.equalsIgnoreCase(newDb)) return 0;
+        String cleanNewDb = newDb.trim().toLowerCase().replaceAll("[^a-z0-9_]", "_");
+        String[] prefixes = {"", "rec:", "kv:", "vec:", "graph:", "ts:", "col:", "geo:", "obj:"};
+        int migrated = 0;
+
+        for (String pfx : prefixes) {
+            String oldPrefix = pfx + oldDb + ":";
+            Map<String, byte[]> records = engine.getStorageCore().scanPrefix(oldPrefix);
+            for (Map.Entry<String, byte[]> entry : records.entrySet()) {
+                String oldKey = entry.getKey();
+                byte[] val = entry.getValue();
+                if (oldKey.startsWith(oldPrefix)) {
+                    String id = oldKey.substring(oldPrefix.length());
+                    String newKey = pfx + cleanNewDb + ":" + id;
+                    engine.getStorageCore().put(newKey, val, System.currentTimeMillis());
+                    engine.getStorageCore().delete(oldKey, System.currentTimeMillis());
+                    migrated++;
+                }
+            }
+        }
+        return migrated;
+    }
+
+    private int purgeDatabase(String targetDb) {
+        if (targetDb == null || targetDb.isBlank()) return 0;
+        String[] prefixes = {"", "rec:", "kv:", "vec:", "graph:", "ts:", "col:", "geo:", "obj:"};
+        int count = 0;
+        for (String pfx : prefixes) {
+            String fullPrefix = pfx + targetDb + ":";
+            Map<String, byte[]> records = engine.getStorageCore().scanPrefix(fullPrefix);
+            for (String k : records.keySet()) {
+                engine.getStorageCore().delete(k, System.currentTimeMillis());
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private String getPrefixForEngine(String engineKey) {
+        if (engineKey == null) return "";
+        return switch (engineKey.toUpperCase()) {
+            case "RECORDS" -> "rec:";
+            case "KEYVALUE" -> "kv:";
+            case "VECTOR" -> "vec:";
+            case "GRAPH" -> "graph:";
+            case "TIMESERIES" -> "ts:";
+            case "COLUMN" -> "col:";
+            case "GEOSPATIAL" -> "geo:";
+            case "OBJECT" -> "obj:";
+            default -> ""; // DOCUMENT
+        };
     }
 }
