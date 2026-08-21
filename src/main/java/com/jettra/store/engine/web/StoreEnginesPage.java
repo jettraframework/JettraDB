@@ -8,6 +8,7 @@ import com.jettra.store.engine.models.*;
 import com.jettra.store.engine.query.JettraQueryEngine;
 import com.jettra.store.engine.ref.JettraReference;
 import com.jettra.store.engine.ref.JettraReferenceResolver;
+import com.jettra.store.engine.samples.SampleDatasetManager;
 import com.sun.net.httpserver.HttpExchange;
 import io.jettra.flux.core.Widget;
 import io.jettra.flux.widgets.*;
@@ -39,12 +40,14 @@ public class StoreEnginesPage extends StoreTemplatePage {
     private final JettraStorageEngine engine;
     private final JettraQueryEngine queryEngine;
     private final JettraReferenceResolver referenceResolver;
+    private final SampleDatasetManager sampleDatasetManager;
     private final JettraJson jsonParser = new JettraJson();
 
     public StoreEnginesPage(JettraStorageEngine engine) {
         this.engine = engine;
         this.queryEngine = new JettraQueryEngine(engine);
         this.referenceResolver = new JettraReferenceResolver(engine);
+        this.sampleDatasetManager = new SampleDatasetManager(engine);
     }
 
     @Override
@@ -113,6 +116,20 @@ public class StoreEnginesPage extends StoreTemplatePage {
                         alertMessage = "Database '" + toDrop + "' dropped permanently (" + purged + " keys purged).";
                         alertType = "badge-raft";
                     }
+                } else if ("load_sample_dataset".equalsIgnoreCase(action)) {
+                    String datasetKey = params.get("dataset_key");
+                    int loaded = sampleDatasetManager.loadDataset(datasetKey);
+                    if (!"ALL".equalsIgnoreCase(datasetKey) && !"ALL_SAMPLE_DATABASES".equalsIgnoreCase(datasetKey)) {
+                        for (SampleDatasetManager.DatasetInfo ds : SampleDatasetManager.AVAILABLE_DATASETS) {
+                            if (ds.engineType().equalsIgnoreCase(datasetKey)) {
+                                targetDb = ds.databaseName();
+                                selectedEngine = ds.engineType();
+                                break;
+                            }
+                        }
+                    }
+                    alertMessage = "Sample Dataset [" + datasetKey + "] loaded successfully (" + loaded + " records populated with cross-engine fast references)!";
+                    alertType = "badge-active";
                 } else if ("run_advanced_query".equalsIgnoreCase(action)) {
                     String q = params.get("query_string");
                     if (q != null && !q.isBlank()) {
@@ -210,6 +227,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
         Widget engineNavPills = createEngineNavPills(selectedEngine);
         Widget dbProvisionBar = createDatabaseProvisionBar(selectedEngine, targetDb);
         Widget dbManagementModals = createDatabaseManagementModals(selectedEngine, targetDb);
+        Widget sampleDataModal = createSampleDataModal(selectedEngine, targetDb);
         Widget advancedQueryModal = createAdvancedQueryModal(selectedEngine, targetDb, advancedQueryResult, queryInputText);
         Widget insertRecordModal = createInsertRecordModal(selectedEngine, targetDb);
         Widget editRecordModal = (editId != null && !editId.isBlank()) ? createEditRecordModal(selectedEngine, targetDb, editId) : Paragraph.of("");
@@ -222,6 +240,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
             titleBlock,
             alertWidget,
             dbManagementModals,
+            sampleDataModal,
             advancedQueryModal,
             insertRecordModal,
             editRecordModal,
@@ -617,6 +636,8 @@ public class StoreEnginesPage extends StoreTemplatePage {
         sb.append("  </div>\n");
 
         sb.append("  <div style='display:flex; align-items:center; gap:8px;'>\n");
+        // Sample DBs Seeder button
+        sb.append("    <button type='button' class='btn-action btn-secondary' onclick=\"document.getElementById('sample_dataset_modal').showModal();\" style='font-size:12px; padding:6px 12px; color:#f59e0b; border-color:rgba(245,158,11,0.4);'><i class='fas fa-flask'></i> Load Sample DBs</button>\n");
         // DB Admin action buttons (Create, Rename, Drop)
         sb.append("    <button type='button' class='btn-action btn-primary' onclick=\"document.getElementById('create_db_modal').showModal();\" style='font-size:12px; padding:6px 12px;'><i class='fas fa-folder-plus'></i> Create DB</button>\n");
         sb.append("    <button type='button' class='btn-action btn-secondary' onclick=\"document.getElementById('rename_db_modal').showModal();\" style='font-size:12px; padding:6px 12px; color:#38bdf8;'><i class='fas fa-pen'></i> Rename DB</button>\n");
@@ -625,6 +646,78 @@ public class StoreEnginesPage extends StoreTemplatePage {
         sb.append("</div>\n");
 
         return Div.of(Paragraph.of(sb.toString())).modifier(new io.jettra.flux.core.Modifier().cssClass("store-card").style("margin-bottom: 20px; padding: 14px 20px;"));
+    }
+
+    private Widget createSampleDataModal(String engineKey, String currentDb) {
+        String actionUrl = JettraServer.resolvePath("/engines?engine=" + engineKey + "&target_db=" + currentDb);
+        StringBuilder sb = new StringBuilder();
+
+        sb.append("<dialog id='sample_dataset_modal' style='border: 1px solid rgba(245,158,11,0.4); border-radius: 14px; padding: 0; background: #0f172a; color: #f8fafc; max-width: 860px; width: 94%; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.9); backdrop-filter: blur(8px); margin:auto;'>\n");
+
+        // Header
+        sb.append("  <div style='padding: 16px 22px; border-bottom: 1px solid rgba(255,255,255,0.08); display: flex; justify-content: space-between; align-items: center;'>\n");
+        sb.append("    <div style='display:flex; align-items:center; gap:10px;'>\n");
+        sb.append("      <div style='width:36px; height:36px; border-radius:8px; background:rgba(245,158,11,0.15); display:flex; align-items:center; justify-content:center; color:#f59e0b; font-size:16px;'><i class='fas fa-flask'></i></div>\n");
+        sb.append("      <div>\n");
+        sb.append("        <h3 style='margin:0; font-size:16px; font-weight:700; color:#f8fafc;'>Multi-Model Sample Datasets & Cross-Engine Seeds</h3>\n");
+        sb.append("        <p style='margin:0; font-size:12px; color:#94a3b8;'>Load high-volume, realistic datasets across all 9 engines with native cross-engine pointers (<code>jref://</code>).</p>\n");
+        sb.append("      </div>\n");
+        sb.append("    </div>\n");
+        sb.append("    <button type='button' class='btn-action btn-secondary' style='padding:4px 8px; font-size:12px;' onclick=\"document.getElementById('sample_dataset_modal').close();\"><i class='fas fa-times'></i></button>\n");
+        sb.append("  </div>\n");
+
+        // Body Content
+        sb.append("  <div style='padding: 20px 24px; max-height: calc(82vh - 80px); overflow-y: auto;'>\n");
+
+        // Top Banner for Full Suite
+        sb.append("    <div style='background: linear-gradient(135deg, rgba(245,158,11,0.15), rgba(59,130,246,0.15)); border: 1px solid rgba(245,158,11,0.4); border-radius: 10px; padding: 16px 20px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;'>\n");
+        sb.append("      <div>\n");
+        sb.append("        <h4 style='margin:0 0 4px 0; font-size:15px; font-weight:700; color:#f59e0b;'><i class='fas fa-layer-group'></i> Complete Enterprise Multi-Model Suite</h4>\n");
+        sb.append("        <p style='margin:0; font-size:12px; color:#cbd5e1;'>Seeds all 9 storage engines simultaneously (10,400+ interconnected records with cross-references).</p>\n");
+        sb.append("      </div>\n");
+        sb.append("      <form method='POST' action='").append(actionUrl).append("'>\n");
+        sb.append("        <input type='hidden' name='action' value='load_sample_dataset' />\n");
+        sb.append("        <input type='hidden' name='dataset_key' value='ALL' />\n");
+        sb.append("        <button type='submit' class='btn-action' style='background: linear-gradient(135deg, #f59e0b, #d97706); color:white; font-weight:700; padding:8px 18px; border-radius:8px; cursor:pointer;'><i class='fas fa-bolt'></i> Load All 9 Databases</button>\n");
+        sb.append("      </form>\n");
+        sb.append("    </div>\n");
+
+        // Grid of Individual Datasets
+        sb.append("    <div style='display:grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 14px;'>\n");
+        for (SampleDatasetManager.DatasetInfo ds : SampleDatasetManager.AVAILABLE_DATASETS) {
+            if ("ALL".equalsIgnoreCase(ds.engineType())) continue;
+            sb.append("      <div class='store-card' style='background: rgba(15,23,42,0.85); border: 1px solid rgba(255,255,255,0.08); padding: 16px; display:flex; flex-direction:column; justify-content:space-between;'>\n");
+            sb.append("        <div>\n");
+            sb.append("          <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;'>\n");
+            sb.append("            <div style='display:flex; align-items:center; gap:8px;'>\n");
+            sb.append("              <i class='").append(ds.icon()).append("' style='color:#38bdf8; font-size:16px;'></i>\n");
+            sb.append("              <span style='font-size:14px; font-weight:700; color:#f8fafc;'>").append(ds.displayName()).append("</span>\n");
+            sb.append("            </div>\n");
+            sb.append("            <span class='store-badge badge-engine'>").append(ds.engineType()).append("</span>\n");
+            sb.append("          </div>\n");
+            sb.append("          <p style='margin:0 0 10px 0; font-size:12px; color:#94a3b8; line-height:1.4;'>").append(ds.description()).append("</p>\n");
+            sb.append("        </div>\n");
+            sb.append("        <div style='display:flex; justify-content:space-between; align-items:center; border-top:1px solid rgba(255,255,255,0.06); padding-top:10px; margin-top:10px;'>\n");
+            sb.append("          <span style='font-size:11px; color:#cbd5e1;'><i class='fas fa-database' style='color:#f59e0b;'></i> <code>").append(ds.databaseName()).append("</code> (<b>~").append(ds.estimatedRecords()).append("</b> recs)</span>\n");
+            sb.append("          <form method='POST' action='").append(actionUrl).append("'>\n");
+            sb.append("            <input type='hidden' name='action' value='load_sample_dataset' />\n");
+            sb.append("            <input type='hidden' name='dataset_key' value='").append(ds.engineType()).append("' />\n");
+            sb.append("            <button type='submit' class='btn-action btn-secondary' style='padding:5px 12px; font-size:12px; color:#38bdf8;'><i class='fas fa-download'></i> Seed DB</button>\n");
+            sb.append("          </form>\n");
+            sb.append("        </div>\n");
+            sb.append("      </div>\n");
+        }
+        sb.append("    </div>\n");
+
+        sb.append("  </div>\n");
+
+        // Footer
+        sb.append("  <div style='display:flex; justify-content:flex-end; padding:14px 24px; border-top:1px solid rgba(255,255,255,0.08); background:rgba(0,0,0,0.2);'>\n");
+        sb.append("    <button type='button' class='btn-action btn-secondary' onclick=\"document.getElementById('sample_dataset_modal').close();\">Close</button>\n");
+        sb.append("  </div>\n");
+        sb.append("</dialog>\n");
+
+        return Paragraph.of(sb.toString());
     }
 
     private Widget createDatabaseManagementModals(String engineKey, String currentDb) {

@@ -1153,6 +1153,19 @@ Enables administrative security management:
 - **`/components`**: Inspect active `.jettra` disk files, MemTable heap usage, compaction worker threads, and Raft consensus peer nodes.
 - **`/swagger-ui`**: Embedded OpenAPI explorer for testing all database REST endpoints directly in the browser.
 
+### 11.5 Multi-Model Sample Datasets & Interconnected Seed Generator
+Enables one-click visual loading of production-grade sample datasets across all 9 engines with over 10,000 realistic interconnected records and cross-engine pointers (`jref://`):
+- **`DOCUMENT` (`scrum_board_db`)**: 1,200 User Stories, Epics, Tasks, and Sprints with cross-references to HR assignees in `hr_enterprise_db`.
+- **`TIMESERIES` (`meteorology_iot_db`)**: 2,500 High-frequency meteorological measurements from weather stations (temperature, humidity, atmospheric pressure, solar irradiance, precipitation) across time intervals.
+- **`RECORDS` (`hr_enterprise_db`)**: 1,000 Java 25 Immutable Employee records, contracts, departments, and payroll components with biometric and GIS references.
+- **`VECTOR` (`ai_knowledge_db`)**: 800 Semantic neural embeddings for document search, product classification, and facial biometrics with cosine similarity indexing.
+- **`GRAPH` (`social_network_db`)**: 1,500 Labeled Property Graph vertices (Users, Teams, Projects) and directed relationships (`REPORTS_TO`, `COLLABORATES_WITH`, `LEADS`).
+- **`GEOSPATIAL` (`smart_city_gis_db`)**: 600 Geographic coordinates for weather stations, delivery hubs, and distribution centers with Haversine distance tracking.
+- **`COLUMN` (`ecommerce_olap_db`)**: 1,000 Analytical wide-column fact tables, quarterly revenue by region, and customer cohort aggregations.
+- **`KEYVALUE` (`distributed_cache_db`)**: 800 High-speed session tokens, feature flags, distributed rate limiters, and atomic counters.
+- **`OBJECT` (`digital_assets_db`)**: 500 Media objects, invoice PDF documents, image blobs, and content-type metadata.
+- **Complete Enterprise Suite**: Seeds all 9 engines simultaneously with a single click.
+
 ---
 
 # Chapter 12: Backups, Snapshot Replication & Disaster Recovery

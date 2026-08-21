@@ -2,6 +2,7 @@ package com.jettra.store.engine.web;
 
 import com.jettra.store.engine.auth.AuthManager;
 import com.jettra.store.engine.core.JettraStorageEngine;
+import com.jettra.store.engine.samples.SampleDatasetManager;
 import com.sun.net.httpserver.HttpExchange;
 import io.jettra.core.login.NoLoginRequired;
 import io.jettra.flux.core.Widget;
@@ -38,12 +39,14 @@ public class StoreDatabasesPage extends StoreTemplatePage {
     private final AuthManager authManager;
     private final JUserRepository userRepo;
     private final JCredentialRepository credRepo;
+    private final SampleDatasetManager sampleDatasetManager;
 
     public StoreDatabasesPage(JettraStorageEngine engine, AuthManager authManager) {
         this.engine = engine;
         this.authManager = authManager;
         this.userRepo = new JUserRepositoryImpl();
         this.credRepo = new JCredentialRepositoryImpl();
+        this.sampleDatasetManager = new SampleDatasetManager(engine);
     }
 
     @Override
@@ -114,6 +117,11 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                         alertMessage = "Entity '" + rawKey + "' deleted from storage core.";
                         alertType = "badge-raft";
                     }
+                } else if ("load_sample_dataset".equalsIgnoreCase(action)) {
+                    String datasetKey = params.get("dataset_key");
+                    int loaded = sampleDatasetManager.loadDataset(datasetKey);
+                    alertMessage = "Sample Dataset [" + datasetKey + "] loaded successfully (" + loaded + " records populated across multi-model engines with cross-references)!";
+                    alertType = "badge-active";
                 } else if ("assign_user".equalsIgnoreCase(action)) {
                     String username = params.get("username");
                     String email = params.get("email");
@@ -161,6 +169,7 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                 Paragraph.of("<p style='margin: 4px 0 0 0; color: #94a3b8; font-size: 14px;'>Visual management of database namespaces, multi-model storage components, Java 25 Records, and per-database RBAC security.</p>")
             ),
             Row.of(
+                Paragraph.of("<button class='btn-action btn-secondary' onclick=\"document.getElementById('sample_dataset_modal').showModal();\" style='margin-right:8px; color:#f59e0b; border-color:rgba(245,158,11,0.4);'><i class='fas fa-flask'></i> Load Sample DBs</button>"),
                 Paragraph.of("<button class='btn-action btn-primary' onclick=\"openCreateDbModal()\"><i class='fas fa-plus-circle'></i> New Database</button>"),
                 Paragraph.of("<a href='" + JettraServer.resolvePath("/users") + "' class='btn-action btn-secondary' style='margin-left:8px;'><i class='fas fa-users-cog'></i> User Security</a>"),
                 Paragraph.of("<a href='" + JettraServer.resolvePath("/engines") + "' class='btn-action btn-secondary' style='margin-left:8px;'><i class='fas fa-cubes'></i> Engines Matrix</a>")
@@ -322,8 +331,66 @@ public class StoreDatabasesPage extends StoreTemplatePage {
 
         dbHtml.append("</div>\n");
 
-        // Modals: Create Database, Add Component, Assign User
-        String modalsHtml =
+        // Modals: Sample Datasets, Create Database, Add Component, Assign User
+        StringBuilder sampleModal = new StringBuilder();
+        sampleModal.append("<dialog id='sample_dataset_modal' style='border: 1px solid rgba(245,158,11,0.4); border-radius: 14px; padding: 0; background: #0f172a; color: #f8fafc; max-width: 860px; width: 94%; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.9); backdrop-filter: blur(8px); margin:auto;'>\n");
+        sampleModal.append("  <div style='padding: 16px 22px; border-bottom: 1px solid rgba(255,255,255,0.08); display: flex; justify-content: space-between; align-items: center;'>\n");
+        sampleModal.append("    <div style='display:flex; align-items:center; gap:10px;'>\n");
+        sampleModal.append("      <div style='width:36px; height:36px; border-radius:8px; background:rgba(245,158,11,0.15); display:flex; align-items:center; justify-content:center; color:#f59e0b; font-size:16px;'><i class='fas fa-flask'></i></div>\n");
+        sampleModal.append("      <div>\n");
+        sampleModal.append("        <h3 style='margin:0; font-size:16px; font-weight:700; color:#f8fafc;'>Multi-Model Sample Datasets & Cross-Engine Seeds</h3>\n");
+        sampleModal.append("        <p style='margin:0; font-size:12px; color:#94a3b8;'>Populate high-volume realistic datasets with native cross-engine pointers (<code>jref://</code>).</p>\n");
+        sampleModal.append("      </div>\n");
+        sampleModal.append("    </div>\n");
+        sampleModal.append("    <button type='button' class='btn-action btn-secondary' style='padding:4px 8px; font-size:12px;' onclick=\"document.getElementById('sample_dataset_modal').close();\"><i class='fas fa-times'></i></button>\n");
+        sampleModal.append("  </div>\n");
+
+        sampleModal.append("  <div style='padding: 20px 24px; max-height: calc(82vh - 80px); overflow-y: auto;'>\n");
+        sampleModal.append("    <div style='background: linear-gradient(135deg, rgba(245,158,11,0.15), rgba(59,130,246,0.15)); border: 1px solid rgba(245,158,11,0.4); border-radius: 10px; padding: 16px 20px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;'>\n");
+        sampleModal.append("      <div>\n");
+        sampleModal.append("        <h4 style='margin:0 0 4px 0; font-size:15px; font-weight:700; color:#f59e0b;'><i class='fas fa-layer-group'></i> Complete Enterprise Multi-Model Suite</h4>\n");
+        sampleModal.append("        <p style='margin:0; font-size:12px; color:#cbd5e1;'>Populates all 9 multi-model engines simultaneously (10,400+ interconnected records with cross-references).</p>\n");
+        sampleModal.append("      </div>\n");
+        sampleModal.append("      <form method='POST' action='").append(JettraServer.resolvePath("/databases")).append("'>\n");
+        sampleModal.append("        <input type='hidden' name='action' value='load_sample_dataset' />\n");
+        sampleModal.append("        <input type='hidden' name='dataset_key' value='ALL' />\n");
+        sampleModal.append("        <button type='submit' class='btn-action' style='background: linear-gradient(135deg, #f59e0b, #d97706); color:white; font-weight:700; padding:8px 18px; border-radius:8px; cursor:pointer;'><i class='fas fa-bolt'></i> Load All 9 Databases</button>\n");
+        sampleModal.append("      </form>\n");
+        sampleModal.append("    </div>\n");
+
+        sampleModal.append("    <div style='display:grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 14px;'>\n");
+        for (SampleDatasetManager.DatasetInfo ds : SampleDatasetManager.AVAILABLE_DATASETS) {
+            if ("ALL".equalsIgnoreCase(ds.engineType())) continue;
+            sampleModal.append("      <div class='store-card' style='background: rgba(15,23,42,0.85); border: 1px solid rgba(255,255,255,0.08); padding: 16px; display:flex; flex-direction:column; justify-content:space-between;'>\n");
+            sampleModal.append("        <div>\n");
+            sampleModal.append("          <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;'>\n");
+            sampleModal.append("            <div style='display:flex; align-items:center; gap:8px;'>\n");
+            sampleModal.append("              <i class='").append(ds.icon()).append("' style='color:#38bdf8; font-size:16px;'></i>\n");
+            sampleModal.append("              <span style='font-size:14px; font-weight:700; color:#f8fafc;'>").append(ds.displayName()).append("</span>\n");
+            sampleModal.append("            </div>\n");
+            sampleModal.append("            <span class='store-badge badge-engine'>").append(ds.engineType()).append("</span>\n");
+            sampleModal.append("          </div>\n");
+            sampleModal.append("          <p style='margin:0 0 10px 0; font-size:12px; color:#94a3b8; line-height:1.4;'>").append(ds.description()).append("</p>\n");
+            sampleModal.append("        </div>\n");
+            sampleModal.append("        <div style='display:flex; justify-content:space-between; align-items:center; border-top:1px solid rgba(255,255,255,0.06); padding-top:10px; margin-top:10px;'>\n");
+            sampleModal.append("          <span style='font-size:11px; color:#cbd5e1;'><i class='fas fa-database' style='color:#f59e0b;'></i> <code>").append(ds.databaseName()).append("</code> (<b>~").append(ds.estimatedRecords()).append("</b> recs)</span>\n");
+            sampleModal.append("          <form method='POST' action='").append(JettraServer.resolvePath("/databases")).append("'>\n");
+            sampleModal.append("            <input type='hidden' name='action' value='load_sample_dataset' />\n");
+            sampleModal.append("            <input type='hidden' name='dataset_key' value='").append(ds.engineType()).append("' />\n");
+            sampleModal.append("            <button type='submit' class='btn-action btn-secondary' style='padding:5px 12px; font-size:12px; color:#38bdf8;'><i class='fas fa-download'></i> Seed DB</button>\n");
+            sampleModal.append("          </form>\n");
+            sampleModal.append("        </div>\n");
+            sampleModal.append("      </div>\n");
+        }
+        sampleModal.append("    </div>\n");
+        sampleModal.append("  </div>\n");
+
+        sampleModal.append("  <div style='display:flex; justify-content:flex-end; padding:14px 24px; border-top:1px solid rgba(255,255,255,0.08); background:rgba(0,0,0,0.2);'>\n");
+        sampleModal.append("    <button type='button' class='btn-action btn-secondary' onclick=\"document.getElementById('sample_dataset_modal').close();\">Close</button>\n");
+        sampleModal.append("  </div>\n");
+        sampleModal.append("</dialog>\n");
+
+        String modalsHtml = sampleModal.toString() +
             // Modal 1: Create Database
             "<div id='createDbModal' style='display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center;'>\n" +
             "  <div class='store-card' style='width:540px; max-width:90%; background:#1e293b; border:1px solid rgba(255,255,255,0.15); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:28px;'>\n" +
