@@ -192,10 +192,10 @@ public class StoreEnginesPage extends StoreTemplatePage {
         Widget engineNavPills = createEngineNavPills(selectedEngine);
         Widget dbProvisionBar = createDatabaseProvisionBar(selectedEngine, targetDb);
         Widget dbManagementModals = createDatabaseManagementModals(selectedEngine, targetDb);
+        Widget advancedQueryModal = createAdvancedQueryModal(selectedEngine, targetDb, advancedQueryResult, queryInputText);
         Widget insertRecordModal = createInsertRecordModal(selectedEngine, targetDb);
         Widget editRecordModal = (editId != null && !editId.isBlank()) ? createEditRecordModal(selectedEngine, targetDb, editId) : Paragraph.of("");
         Widget versionHistoryModal = (historyId != null && !historyId.isBlank()) ? createVersionHistoryModal(selectedEngine, targetDb, historyId) : Paragraph.of("");
-        Widget advancedQueryStudio = createAdvancedQueryStudio(selectedEngine, targetDb, advancedQueryResult, queryInputText);
         Widget queryLookupCard = createQueryLookupCard(selectedEngine, targetDb, queryResultDisplay);
         Widget liveObjectsExplorer = createLiveObjectsExplorer(selectedEngine, targetDb, filterQuery);
         Widget engineMatrix = createEngineMatrixTable();
@@ -204,12 +204,12 @@ public class StoreEnginesPage extends StoreTemplatePage {
             titleBlock,
             alertWidget,
             dbManagementModals,
+            advancedQueryModal,
             insertRecordModal,
             editRecordModal,
             versionHistoryModal,
             engineNavPills,
             dbProvisionBar,
-            advancedQueryStudio,
             queryLookupCard,
             liveObjectsExplorer,
             engineMatrix
@@ -686,95 +686,107 @@ public class StoreEnginesPage extends StoreTemplatePage {
         return Paragraph.of(sb.toString());
     }
 
-    private Widget createAdvancedQueryStudio(String engineKey, String targetDb, JettraQueryEngine.QueryResult advancedQueryResult, String queryInputText) {
+    private Widget createAdvancedQueryModal(String engineKey, String targetDb, JettraQueryEngine.QueryResult advancedQueryResult, String queryInputText) {
         String actionUrl = JettraServer.resolvePath("/engines?engine=" + engineKey + "&target_db=" + targetDb);
         StringBuilder sb = new StringBuilder();
 
-        sb.append("<div class='store-card' style='margin-bottom: 24px; border: 1px solid rgba(56,189,248,0.3); background: rgba(15, 23, 42, 0.85);'>\n");
+        // JettraFlux Native Modal Dialog
+        sb.append("<!-- JettraFlux Advanced Query Studio Modal Dialog -->\n");
+        sb.append("<dialog id='advanced_query_modal'").append(advancedQueryResult != null ? " open " : " ").append("style='border: 1px solid rgba(56,189,248,0.4); border-radius: 14px; padding: 0; background: #0f172a; color: #f8fafc; max-width: 860px; width: 94%; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.9); backdrop-filter: blur(8px); margin:auto;'>\n");
 
         // Header
-        sb.append("  <div style='display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:12px;'>\n");
+        sb.append("  <div style='padding: 16px 22px; border-bottom: 1px solid rgba(255,255,255,0.08); display: flex; justify-content: space-between; align-items: center;'>\n");
         sb.append("    <div style='display:flex; align-items:center; gap:10px;'>\n");
         sb.append("      <div style='width:36px; height:36px; border-radius:8px; background:rgba(56,189,248,0.15); display:flex; align-items:center; justify-content:center; color:#38bdf8; font-size:16px;'><i class='fas fa-code'></i></div>\n");
         sb.append("      <div>\n");
         sb.append("        <h3 style='margin:0; font-size:16px; font-weight:700; color:#f8fafc;'>Advanced Query Studio (JQL & Java Stream Fluent API)</h3>\n");
-        sb.append("        <p style='margin:0; font-size:12px; color:#94a3b8;'>Execute declarative JettraQueryLanguage (JQL) or Java 25 lambda stream fluent pipelines on database: <span style='color:#38bdf8;'>").append(escapeHtml(targetDb)).append("</span></p>\n");
+        sb.append("        <p style='margin:0; font-size:12px; color:#94a3b8;'>Active Database: <span style='color:#38bdf8;'>").append(escapeHtml(targetDb)).append("</span> | Multi-Model Storage Core</p>\n");
         sb.append("      </div>\n");
         sb.append("    </div>\n");
-
-        // Presets selector
-        sb.append("    <div style='display:flex; gap:8px; align-items:center;'>\n");
-        sb.append("      <span style='font-size:12px; color:#94a3b8;'>Presets:</span>\n");
-        sb.append("      <select id='queryPresets' onchange=\"if(this.value){ document.getElementById('queryInput').value = this.value; }\" style='padding:5px 10px; background:#0f172a; border-radius:6px; color:#38bdf8; font-size:12px; border:1px solid rgba(255,255,255,0.1);'>\n");
-        sb.append("        <option value=''>-- Select Example Query Template --</option>\n");
-        sb.append("        <option value=\"FROM ").append(targetDb).append(" WHERE status = 'ACTIVE' ORDER BY score DESC LIMIT 10\">[JQL] Status Filter & Sort</option>\n");
-        sb.append("        <option value=\"SELECT name, email, score FROM ").append(targetDb).append(" WHERE score >= 80 LIMIT 20\">[JQL] Field Projection</option>\n");
-        sb.append("        <option value=\"FROM ").append(targetDb).append(" WHERE name LIKE '%John%'\">[JQL] Text Pattern Search</option>\n");
-        sb.append("        <option value=\"stream().filter(d -> d.get('status').equals('ACTIVE')).sorted((a,b) -> b.getInt('score') - a.getInt('score')).limit(10)\">[Java Stream] Filter + Sort + Limit</option>\n");
-        sb.append("        <option value=\"stream().filter(d -> d.contains('email')).map(d -> d.get('email')).limit(15)\">[Java Stream] Key Exists & Projection</option>\n");
-        sb.append("      </select>\n");
-        sb.append("    </div>\n");
+        sb.append("    <button type='button' class='btn-action btn-secondary' style='padding:4px 8px; font-size:12px;' onclick=\"document.getElementById('advanced_query_modal').close();\"><i class='fas fa-times'></i></button>\n");
         sb.append("  </div>\n");
 
-        // Form
-        String defaultQuery = queryInputText != null && !queryInputText.isBlank() ? queryInputText : "FROM " + targetDb + " WHERE status = 'ACTIVE' ORDER BY score DESC LIMIT 10";
-        sb.append("  <form method='POST' action='").append(actionUrl).append("'>\n");
-        sb.append("    <input type='hidden' name='action' value='run_advanced_query' />\n");
-        sb.append("    <div style='margin-bottom:12px;'>\n");
-        sb.append("      <textarea id='queryInput' name='query_string' class='form-input' style='font-family:monospace; font-size:13px; min-height:85px; background:#0a0f1d; color:#38bdf8; line-height:1.5; border: 1px solid rgba(56,189,248,0.25);'>").append(escapeHtml(defaultQuery)).append("</textarea>\n");
-        sb.append("    </div>\n");
-        sb.append("    <div style='display:flex; justify-content:space-between; align-items:center;'>\n");
-        sb.append("      <div style='font-size:12px; color:#64748b;'><i class='fas fa-lightbulb' style='color:#facc15;'></i> Tip: Use <code>FROM [db] WHERE ...</code> for JQL or <code>stream().filter(...)</code> for Java fluent API.</div>\n");
-        sb.append("      <div style='display:flex; gap:8px;'>\n");
-        sb.append("        <button type='button' class='btn-action btn-secondary' onclick=\"document.getElementById('queryInput').value='FROM ").append(targetDb).append(" LIMIT 50';\" style='font-size:12px;'>Clear / Reset</button>\n");
-        sb.append("        <button type='submit' class='btn-action btn-primary' style='padding:6px 18px; font-size:13px;'><i class='fas fa-play'></i> Run Query</button>\n");
+        // Body Form
+        sb.append("  <div style='padding: 20px 24px; max-height: calc(85vh - 70px); overflow-y: auto;'>\n");
+        sb.append("    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;'>\n");
+        sb.append("      <label class='form-label' style='margin:0;'><i class='fas fa-terminal'></i> Query Expression Editor</label>\n");
+        sb.append("      <div style='display:flex; gap:8px; align-items:center;'>\n");
+        sb.append("        <span style='font-size:12px; color:#94a3b8;'>Presets:</span>\n");
+        sb.append("        <select id='queryPresets' onchange=\"if(this.value){ document.getElementById('queryInput').value = this.value; }\" style='padding:4px 8px; background:#0f172a; border-radius:6px; color:#38bdf8; font-size:12px; border:1px solid rgba(255,255,255,0.15);'>\n");
+        sb.append("          <option value=''>-- Select Example Template --</option>\n");
+        sb.append("          <option value=\"FROM ").append(targetDb).append(" WHERE status = 'ACTIVE' ORDER BY score DESC LIMIT 10\">[JQL] Status Filter & Sort</option>\n");
+        sb.append("          <option value=\"SELECT name, email, score FROM ").append(targetDb).append(" WHERE score >= 80 LIMIT 20\">[JQL] Field Projection</option>\n");
+        sb.append("          <option value=\"FROM ").append(targetDb).append(" WHERE name LIKE '%John%'\">[JQL] Text Pattern Search</option>\n");
+        sb.append("          <option value=\"stream().filter(d -> d.get('status').equals('ACTIVE')).sorted((a,b) -> b.getInt('score') - a.getInt('score')).limit(10)\">[Java Stream] Filter + Sort + Limit</option>\n");
+        sb.append("          <option value=\"stream().filter(d -> d.contains('email')).map(d -> d.get('email')).limit(15)\">[Java Stream] Key Exists & Projection</option>\n");
+        sb.append("        </select>\n");
         sb.append("      </div>\n");
         sb.append("    </div>\n");
-        sb.append("  </form>\n");
 
-        // Results
+        String defaultQuery = queryInputText != null && !queryInputText.isBlank() ? queryInputText : "FROM " + targetDb + " WHERE status = 'ACTIVE' ORDER BY score DESC LIMIT 10";
+        sb.append("    <form method='POST' action='").append(actionUrl).append("'>\n");
+        sb.append("      <input type='hidden' name='action' value='run_advanced_query' />\n");
+        sb.append("      <div style='margin-bottom:12px;'>\n");
+        sb.append("        <textarea id='queryInput' name='query_string' class='form-input' style='font-family:monospace; font-size:13px; min-height:90px; background:#0a0f1d; color:#38bdf8; line-height:1.5; border: 1px solid rgba(56,189,248,0.25); width:100%; box-sizing:border-box;'>").append(escapeHtml(defaultQuery)).append("</textarea>\n");
+        sb.append("      </div>\n");
+        sb.append("      <div style='display:flex; justify-content:space-between; align-items:center;'>\n");
+        sb.append("        <div style='font-size:12px; color:#64748b;'><i class='fas fa-lightbulb' style='color:#facc15;'></i> Supports <code>FROM [db] WHERE ...</code> (JQL) or <code>stream().filter(...)</code> (Java API)</div>\n");
+        sb.append("        <div style='display:flex; gap:8px;'>\n");
+        sb.append("          <button type='button' class='btn-action btn-secondary' onclick=\"document.getElementById('queryInput').value='FROM ").append(targetDb).append(" LIMIT 50';\" style='font-size:12px;'>Clear / Reset</button>\n");
+        sb.append("          <button type='submit' class='btn-action btn-primary' style='padding:6px 18px; font-size:13px;'><i class='fas fa-play'></i> Run Query</button>\n");
+        sb.append("        </div>\n");
+        sb.append("      </div>\n");
+        sb.append("    </form>\n");
+
+        // Query Results inside modal
         if (advancedQueryResult != null) {
-            sb.append("  <div style='margin-top:20px; border-top:1px solid rgba(255,255,255,0.08); padding-top:16px;'>\n");
-            sb.append("    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;'>\n");
-            sb.append("      <div style='display:flex; align-items:center; gap:12px;'>\n");
-            sb.append("        <span class='store-badge badge-active'><i class='fas fa-bolt'></i> ").append(advancedQueryResult.executionTimeMs()).append(" ms</span>\n");
-            sb.append("        <span class='store-badge badge-engine'>Engine: ").append(advancedQueryResult.queryType()).append("</span>\n");
-            sb.append("        <span style='font-size:13px; color:#94a3b8;'>Scanned: <b>").append(advancedQueryResult.totalScanned()).append("</b> | Matched: <b style='color:#38bdf8;'>").append(advancedQueryResult.totalMatched()).append("</b> items</span>\n");
+            sb.append("    <div style='margin-top:20px; border-top:1px solid rgba(255,255,255,0.08); padding-top:16px;'>\n");
+            sb.append("      <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;'>\n");
+            sb.append("        <div style='display:flex; align-items:center; gap:10px;'>\n");
+            sb.append("          <span class='store-badge badge-active'><i class='fas fa-bolt'></i> ").append(advancedQueryResult.executionTimeMs()).append(" ms</span>\n");
+            sb.append("          <span class='store-badge badge-engine'>").append(advancedQueryResult.queryType()).append("</span>\n");
+            sb.append("          <span style='font-size:12px; color:#94a3b8;'>Scanned: <b>").append(advancedQueryResult.totalScanned()).append("</b> | Matched: <b style='color:#38bdf8;'>").append(advancedQueryResult.totalMatched()).append("</b></span>\n");
+            sb.append("        </div>\n");
             sb.append("      </div>\n");
-            sb.append("    </div>\n");
 
             if (advancedQueryResult.rows().isEmpty()) {
-                sb.append("    <div style='background:rgba(0,0,0,0.3); border-radius:8px; padding:16px; text-align:center; color:#94a3b8; font-size:13px;'>No matching records found for query.</div>\n");
+                sb.append("      <div style='background:rgba(0,0,0,0.3); border-radius:8px; padding:16px; text-align:center; color:#94a3b8; font-size:13px;'>No matching records found for query expression.</div>\n");
             } else {
-                sb.append("    <div class='table-responsive' style='max-height:360px; overflow-y:auto; border:1px solid rgba(255,255,255,0.06); border-radius:8px;'>\n");
-                sb.append("      <table class='jettra-table' style='margin:0;'>\n");
-                sb.append("        <thead>\n");
-                sb.append("          <tr>\n");
-                sb.append("            <th style='width:20%;'>ID</th>\n");
-                sb.append("            <th style='width:15%;'>DB / Engine</th>\n");
-                sb.append("            <th style='width:55%;'>Payload & Projection</th>\n");
-                sb.append("            <th style='width:10%; text-align:center;'>Version</th>\n");
-                sb.append("          </tr>\n");
-                sb.append("        </thead>\n");
-                sb.append("        <tbody>\n");
+                sb.append("      <div class='table-responsive' style='max-height:300px; overflow-y:auto; border:1px solid rgba(255,255,255,0.06); border-radius:8px;'>\n");
+                sb.append("        <table class='jettra-table' style='margin:0;'>\n");
+                sb.append("          <thead>\n");
+                sb.append("            <tr>\n");
+                sb.append("              <th style='width:20%;'>ID</th>\n");
+                sb.append("              <th style='width:15%;'>DB / Engine</th>\n");
+                sb.append("              <th style='width:55%;'>Payload & Projection</th>\n");
+                sb.append("              <th style='width:10%; text-align:center;'>Version</th>\n");
+                sb.append("            </tr>\n");
+                sb.append("          </thead>\n");
+                sb.append("          <tbody>\n");
                 for (JettraQueryEngine.QueryResultRow r : advancedQueryResult.rows()) {
                     String preview = r.rawPayload();
                     if (preview != null && preview.length() > 110) preview = preview.substring(0, 110) + "...";
-                    sb.append("          <tr>\n");
-                    sb.append("            <td><b>").append(escapeHtml(r.id())).append("</b></td>\n");
-                    sb.append("            <td><span class='store-badge badge-engine'>").append(r.database()).append(" / ").append(r.engineType()).append("</span></td>\n");
-                    sb.append("            <td><code style='font-size:11px;'>").append(escapeHtml(preview)).append("</code></td>\n");
-                    sb.append("            <td style='text-align:center;'><span class='store-badge' style='background:rgba(139,92,246,0.2); color:#c084fc;'>v").append(r.versionCount()).append("</span></td>\n");
-                    sb.append("          </tr>\n");
+                    sb.append("            <tr>\n");
+                    sb.append("              <td><b>").append(escapeHtml(r.id())).append("</b></td>\n");
+                    sb.append("              <td><span class='store-badge badge-engine'>").append(r.database()).append(" / ").append(r.engineType()).append("</span></td>\n");
+                    sb.append("              <td><code style='font-size:11px;'>").append(escapeHtml(preview)).append("</code></td>\n");
+                    sb.append("              <td style='text-align:center;'><span class='store-badge' style='background:rgba(139,92,246,0.2); color:#c084fc;'>v").append(r.versionCount()).append("</span></td>\n");
+                    sb.append("            </tr>\n");
                 }
-                sb.append("        </tbody>\n");
-                sb.append("      </table>\n");
-                sb.append("    </div>\n");
+                sb.append("          </tbody>\n");
+                sb.append("        </table>\n");
+                sb.append("      </div>\n");
             }
-            sb.append("  </div>\n");
+            sb.append("    </div>\n");
         }
 
-        sb.append("</div>\n");
+        sb.append("  </div>\n");
+
+        // Modal Footer
+        sb.append("  <div style='display:flex; justify-content:flex-end; padding:14px 24px; border-top:1px solid rgba(255,255,255,0.08); background:rgba(0,0,0,0.2);'>\n");
+        sb.append("    <button type='button' class='btn-action btn-secondary' onclick=\"document.getElementById('advanced_query_modal').close();\">Close Studio</button>\n");
+        sb.append("  </div>\n");
+        sb.append("</dialog>\n");
 
         return Paragraph.of(sb.toString());
     }
@@ -1053,14 +1065,17 @@ public class StoreEnginesPage extends StoreTemplatePage {
         sb.append("<div style='display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;'>\n");
         sb.append("  <div style='display:flex; align-items:center; gap:10px;'>\n");
         sb.append("    <i class='fas fa-search' style='color:#10b981; font-size:16px;'></i>\n");
-        sb.append("    <span style='font-size:14px; font-weight:600; color:#f8fafc;'>Query / Direct Lookup:</span>\n");
+        sb.append("    <span style='font-size:14px; font-weight:600; color:#f8fafc;'>Direct Lookup / Search:</span>\n");
         sb.append("  </div>\n");
 
-        sb.append("  <form method='POST' action='").append(actionUrl).append("' style='display:flex; gap:8px; flex:1; max-width:480px;'>\n");
-        sb.append("    <input type='hidden' name='action' value='query_object' />\n");
-        sb.append("    <input type='text' name='target_id' class='form-input' style='height:34px; font-size:13px;' placeholder='Enter Document / Object ID to query...' required />\n");
-        sb.append("    <button type='submit' class='btn-action btn-primary' style='padding:6px 14px; font-size:12px; height:34px;'><i class='fas fa-search'></i> Find</button>\n");
-        sb.append("  </form>\n");
+        sb.append("  <div style='display:flex; gap:10px; align-items:center; flex-wrap:wrap;'>\n");
+        sb.append("    <form method='POST' action='").append(actionUrl).append("' style='display:flex; gap:8px;'>\n");
+        sb.append("      <input type='hidden' name='action' value='query_object' />\n");
+        sb.append("      <input type='text' name='target_id' class='form-input' style='height:34px; font-size:13px; width:200px;' placeholder='Enter ID to lookup...' required />\n");
+        sb.append("      <button type='submit' class='btn-action btn-primary' style='padding:6px 14px; font-size:12px; height:34px;'><i class='fas fa-search'></i> Find</button>\n");
+        sb.append("    </form>\n");
+        sb.append("    <button type='button' class='btn-action btn-secondary' onclick=\"document.getElementById('advanced_query_modal').showModal();\" style='padding:6px 14px; font-size:12px; height:34px; color:#38bdf8; border-color:rgba(56,189,248,0.3);'><i class='fas fa-terminal'></i> Advanced Query Studio (JQL / Stream)</button>\n");
+        sb.append("  </div>\n");
         sb.append("</div>\n");
 
         if (queryResultDisplay != null && !queryResultDisplay.isBlank()) {
@@ -1081,7 +1096,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
         StringBuilder sb = new StringBuilder();
 
-        // Header with Live Search Filter, Export Buttons, and "+ New Object" Modal Trigger
+        // Header with Live Search Filter, Export Buttons, Advanced Query Modal Button, and "+ Insert" Button
         sb.append("<div style='display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px;'>\n");
         sb.append("  <div>\n");
         sb.append("    <h3 style='margin:0; font-size:18px; font-weight:600;'><i class='fas fa-table' style='color:#38bdf8; margin-right:8px;'></i> Stored Objects in [").append(targetDb).append("]</h3>\n");
@@ -1091,7 +1106,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
         sb.append("  <div style='display:flex; align-items:center; gap:8px; flex-wrap:wrap;'>\n");
         // Real-time table search input (client-side JS filtering)
         sb.append("    <div style='position:relative;'>\n");
-        sb.append("      <input type='text' id='liveTableSearch' class='form-input' style='padding-left:30px; font-size:12px; height:32px; width:180px;' placeholder='Filter records...' onkeyup='filterLiveTable()' />\n");
+        sb.append("      <input type='text' id='liveTableSearch' class='form-input' style='padding-left:30px; font-size:12px; height:32px; width:170px;' placeholder='Filter records...' onkeyup='filterLiveTable()' />\n");
         sb.append("      <i class='fas fa-search' style='position:absolute; left:10px; top:9px; color:#94a3b8; font-size:12px;'></i>\n");
         sb.append("    </div>\n");
 
@@ -1101,6 +1116,9 @@ public class StoreEnginesPage extends StoreTemplatePage {
         sb.append("      <a href='").append(exportBaseUrl).append("&format=csv' class='btn-action btn-secondary' style='font-size:12px; padding:6px 10px; color:#38bdf8; border-color:rgba(56,189,248,0.3);'><i class='fas fa-file-csv'></i> CSV</a>\n");
         sb.append("      <a href='").append(exportBaseUrl).append("&format=pdf' class='btn-action btn-secondary' style='font-size:12px; padding:6px 10px; color:#f43f5e; border-color:rgba(244,63,94,0.3);'><i class='fas fa-file-pdf'></i> PDF</a>\n");
         sb.append("    </div>\n");
+
+        // Advanced Query Studio Modal Trigger Button
+        sb.append("    <button type='button' class='btn-action btn-secondary' onclick=\"document.getElementById('advanced_query_modal').showModal();\" style='font-size:12px; padding:6px 12px; color:#38bdf8; border-color:rgba(56,189,248,0.3);'><i class='fas fa-terminal'></i> Query Studio</button>\n");
 
         // Primary Action: Modal Trigger Button to Insert New Object
         sb.append("    <button type='button' class='btn-action btn-primary' onclick=\"document.getElementById('insert_record_modal').showModal();\" style='font-size:12px; padding:6px 14px; font-weight:600;'><i class='fas fa-plus-circle'></i> Insert ").append(engineKey).append("</button>\n");
