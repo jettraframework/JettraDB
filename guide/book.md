@@ -1183,6 +1183,120 @@ FIND IN facturas WHERE estado = 'EMITIDA' AFTER id 'INV_2026_09999' LIMIT 50;
 
 ---
 
+# Chapter 13: High-Performance Cross-Engine Fast References (`JettraReference`)
+
+JettraStoreEngine provides native, ultra-low-latency cross-engine reference pointers (**`JettraReference`**) that enable direct relationships between entities across all 9 multi-model storage engines, distinct database namespaces, and distributed cluster nodes.
+
+```
+                    ┌─────────────────────────────────────────────────────────────┐
+                    │                   Cross-Engine Reference                    │
+                    │                                                             │
+  [RECORDS Engine]  │  <PersonaRecord>                                            │
+  hr_db:emp_101     │    id: "emp_101"                                            │
+                    │    nombre: "Carlos Mendez"                                  │
+                    │    paisRef: "jref://DOCUMENT:geo_db/PAIS_PA" ─────────────┐ │
+                    └───────────────────────────────────────────────────────────┼─┘
+                                                                                │
+                                           Direct O(1) Memory Jump              │
+                                         (Zero Scan / Microsecond Lookup)       ▼
+                    ┌─────────────────────────────────────────────────────────────┐
+  [DOCUMENT Engine] │  <PaisDocument>                                             │
+  geo_db:PAIS_PA    │    codigo: "PA"                                             │
+                    │    nombre: "Panama"                                         │
+                    │    continente: "America Central"                            │
+                    └─────────────────────────────────────────────────────────────┘
+```
+
+### 13.1 Reference URI Format & Architecture
+The standard Jettra reference pointer follows the canonical URI scheme:
+```
+jref://[node@][ENGINE:]database/entityId
+```
+
+| Component | Description | Example |
+| :--- | :--- | :--- |
+| `node@` *(optional)* | Distributed cluster node hostname or ID | `node-01@` (omitted for local cluster instance) |
+| `ENGINE:` *(optional)* | Target engine (`DOCUMENT`, `RECORDS`, `VECTOR`, `GRAPH`, `TIMESERIES`, etc.) | `RECORDS:`, `VECTOR:` (defaults to `DOCUMENT`) |
+| `database` | Target database namespace | `geo_db`, `hr_db`, `ai_models` |
+| `entityId` | Target document / object primary key | `PAIS_PA`, `emp_101`, `face_vec_42` |
+
+### 13.2 JSON Representation & Deep Dereferencing
+References can be stored as inline URI strings or as rich structured reference objects with automatic dereferencing (`$jref`):
+
+```json
+{
+  "id": "emp_101",
+  "nombre": "Carlos Mendez",
+  "cargo": "Senior Distributed Systems Engineer",
+  "pais": {
+    "$jref": "jref://DOCUMENT:geo_db/PAIS_PA",
+    "_resolved": {
+      "codigo": "PA",
+      "nombre": "Panama",
+      "moneda": "USD / PAB"
+    }
+  },
+  "biometria": "jref://VECTOR:biometric_db/face_vec_carlos"
+}
+```
+
+### 13.3 Java 25 Driver Usage
+```java
+JettraClient client = new JettraClient("localhost", 50050);
+client.connect();
+client.login("admin", "admin123");
+
+// 1. Create a reference pointer
+JettraReference ref = client.createRef("DOCUMENT", "geo_db", "PAIS_PA");
+System.out.println("Reference URI: " + ref.toUri()); // jref://DOCUMENT:geo_db/PAIS_PA
+
+// 2. Direct O(1) Resolution
+String paisJson = client.resolveRef(ref);
+System.out.println("Loaded Country: " + paisJson);
+```
+
+### 13.4 Python Driver Usage
+```python
+from jettra_driver import JettraClient
+
+client = JettraClient("localhost", 50050)
+client.connect()
+client.login("admin", "admin123")
+
+# 1. Create and resolve cross-engine pointer
+ref = client.create_ref(engine="DOCUMENT", db="geo_db", entity_id="PAIS_PA")
+pais_data = client.resolve_ref(ref)
+print("Resolved Country:", pais_data)
+```
+
+### 13.5 Go Driver Usage
+```go
+client := jettra_driver.NewClient("localhost", 50050)
+client.Connect()
+client.Login("admin", "admin123")
+
+// 1. Direct resolution of cross-engine URI
+countryJSON, err := client.ResolveRef("jref://DOCUMENT:geo_db/PAIS_PA")
+if err == nil {
+    fmt.Println("Resolved Country:", countryJSON)
+}
+```
+
+### 13.6 Interactive Shell Commands (`JettraStoreShell`)
+```bash
+# Direct resolution of cross-engine reference URI
+jettra> ref resolve jref://DOCUMENT:geo_db/PAIS_PA
+Resolved Reference [jref://DOCUMENT:geo_db/PAIS_PA]:
+{"codigo": "PA", "nombre": "Panama", "continente": "America"}
+
+# Generate reference pointer URI and direct storage key
+jettra> ref create RECORDS hr_db emp_101
+Generated Reference URI: jref://RECORDS:hr_db/emp_101
+Direct Storage Key:      rec:hr_db:emp_101
+```
+
+---
+
 # Appendix B: JVM 25, Generational ZGC & Compact Object Headers Tuning
 
 ### Production JVM Launch Command

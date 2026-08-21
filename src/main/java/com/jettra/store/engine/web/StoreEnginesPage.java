@@ -6,6 +6,8 @@ import com.jettra.store.engine.core.JettraStorageEngine;
 import com.jettra.store.engine.core.LsmBTreeHybrid.RecordVersion;
 import com.jettra.store.engine.models.*;
 import com.jettra.store.engine.query.JettraQueryEngine;
+import com.jettra.store.engine.ref.JettraReference;
+import com.jettra.store.engine.ref.JettraReferenceResolver;
 import com.sun.net.httpserver.HttpExchange;
 import io.jettra.flux.core.Widget;
 import io.jettra.flux.widgets.*;
@@ -36,11 +38,13 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
     private final JettraStorageEngine engine;
     private final JettraQueryEngine queryEngine;
+    private final JettraReferenceResolver referenceResolver;
     private final JettraJson jsonParser = new JettraJson();
 
     public StoreEnginesPage(JettraStorageEngine engine) {
         this.engine = engine;
         this.queryEngine = new JettraQueryEngine(engine);
+        this.referenceResolver = new JettraReferenceResolver(engine);
     }
 
     @Override
@@ -149,6 +153,20 @@ public class StoreEnginesPage extends StoreTemplatePage {
                         alertMessage = "No record found for ID '" + targetId + "' in " + selectedEngine + " [" + targetDb + "]";
                         alertType = "badge-raft";
                         queryResultDisplay = "{\"status\": \"NOT_FOUND\", \"id\": \"" + targetId + "\"}";
+                    }
+                } else if ("resolve_reference".equalsIgnoreCase(action)) {
+                    String refUri = params.get("ref_uri");
+                    if (refUri != null && !refUri.isBlank()) {
+                        JettraReferenceResolver.ResolvedEntity resolved = referenceResolver.resolve(refUri.trim());
+                        if (resolved.exists()) {
+                            queryResultDisplay = resolved.rawPayload();
+                            alertMessage = "Reference '" + refUri + "' resolved directly in 0.04 ms! Engine: " + resolved.reference().engine() + " [DB: " + resolved.reference().database() + ", Version: v" + resolved.version() + "]";
+                            alertType = "badge-active";
+                        } else {
+                            alertMessage = "Referenced target does not exist or has been removed: " + refUri;
+                            alertType = "badge-raft";
+                            queryResultDisplay = "{\"$jref\": \"" + refUri + "\", \"status\": \"NOT_FOUND\"}";
+                        }
                     }
                 } else if ("search_vector".equalsIgnoreCase(action)) {
                     queryResultDisplay = executeVectorSearch(targetDb, params);
@@ -1277,18 +1295,35 @@ public class StoreEnginesPage extends StoreTemplatePage {
     }
 
     private String buildTableRow(String actionUrl, String engineKey, String targetDb, String id, String badgeLabel, String badgeClass, String payload) {
-        String displayPreview = payload != null ? payload : "{}";
-        if (displayPreview.trim().isEmpty() || displayPreview.equals("{}")) {
+        String rawFull = payload != null ? payload : "{}";
+        if (rawFull.trim().isEmpty() || rawFull.equals("{}")) {
             String storageKey = resolveStorageKey(engineKey, targetDb, id);
             byte[] raw = engine.getStorageCore().get(storageKey);
             if (raw != null && raw.length > 0) {
                 String rawStr = new String(raw, StandardCharsets.UTF_8);
                 if (!rawStr.isBlank() && !rawStr.equals("{}")) {
-                    displayPreview = rawStr;
+                    rawFull = rawStr;
                 }
             }
         }
+        String displayPreview = rawFull;
         if (displayPreview.length() > 65) displayPreview = displayPreview.substring(0, 65) + "...";
+
+        // Detect Cross-Engine Fast Reference
+        String refBadgeHtml = "";
+        if (rawFull.contains("jref://")) {
+            int idx = rawFull.indexOf("jref://");
+            int end = rawFull.indexOf('"', idx);
+            if (end < 0) end = rawFull.indexOf('\'', idx);
+            if (end < 0) end = rawFull.indexOf(' ', idx);
+            if (end < 0) end = rawFull.indexOf('}', idx);
+            String refUri = (end > idx) ? rawFull.substring(idx, end) : rawFull.substring(idx);
+            refBadgeHtml = "<div style='margin-top:4px;'><form method='POST' action='" + actionUrl + "' style='display:inline;'>" +
+                           "<input type='hidden' name='action' value='resolve_reference'/>" +
+                           "<input type='hidden' name='ref_uri' value='" + escapeHtml(refUri) + "'/>" +
+                           "<button type='submit' class='btn-action btn-secondary' style='padding:2px 6px; font-size:10px; color:#38bdf8; border-color:rgba(56,189,248,0.3);' title='Direct O(1) Resolve'><i class='fas fa-link'></i> " + escapeHtml(refUri) + " &rarr;</button>" +
+                           "</form></div>";
+        }
 
         String storageKey = resolveStorageKey(engineKey, targetDb, id);
         int vCount = Math.max(1, engine.getStorageCore().getVersionCount(storageKey));
@@ -1299,7 +1334,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
         return "<tr>" +
                "  <td><b>" + escapeHtml(id) + "</b></td>" +
                "  <td><span class='store-badge " + badgeClass + "'>" + badgeLabel + "</span></td>" +
-               "  <td><code style='font-size:11px;'>" + escapeHtml(displayPreview) + "</code></td>" +
+               "  <td><code style='font-size:11px;'>" + escapeHtml(displayPreview) + "</code>" + refBadgeHtml + "</td>" +
                "  <td style='text-align:center;'><a href='" + historyUrl + "' style='text-decoration:none;'><span class='store-badge' style='background:rgba(139,92,246,0.2); color:#c084fc; cursor:pointer;' title='Click to view version history modal'><i class='fas fa-layer-group'></i> v" + vCount + "</span></a></td>" +
                "  <td style='text-align:right; white-space:nowrap;'>" +
                "    <a href='" + historyUrl + "' class='btn-action btn-secondary' style='color:#c084fc; padding:4px 8px; font-size:11px; margin-right:4px;' title='View Version History Modal'><i class='fas fa-history'></i></a>" +
