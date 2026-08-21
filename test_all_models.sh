@@ -33,8 +33,8 @@ fi
 
 echo "Token obtained: $TOKEN"
 
-# Testing all 8 models
-MODELS=("document" "vector" "graph" "timeseries" "column" "keyvalue" "geospatial" "object")
+# Testing all 9 models
+MODELS=("document" "vector" "graph" "timeseries" "column" "keyvalue" "geospatial" "object" "records")
 
 # Payloads for POST
 declare -A PAYLOADS
@@ -47,6 +47,7 @@ PAYLOADS=(
   ["keyvalue"]="raw_string_value"
   ["geospatial"]='{"lat":10.0, "lon":20.0}'
   ["object"]='{"state":"active"}'
+  ["records"]='{"_recordClass":"com.jettra.model.PersonRecord", "components":{"id":"123456", "name":"Alice", "age":30}}'
 )
 
 for MODEL in "${MODELS[@]}"; do

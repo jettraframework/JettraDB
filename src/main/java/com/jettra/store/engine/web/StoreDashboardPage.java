@@ -72,8 +72,8 @@ public class StoreDashboardPage extends StoreTemplatePage {
 
         // Multi-Model Database Engines Section
         Widget enginesHeader = Row.of(
-            Paragraph.of("<h2 style='margin: 0; font-size: 20px; font-weight: 600;'><i class='fas fa-database' style='color:#38bdf8; margin-right:8px;'></i> Supported Database Engines (8 Multi-Models)</h2>"),
-            Span.of("All 8 Active").modifier(new io.jettra.flux.core.Modifier().cssClass("store-badge badge-active"))
+            Paragraph.of("<h2 style='margin: 0; font-size: 20px; font-weight: 600;'><i class='fas fa-database' style='color:#38bdf8; margin-right:8px;'></i> Supported Database Engines (9 Multi-Models)</h2>"),
+            Span.of("All 9 Active").modifier(new io.jettra.flux.core.Modifier().cssClass("store-badge badge-active"))
         ).modifier(new io.jettra.flux.core.Modifier().style("justify-content: space-between; align-items: center; margin-bottom: 16px; margin-top: 12px;"));
 
         Widget docEngineCard = createEngineSummaryCard("DOCUMENT", "fas fa-file-alt", "#3b82f6", "Document Store", "JSON / BSON document store with collection partitioning, compound indexing, and schema-free queries.");
@@ -84,10 +84,11 @@ public class StoreDashboardPage extends StoreTemplatePage {
         Widget kvEngineCard = createEngineSummaryCard("KEYVALUE", "fas fa-key", "#10b981", "Key-Value Store", "Low-latency key-value engine backed by an in-memory LSM MemTable and WAL for instant lookups.");
         Widget geoEngineCard = createEngineSummaryCard("GEOSPATIAL", "fas fa-globe-americas", "#14b8a6", "Geospatial GIS", "2D spatial coordinates engine with bounding box queries and Haversine geodesic radius calculations.");
         Widget objectEngineCard = createEngineSummaryCard("OBJECT", "fas fa-archive", "#a855f7", "Object & Binary Blob", "Large binary objects, file payloads, and serialized byte stream persistence.");
+        Widget recordsEngineCard = createEngineSummaryCard("RECORDS", "fas fa-id-card", "#f43f5e", "Java Records Store", "High-density immutable Java records storage with schema inspection, component validation, and field projections.");
 
         Widget enginesGrid = Div.of(
             docEngineCard, vectorEngineCard, graphEngineCard, timeSeriesCard,
-            columnEngineCard, kvEngineCard, geoEngineCard, objectEngineCard
+            columnEngineCard, kvEngineCard, geoEngineCard, objectEngineCard, recordsEngineCard
         ).modifier(new io.jettra.flux.core.Modifier().cssClass("engine-grid"));
 
         // Bottom Operations & Client Info Section

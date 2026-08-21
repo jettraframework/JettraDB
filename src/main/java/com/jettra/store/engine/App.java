@@ -9,6 +9,7 @@ import com.jettra.store.engine.models.ColumnEngine;
 import com.jettra.store.engine.models.KeyValueEngine;
 import com.jettra.store.engine.models.GeospatialEngine;
 import com.jettra.store.engine.models.ObjectEngine;
+import com.jettra.store.engine.models.RecordsEngine;
 import com.jettra.store.engine.server.JettraServerOrchestrator;
 import com.jettra.store.engine.core.BackupManager;
 import java.nio.file.Path;
@@ -60,6 +61,7 @@ public class App {
         storageEngine.registerEngine("KEYVALUE", new KeyValueEngine(storageEngine));
         storageEngine.registerEngine("GEOSPATIAL", new GeospatialEngine(storageEngine));
         storageEngine.registerEngine("OBJECT", new ObjectEngine(storageEngine));
+        storageEngine.registerEngine("RECORDS", new RecordsEngine(storageEngine));
         
         boolean autoRestore = Boolean.parseBoolean(props.getProperty("store.restore.auto", "false"));
         if (autoRestore) {

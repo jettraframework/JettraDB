@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import com.jettra.store.engine.models.*;
 
 public class ModelRestController implements HttpHandler {
@@ -72,6 +73,13 @@ public class ModelRestController implements HttpHandler {
                     case "OBJECT":
                         ((ObjectEngine) storageEngine.getEngine(modelType)).saveObject(namespace, id, "Unknown", gson.fromJson(body, JsonObject.class));
                         break;
+                    case "RECORDS":
+                        JsonObject recBody = gson.fromJson(body, JsonObject.class);
+                        String rClass = recBody.has("_recordClass") ? (String) recBody.get("_recordClass") : (recBody.has("_class") ? (String) recBody.get("_class") : "java.lang.Record");
+                        JsonObject rComps = recBody.has("components") && recBody.get("components") instanceof JsonObject ? (JsonObject) recBody.get("components") : recBody;
+                        JsonObject rSchema = recBody.has("_schema") && recBody.get("_schema") instanceof JsonObject ? (JsonObject) recBody.get("_schema") : null;
+                        ((RecordsEngine) storageEngine.getEngine(modelType)).saveRecord(namespace, id, rClass, rComps, rSchema);
+                        break;
                     case "DOCUMENT":
                     default:
                         ((DocumentEngine) storageEngine.getEngine("DOCUMENT")).insert(namespace, id, gson.fromJson(body, JsonObject.class));
@@ -95,6 +103,22 @@ public class ModelRestController implements HttpHandler {
                     case "KEYVALUE": result = ((KeyValueEngine) storageEngine.getEngine(modelType)).get(namespace, id); break;
                     case "GEOSPATIAL": result = ((GeospatialEngine) storageEngine.getEngine(modelType)).getLocation(namespace, id); break;
                     case "OBJECT": result = ((ObjectEngine) storageEngine.getEngine(modelType)).getObject(namespace, id); break;
+                    case "RECORDS":
+                        String query = exchange.getRequestURI().getQuery();
+                        if (query != null && query.contains("fields=")) {
+                            String[] fParams = query.split("&");
+                            List<String> fList = new java.util.ArrayList<>();
+                            for (String p : fParams) {
+                                if (p.startsWith("fields=")) {
+                                    String[] fArray = p.substring(7).split(",");
+                                    for (String f : fArray) fList.add(f.trim());
+                                }
+                            }
+                            result = ((RecordsEngine) storageEngine.getEngine(modelType)).projectFields(namespace, id, fList);
+                        } else {
+                            result = ((RecordsEngine) storageEngine.getEngine(modelType)).getRecord(namespace, id);
+                        }
+                        break;
                     case "DOCUMENT": default: result = ((DocumentEngine) storageEngine.getEngine("DOCUMENT")).get(namespace, id); break;
                 }
                 
@@ -106,6 +130,27 @@ public class ModelRestController implements HttpHandler {
                 } else {
                     exchange.sendResponseHeaders(404, -1);
                 }
+            } catch (Exception e) {
+                exchange.sendResponseHeaders(500, -1);
+            }
+        } else if ("DELETE".equals(method)) {
+            try {
+                switch (modelType) {
+                    case "RECORDS":
+                        ((RecordsEngine) storageEngine.getEngine(modelType)).deleteRecord(namespace, id);
+                        break;
+                    case "OBJECT":
+                        ((ObjectEngine) storageEngine.getEngine(modelType)).deleteObject(namespace, id);
+                        break;
+                    case "KEYVALUE":
+                        ((KeyValueEngine) storageEngine.getEngine(modelType)).delete(namespace, id);
+                        break;
+                    case "DOCUMENT":
+                    default:
+                        ((DocumentEngine) storageEngine.getEngine("DOCUMENT")).delete(namespace, id);
+                        break;
+                }
+                exchange.sendResponseHeaders(204, -1);
             } catch (Exception e) {
                 exchange.sendResponseHeaders(500, -1);
             }

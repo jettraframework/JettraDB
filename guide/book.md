@@ -27,7 +27,7 @@
   - [5.1 High-Density `Dockerfile` (Liberica JRE 25 Musl)](#51-high-density-dockerfile-liberica-jre-25-musl)
   - [5.2 Production 3-Node `docker-compose.yml`](#52-production-3-node-docker-composeyml)
   - [5.3 Container Lifecycle & Operational Commands](#53-container-lifecycle--operational-commands)
-- [Chapter 6: The 8 Multi-Model Database Engines & Exhaustive APIs](#chapter-6-the-8-multi-model-database-engines--exhaustive-apis)
+- [Chapter 6: The 9 Multi-Model Database Engines & Exhaustive APIs](#chapter-6-the-9-multi-model-database-engines--exhaustive-apis)
   - [6.1 Document Engine (JSON / BSON / NoSQL)](#61-document-engine-json--bson--nosql)
   - [6.2 Vector Engine (AI Embeddings, Cosine Similarity & ANN)](#62-vector-engine-ai-embeddings-cosine-similarity--ann)
   - [6.3 Graph Engine (Vertices, Edges & Deep Traversal)](#63-graph-engine-vertices-edges--deep-traversal)
@@ -36,6 +36,7 @@
   - [6.6 KeyValue Engine (MemTable Cache & Atomic Counters)](#66-keyvalue-engine-memtable-cache--atomic-counters)
   - [6.7 Geospatial Engine (2D Coordinates, GIS Layers & Haversine Distance)](#67-geospatial-engine-2d-coordinates-gis-layers--haversine-distance)
   - [6.8 Object Engine (Binary BLOBs, Chunked Blocks & Media Streams)](#68-object-engine-binary-blobs-chunked-blocks--media-streams)
+  - [6.9 Records Engine (Java 25 Records, Component Validation & Schema Reflection)](#69-records-engine-java-25-records-component-validation--schema-reflection)
 - [Chapter 7: Aggregations Pipeline & Real-Time Analytics](#chapter-7-aggregations-pipeline--real-time-analytics)
   - [7.1 Pipeline Stages & Accumulator Operators](#71-pipeline-stages--accumulator-operators)
   - [7.2 Aggregations via Java Driver & High-Level Methods](#72-aggregations-via-java-driver--high-level-methods)
@@ -68,7 +69,7 @@
 
 # Chapter 1: Introduction, Architecture & JVM 25 Optimizations
 
-`JettraStoreEngine` is an autonomous, high-density, multi-model storage engine engineered natively in Java 25. It unifies 8 distinct operational database models over a single, resilient storage core combining Log-Structured Merge Trees (LSM) and high-speed B-Trees.
+`JettraStoreEngine` is an autonomous, high-density, multi-model storage engine engineered natively in Java 25. It unifies 9 distinct operational database models over a single, resilient storage core combining Log-Structured Merge Trees (LSM) and high-speed B-Trees.
 
 ```mermaid
 graph TD
@@ -77,7 +78,7 @@ graph TD
     NetLayer --> GuiPort["JettraFlux Web Console (50050)"]
     NetLayer --> GrpcPort["Raft Consensus & gRPC (50051)"]
     
-    subgraph MultiModelLayer["Multi-Model Engines Layer"]
+    subgraph MultiModelLayer["Multi-Model Engines Layer (9 Engines)"]
         DocumentEngine["1. Document Engine (JSON / NoSQL)"]
         VectorEngine["2. Vector Engine (AI Embeddings)"]
         GraphEngine["3. Graph Engine (Vertices & Edges)"]
@@ -86,6 +87,7 @@ graph TD
         KeyValueEngine["6. KeyValue Engine (MemTable Cache)"]
         GeospatialEngine["7. Geospatial Engine (2D GIS)"]
         ObjectEngine["8. Object Engine (BLOBs & Streams)"]
+        RecordsEngine["9. Records Engine (Java 25 Records)"]
     end
     
     RestPort --> MultiModelLayer
@@ -700,6 +702,58 @@ curl -X POST http://localhost:8086/api/model/object/save \
 
 ---
 
+## 6.9 Records Engine (Java 25 Records, Component Validation & Schema Reflection)
+- **Use Case**: Native storage for immutable Java Records (`java.lang.Record`), domain event payloads, structural data transfer objects (DTOs), and schema-reflected entities with high-density Compact Object Headers.
+- **Specific Object Representation**: Compact key-value record (`rec:collection:recordId`) storing:
+  - `_recordClass`: Fully-qualified class name of the canonical Java Record.
+  - `_timestamp`: Monotonic revision timestamp.
+  - `_version`: Schema version number.
+  - `_schema`: Component name and type dictionary (e.g. `{"id": "String", "salary": "Double"}`).
+  - `components`: JSON map of record component values.
+- **Administrative Operations**:
+  - Insert / Save Record (`collection`, `id`, `recordClass`, `components`, optional `_schema`)
+  - Query Record by ID
+  - Project specific component fields (`?fields=name,salary`)
+  - Filter records by component field predicate
+  - Partial component field update
+  - Delete Record (Raft quorum tombstone)
+- **REST Endpoints**:
+  - `POST   /api/model/records/{collection}/{id}` : Store or update a Java record.
+  - `GET    /api/model/records/{collection}/{id}` : Retrieve full record object.
+  - `GET    /api/model/records/{collection}/{id}?fields=f1,f2` : Project specific fields.
+  - `DELETE /api/model/records/{collection}/{id}` : Delete record.
+
+```bash
+# 1. Insert a typed Java Record into the 'employees' collection
+curl -X POST http://localhost:8086/api/model/records/employees/emp_9001 \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "_recordClass": "com.enterprise.model.EmployeeRecord",
+    "components": {
+      "id": "emp_9001",
+      "fullName": "Carlos Mendez",
+      "department": "Engineering",
+      "active": true,
+      "salary": 85000.00
+    }
+  }'
+
+# 2. Retrieve the complete record
+curl -X GET http://localhost:8086/api/model/records/employees/emp_9001 \
+  -H "Authorization: Bearer $TOKEN"
+
+# 3. Retrieve only projected fields (fullName, department)
+curl -X GET "http://localhost:8086/api/model/records/employees/emp_9001?fields=fullName,department" \
+  -H "Authorization: Bearer $TOKEN"
+
+# 4. Delete record
+curl -X DELETE http://localhost:8086/api/model/records/employees/emp_9001 \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+---
+
 # Chapter 7: Aggregations Pipeline & Real-Time Analytics
 
 ### 7.1 Pipeline Stages & Accumulator Operators
@@ -772,59 +826,58 @@ mongo db.users.aggregate([{$match: {city: 'Panama'}}, {$group: {_id: null, avgAg
 </dependency>
 ```
 
-#### Typed Repository with Immutable Records
+#### Typed Repository with Immutable Java 25 Records
 ```java
-import com.jettra.driver.JettraClient;
+import com.jettra.driver.java.JettraClient;
 import com.jettra.driver.java.JettraRepository;
 import java.util.Optional;
 
-public record Persona(String id, String nombre, int edad) {}
+public record Persona(String id, String nombre, int edad, String role) {}
 
 public class Main {
-    public static void main(String[] args) {
-        JettraClient client = JettraClient.builder()
-            .host("localhost").port(8086)
-            .credentials("admin", "admin").build();
+    public static void main(String[] args) throws Exception {
+        JettraClient client = new JettraClient("localhost", 8086);
+        client.connect();
+        client.login("admin", "admin");
             
-        JettraRepository<Persona> repo = client.repository(Persona.class, "DOCUMENT", "personas");
+        // Option A: Using recordRepository directly
+        JettraRepository<Persona> repo = client.recordRepository(Persona.class, "personas");
         
-        // Insert
-        repo.save("P001", new Persona("P001", "Alice", 28));
+        // Save Java Record
+        repo.save("P001", new Persona("P001", "Alice", 28, "Architect"));
         
-        // Find
+        // Find by ID and unwrap directly into Persona record
         Optional<Persona> p = repo.findById("P001");
-        p.ifPresent(persona -> System.out.println("Retrieved: " + persona.nombre()));
+        p.ifPresent(persona -> System.out.println("Retrieved: " + persona.nombre() + " (" + persona.role() + ")"));
+
+        // Option B: Using Fluent Records API
+        client.records().collection("personas").insert("P002", "{\"_recordClass\":\"Persona\",\"components\":{\"nombre\":\"Bob\",\"edad\":35}}");
+        String recJson = client.records().collection("personas").get("P002");
+        System.out.println("Raw Record: " + recJson);
     }
 }
 ```
 
 #### Fluent Query API
 ```java
-client.database("ecommerce").collection("users")
-      .filter(eq("status", "ACTIVE"))
-      .sort(asc("createdAt"))
-      .limit(50)
-      .execute();
+client.document().collection("users").insert("U101", "{\"status\":\"ACTIVE\",\"score\":95}");
+String userDoc = client.document().collection("users").get("U101");
 ```
 
 ### 8.2 Multi-Model ACID Transactions in Java
 
-`JettraStoreEngine` allows combining document writes and KV cache decrements in an atomic transaction block:
+`JettraStoreEngine` allows combining document writes, record insertions, and KV cache updates:
 
 ```java
-client.transaction(tx -> {
-    Factura factura = new Factura("F-100", "C-500", List.of(
-        new LineaFactura("A-1", 2, 50.0),
-        new LineaFactura("A-2", 1, 100.0)
-    ));
-    
-    // 1. Save Document Invoice
-    tx.database("sales").collection("facturas").insert(factura);
-    
-    // 2. Decrement inventory in KeyValue engine
-    tx.database("sales").kv("stock").decrement("A-1", 2);
-    tx.database("sales").kv("stock").decrement("A-2", 1);
-});
+// Save invoice document
+client.document().collection("facturas").insert("F-100", "{\"total\": 150.00}");
+
+// Save immutable audit record in RECORDS engine
+record AuditRecord(String txId, String user, long timestamp) {}
+client.saveRecord("audit_logs", "TX-9901", new AuditRecord("TX-9901", "admin", System.currentTimeMillis()));
+
+// Update KeyValue cache
+client.keyvalue().collection("stats").insert("last_tx", "TX-9901");
 ```
 
 ### 8.3 Python Driver (`jettra-driver`)
@@ -834,18 +887,30 @@ pip install jettra-driver
 ```
 
 ```python
-from jettra import JettraClient
+from jettra_driver.client import JettraClient
+from dataclasses import dataclass
 
-client = JettraClient(host="localhost", port=8086, username="admin", password="admin")
-db = client.database("library_db")
-books = db.collection("books")
+@dataclass
+class Persona:
+    id: str
+    nombre: str
+    edad: int
 
-# Insert
-books.insert({"id": "B101", "title": "Clean Code", "author": "Robert C. Martin"})
+client = JettraClient(host="localhost", port=8086)
+client.connect()
+client.login("admin", "admin")
 
-# Find
-book = books.find_by_id("B101")
-print("Found book:", book["title"])
+# 1. Native Records Engine helper
+client.save_record("personas", "P001", {"id": "P001", "nombre": "Alice", "edad": 28}, record_class="Persona")
+
+record_data = client.get_record("personas", "P001")
+print("Retrieved record:", record_data)
+
+# 2. Typed Record Repository
+repo = client.record_repository(Persona, collection="personas")
+repo.save("P002", Persona(id="P002", nombre="Bob", edad=32))
+persona_obj = repo.find_by_id("P002")
+print("Found person:", persona_obj.nombre, persona_obj.edad)
 ```
 
 ### 8.4 Go Driver (`github.com/jettra/jettra-driver-go`)
@@ -859,25 +924,32 @@ package main
 
 import (
     "fmt"
-    "github.com/jettra/jettra-driver-go/jettra"
+    jettra "github.com/jettra/jettra-driver-go"
 )
 
-type Book struct {
+type PersonaRecord struct {
     ID     string `json:"id"`
-    Title  string `json:"title"`
-    Author string `json:"author"`
+    Nombre string `json:"nombre"`
+    Edad   int    `json:"edad"`
 }
 
 func main() {
-    client := jettra.NewClient("http://localhost:8086", "admin", "admin")
-    col := client.Database("library_db").Collection("books")
+    client := jettra.NewJettraClient("localhost", 8086)
+    client.Connect()
+    client.Login("admin", "admin")
 
-    b := Book{ID: "B1", Title: "Distributed Systems", Author: "Tanenbaum"}
-    col.Insert(b)
+    // 1. Save and Get Record
+    record := PersonaRecord{ID: "P001", Nombre: "Alice", Edad: 28}
+    client.SaveRecord("personas", "P001", record)
 
-    var result Book
-    col.FindByID("B1", &result)
-    fmt.Printf("Retrieved book: %s by %s\n", result.Title, result.Author)
+    var retrieved PersonaRecord
+    client.GetRecord("personas", "P001", &retrieved)
+    fmt.Printf("Retrieved Record in Go: %+v\n", retrieved)
+
+    // 2. Fluent Records API
+    client.Records().Collection("personas").Insert("P002", `{"id":"P002","nombre":"Bob","edad":35}`)
+    res, _ := client.Records().Collection("personas").Get("P002")
+    fmt.Println("Raw JSON:", res)
 }
 ```
 
@@ -885,7 +957,7 @@ func main() {
 
 # Chapter 9: End-to-End Enterprise Domain: Multi-Model E-Invoicing System
 
-This chapter details the complete e-invoicing (`facturacion`) domain model mapped simultaneously across all 8 multi-model engines.
+This chapter details the complete e-invoicing (`facturacion`) domain model mapped simultaneously across all 9 multi-model engines.
 
 ### 9.1 Domain Entity Definitions with Immutable Java Records
 
@@ -988,6 +1060,7 @@ public record Factura(
 | **Locks de Firma Electrónica** | `KEYVALUE` | `kv:signing_locks:{id}` | Ultra-low latency memory locks during signing. |
 | **Geolocalización de Entregas** | `GEOSPATIAL` | `geo:delivery_points:{id}` | GPS validation against jurisdictional tax boundaries. |
 | **XML Firmado & PDFs (BLOBs)** | `OBJECT` | `obj:invoices_pdf:{id}` | Cryptographic block storage for signed receipts. |
+| **Audit Trails & DTOs (Records)** | `RECORDS` | `rec:audit_trail:{id}` | Immutable Java 25 record structures with schema verification. |
 
 ---
 
@@ -1022,8 +1095,8 @@ The Web Management Console runs natively on `jettra.gui.port` (default `50050`) 
 - Modern dark-mode glassmorphism styling with real-time JVM metrics, disk allocation, and consensus telemetry.
 
 ### 11.2 Interactive Database & Type-Specific Object Management Console (`/engines`)
-Enables direct visual administration of databases, collections, and specific typed objects across all 8 multi-model engines without forcing everything into generic JSON textareas:
-- **Database / Namespace Provisioning**: Dynamic switcher and provisioner for collections, namespaces, graph spaces, IoT measurement feeds, and storage buckets.
+Enables direct visual administration of databases, collections, and specific typed objects across all 9 multi-model engines without forcing everything into generic JSON textareas:
+- **Database / Namespace Provisioning**: Dynamic switcher and provisioner for collections, namespaces, graph spaces, IoT measurement feeds, storage buckets, and record namespaces.
 - **Engine-Specific Object Creation Forms**:
   - **`DOCUMENT`**: Document ID, Java Schema (`_class`) validation binding, and structured JSON fields.
   - **`KEYVALUE`**: Key identifier, Value type selector (Plain String, Numeric, Raw JSON), and raw string data.
@@ -1033,13 +1106,15 @@ Enables direct visual administration of databases, collections, and specific typ
   - **`COLUMN`**: Row key and tabular column field vectors (`key=value` or JSON).
   - **`GEOSPATIAL`**: Location ID, location label, decimal Latitude/Longitude coordinates, and GIS metadata.
   - **`OBJECT`**: Object key / filename, MIME content-type, Java wrapper class, and binary/Base64 stream payload.
+  - **`RECORDS`**: Record ID, Java Record Class name (e.g. `com.jettra.model.PersonRecord`), and JSON components with automatic schema reflection.
 - **Engine-Specific Query & Search Inspector**:
   - Direct Primary Key lookups across all engines.
   - **Vector Cosine Similarity Search**: Query vector `float[]` input with Top-K limit calculation.
   - **Geospatial Haversine Calculator**: Real-time geodesic distance computation in Kilometers and Miles between coordinates.
+  - **Records Field Projections**: Filter and project specific record component fields.
 - **Live Database Records / Objects Explorer**:
   - Interactive table listing all stored keys and objects within the active database/namespace.
-  - Type-specific badges and formatted payload previews.
+  - Type-specific badges (`RECORD (Java 25)`, `DOCUMENT (JSON)`, `KEY-VALUE STRING`, etc.) and formatted payload previews.
   - One-click deletion with Raft consensus synchronization and tombstone persistence.
 
 ### 11.3 User & Per-Database Security Provisioning (`/users`)

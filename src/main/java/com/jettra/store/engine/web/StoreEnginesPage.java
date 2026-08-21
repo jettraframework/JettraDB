@@ -139,6 +139,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
             case "COLUMN" -> "analytics_olap";
             case "GEOSPATIAL" -> "gis_layers";
             case "OBJECT" -> "media_bucket";
+            case "RECORDS" -> "records_store";
             default -> "app_db";
         };
     }
@@ -246,6 +247,15 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     objEngine.saveObject(db, targetId, className, state);
                 }
             }
+            case "RECORDS" -> {
+                RecordsEngine recEngine = (RecordsEngine) engine.getEngine("RECORDS");
+                if (recEngine != null) {
+                    String recordClass = params.getOrDefault("rec_class", "com.jettra.model.PersonRecord");
+                    String payload = params.getOrDefault("rec_payload", "{}");
+                    JsonObject comps = parseJsonOrWrap(payload);
+                    recEngine.saveRecord(db, targetId, recordClass, comps);
+                }
+            }
         }
     }
 
@@ -306,6 +316,13 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 ObjectEngine objEngine = (ObjectEngine) engine.getEngine("OBJECT");
                 if (objEngine != null) {
                     JsonObject res = objEngine.getObject(db, id);
+                    return res != null ? res.toString() : null;
+                }
+            }
+            case "RECORDS" -> {
+                RecordsEngine recEngine = (RecordsEngine) engine.getEngine("RECORDS");
+                if (recEngine != null) {
+                    JsonObject res = recEngine.getRecord(db, id);
                     return res != null ? res.toString() : null;
                 }
             }
@@ -379,6 +396,10 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 ObjectEngine oe = (ObjectEngine) engine.getEngine("OBJECT");
                 if (oe != null) oe.deleteObject(db, id);
             }
+            case "RECORDS" -> {
+                RecordsEngine re = (RecordsEngine) engine.getEngine("RECORDS");
+                if (re != null) re.deleteRecord(db, id);
+            }
         }
     }
 
@@ -427,9 +448,9 @@ public class StoreEnginesPage extends StoreTemplatePage {
     }
 
     private Widget createEngineNavPills(String current) {
-        String[] engines = {"DOCUMENT", "KEYVALUE", "VECTOR", "GRAPH", "TIMESERIES", "COLUMN", "GEOSPATIAL", "OBJECT"};
-        String[] icons = {"fas fa-file-alt", "fas fa-key", "fas fa-project-diagram", "fas fa-share-alt", "fas fa-chart-line", "fas fa-table", "fas fa-globe-americas", "fas fa-archive"};
-        String[] types = {"NoSQL JSON", "KV Cache", "AI Vector ANN", "LPG Graph", "IoT Telemetry", "OLAP Columns", "2D GIS Spatial", "Binary BLOB"};
+        String[] engines = {"DOCUMENT", "KEYVALUE", "VECTOR", "GRAPH", "TIMESERIES", "COLUMN", "GEOSPATIAL", "OBJECT", "RECORDS"};
+        String[] icons = {"fas fa-file-alt", "fas fa-key", "fas fa-project-diagram", "fas fa-share-alt", "fas fa-chart-line", "fas fa-table", "fas fa-globe-americas", "fas fa-archive", "fas fa-id-card"};
+        String[] types = {"NoSQL JSON", "KV Cache", "AI Vector ANN", "LPG Graph", "IoT Telemetry", "OLAP Columns", "2D GIS Spatial", "Binary BLOB", "Java 25 Record"};
 
         StringBuilder sb = new StringBuilder();
         sb.append("<div style='display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; padding: 6px; background: rgba(30, 41, 59, 0.5); border-radius: 12px; border: 1px solid rgba(255,255,255,0.06);'>\n");
@@ -461,6 +482,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
             case "COLUMN" -> "Column Family / Table";
             case "GEOSPATIAL" -> "GIS Layer / Collection";
             case "OBJECT" -> "Storage Bucket";
+            case "RECORDS" -> "Records Collection / Namespace";
             default -> "Database";
         };
 
@@ -626,6 +648,21 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 sb.append("  <label style='font-size:12px; color:#94a3b8; font-weight:600;'>Payload (Base64 / Stream Text)</label>\n");
                 sb.append("  <textarea name='obj_payload' class='form-input' style='height: 60px; font-family: monospace; font-size: 12px;' required>JVBERi0xLjQKJcTl8uXr...[Base64 Stream Payload]...</textarea>\n");
                 sb.append("  <button type='submit' class='btn-action btn-primary' style='margin-top: 10px;'><i class='fas fa-upload'></i> Save Object BLOB</button>\n");
+                sb.append("</form>");
+            }
+            case "RECORDS" -> {
+                sb.append("<h3 style='margin: 0 0 10px 0; font-size: 16px; font-weight: 600;'><i class='fas fa-id-card' style='color:#f43f5e; margin-right:8px;'></i> Store Immutable Java Record</h3>");
+                sb.append("<p style='font-size: 13px; color: #94a3b8; margin-bottom: 14px;'>Persist typed Java records with structural schema reflection and component validation.</p>");
+                sb.append("<form method='POST' action='").append(actionUrl).append("'>\n");
+                sb.append("  <input type='hidden' name='action' value='insert_object' />\n");
+                sb.append("  <input type='hidden' name='target_db' value='").append(targetDb).append("' />\n");
+                sb.append("  <div style='display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px;'>\n");
+                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Record ID</label><input class='form-input' type='text' name='target_id' value='rec_").append(System.currentTimeMillis() % 1000).append("' required /></div>\n");
+                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Record Class</label><input class='form-input' type='text' name='rec_class' value='com.jettra.model.PersonRecord' required /></div>\n");
+                sb.append("  </div>\n");
+                sb.append("  <label style='font-size:12px; color:#94a3b8; font-weight:600;'>Record Components JSON (Fields & Values)</label>\n");
+                sb.append("  <textarea name='rec_payload' class='form-input' style='height: 90px; font-family: monospace; font-size: 12px;' required>{\n  \"id\": \"rec_01\",\n  \"fullName\": \"Alice Monroe\",\n  \"email\": \"alice@enterprise.org\",\n  \"active\": true,\n  \"salary\": 92500.00\n}</textarea>\n");
+                sb.append("  <button type='submit' class='btn-action btn-primary' style='margin-top: 10px;'><i class='fas fa-save'></i> Save Java Record</button>\n");
                 sb.append("</form>");
             }
         }
@@ -859,6 +896,24 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     }
                 }
             }
+            case "RECORDS" -> {
+                RecordsEngine re = (RecordsEngine) engine.getEngine("RECORDS");
+                if (re != null) {
+                    Map<String, JsonObject> recs = re.list(targetDb);
+                    for (Map.Entry<String, JsonObject> entry : recs.entrySet()) {
+                        count++;
+                        String id = entry.getKey();
+                        String preview = entry.getValue() != null ? entry.getValue().toString() : "{}";
+                        if (preview.length() > 65) preview = preview.substring(0, 65) + "...";
+                        sb.append("<tr>");
+                        sb.append("<td><b>").append(id).append("</b></td>");
+                        sb.append("<td><span class='store-badge' style='background:rgba(244,63,94,0.2); color:#fb7185;'>RECORD (Java 25)</span></td>");
+                        sb.append("<td><code style='font-size:11px;'>").append(preview).append("</code></td>");
+                        sb.append("<td>").append(buildDeleteButton(actionUrl, targetDb, id)).append("</td>");
+                        sb.append("</tr>");
+                    }
+                }
+            }
         }
 
         if (count == 0) {
@@ -883,7 +938,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
     private Widget createEngineMatrixTable() {
         return Div.of(
-            Paragraph.of("<h3 style='margin: 0 0 16px 0; font-size: 18px; font-weight: 600;'><i class='fas fa-table' style='color:#38bdf8; margin-right:8px;'></i> All 8 Supported Multi-Model Engines</h3>"),
+            Paragraph.of("<h3 style='margin: 0 0 16px 0; font-size: 18px; font-weight: 600;'><i class='fas fa-table' style='color:#38bdf8; margin-right:8px;'></i> All 9 Supported Multi-Model Engines</h3>"),
             Paragraph.of(
                 "<div class='table-responsive'>\n" +
                 "  <table class='jettra-table'>\n" +
@@ -906,6 +961,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 "      <tr><td><i class='fas fa-table' style='color:#f97316; margin-right:6px;'></i> <b>COLUMN</b></td><td>OLAP Big Data Aggregations</td><td>Column Vectors & Run-Length</td><td>Raft Sync</td><td><code>/api/model/column/*</code></td><td><span class='store-badge badge-active'>ACTIVE</span></td></tr>\n" +
                 "      <tr><td><i class='fas fa-globe-americas' style='color:#14b8a6; margin-right:6px;'></i> <b>GEOSPATIAL</b></td><td>Spatial Coordinates, Radius, GIS</td><td>Geohash / QuadTree</td><td>Raft Sync</td><td><code>/api/model/geospatial/*</code></td><td><span class='store-badge badge-active'>ACTIVE</span></td></tr>\n" +
                 "      <tr><td><i class='fas fa-archive' style='color:#a855f7; margin-right:6px;'></i> <b>OBJECT</b></td><td>Binary BLOBs, Serialized Stream Files</td><td>Chunked Block Store</td><td>Raft Sync</td><td><code>/api/model/object/*</code></td><td><span class='store-badge badge-active'>ACTIVE</span></td></tr>\n" +
+                "      <tr><td><i class='fas fa-id-card' style='color:#f43f5e; margin-right:6px;'></i> <b>RECORDS</b></td><td>Immutable Java 25 Records, Component Validation</td><td>Compact Object Headers (rec:)</td><td>Raft Sync</td><td><code>/api/model/records/*</code></td><td><span class='store-badge badge-active'>ACTIVE</span></td></tr>\n" +
                 "    </tbody>\n" +
                 "  </table>\n" +
                 "</div>"
