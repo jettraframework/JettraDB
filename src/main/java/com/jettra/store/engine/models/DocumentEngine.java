@@ -49,15 +49,15 @@ public class DocumentEngine implements EngineFamily {
     
     // Document Operations
     
-    public String insert(String collection, String documentId, JsonObject document) {
-        return insert(collection, documentId, document, IdMode.MANUAL);
+    public String insert(String database, String collection, String documentId, JsonObject document) {
+        return insert(database, collection, documentId, document, IdMode.MANUAL);
     }
 
-    public String insert(String collection, String documentId, JsonObject document, IdMode idMode) {
+    public String insert(String database, String collection, String documentId, JsonObject document, IdMode idMode) {
         validateDocument(document);
         
-        String resolvedId = IdGenerator.generateId(collection, idMode, documentId);
-        String key = collection + ":" + resolvedId;
+        String resolvedId = IdGenerator.generateId(database + ":" + collection, idMode, documentId);
+        String key = database + ":" + collection + ":" + resolvedId;
         String jsonString = gson.toJson(document);
         
         // 1. Direct Local Storage Core persistence
@@ -73,8 +73,8 @@ public class DocumentEngine implements EngineFamily {
         return resolvedId;
     }
     
-    public JsonObject get(String collection, String documentId) {
-        String key = collection + ":" + documentId;
+    public JsonObject get(String database, String collection, String documentId) {
+        String key = database + ":" + collection + ":" + documentId;
         byte[] payload = engine.getStorageCore().get(key);
         if (payload != null && payload.length > 0) {
             String jsonString = new String(payload, StandardCharsets.UTF_8);
@@ -85,8 +85,8 @@ public class DocumentEngine implements EngineFamily {
         return null;
     }
     
-    public void delete(String collection, String documentId) {
-        String key = collection + ":" + documentId;
+    public void delete(String database, String collection, String documentId) {
+        String key = database + ":" + collection + ":" + documentId;
         // 1. Local delete
         engine.getStorageCore().delete(key, System.currentTimeMillis());
 
@@ -98,9 +98,9 @@ public class DocumentEngine implements EngineFamily {
         }
     }
 
-    public java.util.Map<String, JsonObject> list(String collection) {
+    public java.util.Map<String, JsonObject> list(String database, String collection) {
         java.util.Map<String, JsonObject> docs = new java.util.LinkedHashMap<>();
-        String prefix = collection + ":";
+        String prefix = database + ":" + collection + ":";
         java.util.Map<String, byte[]> raw = engine.getStorageCore().scanPrefix(prefix);
         for (java.util.Map.Entry<String, byte[]> entry : raw.entrySet()) {
             String fullKey = entry.getKey();

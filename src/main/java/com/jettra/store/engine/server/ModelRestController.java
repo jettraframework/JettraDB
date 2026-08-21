@@ -82,7 +82,7 @@ public class ModelRestController implements HttpHandler {
                         break;
                     case "DOCUMENT":
                     default:
-                        ((DocumentEngine) storageEngine.getEngine("DOCUMENT")).insert(namespace, id, gson.fromJson(body, JsonObject.class));
+                        ((DocumentEngine) storageEngine.getEngine("DOCUMENT")).insert(namespace, "default", id, gson.fromJson(body, JsonObject.class));
                         break;
                 }
                 
@@ -119,7 +119,7 @@ public class ModelRestController implements HttpHandler {
                             result = ((RecordsEngine) storageEngine.getEngine(modelType)).getRecord(namespace, id);
                         }
                         break;
-                    case "DOCUMENT": default: result = ((DocumentEngine) storageEngine.getEngine("DOCUMENT")).get(namespace, id); break;
+                    case "DOCUMENT": default: result = ((DocumentEngine) storageEngine.getEngine("DOCUMENT")).get(namespace, "default", id); break;
                 }
                 
                 if (result != null) {
@@ -147,7 +147,7 @@ public class ModelRestController implements HttpHandler {
                         break;
                     case "DOCUMENT":
                     default:
-                        ((DocumentEngine) storageEngine.getEngine("DOCUMENT")).delete(namespace, id);
+                        ((DocumentEngine) storageEngine.getEngine("DOCUMENT")).delete(namespace, "default", id);
                         break;
                 }
                 exchange.sendResponseHeaders(204, -1);

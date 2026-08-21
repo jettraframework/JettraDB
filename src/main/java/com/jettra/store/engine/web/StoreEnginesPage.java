@@ -352,7 +352,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
             case "DOCUMENT" -> {
                 DocumentEngine de = (DocumentEngine) engine.getEngine("DOCUMENT");
                 if (de != null) {
-                    Map<String, JsonObject> items = de.list(targetDb);
+                    Map<String, JsonObject> items = de.list(targetDb, "default");
                     for (Map.Entry<String, JsonObject> entry : items.entrySet()) {
                         String sk = resolveStorageKey(engineKey, targetDb, entry.getKey());
                         int vCount = Math.max(1, engine.getStorageCore().getVersionCount(sk));
@@ -461,7 +461,8 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 DocumentEngine docEngine = (DocumentEngine) engine.getEngine("DOCUMENT");
                 if (docEngine != null) {
                     String jsonPayload = params.getOrDefault("doc_payload", "{}");
-                    docEngine.insert(db, targetId, parseJsonOrWrap(jsonPayload), idMode);
+                    String targetCollection = params.getOrDefault("target_collection", "default");
+                    docEngine.insert(db, targetCollection, targetId, parseJsonOrWrap(jsonPayload), idMode);
                 }
             }
             case "KEYVALUE" -> {
@@ -517,7 +518,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
     private String executeTypeSpecificQuery(String engineName, String db, String id, Map<String, String> params) {
         return switch (engineName) {
-            case "DOCUMENT" -> { DocumentEngine e = (DocumentEngine) engine.getEngine("DOCUMENT"); yield e != null && e.get(db, id) != null ? e.get(db, id).toString() : null; }
+            case "DOCUMENT" -> { DocumentEngine e = (DocumentEngine) engine.getEngine("DOCUMENT"); String col = params.getOrDefault("target_collection", "default"); yield e != null && e.get(db, col, id) != null ? e.get(db, col, id).toString() : null; }
             case "KEYVALUE" -> { KeyValueEngine e = (KeyValueEngine) engine.getEngine("KEYVALUE"); yield e != null ? e.get(db, id) : null; }
             case "VECTOR" -> { VectorEngine e = (VectorEngine) engine.getEngine("VECTOR"); yield e != null && e.getVector(db, id) != null ? e.getVector(db, id).toString() : null; }
             case "GRAPH" -> { GraphEngine e = (GraphEngine) engine.getEngine("GRAPH"); yield e != null && e.getNode(db, id) != null ? e.getNode(db, id).toString() : null; }
@@ -549,7 +550,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
     private void executeTypeSpecificDelete(String engineName, String db, String id, Map<String, String> params) {
         switch (engineName) {
-            case "DOCUMENT" -> { DocumentEngine de = (DocumentEngine) engine.getEngine("DOCUMENT"); if (de != null) de.delete(db, id); }
+            case "DOCUMENT" -> { DocumentEngine de = (DocumentEngine) engine.getEngine("DOCUMENT"); String col = params.getOrDefault("target_collection", "default"); if (de != null) de.delete(db, col, id); }
             case "KEYVALUE" -> { KeyValueEngine ke = (KeyValueEngine) engine.getEngine("KEYVALUE"); if (ke != null) ke.delete(db, id); }
             case "VECTOR" -> { VectorEngine ve = (VectorEngine) engine.getEngine("VECTOR"); if (ve != null) ve.deleteVector(db, id); }
             case "GRAPH" -> { GraphEngine ge = (GraphEngine) engine.getEngine("GRAPH"); if (ge != null) ge.deleteNode(db, id); }
@@ -1254,7 +1255,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
             case "DOCUMENT" -> {
                 DocumentEngine de = (DocumentEngine) engine.getEngine("DOCUMENT");
                 if (de != null) {
-                    Map<String, JsonObject> items = de.list(targetDb);
+                    Map<String, JsonObject> items = de.list(targetDb, "default");
                     for (Map.Entry<String, JsonObject> entry : items.entrySet()) {
                         count++;
                         String id = entry.getKey();

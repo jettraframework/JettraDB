@@ -108,7 +108,7 @@ public class DocumentRestController implements HttpHandler {
         try (InputStream is = exchange.getRequestBody()) {
             String jsonBody = new String(is.readAllBytes(), StandardCharsets.UTF_8);
             JsonObject doc = gson.fromJson(jsonBody, JsonObject.class);
-            String actualId = engine.insert(collection, id, doc, idMode);
+            String actualId = engine.insert(collection, "default", id, doc, idMode);
             
             JsonObject res = new JsonObject();
             res.addProperty("status", "inserted");
@@ -122,12 +122,12 @@ public class DocumentRestController implements HttpHandler {
     private void handleGet(HttpExchange exchange, String collection, String id) throws IOException {
         if (id == null || id.isBlank()) {
             // List all documents in collection
-            var list = engine.list(collection);
+            var list = engine.list(collection, "default");
             sendResponse(exchange, 200, gson.toJson(list));
             return;
         }
 
-        JsonObject doc = engine.get(collection, id);
+        JsonObject doc = engine.get(collection, "default", id);
         if (doc != null) {
             sendResponse(exchange, 200, doc.toString());
         } else {
@@ -191,7 +191,7 @@ public class DocumentRestController implements HttpHandler {
             sendResponse(exchange, 400, "{\"error\":\"Document ID required for deletion\"}");
             return;
         }
-        engine.delete(collection, id);
+        engine.delete(collection, "default", id);
         sendResponse(exchange, 200, "{\"status\":\"deleted\",\"id\":\"" + id + "\"}");
     }
 
