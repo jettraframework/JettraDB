@@ -1,6 +1,9 @@
 package com.jettra.store.engine.web;
 
+import com.jettra.store.engine.core.IdGenerator;
+import com.jettra.store.engine.core.IdGenerator.IdMode;
 import com.jettra.store.engine.core.JettraStorageEngine;
+import com.jettra.store.engine.core.LsmBTreeHybrid.RecordVersion;
 import com.jettra.store.engine.models.*;
 import com.sun.net.httpserver.HttpExchange;
 import io.jettra.flux.core.Widget;
@@ -8,18 +11,23 @@ import io.jettra.flux.widgets.*;
 import io.jettra.core.login.NoLoginRequired;
 import io.jettra.json.JettraJson;
 import io.jettra.json.JsonObject;
+import io.jettra.report.Report;
 import io.jettra.server.JettraServer;
 
+import java.io.File;
+import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
+import java.nio.file.Files;
+import java.util.*;
 import java.util.Map;
-import java.util.Set;
-import java.util.TreeSet;
+import java.util.List;
 
 /**
- * Interactive Type-Specific Database and Object Administrator for all 8 Multi-Model Storage Engines in JettraStoreEngine.
- * Provides specialized management interfaces (not just generic JSON) for Document, KeyValue, Vector, Graph,
- * TimeSeries, Column, Geospatial, and Object engines, with full CRUD, search, inspection and deletion.
+ * Interactive Type-Specific Database and Object Administrator for all 9 Multi-Model Storage Engines in JettraStoreEngine.
+ * Provides specialized management interfaces for Document, KeyValue, Vector, Graph, TimeSeries, Column,
+ * Geospatial, Object, and Records engines, with full CRUD, editing, versioning with diffs and restorations,
+ * real-time filtering, and multi-format export (Excel, CSV, PDF) using JettraReport.
  */
 @NoLoginRequired
 public class StoreEnginesPage extends StoreTemplatePage {
@@ -36,13 +44,29 @@ public class StoreEnginesPage extends StoreTemplatePage {
         return "Multi-Model Engines & Object Administrator - JettraStoreEngine";
     }
 
+    /**
+     * Handles HTTP GET actions such as file export to Excel, CSV, or PDF via JettraReport.
+     */
+    @Override
+    protected boolean onGet(HttpExchange exchange, Map<String, String> params) throws IOException {
+        if (params != null && "export".equalsIgnoreCase(params.get("action"))) {
+            handleExportReport(exchange, params);
+            return true;
+        }
+        return false;
+    }
+
     @Override
     protected Widget buildContent(HttpExchange exchange, Map<String, String> params, String currentTheme) {
         String selectedEngine = params != null && params.containsKey("engine") ? params.get("engine").toUpperCase() : "DOCUMENT";
+        String targetDb = params != null && params.containsKey("target_db") ? params.get("target_db") : getDefaultDbForEngine(selectedEngine);
+        String editId = params != null ? params.get("edit_id") : null;
+        String historyId = params != null ? params.get("view_history") : null;
+        String filterQuery = params != null ? params.get("filter") : "";
+
         String alertMessage = "";
         String alertType = "badge-active";
         String queryResultDisplay = "";
-        String targetDb = params != null && params.containsKey("target_db") ? params.get("target_db") : getDefaultDbForEngine(selectedEngine);
 
         // Handle POST Operations
         if ("POST".equalsIgnoreCase(exchange.getRequestMethod())) {
@@ -55,8 +79,27 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     alertType = "badge-active";
                 } else if ("insert_object".equalsIgnoreCase(action)) {
                     executeTypeSpecificInsert(selectedEngine, targetDb, params);
-                    alertMessage = "Object successfully created and persisted in " + selectedEngine + " [" + targetDb + "]!";
+                    alertMessage = "Object '" + targetId + "' successfully created/updated and new version persisted in " + selectedEngine + " [" + targetDb + "]!";
                     alertType = "badge-active";
+                } else if ("edit_object".equalsIgnoreCase(action)) {
+                    executeTypeSpecificInsert(selectedEngine, targetDb, params);
+                    alertMessage = "Record '" + targetId + "' updated successfully! New version registered.";
+                    alertType = "badge-active";
+                    editId = null; // Clear edit view after saving
+                } else if ("restore_version".equalsIgnoreCase(action)) {
+                    String versionTsStr = params.get("version_ts");
+                    if (versionTsStr != null && !versionTsStr.isBlank()) {
+                        long ts = Long.parseLong(versionTsStr.trim());
+                        String storageKey = resolveStorageKey(selectedEngine, targetDb, targetId);
+                        boolean restored = engine.getStorageCore().restoreVersion(storageKey, ts);
+                        if (restored) {
+                            alertMessage = "Record '" + targetId + "' successfully restored to version from " + new Date(ts) + "!";
+                            alertType = "badge-active";
+                        } else {
+                            alertMessage = "Could not restore version for record '" + targetId + "'.";
+                            alertType = "badge-raft";
+                        }
+                    }
                 } else if ("query_object".equalsIgnoreCase(action)) {
                     queryResultDisplay = executeTypeSpecificQuery(selectedEngine, targetDb, targetId, params);
                     if (queryResultDisplay != null && !queryResultDisplay.isBlank()) {
@@ -90,14 +133,14 @@ public class StoreEnginesPage extends StoreTemplatePage {
         Widget titleBlock = Row.of(
             Column.of(
                 Paragraph.of("<h1 style='margin: 0; font-size: 26px; font-weight: 700;'><i class='fas fa-database' style='color:#38bdf8; margin-right:8px;'></i> Multi-Model Database & Objects Administrator</h1>"),
-                Paragraph.of("<p style='margin: 4px 0 0 0; color: #94a3b8; font-size: 14px;'>Administer databases and manage native typed objects across all 8 multi-model engines with specialized controls.</p>")
+                Paragraph.of("<p style='margin: 4px 0 0 0; color: #94a3b8; font-size: 14px;'>Administer databases, edit records, inspect full version histories with diffs, and export via JettraReport across all 9 engines.</p>")
             ),
             Row.of(
                 Paragraph.of("<a href='" + JettraServer.resolvePath("/dashboard") + "' class='btn-action btn-secondary'><i class='fas fa-arrow-left'></i> Dashboard</a>")
             ).modifier(new io.jettra.flux.core.Modifier().style("align-items: center;"))
         ).modifier(new io.jettra.flux.core.Modifier().style("justify-content: space-between; align-items: center; margin-bottom: 24px;"));
 
-        // Alert Banner (if any)
+        // Alert Banner
         Widget alertWidget = alertMessage.isEmpty() ? Paragraph.of("") : Paragraph.of(
             "<div style='background: rgba(30, 41, 59, 0.9); border: 1px solid rgba(59,130,246,0.4); padding: 14px 20px; border-radius: 10px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between;'>\n" +
             "  <div style='display:flex; align-items:center; gap:10px;'><i class='fas fa-info-circle' style='color:#38bdf8; font-size:18px;'></i> <span style='font-size:14px; color:#f8fafc; font-weight:500;'>" + alertMessage + "</span></div>\n" +
@@ -105,26 +148,21 @@ public class StoreEnginesPage extends StoreTemplatePage {
             "</div>\n"
         );
 
-        // Engine Selection Tabs / Pills
         Widget engineNavPills = createEngineNavPills(selectedEngine);
-
-        // Database Provisioning Bar
         Widget dbProvisionBar = createDatabaseProvisionBar(selectedEngine, targetDb);
-
-        // Engine-Specific Object Creation & Management Card
+        Widget editRecordCard = (editId != null && !editId.isBlank()) ? createEditRecordCard(selectedEngine, targetDb, editId) : Paragraph.of("");
+        Widget versionHistoryModal = (historyId != null && !historyId.isBlank()) ? createVersionHistoryModal(selectedEngine, targetDb, historyId) : Paragraph.of("");
         Widget typeSpecificCrudCard = createTypeSpecificCrudCard(selectedEngine, targetDb, queryResultDisplay);
-
-        // Live Objects Explorer for active Engine & Database
-        Widget liveObjectsExplorer = createLiveObjectsExplorer(selectedEngine, targetDb);
-
-        // Capabilities & Architecture Matrix
+        Widget liveObjectsExplorer = createLiveObjectsExplorer(selectedEngine, targetDb, filterQuery);
         Widget engineMatrix = createEngineMatrixTable();
 
         return Column.of(
             titleBlock,
             alertWidget,
+            versionHistoryModal,
             engineNavPills,
             dbProvisionBar,
+            editRecordCard,
             typeSpecificCrudCard,
             liveObjectsExplorer,
             engineMatrix
@@ -146,641 +184,669 @@ public class StoreEnginesPage extends StoreTemplatePage {
         };
     }
 
+    public static String resolveStorageKey(String engineKey, String db, String id) {
+        return switch (engineKey.toUpperCase()) {
+            case "DOCUMENT" -> db + ":" + id;
+            case "KEYVALUE" -> "kv:" + db + ":" + id;
+            case "VECTOR" -> "vec:" + db + ":" + id;
+            case "GRAPH" -> "graph:" + db + ":node:" + id;
+            case "TIMESERIES" -> "ts:" + db + ":" + id;
+            case "COLUMN" -> "col:" + db + ":" + id;
+            case "GEOSPATIAL" -> "geo:" + db + ":" + id;
+            case "OBJECT" -> "obj:" + db + ":" + id;
+            case "RECORDS" -> "rec:" + db + ":" + id;
+            default -> db + ":" + id;
+        };
+    }
+
+    // Record structure for JettraReport exports
+    public static record ExportRow(String id, String type, String payload, int versions) {}
+
+    private void handleExportReport(HttpExchange exchange, Map<String, String> params) throws IOException {
+        String engineKey = params.getOrDefault("engine", "DOCUMENT").toUpperCase();
+        String targetDb = params.getOrDefault("target_db", getDefaultDbForEngine(engineKey));
+        String format = params.getOrDefault("format", "excel").toLowerCase();
+
+        List<ExportRow> dataList = new ArrayList<>();
+        collectEngineExportData(engineKey, targetDb, dataList);
+
+        Report report = new Report("JettraStoreEngine " + engineKey + " Records Report");
+        report.getPageSettings().setOrientation(Report.PageSettings.Orientation.LANDSCAPE);
+        report.getHeader().addElement(new Report.TextElement("JettraStoreEngine - Engine: " + engineKey + " | Database: " + targetDb + " | Total Records: " + dataList.size()));
+
+        Report.Table table = new Report.Table();
+        table.addColumn(new Report.Column("Object ID / Key", "id", 140));
+        table.addColumn(new Report.Column("Engine Type", "type", 110));
+        table.addColumn(new Report.Column("Content Payload", "payload", 320));
+        table.addColumn(new Report.Column("Versions", "versions", 60));
+
+        report.getDetail().addElement(table);
+        report.setData(dataList);
+        report.getFooter().addElement(new Report.TextElement("Generated by JettraReport on " + new Date()));
+
+        String ext;
+        String mimeType;
+        if ("csv".equalsIgnoreCase(format)) {
+            ext = "csv";
+            mimeType = "text/csv; charset=UTF-8";
+        } else if ("pdf".equalsIgnoreCase(format)) {
+            ext = "pdf";
+            mimeType = "application/pdf";
+        } else {
+            ext = "xlsx";
+            mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+        }
+
+        File tempFile = File.createTempFile("jettra_export_" + engineKey.toLowerCase() + "_", "." + ext);
+        try {
+            if ("csv".equalsIgnoreCase(format)) {
+                report.exportToCsv(tempFile.getAbsolutePath());
+            } else if ("pdf".equalsIgnoreCase(format)) {
+                report.exportToPdf(tempFile.getAbsolutePath());
+            } else {
+                report.exportToExcel(tempFile.getAbsolutePath());
+            }
+
+            byte[] fileBytes = Files.readAllBytes(tempFile.toPath());
+            String fileName = "jettra_export_" + engineKey.toLowerCase() + "_" + targetDb + "." + ext;
+            exchange.getResponseHeaders().set("Content-Type", mimeType);
+            exchange.getResponseHeaders().set("Content-Disposition", "attachment; filename=\"" + fileName + "\"");
+            exchange.sendResponseHeaders(200, fileBytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(fileBytes);
+                os.flush();
+            }
+        } finally {
+            if (tempFile.exists()) {
+                tempFile.delete();
+            }
+        }
+    }
+
+    private void collectEngineExportData(String engineKey, String targetDb, List<ExportRow> list) {
+        switch (engineKey) {
+            case "DOCUMENT" -> {
+                DocumentEngine de = (DocumentEngine) engine.getEngine("DOCUMENT");
+                if (de != null) {
+                    Map<String, JsonObject> items = de.list(targetDb);
+                    for (Map.Entry<String, JsonObject> entry : items.entrySet()) {
+                        String sk = resolveStorageKey(engineKey, targetDb, entry.getKey());
+                        int vCount = Math.max(1, engine.getStorageCore().getVersionCount(sk));
+                        list.add(new ExportRow(entry.getKey(), "DOCUMENT", entry.getValue() != null ? entry.getValue().toString() : "{}", vCount));
+                    }
+                }
+            }
+            case "KEYVALUE" -> {
+                KeyValueEngine ke = (KeyValueEngine) engine.getEngine("KEYVALUE");
+                if (ke != null) {
+                    Map<String, String> items = ke.list(targetDb);
+                    for (Map.Entry<String, String> entry : items.entrySet()) {
+                        String sk = resolveStorageKey(engineKey, targetDb, entry.getKey());
+                        int vCount = Math.max(1, engine.getStorageCore().getVersionCount(sk));
+                        list.add(new ExportRow(entry.getKey(), "KEYVALUE", entry.getValue(), vCount));
+                    }
+                }
+            }
+            case "VECTOR" -> {
+                VectorEngine ve = (VectorEngine) engine.getEngine("VECTOR");
+                if (ve != null) {
+                    Map<String, JsonObject> items = ve.list(targetDb);
+                    for (Map.Entry<String, JsonObject> entry : items.entrySet()) {
+                        String sk = resolveStorageKey(engineKey, targetDb, entry.getKey());
+                        int vCount = Math.max(1, engine.getStorageCore().getVersionCount(sk));
+                        list.add(new ExportRow(entry.getKey(), "VECTOR", entry.getValue() != null ? entry.getValue().toString() : "{}", vCount));
+                    }
+                }
+            }
+            case "GRAPH" -> {
+                GraphEngine ge = (GraphEngine) engine.getEngine("GRAPH");
+                if (ge != null) {
+                    Map<String, JsonObject> nodes = ge.listNodes(targetDb);
+                    for (Map.Entry<String, JsonObject> entry : nodes.entrySet()) {
+                        String sk = resolveStorageKey(engineKey, targetDb, entry.getKey());
+                        int vCount = Math.max(1, engine.getStorageCore().getVersionCount(sk));
+                        list.add(new ExportRow(entry.getKey(), "GRAPH_NODE", entry.getValue() != null ? entry.getValue().toString() : "{}", vCount));
+                    }
+                }
+            }
+            case "TIMESERIES" -> {
+                TimeSeriesEngine te = (TimeSeriesEngine) engine.getEngine("TIMESERIES");
+                if (te != null) {
+                    Map<String, JsonObject> points = te.list(targetDb);
+                    for (Map.Entry<String, JsonObject> entry : points.entrySet()) {
+                        String sk = resolveStorageKey(engineKey, targetDb, entry.getKey());
+                        int vCount = Math.max(1, engine.getStorageCore().getVersionCount(sk));
+                        list.add(new ExportRow(entry.getKey(), "TIMESERIES", entry.getValue() != null ? entry.getValue().toString() : "{}", vCount));
+                    }
+                }
+            }
+            case "COLUMN" -> {
+                ColumnEngine ce = (ColumnEngine) engine.getEngine("COLUMN");
+                if (ce != null) {
+                    Map<String, JsonObject> rows = ce.list(targetDb);
+                    for (Map.Entry<String, JsonObject> entry : rows.entrySet()) {
+                        String sk = resolveStorageKey(engineKey, targetDb, entry.getKey());
+                        int vCount = Math.max(1, engine.getStorageCore().getVersionCount(sk));
+                        list.add(new ExportRow(entry.getKey(), "COLUMN", entry.getValue() != null ? entry.getValue().toString() : "{}", vCount));
+                    }
+                }
+            }
+            case "GEOSPATIAL" -> {
+                GeospatialEngine geo = (GeospatialEngine) engine.getEngine("GEOSPATIAL");
+                if (geo != null) {
+                    Map<String, JsonObject> locs = geo.list(targetDb);
+                    for (Map.Entry<String, JsonObject> entry : locs.entrySet()) {
+                        String sk = resolveStorageKey(engineKey, targetDb, entry.getKey());
+                        int vCount = Math.max(1, engine.getStorageCore().getVersionCount(sk));
+                        list.add(new ExportRow(entry.getKey(), "GEOSPATIAL", entry.getValue() != null ? entry.getValue().toString() : "{}", vCount));
+                    }
+                }
+            }
+            case "OBJECT" -> {
+                ObjectEngine oe = (ObjectEngine) engine.getEngine("OBJECT");
+                if (oe != null) {
+                    Map<String, JsonObject> objs = oe.list(targetDb);
+                    for (Map.Entry<String, JsonObject> entry : objs.entrySet()) {
+                        String sk = resolveStorageKey(engineKey, targetDb, entry.getKey());
+                        int vCount = Math.max(1, engine.getStorageCore().getVersionCount(sk));
+                        list.add(new ExportRow(entry.getKey(), "OBJECT", entry.getValue() != null ? entry.getValue().toString() : "{}", vCount));
+                    }
+                }
+            }
+            case "RECORDS" -> {
+                RecordsEngine re = (RecordsEngine) engine.getEngine("RECORDS");
+                if (re != null) {
+                    Map<String, JsonObject> recs = re.list(targetDb);
+                    for (Map.Entry<String, JsonObject> entry : recs.entrySet()) {
+                        String sk = resolveStorageKey(engineKey, targetDb, entry.getKey());
+                        int vCount = Math.max(1, engine.getStorageCore().getVersionCount(sk));
+                        list.add(new ExportRow(entry.getKey(), "RECORDS", entry.getValue() != null ? entry.getValue().toString() : "{}", vCount));
+                    }
+                }
+            }
+        }
+    }
+
     private void executeTypeSpecificInsert(String engineName, String db, Map<String, String> params) {
-        String targetId = params.getOrDefault("target_id", "rec_" + (System.currentTimeMillis() % 10000));
-        
+        String rawId = params.get("target_id");
+        IdMode idMode = IdMode.fromString(params.get("id_mode"));
+        String targetId = IdGenerator.generateId(db, idMode, rawId);
+
         switch (engineName) {
             case "DOCUMENT" -> {
                 DocumentEngine docEngine = (DocumentEngine) engine.getEngine("DOCUMENT");
                 if (docEngine != null) {
                     String jsonPayload = params.getOrDefault("doc_payload", "{}");
-                    JsonObject doc = parseJsonOrWrap(jsonPayload);
-                    String docClass = params.get("doc_class");
-                    if (docClass != null && !docClass.isBlank()) {
-                        doc.addProperty("_class", docClass.trim());
-                    }
-                    docEngine.insert(db, targetId, doc);
+                    docEngine.insert(db, targetId, parseJsonOrWrap(jsonPayload), idMode);
                 }
             }
             case "KEYVALUE" -> {
                 KeyValueEngine kvEngine = (KeyValueEngine) engine.getEngine("KEYVALUE");
                 if (kvEngine != null) {
-                    String value = params.getOrDefault("kv_value", "");
-                    String valType = params.getOrDefault("kv_type", "string");
-                    String finalVal = "json".equalsIgnoreCase(valType) ? value : value;
-                    kvEngine.put(db, targetId, finalVal);
+                    kvEngine.put(db, targetId, params.getOrDefault("kv_value", ""));
                 }
             }
             case "VECTOR" -> {
                 VectorEngine vecEngine = (VectorEngine) engine.getEngine("VECTOR");
                 if (vecEngine != null) {
-                    String rawVec = params.getOrDefault("vector_coords", "0.12, 0.45, 0.88, 0.31");
-                    float[] floats = parseFloats(rawVec);
-                    String metaStr = params.getOrDefault("vector_meta", "{}");
-                    JsonObject meta = parseJsonOrWrap(metaStr);
-                    String label = params.get("vector_label");
-                    if (label != null && !label.isBlank()) meta.addProperty("label", label);
-                    vecEngine.insertVector(db, targetId, floats, meta);
+                    vecEngine.insertVector(db, targetId, parseFloats(params.getOrDefault("vector_coords", "0.1")), parseJsonOrWrap(params.getOrDefault("vector_meta", "{}")));
                 }
             }
             case "GRAPH" -> {
                 GraphEngine graphEngine = (GraphEngine) engine.getEngine("GRAPH");
                 if (graphEngine != null) {
-                    String graphMode = params.getOrDefault("graph_mode", "node");
-                    if ("edge".equalsIgnoreCase(graphMode)) {
-                        String from = params.getOrDefault("edge_from", "node_1");
-                        String to = params.getOrDefault("edge_to", "node_2");
-                        String label = params.getOrDefault("edge_label", "CONNECTED_TO");
-                        String edgeProps = params.getOrDefault("edge_props", "{}");
-                        graphEngine.addEdge(db, from, to, label, parseJsonOrWrap(edgeProps));
-                    } else {
-                        String nodeLabel = params.getOrDefault("node_label", "Vertex");
-                        String nodeProps = params.getOrDefault("node_props", "{}");
-                        JsonObject data = parseJsonOrWrap(nodeProps);
-                        data.addProperty("label", nodeLabel);
-                        graphEngine.addNode(db, targetId, data);
-                    }
+                    graphEngine.addNode(db, targetId, parseJsonOrWrap(params.getOrDefault("node_props", "{}")));
                 }
             }
             case "TIMESERIES" -> {
                 TimeSeriesEngine tsEngine = (TimeSeriesEngine) engine.getEngine("TIMESERIES");
                 if (tsEngine != null) {
-                    String rawTs = params.get("ts_timestamp");
-                    long timestamp = (rawTs != null && !rawTs.isBlank()) ? Long.parseLong(rawTs.trim()) : System.currentTimeMillis();
-                    double val = Double.parseDouble(params.getOrDefault("ts_value", "0.0"));
-                    String unit = params.getOrDefault("ts_unit", "");
-                    String tags = params.getOrDefault("ts_tags", "{}");
-                    JsonObject dp = parseJsonOrWrap(tags);
-                    dp.addProperty("value", val);
-                    if (!unit.isBlank()) dp.addProperty("unit", unit);
-                    tsEngine.insert(db, timestamp, dp);
+                    tsEngine.insert(db, System.currentTimeMillis(), parseJsonOrWrap(params.getOrDefault("ts_tags", "{}")));
                 }
             }
             case "COLUMN" -> {
                 ColumnEngine colEngine = (ColumnEngine) engine.getEngine("COLUMN");
                 if (colEngine != null) {
-                    String colData = params.getOrDefault("col_data", "{}");
-                    JsonObject row = parseJsonOrColumns(colData);
-                    colEngine.insertRow(db, targetId, row);
+                    colEngine.insertRow(db, targetId, parseJsonOrColumns(params.getOrDefault("col_data", "{}")));
                 }
             }
             case "GEOSPATIAL" -> {
                 GeospatialEngine geoEngine = (GeospatialEngine) engine.getEngine("GEOSPATIAL");
                 if (geoEngine != null) {
-                    double lat = Double.parseDouble(params.getOrDefault("geo_lat", "8.9824"));
-                    double lon = Double.parseDouble(params.getOrDefault("geo_lon", "-79.5199"));
-                    String metaStr = params.getOrDefault("geo_meta", "{}");
-                    JsonObject meta = parseJsonOrWrap(metaStr);
-                    String name = params.get("geo_name");
-                    if (name != null && !name.isBlank()) meta.addProperty("name", name);
-                    geoEngine.insertLocation(db, targetId, lat, lon, meta);
+                    geoEngine.insertLocation(db, targetId, Double.parseDouble(params.getOrDefault("geo_lat", "0")), Double.parseDouble(params.getOrDefault("geo_lon", "0")), parseJsonOrWrap(params.getOrDefault("geo_meta", "{}")));
                 }
             }
             case "OBJECT" -> {
                 ObjectEngine objEngine = (ObjectEngine) engine.getEngine("OBJECT");
                 if (objEngine != null) {
-                    String className = params.getOrDefault("obj_class", "GenericBlob");
-                    String payload = params.getOrDefault("obj_payload", "");
-                    String mime = params.getOrDefault("obj_mime", "application/octet-stream");
-                    JsonObject state = new JsonObject();
-                    state.addProperty("mimeType", mime);
-                    state.addProperty("sizeBytes", payload.getBytes(StandardCharsets.UTF_8).length);
-                    state.addProperty("content", payload);
-                    objEngine.saveObject(db, targetId, className, state);
+                    objEngine.saveObject(db, targetId, "GenericBlob", parseJsonOrWrap(params.getOrDefault("obj_payload", "{}")));
                 }
             }
             case "RECORDS" -> {
                 RecordsEngine recEngine = (RecordsEngine) engine.getEngine("RECORDS");
                 if (recEngine != null) {
-                    String recordClass = params.getOrDefault("rec_class", "com.jettra.model.PersonRecord");
-                    String payload = params.getOrDefault("rec_payload", "{}");
-                    JsonObject comps = parseJsonOrWrap(payload);
-                    recEngine.saveRecord(db, targetId, recordClass, comps);
+                    recEngine.saveRecord(db, targetId, params.getOrDefault("rec_class", "Record"), parseJsonOrWrap(params.getOrDefault("rec_payload", "{}")));
                 }
             }
         }
     }
 
     private String executeTypeSpecificQuery(String engineName, String db, String id, Map<String, String> params) {
-        switch (engineName) {
-            case "DOCUMENT" -> {
-                DocumentEngine docEngine = (DocumentEngine) engine.getEngine("DOCUMENT");
-                if (docEngine != null) {
-                    JsonObject res = docEngine.get(db, id);
-                    return res != null ? res.toString() : null;
-                }
-            }
-            case "KEYVALUE" -> {
-                KeyValueEngine kvEngine = (KeyValueEngine) engine.getEngine("KEYVALUE");
-                if (kvEngine != null) {
-                    String res = kvEngine.get(db, id);
-                    return res != null ? "{\"key\": \"" + id + "\", \"value\": \"" + res + "\", \"type\": \"KEYVALUE\"}" : null;
-                }
-            }
-            case "VECTOR" -> {
-                VectorEngine vecEngine = (VectorEngine) engine.getEngine("VECTOR");
-                if (vecEngine != null) {
-                    JsonObject res = vecEngine.getVector(db, id);
-                    return res != null ? res.toString() : null;
-                }
-            }
-            case "GRAPH" -> {
-                GraphEngine graphEngine = (GraphEngine) engine.getEngine("GRAPH");
-                if (graphEngine != null) {
-                    JsonObject res = graphEngine.getNode(db, id);
-                    return res != null ? res.toString() : null;
-                }
-            }
+        return switch (engineName) {
+            case "DOCUMENT" -> { DocumentEngine e = (DocumentEngine) engine.getEngine("DOCUMENT"); yield e != null && e.get(db, id) != null ? e.get(db, id).toString() : null; }
+            case "KEYVALUE" -> { KeyValueEngine e = (KeyValueEngine) engine.getEngine("KEYVALUE"); yield e != null ? e.get(db, id) : null; }
+            case "VECTOR" -> { VectorEngine e = (VectorEngine) engine.getEngine("VECTOR"); yield e != null && e.getVector(db, id) != null ? e.getVector(db, id).toString() : null; }
+            case "GRAPH" -> { GraphEngine e = (GraphEngine) engine.getEngine("GRAPH"); yield e != null && e.getNode(db, id) != null ? e.getNode(db, id).toString() : null; }
             case "TIMESERIES" -> {
-                TimeSeriesEngine tsEngine = (TimeSeriesEngine) engine.getEngine("TIMESERIES");
-                if (tsEngine != null) {
-                    long ts = 0;
-                    try { ts = Long.parseLong(id); } catch (Exception ignored) {}
-                    JsonObject res = tsEngine.get(db, ts);
-                    return res != null ? res.toString() : null;
-                }
+                TimeSeriesEngine e = (TimeSeriesEngine) engine.getEngine("TIMESERIES");
+                try { yield e != null && e.get(db, Long.parseLong(id)) != null ? e.get(db, Long.parseLong(id)).toString() : null; } catch (Exception ex) { yield null; }
             }
-            case "COLUMN" -> {
-                ColumnEngine colEngine = (ColumnEngine) engine.getEngine("COLUMN");
-                if (colEngine != null) {
-                    JsonObject res = colEngine.getRow(db, id);
-                    return res != null ? res.toString() : null;
-                }
-            }
-            case "GEOSPATIAL" -> {
-                GeospatialEngine geoEngine = (GeospatialEngine) engine.getEngine("GEOSPATIAL");
-                if (geoEngine != null) {
-                    JsonObject res = geoEngine.getLocation(db, id);
-                    return res != null ? res.toString() : null;
-                }
-            }
-            case "OBJECT" -> {
-                ObjectEngine objEngine = (ObjectEngine) engine.getEngine("OBJECT");
-                if (objEngine != null) {
-                    JsonObject res = objEngine.getObject(db, id);
-                    return res != null ? res.toString() : null;
-                }
-            }
-            case "RECORDS" -> {
-                RecordsEngine recEngine = (RecordsEngine) engine.getEngine("RECORDS");
-                if (recEngine != null) {
-                    JsonObject res = recEngine.getRecord(db, id);
-                    return res != null ? res.toString() : null;
-                }
-            }
-        }
-        return null;
+            case "COLUMN" -> { ColumnEngine e = (ColumnEngine) engine.getEngine("COLUMN"); yield e != null && e.getRow(db, id) != null ? e.getRow(db, id).toString() : null; }
+            case "GEOSPATIAL" -> { GeospatialEngine e = (GeospatialEngine) engine.getEngine("GEOSPATIAL"); yield e != null && e.getLocation(db, id) != null ? e.getLocation(db, id).toString() : null; }
+            case "OBJECT" -> { ObjectEngine e = (ObjectEngine) engine.getEngine("OBJECT"); yield e != null && e.getObject(db, id) != null ? e.getObject(db, id).toString() : null; }
+            case "RECORDS" -> { RecordsEngine e = (RecordsEngine) engine.getEngine("RECORDS"); yield e != null && e.getRecord(db, id) != null ? e.getRecord(db, id).toString() : null; }
+            default -> null;
+        };
     }
 
     private String executeVectorSearch(String db, Map<String, String> params) {
-        VectorEngine vecEngine = (VectorEngine) engine.getEngine("VECTOR");
-        if (vecEngine != null) {
-            String queryCoords = params.getOrDefault("query_vector", "0.10, 0.44, 0.85, 0.30");
-            int topK = Integer.parseInt(params.getOrDefault("top_k", "5"));
-            float[] queryVec = parseFloats(queryCoords);
-            List<JsonObject> results = vecEngine.searchVector(db, queryVec, topK);
-            return jsonParser.toJson(results);
-        }
-        return "[]";
+        VectorEngine ve = (VectorEngine) engine.getEngine("VECTOR");
+        return ve != null ? jsonParser.toJson(ve.searchVector(db, parseFloats(params.getOrDefault("query_vector", "0.1")), Integer.parseInt(params.getOrDefault("top_k", "5")))) : "[]";
     }
 
     private String executeGeoDistance(Map<String, String> params) {
-        GeospatialEngine geoEngine = (GeospatialEngine) engine.getEngine("GEOSPATIAL");
-        if (geoEngine != null) {
-            double lat1 = Double.parseDouble(params.getOrDefault("dist_lat1", "8.9824"));
-            double lon1 = Double.parseDouble(params.getOrDefault("dist_lon1", "-79.5199"));
-            double lat2 = Double.parseDouble(params.getOrDefault("dist_lat2", "8.9745"));
-            double lon2 = Double.parseDouble(params.getOrDefault("dist_lon2", "-79.5532"));
-            double distanceKm = geoEngine.calculateDistance(lat1, lon1, lat2, lon2);
-            JsonObject res = new JsonObject();
-            res.addProperty("point1", lat1 + ", " + lon1);
-            res.addProperty("point2", lat2 + ", " + lon2);
-            res.addProperty("distanceKm", Math.round(distanceKm * 1000.0) / 1000.0);
-            res.addProperty("distanceMiles", Math.round((distanceKm * 0.621371) * 1000.0) / 1000.0);
-            return res.toString();
+        GeospatialEngine geo = (GeospatialEngine) engine.getEngine("GEOSPATIAL");
+        if (geo != null) {
+            double d = geo.calculateDistance(Double.parseDouble(params.getOrDefault("dist_lat1", "0")), Double.parseDouble(params.getOrDefault("dist_lon1", "0")), Double.parseDouble(params.getOrDefault("dist_lat2", "0")), Double.parseDouble(params.getOrDefault("dist_lon2", "0")));
+            return "{\"distanceKm\": " + d + "}";
         }
         return "{}";
     }
 
     private void executeTypeSpecificDelete(String engineName, String db, String id, Map<String, String> params) {
         switch (engineName) {
-            case "DOCUMENT" -> {
-                DocumentEngine de = (DocumentEngine) engine.getEngine("DOCUMENT");
-                if (de != null) de.delete(db, id);
-            }
-            case "KEYVALUE" -> {
-                KeyValueEngine ke = (KeyValueEngine) engine.getEngine("KEYVALUE");
-                if (ke != null) ke.delete(db, id);
-            }
-            case "VECTOR" -> {
-                VectorEngine ve = (VectorEngine) engine.getEngine("VECTOR");
-                if (ve != null) ve.deleteVector(db, id);
-            }
-            case "GRAPH" -> {
-                GraphEngine ge = (GraphEngine) engine.getEngine("GRAPH");
-                if (ge != null) ge.deleteNode(db, id);
-            }
+            case "DOCUMENT" -> { DocumentEngine de = (DocumentEngine) engine.getEngine("DOCUMENT"); if (de != null) de.delete(db, id); }
+            case "KEYVALUE" -> { KeyValueEngine ke = (KeyValueEngine) engine.getEngine("KEYVALUE"); if (ke != null) ke.delete(db, id); }
+            case "VECTOR" -> { VectorEngine ve = (VectorEngine) engine.getEngine("VECTOR"); if (ve != null) ve.deleteVector(db, id); }
+            case "GRAPH" -> { GraphEngine ge = (GraphEngine) engine.getEngine("GRAPH"); if (ge != null) ge.deleteNode(db, id); }
             case "TIMESERIES" -> {
                 TimeSeriesEngine te = (TimeSeriesEngine) engine.getEngine("TIMESERIES");
-                if (te != null) {
-                    try { te.delete(db, Long.parseLong(id)); } catch (Exception ignored) {}
-                }
+                if (te != null) { try { te.delete(db, Long.parseLong(id)); } catch (Exception ignored) {} }
             }
-            case "COLUMN" -> {
-                ColumnEngine ce = (ColumnEngine) engine.getEngine("COLUMN");
-                if (ce != null) ce.deleteRow(db, id);
-            }
-            case "GEOSPATIAL" -> {
-                GeospatialEngine ge = (GeospatialEngine) engine.getEngine("GEOSPATIAL");
-                if (ge != null) ge.deleteLocation(db, id);
-            }
-            case "OBJECT" -> {
-                ObjectEngine oe = (ObjectEngine) engine.getEngine("OBJECT");
-                if (oe != null) oe.deleteObject(db, id);
-            }
-            case "RECORDS" -> {
-                RecordsEngine re = (RecordsEngine) engine.getEngine("RECORDS");
-                if (re != null) re.deleteRecord(db, id);
-            }
+            case "COLUMN" -> { ColumnEngine ce = (ColumnEngine) engine.getEngine("COLUMN"); if (ce != null) ce.deleteRow(db, id); }
+            case "GEOSPATIAL" -> { GeospatialEngine ge = (GeospatialEngine) engine.getEngine("GEOSPATIAL"); if (ge != null) ge.deleteLocation(db, id); }
+            case "OBJECT" -> { ObjectEngine oe = (ObjectEngine) engine.getEngine("OBJECT"); if (oe != null) oe.deleteObject(db, id); }
+            case "RECORDS" -> { RecordsEngine re = (RecordsEngine) engine.getEngine("RECORDS"); if (re != null) re.deleteRecord(db, id); }
         }
     }
 
     private float[] parseFloats(String raw) {
-        if (raw == null || raw.isBlank()) return new float[]{0.0f, 0.0f, 0.0f, 0.0f};
-        String clean = raw.replaceAll("[\\[\\]]", "");
-        String[] parts = clean.split("[,\\s]+");
+        String[] parts = raw.split("[,\\s]+");
         float[] arr = new float[parts.length];
-        for (int i = 0; i < parts.length; i++) {
-            try {
-                arr[i] = Float.parseFloat(parts[i].trim());
-            } catch (Exception e) {
-                arr[i] = 0.0f;
-            }
-        }
+        for (int i = 0; i < parts.length; i++) try { arr[i] = Float.parseFloat(parts[i]); } catch (Exception ignored) {}
         return arr;
     }
 
     private JsonObject parseJsonOrWrap(String payload) {
-        if (payload == null || payload.isBlank()) return new JsonObject();
-        try {
-            JsonObject obj = jsonParser.fromJson(payload, JsonObject.class);
-            return obj != null ? obj : new JsonObject();
-        } catch (Exception e) {
-            JsonObject wrap = new JsonObject();
-            wrap.addProperty("raw", payload);
-            return wrap;
+        if (payload == null || payload.trim().isEmpty()) {
+            return new JsonObject();
         }
+        try {
+            JsonObject parsed = jsonParser.fromJson(payload.trim(), JsonObject.class);
+            if (parsed != null && !parsed.getMap().isEmpty()) {
+                return parsed;
+            }
+        } catch (Exception ignored) {}
+        JsonObject w = new JsonObject();
+        w.addProperty("raw", payload);
+        return w;
     }
 
     private JsonObject parseJsonOrColumns(String colData) {
-        if (colData == null || colData.isBlank()) return new JsonObject();
-        try {
-            JsonObject obj = jsonParser.fromJson(colData, JsonObject.class);
-            if (obj != null) return obj;
-        } catch (Exception ignored) {}
-        JsonObject obj = new JsonObject();
-        String[] pairs = colData.split("[,;\\n]+");
-        for (String pair : pairs) {
-            String[] kv = pair.split("[:=]", 2);
-            if (kv.length == 2) {
-                obj.addProperty(kv[0].trim(), kv[1].trim());
-            }
-        }
-        return obj;
+        try { return jsonParser.fromJson(colData, JsonObject.class); } catch (Exception e) { JsonObject o = new JsonObject(); for(String p : colData.split(";")) { String[] kv = p.split("="); if(kv.length==2) o.addProperty(kv[0], kv[1]); } return o; }
+    }
+
+    private String escapeHtml(String text) {
+        if (text == null) return "";
+        return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;").replace("'", "&#39;");
     }
 
     private Widget createEngineNavPills(String current) {
         String[] engines = {"DOCUMENT", "KEYVALUE", "VECTOR", "GRAPH", "TIMESERIES", "COLUMN", "GEOSPATIAL", "OBJECT", "RECORDS"};
-        String[] icons = {"fas fa-file-alt", "fas fa-key", "fas fa-project-diagram", "fas fa-share-alt", "fas fa-chart-line", "fas fa-table", "fas fa-globe-americas", "fas fa-archive", "fas fa-id-card"};
-        String[] types = {"NoSQL JSON", "KV Cache", "AI Vector ANN", "LPG Graph", "IoT Telemetry", "OLAP Columns", "2D GIS Spatial", "Binary BLOB", "Java 25 Record"};
-
-        StringBuilder sb = new StringBuilder();
-        sb.append("<div style='display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; padding: 6px; background: rgba(30, 41, 59, 0.5); border-radius: 12px; border: 1px solid rgba(255,255,255,0.06);'>\n");
-
-        for (int i = 0; i < engines.length; i++) {
-            String eng = engines[i];
-            String icon = icons[i];
-            String typeBadge = types[i];
-            boolean active = eng.equalsIgnoreCase(current);
-            String bg = active ? "background: #3b82f6; color: #ffffff; font-weight: 600; box-shadow: 0 0 12px rgba(59,130,246,0.4);" : "background: transparent; color: #94a3b8;";
-            sb.append("<a href='").append(JettraServer.resolvePath("/engines?engine=" + eng))
-              .append("' style='display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 8px; text-decoration: none; font-size: 13px; transition: all 0.2s; ").append(bg).append("'>")
-              .append("<i class='").append(icon).append("'></i> <span>").append(eng).append("</span>")
-              .append("<span style='font-size:10px; opacity:0.8; background:rgba(0,0,0,0.2); padding:2px 6px; border-radius:4px;'>").append(typeBadge).append("</span>")
-              .append("</a>\n");
+        StringBuilder sb = new StringBuilder("<div style='display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; padding: 6px; background: rgba(30, 41, 59, 0.5); border-radius: 12px; border: 1px solid rgba(255,255,255,0.06);'>\n");
+        for (String eng : engines) {
+            String style = eng.equalsIgnoreCase(current) ? "background: #3b82f6; color: #ffffff;" : "background: transparent; color: #94a3b8;";
+            sb.append("<a href='").append(JettraServer.resolvePath("/engines?engine=" + eng)).append("' style='padding: 8px 14px; border-radius: 8px; text-decoration: none; font-size: 13px; font-weight:600; ").append(style).append("'>").append(eng).append("</a>\n");
         }
-        sb.append("</div>\n");
-
-        return Paragraph.of(sb.toString());
+        return Paragraph.of(sb.append("</div>\n").toString());
     }
 
     private Widget createDatabaseProvisionBar(String engineKey, String currentDb) {
-        String dbLabel = switch (engineKey) {
-            case "DOCUMENT" -> "Database / Collection";
-            case "KEYVALUE" -> "Namespace / Bucket";
-            case "VECTOR" -> "Vector Index / Collection";
-            case "GRAPH" -> "Graph Space";
-            case "TIMESERIES" -> "Measurement / Feed";
-            case "COLUMN" -> "Column Family / Table";
-            case "GEOSPATIAL" -> "GIS Layer / Collection";
-            case "OBJECT" -> "Storage Bucket";
-            case "RECORDS" -> "Records Collection / Namespace";
-            default -> "Database";
-        };
-
-        // Discover databases
         Set<String> discoveredDbs = new TreeSet<>();
-        discoveredDbs.add(currentDb);
-        discoveredDbs.add(getDefaultDbForEngine(engineKey));
+        if (currentDb != null && !currentDb.isBlank()) {
+            discoveredDbs.add(currentDb);
+        }
+        String defaultDb = getDefaultDbForEngine(engineKey);
+        if (defaultDb != null && !defaultDb.isBlank()) {
+            discoveredDbs.add(defaultDb);
+        }
         String prefix = switch (engineKey.toUpperCase()) {
-            case "RECORDS" -> "rec:";
-            case "VECTOR" -> "vec:";
-            case "GRAPH" -> "graph:";
-            case "TIMESERIES" -> "ts:";
-            case "COLUMN" -> "col:";
-            case "KEYVALUE" -> "kv:";
-            case "GEOSPATIAL" -> "geo:";
-            case "OBJECT" -> "obj:";
-            default -> "doc:";
+            case "RECORDS" -> "rec:"; case "VECTOR" -> "vec:"; case "GRAPH" -> "graph:"; case "TIMESERIES" -> "ts:"; case "COLUMN" -> "col:"; case "KEYVALUE" -> "kv:"; case "GEOSPATIAL" -> "geo:"; case "OBJECT" -> "obj:"; default -> "";
         };
         Map<String, byte[]> scanned = engine.getStorageCore().scanPrefix(prefix);
         for (String k : scanned.keySet()) {
-            String rest = k.substring(prefix.length());
+            String rest = prefix.isEmpty() ? k : k.substring(prefix.length());
             int idx = rest.indexOf(':');
-            if (idx > 0) {
-                discoveredDbs.add(rest.substring(0, idx));
-            }
+            if (idx > 0) discoveredDbs.add(rest.substring(0, idx));
         }
 
         StringBuilder options = new StringBuilder();
-        for (String d : discoveredDbs) {
-            options.append("<option value='").append(d).append("'").append(d.equals(currentDb) ? " selected" : "").append(">").append(d).append("</option>\n");
+        for (String d : discoveredDbs) options.append("<option value='").append(d).append("'").append(d.equals(currentDb) ? " selected" : "").append(">").append(d).append("</option>\n");
+
+        return Div.of(Row.of(
+            Column.of(Paragraph.of("<div style='font-size:14px; font-weight:600; color:#f8fafc;'><i class='fas fa-folder-open' style='color:#38bdf8; margin-right:6px;'></i> Active DB: <span style='color:#38bdf8;'>" + currentDb + "</span></div>")),
+            Paragraph.of("<form method='POST' action='" + JettraServer.resolvePath("/engines?engine=" + engineKey) + "' style='display:flex; gap:8px;'><input type='hidden' name='action' value='create_db' /><select onchange=\"window.location.href='" + JettraServer.resolvePath("/engines?engine=" + engineKey + "&target_db=") + "' + this.value\" style='padding:6px; background:#0f172a; border-radius:6px; color:#38bdf8; border: 1px solid rgba(255,255,255,0.1);'>" + options + "</select><input type='text' name='target_db' class='form-input' style='width:140px;' placeholder='New DB Name' /><button type='submit' class='btn-action btn-primary'><i class='fas fa-plus'></i> Add DB</button></form>")
+        ).modifier(new io.jettra.flux.core.Modifier().style("justify-content: space-between; align-items: center;"))).modifier(new io.jettra.flux.core.Modifier().cssClass("store-card").style("margin-bottom: 20px; padding: 14px 20px;"));
+    }
+
+    private Widget createEditRecordCard(String engineKey, String targetDb, String editId) {
+        String actionUrl = JettraServer.resolvePath("/engines?engine=" + engineKey + "&target_db=" + targetDb);
+        String currentVal = executeTypeSpecificQuery(engineKey, targetDb, editId, Map.of());
+        if (currentVal == null || currentVal.trim().isEmpty() || currentVal.equals("{}")) {
+            String storageKey = resolveStorageKey(engineKey, targetDb, editId);
+            byte[] raw = engine.getStorageCore().get(storageKey);
+            if (raw != null && raw.length > 0) {
+                String rawStr = new String(raw, StandardCharsets.UTF_8);
+                if (!rawStr.isBlank()) {
+                    currentVal = rawStr;
+                }
+            }
         }
+        if (currentVal == null) currentVal = "{}";
 
-        return Div.of(
-            Row.of(
-                Column.of(
-                    Paragraph.of("<div style='font-size:14px; font-weight:600; color:#f8fafc;'><i class='fas fa-folder-open' style='color:#38bdf8; margin-right:6px;'></i> Active " + dbLabel + ": <span style='color:#38bdf8; font-weight:700;'>" + currentDb + "</span></div>"),
-                    Paragraph.of("<div style='font-size:12px; color:#94a3b8;'>Engine Type: <b style='color:#f8fafc;'>" + engineKey + "</b> (Raft Synchronized & LSM-Tree Indexed) | <a href='" + JettraServer.resolvePath("/databases") + "' style='color:#38bdf8; text-decoration:none;'><i class='fas fa-server'></i> View All Databases</a></div>")
-                ),
-                Paragraph.of(
-                    "<form method='POST' action='" + JettraServer.resolvePath("/engines?engine=" + engineKey) + "' style='display:flex; gap:8px; margin:0; align-items:center;'>\n" +
-                    "  <input type='hidden' name='action' value='create_db' />\n" +
-                    "  <select onchange=\"window.location.href='" + JettraServer.resolvePath("/engines?engine=" + engineKey + "&target_db=") + "' + this.value\" style='padding:6px 10px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#38bdf8; font-size:13px;'>\n" +
-                    options.toString() +
-                    "  </select>\n" +
-                    "  <input class='form-input' style='width:180px; padding:6px 10px; font-size:13px;' type='text' name='target_db' placeholder='New DB / Collection' required />\n" +
-                    "  <button type='submit' class='btn-action btn-primary' style='padding:6px 12px; font-size:13px;'><i class='fas fa-plus'></i> Switch / Create</button>\n" +
-                    "</form>"
-                )
-            ).modifier(new io.jettra.flux.core.Modifier().style("justify-content: space-between; align-items: center;"))
-        ).modifier(new io.jettra.flux.core.Modifier().cssClass("store-card").style("margin-bottom: 20px; padding: 14px 20px;"));
-    }
-
-    private Widget createTypeSpecificCrudCard(String engineKey, String targetDb, String queryResultDisplay) {
-        Widget insertFormWidget = buildEngineInsertForm(engineKey, targetDb);
-        Widget querySearchWidget = buildEngineQuerySearchForm(engineKey, targetDb, queryResultDisplay);
-
-        return Div.of(
-            Row.of(
-                Column.of(insertFormWidget),
-                Column.of(querySearchWidget)
-            ).modifier(new io.jettra.flux.core.Modifier().style("display: grid; grid-template-columns: 1.1fr 1fr; gap: 24px;"))
-        ).modifier(new io.jettra.flux.core.Modifier().cssClass("store-card").style("margin-bottom: 24px;"));
-    }
-
-    private Widget buildEngineInsertForm(String engineKey, String targetDb) {
         StringBuilder sb = new StringBuilder();
-        String actionUrl = JettraServer.resolvePath("/engines?engine=" + engineKey);
+        sb.append("<div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;'>\n");
+        sb.append("  <h3 style='margin:0; font-size:18px; color:#38bdf8; display:flex; align-items:center; gap:8px;'>\n");
+        sb.append("    <i class='fas fa-edit'></i> Edit Record: <span style='color:#f8fafc;'>").append(escapeHtml(editId)).append("</span>\n");
+        sb.append("  </h3>\n");
+        sb.append("  <a href='").append(actionUrl).append("' class='btn-action btn-secondary' style='font-size:12px;'><i class='fas fa-times'></i> Cancel</a>\n");
+        sb.append("</div>\n");
+
+        sb.append("<p style='font-size:13px; color:#94a3b8; margin-bottom:16px;'>Modify the object contents below. Saving will generate a new historical version with timestamp tracking.</p>\n");
+
+        sb.append("<form method='POST' action='").append(actionUrl).append("'>\n");
+        sb.append("  <input type='hidden' name='action' value='edit_object' />\n");
+        sb.append("  <input type='hidden' name='target_id' value='").append(escapeHtml(editId)).append("' />\n");
 
         switch (engineKey) {
-            case "DOCUMENT" -> {
-                sb.append("<h3 style='margin: 0 0 10px 0; font-size: 16px; font-weight: 600;'><i class='fas fa-file-alt' style='color:#38bdf8; margin-right:8px;'></i> Insert Document (JSON / Schema)</h3>");
-                sb.append("<p style='font-size: 13px; color: #94a3b8; margin-bottom: 14px;'>Save structured JSON documents with optional Java Class and JettraRules validation.</p>");
-                sb.append("<form method='POST' action='").append(actionUrl).append("'>\n");
-                sb.append("  <input type='hidden' name='action' value='insert_object' />\n");
-                sb.append("  <input type='hidden' name='target_db' value='").append(targetDb).append("' />\n");
-                sb.append("  <div style='display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px;'>\n");
-                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Document ID</label><input class='form-input' type='text' name='target_id' value='doc_").append(System.currentTimeMillis() % 10000).append("' required /></div>\n");
-                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Schema / _class (Optional)</label><input class='form-input' type='text' name='doc_class' placeholder='com.jettra.model.Customer' /></div>\n");
-                sb.append("  </div>\n");
-                sb.append("  <label style='font-size:12px; color:#94a3b8; font-weight:600;'>Document JSON Fields</label>\n");
-                sb.append("  <textarea name='doc_payload' class='form-input' style='height: 110px; font-family: monospace; font-size: 12px; resize: vertical;' required>{\n  \"name\": \"Global Enterprise Inc\",\n  \"tier\": \"Platinum\",\n  \"active\": true,\n  \"credit_limit\": 75000\n}</textarea>\n");
-                sb.append("  <button type='submit' class='btn-action btn-primary' style='margin-top: 10px;'><i class='fas fa-save'></i> Save Document</button>\n");
-                sb.append("</form>");
-            }
             case "KEYVALUE" -> {
-                sb.append("<h3 style='margin: 0 0 10px 0; font-size: 16px; font-weight: 600;'><i class='fas fa-key' style='color:#10b981; margin-right:8px;'></i> Set Key-Value Pair (High Speed Cache)</h3>");
-                sb.append("<p style='font-size: 13px; color: #94a3b8; margin-bottom: 14px;'>Store native string/raw cache keys with sub-millisecond MemTable reads.</p>");
-                sb.append("<form method='POST' action='").append(actionUrl).append("'>\n");
-                sb.append("  <input type='hidden' name='action' value='insert_object' />\n");
-                sb.append("  <input type='hidden' name='target_db' value='").append(targetDb).append("' />\n");
-                sb.append("  <div style='display:grid; grid-template-columns: 1.2fr 1fr; gap:10px; margin-bottom:10px;'>\n");
-                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Key (Lookup Identifier)</label><input class='form-input' type='text' name='target_id' value='session_tok_").append(System.currentTimeMillis() % 1000).append("' required /></div>\n");
-                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Value Type</label><select name='kv_type' class='form-input'><option value='string'>Plain String</option><option value='json'>Raw JSON / Payload</option><option value='number'>Numeric Counter</option></select></div>\n");
+                sb.append("  <div class='form-group'>\n");
+                sb.append("    <label class='form-label'>String Value</label>\n");
+                sb.append("    <input type='text' name='kv_value' class='form-input' value='").append(escapeHtml(currentVal)).append("' required />\n");
                 sb.append("  </div>\n");
-                sb.append("  <label style='font-size:12px; color:#94a3b8; font-weight:600;'>Value Data</label>\n");
-                sb.append("  <textarea name='kv_value' class='form-input' style='height: 80px; font-family: monospace; font-size: 13px; resize: vertical;' required>ACTIVE_USER_TOKEN_99A8BC71</textarea>\n");
-                sb.append("  <button type='submit' class='btn-action btn-primary' style='margin-top: 10px;'><i class='fas fa-save'></i> Put Key-Value</button>\n");
-                sb.append("</form>");
             }
             case "VECTOR" -> {
-                sb.append("<h3 style='margin: 0 0 10px 0; font-size: 16px; font-weight: 600;'><i class='fas fa-project-diagram' style='color:#8b5cf6; margin-right:8px;'></i> Store Vector Embedding (AI / LLM)</h3>");
-                sb.append("<p style='font-size: 13px; color: #94a3b8; margin-bottom: 14px;'>Insert high-dimensional float vectors with associated metadata attributes.</p>");
-                sb.append("<form method='POST' action='").append(actionUrl).append("'>\n");
-                sb.append("  <input type='hidden' name='action' value='insert_object' />\n");
-                sb.append("  <input type='hidden' name='target_db' value='").append(targetDb).append("' />\n");
-                sb.append("  <div style='display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px;'>\n");
-                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Vector ID</label><input class='form-input' type='text' name='target_id' value='vec_").append(System.currentTimeMillis() % 1000).append("' required /></div>\n");
-                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Label / Classification</label><input class='form-input' type='text' name='vector_label' value='semantic_doc_embedding' /></div>\n");
+                sb.append("  <div class='form-group'>\n");
+                sb.append("    <label class='form-label'>Vector Coordinates (floats)</label>\n");
+                sb.append("    <input type='text' name='vector_coords' class='form-input' value='0.1, 0.2, 0.3' required />\n");
                 sb.append("  </div>\n");
-                sb.append("  <label style='font-size:12px; color:#94a3b8; font-weight:600;'>Float Vector Components (comma-separated)</label>\n");
-                sb.append("  <input class='form-input' style='font-family:monospace; margin-bottom:10px;' type='text' name='vector_coords' value='0.12, 0.45, 0.88, 0.31' required />\n");
-                sb.append("  <label style='font-size:12px; color:#94a3b8; font-weight:600;'>Metadata JSON</label>\n");
-                sb.append("  <textarea name='vector_meta' class='form-input' style='height: 50px; font-family: monospace; font-size: 12px;'>{\"title\": \"LSM B-Tree Whitepaper\", \"category\": \"database\"}</textarea>\n");
-                sb.append("  <button type='submit' class='btn-action btn-primary' style='margin-top: 10px;'><i class='fas fa-save'></i> Save Vector Embedding</button>\n");
-                sb.append("</form>");
+                sb.append("  <div class='form-group'>\n");
+                sb.append("    <label class='form-label'>Vector Metadata (JSON)</label>\n");
+                sb.append("    <textarea name='vector_meta' class='form-input' rows='4'>").append(escapeHtml(currentVal)).append("</textarea>\n");
+                sb.append("  </div>\n");
             }
             case "GRAPH" -> {
-                sb.append("<h3 style='margin: 0 0 10px 0; font-size: 16px; font-weight: 600;'><i class='fas fa-share-alt' style='color:#ec4899; margin-right:8px;'></i> Graph Vertex / Edge Manager</h3>");
-                sb.append("<p style='font-size: 13px; color: #94a3b8; margin-bottom: 14px;'>Manage Labeled Property Graph (LPG) vertices and directed relationships.</p>");
-                sb.append("<form method='POST' action='").append(actionUrl).append("'>\n");
-                sb.append("  <input type='hidden' name='action' value='insert_object' />\n");
-                sb.append("  <input type='hidden' name='target_db' value='").append(targetDb).append("' />\n");
-                sb.append("  <div style='display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px;'>\n");
-                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Element Type</label><select name='graph_mode' class='form-input'><option value='node'>Node (Vertex)</option><option value='edge'>Edge (Relationship)</option></select></div>\n");
-                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Node ID / Edge From</label><input class='form-input' type='text' name='target_id' value='node_").append(System.currentTimeMillis() % 1000).append("' required /></div>\n");
+                sb.append("  <div class='form-group'>\n");
+                sb.append("    <label class='form-label'>Node Properties (JSON)</label>\n");
+                sb.append("    <textarea name='node_props' class='form-input' rows='5'>").append(escapeHtml(currentVal)).append("</textarea>\n");
                 sb.append("  </div>\n");
-                sb.append("  <div style='display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px;'>\n");
-                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Edge Target (To) / Label</label><input class='form-input' type='text' name='edge_to' placeholder='node_2 (if edge)' /></div>\n");
-                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Label / Relation</label><input class='form-input' type='text' name='node_label' value='KNOWS' /></div>\n");
-                sb.append("  </div>\n");
-                sb.append("  <label style='font-size:12px; color:#94a3b8; font-weight:600;'>Attributes / Properties JSON</label>\n");
-                sb.append("  <textarea name='node_props' class='form-input' style='height: 55px; font-family: monospace; font-size: 12px;'>{\"name\": \"Alice\", \"role\": \"Lead Engineer\", \"weight\": 1.0}</textarea>\n");
-                sb.append("  <button type='submit' class='btn-action btn-primary' style='margin-top: 10px;'><i class='fas fa-plus-circle'></i> Save Graph Entity</button>\n");
-                sb.append("</form>");
             }
             case "TIMESERIES" -> {
-                sb.append("<h3 style='margin: 0 0 10px 0; font-size: 16px; font-weight: 600;'><i class='fas fa-chart-line' style='color:#06b6d4; margin-right:8px;'></i> Ingest Time-Series Data Point</h3>");
-                sb.append("<p style='font-size: 13px; color: #94a3b8; margin-bottom: 14px;'>Append-only telemetry logs with monotonic timestamp ordering.</p>");
-                sb.append("<form method='POST' action='").append(actionUrl).append("'>\n");
-                sb.append("  <input type='hidden' name='action' value='insert_object' />\n");
-                sb.append("  <input type='hidden' name='target_db' value='").append(targetDb).append("' />\n");
-                sb.append("  <div style='display:grid; grid-template-columns: 1.2fr 1fr; gap:10px; margin-bottom:10px;'>\n");
-                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Timestamp (Millis)</label><input class='form-input' type='text' name='ts_timestamp' value='").append(System.currentTimeMillis()).append("' required /></div>\n");
-                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Metric Value (Numeric)</label><input class='form-input' type='number' step='any' name='ts_value' value='42.50' required /></div>\n");
+                sb.append("  <div class='form-group'>\n");
+                sb.append("    <label class='form-label'>Telemetry Metrics (JSON)</label>\n");
+                sb.append("    <textarea name='ts_tags' class='form-input' rows='5'>").append(escapeHtml(currentVal)).append("</textarea>\n");
                 sb.append("  </div>\n");
-                sb.append("  <div style='display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px;'>\n");
-                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Unit of Measure</label><input class='form-input' type='text' name='ts_unit' value='celsius' /></div>\n");
-                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Dimension Tags (JSON)</label><input class='form-input' style='font-family:monospace;' type='text' name='ts_tags' value='{\"host\": \"server-01\", \"rack\": \"A3\"}' /></div>\n");
-                sb.append("  </div>\n");
-                sb.append("  <button type='submit' class='btn-action btn-primary' style='margin-top: 10px;'><i class='fas fa-plus'></i> Ingest Time Point</button>\n");
-                sb.append("</form>");
             }
             case "COLUMN" -> {
-                sb.append("<h3 style='margin: 0 0 10px 0; font-size: 16px; font-weight: 600;'><i class='fas fa-table' style='color:#f97316; margin-right:8px;'></i> Insert OLAP Columnar Row</h3>");
-                sb.append("<p style='font-size: 13px; color: #94a3b8; margin-bottom: 14px;'>Fast analytical row insertion into columnar contiguous arrays.</p>");
-                sb.append("<form method='POST' action='").append(actionUrl).append("'>\n");
-                sb.append("  <input type='hidden' name='action' value='insert_object' />\n");
-                sb.append("  <input type='hidden' name='target_db' value='").append(targetDb).append("' />\n");
-                sb.append("  <div style='margin-bottom:10px;'><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Row Key</label><input class='form-input' type='text' name='target_id' value='order_").append(System.currentTimeMillis() % 10000).append("' required /></div>\n");
-                sb.append("  <label style='font-size:12px; color:#94a3b8; font-weight:600;'>Column Values (JSON or Key=Value pairs)</label>\n");
-                sb.append("  <textarea name='col_data' class='form-input' style='height: 90px; font-family: monospace; font-size: 12px;' required>{\n  \"customer_id\": 101,\n  \"order_total\": 450.00,\n  \"tax\": 31.50,\n  \"status\": \"COMPLETED\"\n}</textarea>\n");
-                sb.append("  <button type='submit' class='btn-action btn-primary' style='margin-top: 10px;'><i class='fas fa-save'></i> Save Column Row</button>\n");
-                sb.append("</form>");
+                sb.append("  <div class='form-group'>\n");
+                sb.append("    <label class='form-label'>Column Values (JSON)</label>\n");
+                sb.append("    <textarea name='col_data' class='form-input' rows='5'>").append(escapeHtml(currentVal)).append("</textarea>\n");
+                sb.append("  </div>\n");
             }
             case "GEOSPATIAL" -> {
-                sb.append("<h3 style='margin: 0 0 10px 0; font-size: 16px; font-weight: 600;'><i class='fas fa-globe-americas' style='color:#14b8a6; margin-right:8px;'></i> Register 2D Geospatial Coordinate</h3>");
-                sb.append("<p style='font-size: 13px; color: #94a3b8; margin-bottom: 14px;'>Store geographical points with Latitude/Longitude and metadata properties.</p>");
-                sb.append("<form method='POST' action='").append(actionUrl).append("'>\n");
-                sb.append("  <input type='hidden' name='action' value='insert_object' />\n");
-                sb.append("  <input type='hidden' name='target_db' value='").append(targetDb).append("' />\n");
-                sb.append("  <div style='display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px;'>\n");
-                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Location ID</label><input class='form-input' type='text' name='target_id' value='loc_panama_").append(System.currentTimeMillis() % 1000).append("' required /></div>\n");
-                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Location Name</label><input class='form-input' type='text' name='geo_name' value='Panama Logistics Hub' /></div>\n");
+                sb.append("  <div style='display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;'>\n");
+                sb.append("    <div><label class='form-label'>Latitude</label><input type='text' name='geo_lat' class='form-input' value='8.98' required /></div>\n");
+                sb.append("    <div><label class='form-label'>Longitude</label><input type='text' name='geo_lon' class='form-input' value='-79.52' required /></div>\n");
                 sb.append("  </div>\n");
-                sb.append("  <div style='display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px;'>\n");
-                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Latitude</label><input class='form-input' type='number' step='any' name='geo_lat' value='8.9824' required /></div>\n");
-                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Longitude</label><input class='form-input' type='number' step='any' name='geo_lon' value='-79.5199' required /></div>\n");
+                sb.append("  <div class='form-group'>\n");
+                sb.append("    <label class='form-label'>Geo Properties (JSON)</label>\n");
+                sb.append("    <textarea name='geo_meta' class='form-input' rows='4'>").append(escapeHtml(currentVal)).append("</textarea>\n");
                 sb.append("  </div>\n");
-                sb.append("  <label style='font-size:12px; color:#94a3b8; font-weight:600;'>GIS Metadata</label>\n");
-                sb.append("  <textarea name='geo_meta' class='form-input' style='height: 45px; font-family: monospace; font-size: 12px;'>{\"city\": \"Panama City\", \"radius_km\": 15, \"active\": true}</textarea>\n");
-                sb.append("  <button type='submit' class='btn-action btn-primary' style='margin-top: 10px;'><i class='fas fa-map-marker-alt'></i> Register Geo Point</button>\n");
-                sb.append("</form>");
             }
             case "OBJECT" -> {
-                sb.append("<h3 style='margin: 0 0 10px 0; font-size: 16px; font-weight: 600;'><i class='fas fa-archive' style='color:#a855f7; margin-right:8px;'></i> Store Binary BLOB / Serialized Stream</h3>");
-                sb.append("<p style='font-size: 13px; color: #94a3b8; margin-bottom: 14px;'>Persist binary objects, files, and serialized class payloads.</p>");
-                sb.append("<form method='POST' action='").append(actionUrl).append("'>\n");
-                sb.append("  <input type='hidden' name='action' value='insert_object' />\n");
-                sb.append("  <input type='hidden' name='target_db' value='").append(targetDb).append("' />\n");
-                sb.append("  <div style='display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px;'>\n");
-                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Object Key / Filename</label><input class='form-input' type='text' name='target_id' value='invoice_2026_").append(System.currentTimeMillis() % 1000).append(".pdf' required /></div>\n");
-                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>MIME / Content Type</label><input class='form-input' type='text' name='obj_mime' value='application/pdf' /></div>\n");
+                sb.append("  <div class='form-group'>\n");
+                sb.append("    <label class='form-label'>Object Payload (JSON)</label>\n");
+                sb.append("    <textarea name='obj_payload' class='form-input' rows='5'>").append(escapeHtml(currentVal)).append("</textarea>\n");
                 sb.append("  </div>\n");
-                sb.append("  <div style='margin-bottom:10px;'><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Java Object Wrapper Class</label><input class='form-input' type='text' name='obj_class' value='com.jettra.storage.BlobDocument' /></div>\n");
-                sb.append("  <label style='font-size:12px; color:#94a3b8; font-weight:600;'>Payload (Base64 / Stream Text)</label>\n");
-                sb.append("  <textarea name='obj_payload' class='form-input' style='height: 60px; font-family: monospace; font-size: 12px;' required>JVBERi0xLjQKJcTl8uXr...[Base64 Stream Payload]...</textarea>\n");
-                sb.append("  <button type='submit' class='btn-action btn-primary' style='margin-top: 10px;'><i class='fas fa-upload'></i> Save Object BLOB</button>\n");
-                sb.append("</form>");
             }
             case "RECORDS" -> {
-                sb.append("<h3 style='margin: 0 0 10px 0; font-size: 16px; font-weight: 600;'><i class='fas fa-id-card' style='color:#f43f5e; margin-right:8px;'></i> Store Immutable Java Record</h3>");
-                sb.append("<p style='font-size: 13px; color: #94a3b8; margin-bottom: 14px;'>Persist typed Java records with structural schema reflection and component validation.</p>");
-                sb.append("<form method='POST' action='").append(actionUrl).append("'>\n");
-                sb.append("  <input type='hidden' name='action' value='insert_object' />\n");
-                sb.append("  <input type='hidden' name='target_db' value='").append(targetDb).append("' />\n");
-                sb.append("  <div style='display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px;'>\n");
-                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Record ID</label><input class='form-input' type='text' name='target_id' value='rec_").append(System.currentTimeMillis() % 1000).append("' required /></div>\n");
-                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Record Class</label><input class='form-input' type='text' name='rec_class' value='com.jettra.model.PersonRecord' required /></div>\n");
+                sb.append("  <div class='form-group'>\n");
+                sb.append("    <label class='form-label'>Record Schema / Class Name</label>\n");
+                sb.append("    <input type='text' name='rec_class' class='form-input' value='RecordModel' required />\n");
                 sb.append("  </div>\n");
-                sb.append("  <label style='font-size:12px; color:#94a3b8; font-weight:600;'>Record Components JSON (Fields & Values)</label>\n");
-                sb.append("  <textarea name='rec_payload' class='form-input' style='height: 90px; font-family: monospace; font-size: 12px;' required>{\n  \"id\": \"rec_01\",\n  \"fullName\": \"Alice Monroe\",\n  \"email\": \"alice@enterprise.org\",\n  \"active\": true,\n  \"salary\": 92500.00\n}</textarea>\n");
-                sb.append("  <button type='submit' class='btn-action btn-primary' style='margin-top: 10px;'><i class='fas fa-save'></i> Save Java Record</button>\n");
-                sb.append("</form>");
+                sb.append("  <div class='form-group'>\n");
+                sb.append("    <label class='form-label'>Record Data (JSON)</label>\n");
+                sb.append("    <textarea name='rec_payload' class='form-input' rows='5'>").append(escapeHtml(currentVal)).append("</textarea>\n");
+                sb.append("  </div>\n");
+            }
+            default -> { // DOCUMENT
+                sb.append("  <div class='form-group'>\n");
+                sb.append("    <label class='form-label'>Document JSON Body</label>\n");
+                sb.append("    <textarea name='doc_payload' class='form-input' rows='7'>").append(escapeHtml(currentVal)).append("</textarea>\n");
+                sb.append("  </div>\n");
             }
         }
-        return Paragraph.of(sb.toString());
-    }
 
-    private Widget buildEngineQuerySearchForm(String engineKey, String targetDb, String queryResultDisplay) {
-        StringBuilder sb = new StringBuilder();
-        String actionUrl = JettraServer.resolvePath("/engines?engine=" + engineKey);
-        String jsonDisplay = queryResultDisplay.isEmpty() ? "{\n  \"message\": \"Execute a query, lookup, or similarity search to view live results.\"\n}" : queryResultDisplay;
-
-        sb.append("<h3 style='margin: 0 0 10px 0; font-size: 16px; font-weight: 600;'><i class='fas fa-search' style='color:#a78bfa; margin-right:8px;'></i> Query & Search Inspector</h3>");
-        sb.append("<p style='font-size: 13px; color: #94a3b8; margin-bottom: 14px;'>Execute primary key lookups or specialized queries (e.g. Vector Cosine Search, Geo Haversine).</p>");
-
-        // Standard ID Query Form
-        sb.append("<form method='POST' action='").append(actionUrl).append("' style='margin-bottom:12px;'>\n");
-        sb.append("  <input type='hidden' name='action' value='query_object' />\n");
-        sb.append("  <input type='hidden' name='target_db' value='").append(targetDb).append("' />\n");
-        sb.append("  <div style='display:flex; gap:8px;'>\n");
-        sb.append("    <input class='form-input' style='flex:1;' type='text' name='target_id' placeholder='Enter Object ID / Key' required />\n");
-        sb.append("    <button type='submit' class='btn-action btn-secondary'><i class='fas fa-bolt'></i> Fetch</button>\n");
+        sb.append("  <div style='display:flex; gap:10px; margin-top:16px;'>\n");
+        sb.append("    <button type='submit' class='btn-action btn-primary'><i class='fas fa-save'></i> Save Changes (New Version)</button>\n");
+        sb.append("    <a href='").append(actionUrl).append("' class='btn-action btn-secondary'>Cancel</a>\n");
         sb.append("  </div>\n");
         sb.append("</form>\n");
 
-        // Specialized Search for VECTOR
-        if ("VECTOR".equalsIgnoreCase(engineKey)) {
-            sb.append("<div style='background:rgba(30,41,59,0.7); border:1px solid rgba(139,92,246,0.3); border-radius:8px; padding:10px; margin-bottom:12px;'>\n");
-            sb.append("  <div style='font-size:12px; font-weight:600; color:#c084fc; margin-bottom:6px;'><i class='fas fa-brain'></i> Top-K Cosine Similarity Search</div>\n");
-            sb.append("  <form method='POST' action='").append(actionUrl).append("'>\n");
-            sb.append("    <input type='hidden' name='action' value='search_vector' />\n");
-            sb.append("    <input type='hidden' name='target_db' value='").append(targetDb).append("' />\n");
-            sb.append("    <div style='display:grid; grid-template-columns: 2fr 1fr; gap:8px; margin-bottom:6px;'>\n");
-            sb.append("      <input class='form-input' style='font-size:12px;' type='text' name='query_vector' value='0.10, 0.44, 0.85, 0.30' placeholder='Query Vector float[]' required />\n");
-            sb.append("      <input class='form-input' style='font-size:12px;' type='number' name='top_k' value='5' min='1' max='50' />\n");
+        return Div.of(Paragraph.of(sb.toString())).modifier(new io.jettra.flux.core.Modifier().cssClass("store-card").style("margin-bottom:24px; border: 1px solid #3b82f6;"));
+    }
+
+    private Widget createVersionHistoryModal(String engineKey, String targetDb, String historyId) {
+        String actionUrl = JettraServer.resolvePath("/engines?engine=" + engineKey + "&target_db=" + targetDb);
+        String storageKey = resolveStorageKey(engineKey, targetDb, historyId);
+        List<RecordVersion> versions = engine.getStorageCore().getVersionHistory(storageKey);
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("<div class='espresso-modal-overlay' style='display: flex; position: fixed; z-index: 1050; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.75); backdrop-filter: blur(6px); justify-content: center; align-items: center;'>\n");
+        sb.append("  <div class='espresso-modal-content store-card' style='background: #0f172a; padding: 24px; border: 1px solid #8b5cf6; border-radius: 14px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.9); max-width: 840px; width: 95%; max-height: 85vh; overflow-y: auto; position: relative;'>\n");
+
+        sb.append("    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:12px;'>\n");
+        sb.append("      <h3 style='margin:0; font-size:18px; color:#c084fc; display:flex; align-items:center; gap:8px;'>\n");
+        sb.append("        <i class='fas fa-history'></i> Version History & Point-in-Time Restore: <span style='color:#f8fafc;'>").append(escapeHtml(historyId)).append("</span>\n");
+        sb.append("      </h3>\n");
+        sb.append("      <a href='").append(actionUrl).append("' class='btn-action btn-secondary' style='font-size:13px;'><i class='fas fa-times'></i> Close</a>\n");
+        sb.append("    </div>\n");
+
+        if (versions.isEmpty()) {
+            sb.append("    <p style='color:#94a3b8; font-size:13px;'>No historical versions recorded for key: <code>").append(storageKey).append("</code></p>\n");
+        } else {
+            sb.append("    <div style='display:flex; flex-direction:column; gap:14px;'>\n");
+            for (int i = 0; i < versions.size(); i++) {
+                RecordVersion ver = versions.get(i);
+                RecordVersion prevVer = (i < versions.size() - 1) ? versions.get(i + 1) : null;
+
+                String badgeClass = ver.isCurrent() ? "badge-active" : "badge-engine";
+                String badgeText = ver.isCurrent() ? "v" + ver.versionNumber() + " (CURRENT VERSION)" : "v" + ver.versionNumber();
+
+                sb.append("    <div style='background:rgba(15,23,42,0.85); border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:16px;'>\n");
+                sb.append("      <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;'>\n");
+                sb.append("        <div style='display:flex; align-items:center; gap:10px;'>\n");
+                sb.append("          <span class='store-badge ").append(badgeClass).append("'>").append(badgeText).append("</span>\n");
+                sb.append("          <span style='font-size:12px; color:#94a3b8;'><i class='fas fa-clock'></i> ").append(ver.formattedDate()).append(" (Timestamp: ").append(ver.timestamp()).append(")</span>\n");
+                sb.append("        </div>\n");
+
+                if (!ver.isCurrent()) {
+                    sb.append("        <form method='POST' action='").append(actionUrl).append("' style='margin:0;'>\n");
+                    sb.append("          <input type='hidden' name='action' value='restore_version' />\n");
+                    sb.append("          <input type='hidden' name='target_id' value='").append(escapeHtml(historyId)).append("' />\n");
+                    sb.append("          <input type='hidden' name='version_ts' value='").append(ver.timestamp()).append("' />\n");
+                    sb.append("          <button type='submit' class='btn-action' style='background:#8b5cf6; color:white; padding:6px 14px; font-size:12px; border-radius:6px; font-weight:500; cursor:pointer;'>\n");
+                    sb.append("            <i class='fas fa-undo'></i> Restore to this Version\n");
+                    sb.append("          </button>\n");
+                    sb.append("        </form>\n");
+                }
+                sb.append("      </div>\n");
+
+                // Diff Box if previous version exists
+                if (prevVer != null) {
+                    sb.append("      <div style='margin-bottom:10px; background:rgba(0,0,0,0.35); border-radius:6px; padding:10px 12px; font-size:12px; border:1px solid rgba(56,189,248,0.2);'>\n");
+                    sb.append("        <span style='color:#38bdf8; font-weight:600;'><i class='fas fa-code-branch'></i> Differences against v").append(prevVer.versionNumber()).append(":</span>\n");
+                    sb.append(renderDiffVisual(prevVer.payload(), ver.payload()));
+                    sb.append("      </div>\n");
+                }
+
+                sb.append("      <pre style='margin:0; background:rgba(0,0,0,0.6); padding:12px; border-radius:6px; font-size:12px; color:#e2e8f0; overflow-x:auto; border:1px solid rgba(255,255,255,0.05);'><code>")
+                  .append(escapeHtml(ver.payload()))
+                  .append("</code></pre>\n");
+
+                sb.append("    </div>\n");
+            }
             sb.append("    </div>\n");
-            sb.append("    <button type='submit' class='btn-action btn-primary' style='padding:4px 10px; font-size:12px;'><i class='fas fa-search'></i> Run ANN Cosine Search</button>\n");
-            sb.append("  </form>\n");
-            sb.append("</div>\n");
         }
 
-        // Specialized Tool for GEOSPATIAL
-        if ("GEOSPATIAL".equalsIgnoreCase(engineKey)) {
-            sb.append("<div style='background:rgba(30,41,59,0.7); border:1px solid rgba(20,184,166,0.3); border-radius:8px; padding:10px; margin-bottom:12px;'>\n");
-            sb.append("  <div style='font-size:12px; font-weight:600; color:#2dd4bf; margin-bottom:6px;'><i class='fas fa-route'></i> Haversine Distance Calculator</div>\n");
-            sb.append("  <form method='POST' action='").append(actionUrl).append("'>\n");
-            sb.append("    <input type='hidden' name='action' value='calc_distance' />\n");
-            sb.append("    <input type='hidden' name='target_db' value='").append(targetDb).append("' />\n");
-            sb.append("    <div style='display:grid; grid-template-columns: 1fr 1fr; gap:6px; margin-bottom:6px;'>\n");
-            sb.append("      <input class='form-input' style='font-size:11px;' type='number' step='any' name='dist_lat1' value='8.9824' placeholder='Lat 1' />\n");
-            sb.append("      <input class='form-input' style='font-size:11px;' type='number' step='any' name='dist_lon1' value='-79.5199' placeholder='Lon 1' />\n");
-            sb.append("      <input class='form-input' style='font-size:11px;' type='number' step='any' name='dist_lat2' value='8.9745' placeholder='Lat 2' />\n");
-            sb.append("      <input class='form-input' style='font-size:11px;' type='number' step='any' name='dist_lon2' value='-79.5532' placeholder='Lon 2' />\n");
-            sb.append("    </div>\n");
-            sb.append("    <button type='submit' class='btn-action btn-secondary' style='padding:4px 10px; font-size:12px;'><i class='fas fa-calculator'></i> Calculate Distance (km)</button>\n");
-            sb.append("  </form>\n");
-            sb.append("</div>\n");
-        }
+        sb.append("    <div style='margin-top:20px; text-align:right; border-top:1px solid rgba(255,255,255,0.08); padding-top:14px;'>\n");
+        sb.append("      <a href='").append(actionUrl).append("' class='btn-action btn-secondary'><i class='fas fa-times'></i> Close Modal</a>\n");
+        sb.append("    </div>\n");
 
-        // Live Engine Result Display
-        sb.append("<div style='background: rgba(15,23,42,0.9); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 10px;'>\n");
-        sb.append("  <div style='font-size: 11px; font-weight: 600; color: #94a3b8; margin-bottom: 4px;'><i class='fas fa-terminal'></i> LIVE ENGINE RESULT</div>\n");
-        sb.append("  <pre style='margin:0; font-family: monospace; font-size: 12px; color: #38bdf8; max-height: 120px; overflow-y: auto;'>").append(jsonDisplay).append("</pre>\n");
+        sb.append("  </div>\n");
         sb.append("</div>\n");
 
         return Paragraph.of(sb.toString());
     }
 
-    private Widget createLiveObjectsExplorer(String engineKey, String targetDb) {
-        StringBuilder sb = new StringBuilder();
-        String actionUrl = JettraServer.resolvePath("/engines?engine=" + engineKey);
+    private String renderDiffVisual(String oldPayload, String newPayload) {
+        if (oldPayload == null) oldPayload = "";
+        if (newPayload == null) newPayload = "";
+        if (oldPayload.equals(newPayload)) {
+            return "<div style='color:#94a3b8; font-size:11px; margin-top:4px;'>Identical payload (no modification)</div>";
+        }
+        return "<div style='display:flex; flex-direction:column; gap:2px; font-family:monospace; font-size:11px; margin-top:4px;'>\n" +
+               "  <div style='color:#f87171;'>- " + escapeHtml(oldPayload.length() > 90 ? oldPayload.substring(0, 90) + "..." : oldPayload) + "</div>\n" +
+               "  <div style='color:#4ade80;'>+ " + escapeHtml(newPayload.length() > 90 ? newPayload.substring(0, 90) + "..." : newPayload) + "</div>\n" +
+               "</div>";
+    }
 
-        sb.append("<div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;'>\n");
-        sb.append("  <h3 style='margin:0; font-size:18px; font-weight:600;'><i class='fas fa-list' style='color:#38bdf8; margin-right:8px;'></i> Stored Objects in ").append(engineKey).append(" [").append(targetDb).append("]</h3>\n");
-        sb.append("  <a href='").append(actionUrl).append("&target_db=").append(targetDb).append("' class='btn-action btn-secondary' style='padding:4px 10px; font-size:12px;'><i class='fas fa-sync'></i> Refresh Objects</a>\n");
+    private Widget createTypeSpecificCrudCard(String engineKey, String targetDb, String queryResultDisplay) {
+        String actionUrl = JettraServer.resolvePath("/engines?engine=" + engineKey + "&target_db=" + targetDb);
+        StringBuilder sb = new StringBuilder();
+
+        sb.append("<div style='display:grid; grid-template-columns: 1fr 1fr; gap:20px;'>\n");
+
+        // INSERT / CREATE SECTION
+        sb.append("<div>\n");
+        sb.append("<h3 style='margin:0 0 12px 0; font-size:16px; color:#38bdf8;'><i class='fas fa-plus-circle'></i> Insert / Persist New ").append(engineKey).append(" Object</h3>\n");
+        sb.append("<form method='POST' action='").append(actionUrl).append("'>\n");
+        sb.append("  <input type='hidden' name='action' value='insert_object' />\n");
+        sb.append("  <div style='display:grid; grid-template-columns: 1.1fr 1fr; gap:10px; margin-bottom:12px;'>\n");
+        sb.append("    <div>\n");
+        sb.append("      <label class='form-label'>ID Strategy</label>\n");
+        sb.append("      <select name='id_mode' class='form-input' style='background:#0f172a; color:#38bdf8; border:1px solid rgba(255,255,255,0.1);'>\n");
+        sb.append("        <option value='MANUAL'>1. Manual ID</option>\n");
+        sb.append("        <option value='AUTOINCREMENT'>2. Auto-increment Sequence</option>\n");
+        sb.append("        <option value='UUID'>3. Composite UUID (Host+Time+DB+Entropy)</option>\n");
+        sb.append("      </select>\n");
+        sb.append("    </div>\n");
+        sb.append("    <div>\n");
+        sb.append("      <label class='form-label'>Object / Document ID</label>\n");
+        sb.append("      <input type='text' name='target_id' class='form-input' placeholder='ID (optional for Auto/UUID)' />\n");
+        sb.append("    </div>\n");
+        sb.append("  </div>\n");
+
+        switch (engineKey) {
+            case "KEYVALUE" -> sb.append("  <div class='form-group'><label class='form-label'>String Value</label><input type='text' name='kv_value' class='form-input' placeholder='value data...' required /></div>\n");
+            case "VECTOR" -> {
+                sb.append("  <div class='form-group'><label class='form-label'>Vector Coords (floats)</label><input type='text' name='vector_coords' class='form-input' placeholder='0.12, 0.45, 0.88' required /></div>\n");
+                sb.append("  <div class='form-group'><label class='form-label'>Metadata (JSON)</label><textarea name='vector_meta' class='form-input' rows='3'>{\"model\":\"text-embedding-3\",\"author\":\"system\"}</textarea></div>\n");
+            }
+            case "GRAPH" -> sb.append("  <div class='form-group'><label class='form-label'>Node Properties (JSON)</label><textarea name='node_props' class='form-input' rows='4'>{\"name\":\"User Node\",\"role\":\"admin\",\"connections\":4}</textarea></div>\n");
+            case "TIMESERIES" -> sb.append("  <div class='form-group'><label class='form-label'>Telemetry Metrics (JSON)</label><textarea name='ts_tags' class='form-input' rows='4'>{\"temperature\":24.5,\"cpu_load\":42,\"status\":\"OK\"}</textarea></div>\n");
+            case "COLUMN" -> sb.append("  <div class='form-group'><label class='form-label'>Row Data (JSON or key=val;)</label><textarea name='col_data' class='form-input' rows='4'>{\"region\":\"US-East\",\"revenue\":15200,\"quarter\":\"Q3\"}</textarea></div>\n");
+            case "GEOSPATIAL" -> {
+                sb.append("  <div style='display:grid; grid-template-columns:1fr 1fr; gap:8px;'><input type='text' name='geo_lat' class='form-input' placeholder='Lat (e.g. 8.98)' required /><input type='text' name='geo_lon' class='form-input' placeholder='Lon (e.g. -79.52)' required /></div>\n");
+                sb.append("  <div class='form-group' style='margin-top:8px;'><label class='form-label'>Geo Metadata (JSON)</label><textarea name='geo_meta' class='form-input' rows='3'>{\"place\":\"Panama City Hub\",\"type\":\"warehouse\"}</textarea></div>\n");
+            }
+            case "OBJECT" -> sb.append("  <div class='form-group'><label class='form-label'>Object JSON / Blob</label><textarea name='obj_payload' class='form-input' rows='4'>{\"fileName\":\"report.pdf\",\"sizeBytes\":1048576,\"mime\":\"application/pdf\"}</textarea></div>\n");
+            case "RECORDS" -> {
+                sb.append("  <div class='form-group'><label class='form-label'>Java 25 Record Type</label><input type='text' name='rec_class' class='form-input' value='CustomerProfile' required /></div>\n");
+                sb.append("  <div class='form-group'><label class='form-label'>Record Data (JSON)</label><textarea name='rec_payload' class='form-input' rows='3'>{\"firstName\":\"Carlos\",\"email\":\"carlos@example.com\",\"verified\":true}</textarea></div>\n");
+            }
+            default -> sb.append("  <div class='form-group'><label class='form-label'>Document JSON Body</label><textarea name='doc_payload' class='form-input' rows='4'>{\"title\":\"Sample Title\",\"status\":\"ACTIVE\",\"score\":98}</textarea></div>\n");
+        }
+        sb.append("  <button type='submit' class='btn-action btn-primary' style='margin-top:10px;'><i class='fas fa-save'></i> Persist to ").append(engineKey).append("</button>\n");
+        sb.append("</form>\n");
+        sb.append("</div>\n");
+
+        // QUERY / QUERY SPECIALIZED SECTION
+        sb.append("<div>\n");
+        sb.append("<h3 style='margin:0 0 12px 0; font-size:16px; color:#10b981;'><i class='fas fa-search'></i> Lookup / Query Engine Data</h3>\n");
+        sb.append("<form method='POST' action='").append(actionUrl).append("'>\n");
+        sb.append("  <input type='hidden' name='action' value='query_object' />\n");
+        sb.append("  <div class='form-group'><label class='form-label'>Lookup by ID / Key</label><div style='display:flex; gap:8px;'><input type='text' name='target_id' class='form-input' placeholder='Enter ID...' required /><button type='submit' class='btn-action btn-primary'><i class='fas fa-search'></i> Find</button></div></div>\n");
+        sb.append("</form>\n");
+
+        if (queryResultDisplay != null && !queryResultDisplay.isBlank()) {
+            sb.append("<div style='margin-top:14px;'><label class='form-label' style='color:#10b981;'>Query Output Result:</label><pre style='background:rgba(0,0,0,0.5); padding:10px; border-radius:6px; font-size:12px; color:#a7f3d0; max-height:160px; overflow-y:auto;'><code>").append(escapeHtml(queryResultDisplay)).append("</code></pre></div>\n");
+        }
+        sb.append("</div>\n");
+
+        sb.append("</div>\n");
+
+        return Div.of(Paragraph.of(sb.toString())).modifier(new io.jettra.flux.core.Modifier().cssClass("store-card").style("margin-bottom:24px;"));
+    }
+
+    private Widget createLiveObjectsExplorer(String engineKey, String targetDb, String filterQuery) {
+        String actionUrl = JettraServer.resolvePath("/engines?engine=" + engineKey + "&target_db=" + targetDb);
+        String exportBaseUrl = JettraServer.resolvePath("/engines?engine=" + engineKey + "&target_db=" + targetDb + "&action=export");
+
+        StringBuilder sb = new StringBuilder();
+
+        // Header with Live Search Filter and Export Buttons
+        sb.append("<div style='display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px;'>\n");
+        sb.append("  <div>\n");
+        sb.append("    <h3 style='margin:0; font-size:18px; font-weight:600;'><i class='fas fa-table' style='color:#38bdf8; margin-right:8px;'></i> Stored Objects in [").append(targetDb).append("]</h3>\n");
+        sb.append("    <p style='margin:2px 0 0 0; font-size:12px; color:#94a3b8;'>Inspect live records, edit fields, navigate version history diffs, and export reports.</p>\n");
+        sb.append("  </div>\n");
+
+        sb.append("  <div style='display:flex; align-items:center; gap:8px; flex-wrap:wrap;'>\n");
+        // Real-time table search input (client-side JS filtering)
+        sb.append("    <div style='position:relative;'>\n");
+        sb.append("      <input type='text' id='liveTableSearch' class='form-input' style='padding-left:30px; font-size:12px; height:32px; width:180px;' placeholder='Filter records...' onkeyup='filterLiveTable()' />\n");
+        sb.append("      <i class='fas fa-search' style='position:absolute; left:10px; top:9px; color:#94a3b8; font-size:12px;'></i>\n");
+        sb.append("    </div>\n");
+
+        // Export dropdown / buttons using JettraReport
+        sb.append("    <div style='display:flex; gap:6px;'>\n");
+        sb.append("      <a href='").append(exportBaseUrl).append("&format=excel' class='btn-action btn-secondary' style='font-size:12px; padding:6px 10px; color:#10b981; border-color:rgba(16,185,129,0.3);'><i class='fas fa-file-excel'></i> Excel</a>\n");
+        sb.append("      <a href='").append(exportBaseUrl).append("&format=csv' class='btn-action btn-secondary' style='font-size:12px; padding:6px 10px; color:#38bdf8; border-color:rgba(56,189,248,0.3);'><i class='fas fa-file-csv'></i> CSV</a>\n");
+        sb.append("      <a href='").append(exportBaseUrl).append("&format=pdf' class='btn-action btn-secondary' style='font-size:12px; padding:6px 10px; color:#f43f5e; border-color:rgba(244,63,94,0.3);'><i class='fas fa-file-pdf'></i> PDF</a>\n");
+        sb.append("    </div>\n");
+        sb.append("  </div>\n");
         sb.append("</div>\n");
 
         sb.append("<div class='table-responsive'>\n");
-        sb.append("  <table class='jettra-table'>\n");
+        sb.append("  <table class='jettra-table' id='recordsTable'>\n");
         sb.append("    <thead>\n");
         sb.append("      <tr>\n");
-        sb.append("        <th>Object ID / Key</th>\n");
-        sb.append("        <th>Type & Specific Representation</th>\n");
-        sb.append("        <th>Storage Preview</th>\n");
-        sb.append("        <th>Actions</th>\n");
+        sb.append("        <th style='width:18%;'>Object ID / Key</th>\n");
+        sb.append("        <th style='width:18%;'>Type & Representation</th>\n");
+        sb.append("        <th style='width:38%;'>Storage Preview</th>\n");
+        sb.append("        <th style='width:10%; text-align:center;'>Versions</th>\n");
+        sb.append("        <th style='width:16%; text-align:right;'>Actions</th>\n");
         sb.append("      </tr>\n");
         sb.append("    </thead>\n");
         sb.append("    <tbody>\n");
@@ -795,13 +861,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
                         count++;
                         String id = entry.getKey();
                         String preview = entry.getValue() != null ? entry.getValue().toString() : "{}";
-                        if (preview.length() > 65) preview = preview.substring(0, 65) + "...";
-                        sb.append("<tr>");
-                        sb.append("<td><b>").append(id).append("</b></td>");
-                        sb.append("<td><span class='store-badge badge-active'>DOCUMENT (JSON)</span></td>");
-                        sb.append("<td><code style='font-size:11px;'>").append(preview).append("</code></td>");
-                        sb.append("<td>").append(buildDeleteButton(actionUrl, targetDb, id)).append("</td>");
-                        sb.append("</tr>");
+                        sb.append(buildTableRow(actionUrl, engineKey, targetDb, id, "DOCUMENT (JSON)", "badge-active", preview));
                     }
                 }
             }
@@ -813,13 +873,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
                         count++;
                         String id = entry.getKey();
                         String val = entry.getValue();
-                        if (val.length() > 65) val = val.substring(0, 65) + "...";
-                        sb.append("<tr>");
-                        sb.append("<td><b>").append(id).append("</b></td>");
-                        sb.append("<td><span class='store-badge badge-engine'>KEY-VALUE STRING</span></td>");
-                        sb.append("<td><code style='font-size:11px;'>").append(val).append("</code></td>");
-                        sb.append("<td>").append(buildDeleteButton(actionUrl, targetDb, id)).append("</td>");
-                        sb.append("</tr>");
+                        sb.append(buildTableRow(actionUrl, engineKey, targetDb, id, "KEY-VALUE STRING", "badge-engine", val));
                     }
                 }
             }
@@ -831,13 +885,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
                         count++;
                         String id = entry.getKey();
                         String preview = entry.getValue() != null ? entry.getValue().toString() : "{}";
-                        if (preview.length() > 65) preview = preview.substring(0, 65) + "...";
-                        sb.append("<tr>");
-                        sb.append("<td><b>").append(id).append("</b></td>");
-                        sb.append("<td><span class='store-badge' style='background:rgba(139,92,246,0.2); color:#c084fc;'>VECTOR (float[])</span></td>");
-                        sb.append("<td><code style='font-size:11px;'>").append(preview).append("</code></td>");
-                        sb.append("<td>").append(buildDeleteButton(actionUrl, targetDb, id)).append("</td>");
-                        sb.append("</tr>");
+                        sb.append(buildTableRow(actionUrl, engineKey, targetDb, id, "VECTOR (float[])", "badge-engine", preview));
                     }
                 }
             }
@@ -849,13 +897,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
                         count++;
                         String id = entry.getKey();
                         String preview = entry.getValue() != null ? entry.getValue().toString() : "{}";
-                        if (preview.length() > 65) preview = preview.substring(0, 65) + "...";
-                        sb.append("<tr>");
-                        sb.append("<td><b>").append(id).append("</b></td>");
-                        sb.append("<td><span class='store-badge' style='background:rgba(236,72,153,0.2); color:#f472b6;'>VERTEX (Node)</span></td>");
-                        sb.append("<td><code style='font-size:11px;'>").append(preview).append("</code></td>");
-                        sb.append("<td>").append(buildDeleteButton(actionUrl, targetDb, id)).append("</td>");
-                        sb.append("</tr>");
+                        sb.append(buildTableRow(actionUrl, engineKey, targetDb, id, "VERTEX (Node)", "badge-engine", preview));
                     }
                 }
             }
@@ -867,12 +909,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
                         count++;
                         String ts = entry.getKey();
                         String preview = entry.getValue() != null ? entry.getValue().toString() : "{}";
-                        sb.append("<tr>");
-                        sb.append("<td><b>TS: ").append(ts).append("</b></td>");
-                        sb.append("<td><span class='store-badge' style='background:rgba(6,182,212,0.2); color:#22d3ee;'>TIME-SERIES POINT</span></td>");
-                        sb.append("<td><code style='font-size:11px;'>").append(preview).append("</code></td>");
-                        sb.append("<td>").append(buildDeleteButton(actionUrl, targetDb, ts)).append("</td>");
-                        sb.append("</tr>");
+                        sb.append(buildTableRow(actionUrl, engineKey, targetDb, ts, "TIME-SERIES POINT", "badge-active", preview));
                     }
                 }
             }
@@ -884,13 +921,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
                         count++;
                         String id = entry.getKey();
                         String preview = entry.getValue() != null ? entry.getValue().toString() : "{}";
-                        if (preview.length() > 65) preview = preview.substring(0, 65) + "...";
-                        sb.append("<tr>");
-                        sb.append("<td><b>").append(id).append("</b></td>");
-                        sb.append("<td><span class='store-badge' style='background:rgba(249,115,22,0.2); color:#fb923c;'>COLUMNAR ROW</span></td>");
-                        sb.append("<td><code style='font-size:11px;'>").append(preview).append("</code></td>");
-                        sb.append("<td>").append(buildDeleteButton(actionUrl, targetDb, id)).append("</td>");
-                        sb.append("</tr>");
+                        sb.append(buildTableRow(actionUrl, engineKey, targetDb, id, "COLUMNAR ROW", "badge-engine", preview));
                     }
                 }
             }
@@ -902,13 +933,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
                         count++;
                         String id = entry.getKey();
                         String preview = entry.getValue() != null ? entry.getValue().toString() : "{}";
-                        if (preview.length() > 65) preview = preview.substring(0, 65) + "...";
-                        sb.append("<tr>");
-                        sb.append("<td><b>").append(id).append("</b></td>");
-                        sb.append("<td><span class='store-badge' style='background:rgba(20,184,166,0.2); color:#2dd4bf;'>GIS 2D POINT</span></td>");
-                        sb.append("<td><code style='font-size:11px;'>").append(preview).append("</code></td>");
-                        sb.append("<td>").append(buildDeleteButton(actionUrl, targetDb, id)).append("</td>");
-                        sb.append("</tr>");
+                        sb.append(buildTableRow(actionUrl, engineKey, targetDb, id, "GIS 2D POINT", "badge-active", preview));
                     }
                 }
             }
@@ -920,13 +945,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
                         count++;
                         String id = entry.getKey();
                         String preview = entry.getValue() != null ? entry.getValue().toString() : "{}";
-                        if (preview.length() > 65) preview = preview.substring(0, 65) + "...";
-                        sb.append("<tr>");
-                        sb.append("<td><b>").append(id).append("</b></td>");
-                        sb.append("<td><span class='store-badge' style='background:rgba(168,85,247,0.2); color:#c084fc;'>OBJECT BLOB</span></td>");
-                        sb.append("<td><code style='font-size:11px;'>").append(preview).append("</code></td>");
-                        sb.append("<td>").append(buildDeleteButton(actionUrl, targetDb, id)).append("</td>");
-                        sb.append("</tr>");
+                        sb.append(buildTableRow(actionUrl, engineKey, targetDb, id, "OBJECT BLOB", "badge-engine", preview));
                     }
                 }
             }
@@ -938,36 +957,103 @@ public class StoreEnginesPage extends StoreTemplatePage {
                         count++;
                         String id = entry.getKey();
                         String preview = entry.getValue() != null ? entry.getValue().toString() : "{}";
-                        if (preview.length() > 65) preview = preview.substring(0, 65) + "...";
-                        sb.append("<tr>");
-                        sb.append("<td><b>").append(id).append("</b></td>");
-                        sb.append("<td><span class='store-badge' style='background:rgba(244,63,94,0.2); color:#fb7185;'>RECORD (Java 25)</span></td>");
-                        sb.append("<td><code style='font-size:11px;'>").append(preview).append("</code></td>");
-                        sb.append("<td>").append(buildDeleteButton(actionUrl, targetDb, id)).append("</td>");
-                        sb.append("</tr>");
+                        sb.append(buildTableRow(actionUrl, engineKey, targetDb, id, "RECORD (Java 25)", "badge-active", preview));
                     }
                 }
             }
         }
 
         if (count == 0) {
-            sb.append("<tr><td colspan='4' style='text-align:center; color:#94a3b8; padding:20px;'>No objects currently stored in ").append(engineKey).append(" [").append(targetDb).append("]. Use the form above to add objects.</td></tr>");
+            sb.append("<tr id='noRecordsRow'><td colspan='5' style='text-align:center; color:#94a3b8; padding:24px;'>No objects currently stored in ").append(engineKey).append(" [").append(targetDb).append("]. Use the form above to add objects.</td></tr>");
         }
 
         sb.append("    </tbody>\n");
         sb.append("  </table>\n");
         sb.append("</div>\n");
 
+        // Client-side JavaScript for real-time table searching/filtering
+        sb.append("<script>\n");
+        sb.append("function filterLiveTable() {\n");
+        sb.append("  const input = document.getElementById('liveTableSearch');\n");
+        sb.append("  const filter = input.value.toLowerCase();\n");
+        sb.append("  const table = document.getElementById('recordsTable');\n");
+        sb.append("  const trs = table.getElementsByTagName('tr');\n");
+        sb.append("  for (let i = 1; i < trs.length; i++) {\n");
+        sb.append("    if (trs[i].id === 'noRecordsRow') continue;\n");
+        sb.append("    const text = trs[i].textContent.toLowerCase();\n");
+        sb.append("    trs[i].style.display = text.indexOf(filter) > -1 ? '' : 'none';\n");
+        sb.append("  }\n");
+        sb.append("}\n");
+        sb.append("</script>\n");
+
         return Div.of(Paragraph.of(sb.toString())).modifier(new io.jettra.flux.core.Modifier().cssClass("store-card").style("margin-bottom:24px;"));
     }
 
-    private String buildDeleteButton(String actionUrl, String db, String id) {
-        return "<form method='POST' action='" + actionUrl + "' style='display:inline; margin:0;'>\n" +
-               "  <input type='hidden' name='action' value='delete_object' />\n" +
-               "  <input type='hidden' name='target_db' value='" + db + "' />\n" +
-               "  <input type='hidden' name='target_id' value='" + id + "' />\n" +
-               "  <button type='submit' class='btn-action btn-secondary' style='color:#ef4444; padding:3px 8px; font-size:11px;' onclick='return confirm(\"Are you sure you want to delete object " + id + "?\");'><i class='fas fa-trash'></i> Delete</button>\n" +
-               "</form>";
+    private String buildTableRow(String actionUrl, String engineKey, String targetDb, String id, String badgeLabel, String badgeClass, String payload) {
+        String displayPreview = payload != null ? payload : "{}";
+        if (displayPreview.trim().isEmpty() || displayPreview.equals("{}")) {
+            String storageKey = resolveStorageKey(engineKey, targetDb, id);
+            byte[] raw = engine.getStorageCore().get(storageKey);
+            if (raw != null && raw.length > 0) {
+                String rawStr = new String(raw, StandardCharsets.UTF_8);
+                if (!rawStr.isBlank() && !rawStr.equals("{}")) {
+                    displayPreview = rawStr;
+                }
+            }
+        }
+        if (displayPreview.length() > 65) displayPreview = displayPreview.substring(0, 65) + "...";
+
+        String storageKey = resolveStorageKey(engineKey, targetDb, id);
+        int vCount = Math.max(1, engine.getStorageCore().getVersionCount(storageKey));
+
+        String editUrl = actionUrl + "&edit_id=" + id;
+        String historyUrl = actionUrl + "&view_history=" + id;
+
+        return "<tr>" +
+               "  <td><b>" + escapeHtml(id) + "</b></td>" +
+               "  <td><span class='store-badge " + badgeClass + "'>" + badgeLabel + "</span></td>" +
+               "  <td><code style='font-size:11px;'>" + escapeHtml(displayPreview) + "</code></td>" +
+               "  <td style='text-align:center;'><a href='" + historyUrl + "' style='text-decoration:none;'><span class='store-badge' style='background:rgba(139,92,246,0.2); color:#c084fc; cursor:pointer;' title='Click to view version history modal'><i class='fas fa-layer-group'></i> v" + vCount + "</span></a></td>" +
+               "  <td style='text-align:right; white-space:nowrap;'>" +
+               "    <a href='" + historyUrl + "' class='btn-action btn-secondary' style='color:#c084fc; padding:4px 8px; font-size:11px; margin-right:4px;' title='View Version History Modal'><i class='fas fa-history'></i></a>" +
+               "    <a href='" + editUrl + "' class='btn-action btn-secondary' style='color:#38bdf8; padding:4px 8px; font-size:11px; margin-right:4px;' title='Edit Record'><i class='fas fa-edit'></i></a>" +
+               "    " + buildDeleteButton(actionUrl, targetDb, id, engineKey) +
+               "  </td>" +
+               "</tr>\n";
+    }
+
+    private String buildDeleteButton(String actionUrl, String db, String id, String engineKey) {
+        String dlgId = "delete_dlg_" + Math.abs((engineKey + "_" + db + "_" + id).hashCode());
+        return "<!-- Delete Trigger -->\n" +
+               "<button type='button' class='btn-action btn-secondary' style='color:#ef4444; padding:4px 8px; font-size:11px;' onclick=\"document.getElementById('" + dlgId + "').showModal();\" title='Delete Record'><i class='fas fa-trash'></i></button>\n" +
+               "<!-- JettraFlux Native Confirmation Dialog -->\n" +
+               "<dialog id='" + dlgId + "' style='border: 1px solid rgba(239,68,68,0.4); border-radius: 12px; padding: 0; background: #0f172a; color: #f8fafc; max-width: 440px; width: 90%; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.8); backdrop-filter: blur(8px); margin:auto;'>\n" +
+               "  <div style='padding: 18px 20px; border-bottom: 1px solid rgba(255,255,255,0.08); display: flex; justify-content: space-between; align-items: center;'>\n" +
+               "    <div style='display:flex; align-items:center; gap:10px;'>\n" +
+               "      <div style='width:34px; height:34px; border-radius:8px; background:rgba(239,68,68,0.15); display:flex; align-items:center; justify-content:center; color:#ef4444; font-size:16px;'>\n" +
+               "        <i class='fas fa-exclamation-triangle'></i>\n" +
+               "      </div>\n" +
+               "      <div>\n" +
+               "        <h3 style='margin:0; font-size:15px; font-weight:600; color:#f8fafc;'>Confirm Deletion</h3>\n" +
+               "        <p style='margin:0; font-size:11px; color:#94a3b8;'>Engine: " + escapeHtml(engineKey) + " | Database: " + escapeHtml(db) + "</p>\n" +
+               "      </div>\n" +
+               "    </div>\n" +
+               "    <button type='button' onclick=\"document.getElementById('" + dlgId + "').close();\" style='background:none; border:none; color:#94a3b8; font-size:20px; cursor:pointer; line-height:1;'>&times;</button>\n" +
+               "  </div>\n" +
+               "  <div style='padding: 20px; font-size: 13px; line-height: 1.5; color: #cbd5e1;'>\n" +
+               "    Are you sure you want to permanently delete object <b style='color:#f87171; font-family:monospace; background:rgba(239,68,68,0.1); padding:2px 6px; border-radius:4px;'>" + escapeHtml(id) + "</b>?\n" +
+               "    <p style='margin:8px 0 0 0; font-size:11px; color:#94a3b8;'>This will write a deletion tombstone and remove it from active queries.</p>\n" +
+               "  </div>\n" +
+               "  <div style='padding: 14px 20px; border-top: 1px solid rgba(255,255,255,0.08); display: flex; justify-content: flex-end; gap: 10px; background: rgba(15,23,42,0.6);'>\n" +
+               "    <button type='button' onclick=\"document.getElementById('" + dlgId + "').close();\" class='btn-action btn-secondary'>Cancel</button>\n" +
+               "    <form method='POST' action='" + actionUrl + "' style='margin:0;'>\n" +
+               "      <input type='hidden' name='action' value='delete_object' />\n" +
+               "      <input type='hidden' name='target_db' value='" + escapeHtml(db) + "' />\n" +
+               "      <input type='hidden' name='target_id' value='" + escapeHtml(id) + "' />\n" +
+               "      <button type='submit' class='btn-action' style='background:#ef4444; color:#fff; font-weight:500;'><i class='fas fa-trash'></i> Delete Object</button>\n" +
+               "    </form>\n" +
+               "  </div>\n" +
+               "</dialog>\n";
     }
 
     private Widget createEngineMatrixTable() {

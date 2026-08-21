@@ -72,7 +72,7 @@ public class JettraServerOrchestrator {
         jettraServer.addHandler("/api/auth/login", new AuthRestController(authManager));
         
         // Mount JettraRest controllers mapped to JettraStorageEngine operations
-        jettraServer.addHandler("/api/document/", new DocumentRestController((DocumentEngine) engine.getEngine("DOCUMENT"), authManager));
+        jettraServer.addHandler("/api/document/", new DocumentRestController((DocumentEngine) engine.getEngine("DOCUMENT"), engine, authManager));
         
         // Universal Model endpoint
         jettraServer.addHandler("/api/model/", new ModelRestController(engine, authManager));
