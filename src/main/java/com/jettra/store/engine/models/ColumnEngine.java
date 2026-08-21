@@ -54,4 +54,24 @@ public class ColumnEngine implements EngineFamily {
         }
         return null;
     }
+
+    public void deleteRow(String columnFamily, String rowKey) {
+        String internalKey = "col:" + columnFamily + ":" + rowKey;
+        String command = "PUT " + internalKey + " ";
+        raftClient.sendCommand(command);
+    }
+
+    public java.util.Map<String, JsonObject> list(String columnFamily) {
+        java.util.Map<String, JsonObject> rows = new java.util.LinkedHashMap<>();
+        String prefix = "col:" + columnFamily + ":";
+        java.util.Map<String, byte[]> raw = engine.getStorageCore().scanPrefix(prefix);
+        for (java.util.Map.Entry<String, byte[]> entry : raw.entrySet()) {
+            String rk = entry.getKey().substring(prefix.length());
+            try {
+                JsonObject obj = gson.fromJson(new String(entry.getValue(), StandardCharsets.UTF_8), JsonObject.class);
+                rows.put(rk, obj);
+            } catch (Exception ignored) {}
+        }
+        return rows;
+    }
 }

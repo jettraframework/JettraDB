@@ -66,4 +66,24 @@ public class TimeSeriesEngine implements EngineFamily {
         }
         return null;
     }
+
+    public void delete(String measurement, long timestamp) {
+        String key = "ts:" + measurement + ":" + timestamp;
+        String command = "PUT " + key + " ";
+        raftClient.sendCommand(command);
+    }
+
+    public java.util.Map<String, JsonObject> list(String measurement) {
+        java.util.Map<String, JsonObject> points = new java.util.LinkedHashMap<>();
+        String prefix = "ts:" + measurement + ":";
+        java.util.Map<String, byte[]> raw = engine.getStorageCore().scanPrefix(prefix);
+        for (java.util.Map.Entry<String, byte[]> entry : raw.entrySet()) {
+            String tsKey = entry.getKey().substring(prefix.length());
+            try {
+                JsonObject obj = gson.fromJson(new String(entry.getValue(), StandardCharsets.UTF_8), JsonObject.class);
+                points.put(tsKey, obj);
+            } catch (Exception ignored) {}
+        }
+        return points;
+    }
 }

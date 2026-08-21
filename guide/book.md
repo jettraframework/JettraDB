@@ -487,22 +487,28 @@ docker compose down -v
 
 # Chapter 6: The 8 Multi-Model Database Engines & Exhaustive APIs
 
-`JettraStoreEngine` embeds 8 purpose-built database engines over a shared, high-throughput storage core.
+`JettraStoreEngine` embeds 8 purpose-built database engines over a shared, high-throughput storage core. Each engine features native object typing, specialized serialization formats, and tailored administrative operations.
 
 ---
 
 ## 6.1 Document Engine (JSON / BSON / NoSQL)
 - **Use Case**: Hierarchical JSON records, schema-flexible document catalogs, and e-commerce models with validation rules.
+- **Specific Object Representation**: Structured JSON document with optional `_class` schema binding validated via `JettraRulesEngine`.
+- **Administrative Operations**:
+  - Insert / Upsert Document (`doc_id`, `_class`, `JSON fields`)
+  - Query Document by ID
+  - Delete Document (replicated soft-delete tombstone)
+  - Full Collection Scan & Listing
 - **REST Endpoints**:
   - `POST /api/document/{collection}/{id}` : Insert or update document.
   - `GET  /api/document/{collection}/{id}` : Read document by ID.
   - `DELETE /api/document/{collection}/{id}` : Delete document (writes tombstone).
 
 ```bash
-# Insert customer document
+# Insert customer document with schema validation
 curl -X POST http://localhost:8086/api/document/customers/cust_101 \
   -H "Content-Type: application/json" \
-  -d '{"name": "Alice Corp", "tier": "Enterprise", "credits": 5000}'
+  -d '{"_class": "com.jettra.model.Customer", "name": "Alice Corp", "tier": "Enterprise", "credits": 5000}'
 
 # Read document
 curl -X GET http://localhost:8086/api/document/customers/cust_101
@@ -512,7 +518,11 @@ curl -X GET http://localhost:8086/api/document/customers/cust_101
 
 ## 6.2 Vector Engine (AI Embeddings, Cosine Similarity & ANN)
 - **Use Case**: Semantic search, LLM Retrieval-Augmented Generation (RAG), and recommendation embeddings.
-- **Data Model**: High-dimensional `float[]` vector embeddings with attached metadata payloads.
+- **Specific Object Representation**: High-dimensional float arrays (`float[]`, e.g. 1536 dimensions) paired with metadata JSON payloads and semantic labels.
+- **Administrative Operations**:
+  - Insert Vector Embedding (`vector_id`, `float[] coords`, `label`, `metadata`)
+  - Approximate Nearest Neighbor (ANN) Cosine Similarity Search (`query_vector`, `top_k`)
+  - Vector Retrieval & Deletion
 - **REST Endpoints**:
   - `POST /api/model/vector/insert` : Insert embedding with metadata.
   - `POST /api/model/vector/search` : Top-K Approximate Nearest Neighbor (ANN) query.
@@ -542,7 +552,13 @@ curl -X POST http://localhost:8086/api/model/vector/search \
 
 ## 6.3 Graph Engine (Vertices, Edges & Deep Traversal)
 - **Use Case**: Social networks, fraud detection, dependency graphs, and knowledge graphs.
-- **Data Model**: Property Graph with Vertices and Directed/Undirected Edges.
+- **Specific Object Representation**:
+  - **Vertices (Nodes)**: `node_id`, `label` (e.g. `User`, `Company`), and node property maps.
+  - **Edges (Relationships)**: `from_node`, `to_node`, `relationship_label` (e.g. `FOLLOWS`, `PURCHASED`), weight, and edge properties.
+- **Administrative Operations**:
+  - Add Vertex (Node) & Add Directed Edge (Relationship)
+  - Fetch Node and its incident adjacency relations
+  - Delete Nodes and Edges
 - **REST Endpoints**:
   - `POST /api/model/graph/node` : Create or update vertex.
   - `POST /api/model/graph/edge` : Create relation with weight and properties.
@@ -570,7 +586,11 @@ curl -X POST http://localhost:8086/api/model/graph/edge \
 
 ## 6.4 TimeSeries Engine (IoT Telemetry, Metrics & Range Aggregations)
 - **Use Case**: Server telemetry, IoT sensor feeds, financial tick-by-tick logs.
-- **Data Model**: Time-stamped metrics with indexed dimension tags.
+- **Specific Object Representation**: Chronologically indexed time points (`ts:metric:timestamp`) containing timestamp (millis), numeric metric value, unit of measure, and dimension tags.
+- **Administrative Operations**:
+  - Ingest Timestamped Data Point (`timestamp`, `value`, `unit`, `tags`)
+  - Point-in-time lookup and time-range queries $[T_{start}, T_{end}]$
+  - Metric pruning and deletion
 - **REST Endpoints**:
   - `POST /api/model/timeseries/insert` : Ingest time point.
   - `GET  /api/model/timeseries/range` : Query range $[T_{start}, T_{end}]$.
@@ -590,7 +610,11 @@ curl -X POST http://localhost:8086/api/model/timeseries/insert \
 
 ## 6.5 Columnar Engine (OLAP, Analytical Projections & Run-Length Encoding)
 - **Use Case**: Data warehousing, columnar aggregations, and business intelligence.
-- **Data Model**: Column families stored in contiguous columnar arrays.
+- **Specific Object Representation**: Column families stored in contiguous columnar arrays (`col:table:rowKey`) with vectorized column fields.
+- **Administrative Operations**:
+  - Insert Row with Key-Value Column Cells
+  - Get Row Columns & Project Specific Fields
+  - Delete Columnar Row
 - **REST Endpoints**:
   - `POST /api/model/column/row` : Insert row vector.
   - `GET  /api/model/column/row?table={tbl}&key={k}` : Read row by key.
@@ -609,6 +633,11 @@ curl -X POST http://localhost:8086/api/model/column/row \
 
 ## 6.6 KeyValue Engine (MemTable Cache & Atomic Counters)
 - **Use Case**: User session storage, token caching, feature flags, distributed counters.
+- **Specific Object Representation**: Native String, Numeric, or Raw JSON payload indexed directly in the in-memory MemTable SkipList (`kv:namespace:key`).
+- **Administrative Operations**:
+  - Put Key-Value (`key`, `value`, `type`)
+  - Get Value by Key
+  - Delete Key
 - **REST Endpoints**:
   - `POST /api/model/keyvalue/set` : Put key/value.
   - `GET  /api/model/keyvalue/get?namespace={ns}&key={k}` : Get value.
@@ -616,13 +645,19 @@ curl -X POST http://localhost:8086/api/model/column/row \
 ```bash
 curl -X POST http://localhost:8086/api/model/keyvalue/set \
   -H "Content-Type: application/json" \
-  -d '{"namespace": "session_cache", "key": "sess_tok_abc", "value": "{\"uid\":\"admin\",\"exp\":1724184000}"}'
+  -d '{"namespace": "session_cache", "key": "sess_tok_abc", "value": "ACTIVE_USER_SESSION_99"}'
 ```
 
 ---
 
 ## 6.7 Geospatial Engine (2D Coordinates, GIS Layers & Haversine Distance)
 - **Use Case**: Delivery tracking, geo-fencing, distance radius calculations.
+- **Specific Object Representation**: 2D Geodetic coordinates (`latitude`, `longitude`) with GIS metadata layer attributes (`geo:layer:locId`).
+- **Administrative Operations**:
+  - Register Geospatial Coordinate (`loc_id`, `latitude`, `longitude`, `metadata`)
+  - Retrieve Coordinate by ID
+  - Calculate Haversine Great-Circle Geodesic Distance between points
+  - Delete Geographic Point
 - **REST Endpoints**:
   - `POST /api/model/geospatial/insert` : Register lat/lon point.
   - `GET  /api/model/geospatial/point?layer={layer}&id={id}` : Retrieve geo point.
@@ -643,6 +678,11 @@ curl -X POST http://localhost:8086/api/model/geospatial/insert \
 
 ## 6.8 Object Engine (Binary BLOBs, Chunked Blocks & Media Streams)
 - **Use Case**: Large file storage, signed XML documents, images, serialized model weights.
+- **Specific Object Representation**: Chunked binary blocks and Base64 stream wrappers tagged with MIME type, checksum, and Java class descriptors (`obj:bucket:objId`).
+- **Administrative Operations**:
+  - Save Binary BLOB / Serialized Object Payload
+  - Retrieve Object and inspect byte size / MIME content
+  - Delete Object from Bucket
 - **REST Endpoints**:
   - `POST /api/model/object/save` : Store binary/JSON payload.
   - `GET  /api/model/object/get?bucket={b}&id={id}` : Retrieve object.
@@ -975,24 +1015,40 @@ Passwords in `JCredential` are hashed using salted SHA-256 and stored securely i
 
 # Chapter 11: Web Administration Console (JettraFlux GUI)
 
-The Web Console runs on `jettra.gui.port` (default `50050`) built entirely with **JettraFlux**:
+The Web Management Console runs natively on `jettra.gui.port` (default `50050`) built completely with **JettraFlux** on pure Java 25 Virtual Threads:
 
 ### 11.1 Native JettraFlux Component Architecture
-- Built with responsive widgets (`Scaffold`, `Left`, `Top`, `Card`, `StatCard`, `Datatable`, `ThemeChanged`, `Avatar`).
-- Modern glassmorphism theme with dynamic dark mode switching.
+- Zero external frontend/JavaScript frameworks or heavy servlet engines: Built natively with `Widget`, `Row`, `Column`, `Div`, `Paragraph`, `Table`, `Left`, `Top`, `Card`, `StatCard`, and `Avatar`.
+- Modern dark-mode glassmorphism styling with real-time JVM metrics, disk allocation, and consensus telemetry.
 
-### 11.2 Interactive Database & Object Management Console
-Enables direct operations in `http://localhost:50050/engines`:
-- **Database Provisioning**: Create collections, graphs, time-series streams, and vector namespaces.
-- **Record CRUD Operations**: Create and query records for all 8 engines with live JSON response inspectors.
+### 11.2 Interactive Database & Type-Specific Object Management Console (`/engines`)
+Enables direct visual administration of databases, collections, and specific typed objects across all 8 multi-model engines without forcing everything into generic JSON textareas:
+- **Database / Namespace Provisioning**: Dynamic switcher and provisioner for collections, namespaces, graph spaces, IoT measurement feeds, and storage buckets.
+- **Engine-Specific Object Creation Forms**:
+  - **`DOCUMENT`**: Document ID, Java Schema (`_class`) validation binding, and structured JSON fields.
+  - **`KEYVALUE`**: Key identifier, Value type selector (Plain String, Numeric, Raw JSON), and raw string data.
+  - **`VECTOR`**: Vector ID, semantic classification label, comma-separated `float[]` components, and metadata JSON.
+  - **`GRAPH`**: Mode switch between **Node (Vertex)** and **Directed Edge (Relationship)** with relationship types, weights, and property maps.
+  - **`TIMESERIES`**: Timestamp (monotonic millis), numeric metric value, unit of measure, and dimension tags.
+  - **`COLUMN`**: Row key and tabular column field vectors (`key=value` or JSON).
+  - **`GEOSPATIAL`**: Location ID, location label, decimal Latitude/Longitude coordinates, and GIS metadata.
+  - **`OBJECT`**: Object key / filename, MIME content-type, Java wrapper class, and binary/Base64 stream payload.
+- **Engine-Specific Query & Search Inspector**:
+  - Direct Primary Key lookups across all engines.
+  - **Vector Cosine Similarity Search**: Query vector `float[]` input with Top-K limit calculation.
+  - **Geospatial Haversine Calculator**: Real-time geodesic distance computation in Kilometers and Miles between coordinates.
+- **Live Database Records / Objects Explorer**:
+  - Interactive table listing all stored keys and objects within the active database/namespace.
+  - Type-specific badges and formatted payload previews.
+  - One-click deletion with Raft consensus synchronization and tombstone persistence.
 
-### 11.3 User & Per-Database Security Provisioning
-Enables administrative management in `http://localhost:50050/users`:
-- Provision user accounts with per-database scope assignment (e.g. `customers_db` on `DOCUMENT`, `gis_layers` on `GEOSPATIAL`, or `*` for all).
-- Assign granular roles (`DB_ADMIN`, `READ_WRITE`, `READ_ONLY`, `MANAGER`).
+### 11.3 User & Per-Database Security Provisioning (`/users`)
+Enables administrative security management:
+- Provision user accounts with per-database scope assignment (e.g. `customers_db` on `DOCUMENT`, `gis_layers` on `GEOSPATIAL`, or `*` for global access).
+- Assign granular roles (`DB_ADMIN`, `READ_WRITE`, `READ_ONLY`, `MANAGER`) with password hashing and SQLite synchronization.
 
 ### 11.4 Storage Internals & Swagger OpenAPI Explorer
-- **`/components`**: Inspect active `.jettra` disk files, MemTable heap usage, and Raft consensus peer status.
+- **`/components`**: Inspect active `.jettra` disk files, MemTable heap usage, compaction worker threads, and Raft consensus peer nodes.
 - **`/swagger-ui`**: Embedded OpenAPI explorer for testing all database REST endpoints directly in the browser.
 
 ---

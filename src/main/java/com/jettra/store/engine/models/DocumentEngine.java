@@ -81,6 +81,20 @@ public class DocumentEngine implements EngineFamily {
             System.err.println("Failed to replicate delete operation via Raft.");
         }
     }
+
+    public java.util.Map<String, JsonObject> list(String collection) {
+        java.util.Map<String, JsonObject> docs = new java.util.LinkedHashMap<>();
+        String prefix = collection + ":";
+        java.util.Map<String, byte[]> raw = engine.getStorageCore().scanPrefix(prefix);
+        for (java.util.Map.Entry<String, byte[]> entry : raw.entrySet()) {
+            String docId = entry.getKey().substring(prefix.length());
+            try {
+                JsonObject obj = gson.fromJson(new String(entry.getValue(), StandardCharsets.UTF_8), JsonObject.class);
+                docs.put(docId, obj);
+            } catch (Exception ignored) {}
+        }
+        return docs;
+    }
     
     private void validateDocument(JsonObject document) {
         if (document.has("_class")) {

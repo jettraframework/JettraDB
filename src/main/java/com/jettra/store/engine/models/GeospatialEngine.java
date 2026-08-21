@@ -62,4 +62,38 @@ public class GeospatialEngine implements EngineFamily {
         }
         return null;
     }
+
+    public void deleteLocation(String collection, String locId) {
+        String internalKey = "geo:" + collection + ":" + locId;
+        String command = "PUT " + internalKey + " ";
+        raftClient.sendCommand(command);
+    }
+
+    public java.util.Map<String, JsonObject> list(String collection) {
+        java.util.Map<String, JsonObject> locs = new java.util.LinkedHashMap<>();
+        String prefix = "geo:" + collection + ":";
+        java.util.Map<String, byte[]> raw = engine.getStorageCore().scanPrefix(prefix);
+        for (java.util.Map.Entry<String, byte[]> entry : raw.entrySet()) {
+            String locId = entry.getKey().substring(prefix.length());
+            try {
+                JsonObject obj = gson.fromJson(new String(entry.getValue(), StandardCharsets.UTF_8), JsonObject.class);
+                locs.put(locId, obj);
+            } catch (Exception ignored) {}
+        }
+        return locs;
+    }
+
+    /**
+     * Calculates the great-circle distance between two points in Kilometers (Haversine formula).
+     */
+    public double calculateDistance(double lat1, double lon1, double lat2, double lon2) {
+        final int R = 6371; // Earth radius in km
+        double latDistance = Math.toRadians(lat2 - lat1);
+        double lonDistance = Math.toRadians(lon2 - lon1);
+        double a = Math.sin(latDistance / 2) * Math.sin(latDistance / 2)
+                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                * Math.sin(lonDistance / 2) * Math.sin(lonDistance / 2);
+        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c;
+    }
 }

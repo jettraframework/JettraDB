@@ -66,4 +66,44 @@ public class GraphEngine implements EngineFamily {
             System.err.println("Failed to replicate graph edge via Raft.");
         }
     }
+
+    public void deleteNode(String graphId, String nodeId) {
+        String key = "graph:" + graphId + ":node:" + nodeId;
+        String command = "PUT " + key + " ";
+        raftClient.sendCommand(command);
+    }
+
+    public void deleteEdge(String graphId, String fromNode, String toNode, String label) {
+        String key = "graph:" + graphId + ":edge:" + fromNode + ":" + toNode + ":" + label;
+        String command = "PUT " + key + " ";
+        raftClient.sendCommand(command);
+    }
+
+    public java.util.Map<String, JsonObject> listNodes(String graphId) {
+        java.util.Map<String, JsonObject> nodes = new java.util.LinkedHashMap<>();
+        String prefix = "graph:" + graphId + ":node:";
+        java.util.Map<String, byte[]> raw = engine.getStorageCore().scanPrefix(prefix);
+        for (java.util.Map.Entry<String, byte[]> entry : raw.entrySet()) {
+            String nodeId = entry.getKey().substring(prefix.length());
+            try {
+                JsonObject obj = gson.fromJson(new String(entry.getValue(), StandardCharsets.UTF_8), JsonObject.class);
+                nodes.put(nodeId, obj);
+            } catch (Exception ignored) {}
+        }
+        return nodes;
+    }
+
+    public java.util.Map<String, JsonObject> listEdges(String graphId) {
+        java.util.Map<String, JsonObject> edges = new java.util.LinkedHashMap<>();
+        String prefix = "graph:" + graphId + ":edge:";
+        java.util.Map<String, byte[]> raw = engine.getStorageCore().scanPrefix(prefix);
+        for (java.util.Map.Entry<String, byte[]> entry : raw.entrySet()) {
+            String edgeId = entry.getKey().substring(prefix.length());
+            try {
+                JsonObject obj = gson.fromJson(new String(entry.getValue(), StandardCharsets.UTF_8), JsonObject.class);
+                edges.put(edgeId, obj);
+            } catch (Exception ignored) {}
+        }
+        return edges;
+    }
 }

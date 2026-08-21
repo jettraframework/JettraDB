@@ -111,6 +111,31 @@ public class VectorEngine implements EngineFamily {
         return topResults;
     }
 
+    public void deleteVector(String collection, String vectorId) {
+        String key = "vec:" + collection + ":" + vectorId;
+        String command = "PUT " + key + " ";
+        boolean success = raftClient.sendCommand(command);
+        if (!success) {
+            System.err.println("Failed to replicate vector delete via Raft.");
+        } else {
+            vectorIndex.remove(key);
+        }
+    }
+
+    public java.util.Map<String, JsonObject> list(String collection) {
+        java.util.Map<String, JsonObject> map = new java.util.LinkedHashMap<>();
+        String prefix = "vec:" + collection + ":";
+        java.util.Map<String, byte[]> raw = engine.getStorageCore().scanPrefix(prefix);
+        for (java.util.Map.Entry<String, byte[]> entry : raw.entrySet()) {
+            String id = entry.getKey().substring(prefix.length());
+            try {
+                JsonObject doc = gson.fromJson(new String(entry.getValue(), StandardCharsets.UTF_8), JsonObject.class);
+                map.put(id, doc);
+            } catch (Exception ignored) {}
+        }
+        return map;
+    }
+
     private float calculateCosineSimilarity(float[] vectorA, float[] vectorB) {
         if (vectorA == null || vectorB == null || vectorA.length != vectorB.length) {
             return 0.0f; // Dimension mismatch or null

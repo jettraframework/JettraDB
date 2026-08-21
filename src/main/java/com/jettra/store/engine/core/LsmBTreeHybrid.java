@@ -61,19 +61,57 @@ public class LsmBTreeHybrid {
         // Search MemTable first (highest timestamp).
         String latestKey = memTable.floorKey(key + "@" + Long.MAX_VALUE);
         if (latestKey != null && latestKey.startsWith(key + "@")) {
-            return memTable.get(latestKey);
+            byte[] val = memTable.get(latestKey);
+            return (val != null && val.length > 0) ? val : null;
         }
         
         // If not found, search the hierarchical B-Tree SSTables on disk.
         Long offset = diskIndex.get(key);
         if (offset != null) {
             try {
-                return fileManager.read(offset);
+                byte[] val = fileManager.read(offset);
+                return (val != null && val.length > 0) ? val : null;
             } catch (IOException e) {
                 e.printStackTrace();
             }
         }
         return null;
+    }
+
+    /**
+     * Deletes a record by writing a tombstone.
+     */
+    public void delete(String key, long timestamp) {
+        put(key, new byte[0], timestamp);
+    }
+
+    /**
+     * Scans keys matching a given prefix from both MemTable and DiskIndex.
+     */
+    public Map<String, byte[]> scanPrefix(String prefix) {
+        Map<String, byte[]> results = new java.util.LinkedHashMap<>();
+        // 1. Scan memTable
+        for (String k : memTable.keySet()) {
+            if (k.startsWith(prefix)) {
+                String baseKey = k.contains("@") ? k.substring(0, k.lastIndexOf('@')) : k;
+                if (!results.containsKey(baseKey)) {
+                    byte[] val = get(baseKey);
+                    if (val != null && val.length > 0) {
+                        results.put(baseKey, val);
+                    }
+                }
+            }
+        }
+        // 2. Scan diskIndex
+        for (String baseKey : diskIndex.keySet()) {
+            if (baseKey.startsWith(prefix) && !results.containsKey(baseKey)) {
+                byte[] val = get(baseKey);
+                if (val != null && val.length > 0) {
+                    results.put(baseKey, val);
+                }
+            }
+        }
+        return results;
     }
     
     /**

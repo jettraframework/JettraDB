@@ -57,4 +57,24 @@ public class ObjectEngine implements EngineFamily {
         }
         return null;
     }
+
+    public void deleteObject(String collection, String objId) {
+        String internalKey = "obj:" + collection + ":" + objId;
+        String command = "PUT " + internalKey + " ";
+        raftClient.sendCommand(command);
+    }
+
+    public java.util.Map<String, JsonObject> list(String collection) {
+        java.util.Map<String, JsonObject> objs = new java.util.LinkedHashMap<>();
+        String prefix = "obj:" + collection + ":";
+        java.util.Map<String, byte[]> raw = engine.getStorageCore().scanPrefix(prefix);
+        for (java.util.Map.Entry<String, byte[]> entry : raw.entrySet()) {
+            String objId = entry.getKey().substring(prefix.length());
+            try {
+                JsonObject obj = gson.fromJson(new String(entry.getValue(), StandardCharsets.UTF_8), JsonObject.class);
+                objs.put(objId, obj);
+            } catch (Exception ignored) {}
+        }
+        return objs;
+    }
 }

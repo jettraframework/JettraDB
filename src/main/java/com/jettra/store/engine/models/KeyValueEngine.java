@@ -49,4 +49,24 @@ public class KeyValueEngine implements EngineFamily {
         }
         return null;
     }
+
+    public void delete(String namespace, String key) {
+        String internalKey = "kv:" + namespace + ":" + key;
+        String command = "PUT " + internalKey + " ";
+        boolean success = raftClient.sendCommand(command);
+        if (!success) {
+            System.err.println("Failed to replicate kv deletion via Raft.");
+        }
+    }
+
+    public java.util.Map<String, String> list(String namespace) {
+        java.util.Map<String, String> map = new java.util.LinkedHashMap<>();
+        String prefix = "kv:" + namespace + ":";
+        java.util.Map<String, byte[]> raw = engine.getStorageCore().scanPrefix(prefix);
+        for (java.util.Map.Entry<String, byte[]> entry : raw.entrySet()) {
+            String k = entry.getKey().substring(prefix.length());
+            map.put(k, new String(entry.getValue(), StandardCharsets.UTF_8));
+        }
+        return map;
+    }
 }
