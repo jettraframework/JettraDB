@@ -150,20 +150,22 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
         Widget engineNavPills = createEngineNavPills(selectedEngine);
         Widget dbProvisionBar = createDatabaseProvisionBar(selectedEngine, targetDb);
+        Widget insertRecordModal = createInsertRecordModal(selectedEngine, targetDb);
         Widget editRecordModal = (editId != null && !editId.isBlank()) ? createEditRecordModal(selectedEngine, targetDb, editId) : Paragraph.of("");
         Widget versionHistoryModal = (historyId != null && !historyId.isBlank()) ? createVersionHistoryModal(selectedEngine, targetDb, historyId) : Paragraph.of("");
-        Widget typeSpecificCrudCard = createTypeSpecificCrudCard(selectedEngine, targetDb, queryResultDisplay);
+        Widget queryLookupCard = createQueryLookupCard(selectedEngine, targetDb, queryResultDisplay);
         Widget liveObjectsExplorer = createLiveObjectsExplorer(selectedEngine, targetDb, filterQuery);
         Widget engineMatrix = createEngineMatrixTable();
 
         return Column.of(
             titleBlock,
             alertWidget,
+            insertRecordModal,
             editRecordModal,
             versionHistoryModal,
             engineNavPills,
             dbProvisionBar,
-            typeSpecificCrudCard,
+            queryLookupCard,
             liveObjectsExplorer,
             engineMatrix
         );
@@ -747,72 +749,102 @@ public class StoreEnginesPage extends StoreTemplatePage {
                "</div>";
     }
 
-    private Widget createTypeSpecificCrudCard(String engineKey, String targetDb, String queryResultDisplay) {
+    private Widget createInsertRecordModal(String engineKey, String targetDb) {
         String actionUrl = JettraServer.resolvePath("/engines?engine=" + engineKey + "&target_db=" + targetDb);
         StringBuilder sb = new StringBuilder();
 
-        sb.append("<div style='display:grid; grid-template-columns: 1fr 1fr; gap:20px;'>\n");
+        sb.append("<!-- JettraFlux Native Insert Modal Dialog -->\n");
+        sb.append("<dialog id='insert_record_modal' style='border: 1px solid rgba(56,189,248,0.4); border-radius: 14px; padding: 0; background: #0f172a; color: #f8fafc; max-width: 680px; width: 92%; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.9); backdrop-filter: blur(8px); margin:auto;'>\n");
 
-        // INSERT / CREATE SECTION
-        sb.append("<div>\n");
-        sb.append("<h3 style='margin:0 0 12px 0; font-size:16px; color:#38bdf8;'><i class='fas fa-plus-circle'></i> Insert / Persist New ").append(engineKey).append(" Object</h3>\n");
-        sb.append("<form method='POST' action='").append(actionUrl).append("'>\n");
-        sb.append("  <input type='hidden' name='action' value='insert_object' />\n");
-        sb.append("  <div style='display:grid; grid-template-columns: 1.1fr 1fr; gap:10px; margin-bottom:12px;'>\n");
-        sb.append("    <div>\n");
-        sb.append("      <label class='form-label'>ID Strategy</label>\n");
-        sb.append("      <select name='id_mode' class='form-input' style='background:#0f172a; color:#38bdf8; border:1px solid rgba(255,255,255,0.1);'>\n");
-        sb.append("        <option value='UUID' selected>3. Composite UUID (Host+Time+DB+Entropy)</option>\n");
-        sb.append("        <option value='AUTOINCREMENT'>2. Auto-increment Sequence</option>\n");
-        sb.append("        <option value='MANUAL'>1. Manual ID</option>\n");
-        sb.append("      </select>\n");
+        // Header
+        sb.append("  <div style='padding: 18px 24px; border-bottom: 1px solid rgba(255,255,255,0.08); display: flex; justify-content: space-between; align-items: center;'>\n");
+        sb.append("    <div style='display:flex; align-items:center; gap:10px;'>\n");
+        sb.append("      <div style='width:36px; height:36px; border-radius:8px; background:rgba(56,189,248,0.15); display:flex; align-items:center; justify-content:center; color:#38bdf8; font-size:16px;'><i class='fas fa-plus-circle'></i></div>\n");
+        sb.append("      <div>\n");
+        sb.append("        <h3 style='margin:0; font-size:16px; font-weight:700; color:#f8fafc;'>Insert New ").append(engineKey).append(" Object</h3>\n");
+        sb.append("        <p style='margin:0; font-size:12px; color:#94a3b8;'>Active Database / Namespace: <span style='color:#38bdf8;'>").append(escapeHtml(targetDb)).append("</span></p>\n");
+        sb.append("      </div>\n");
         sb.append("    </div>\n");
-        sb.append("    <div>\n");
-        sb.append("      <label class='form-label'>Object / Document ID</label>\n");
-        sb.append("      <input type='text' name='target_id' class='form-input' placeholder='ID (optional for Auto/UUID)' />\n");
-        sb.append("    </div>\n");
+        sb.append("    <button type='button' class='btn-action btn-secondary' style='padding:4px 8px; font-size:12px;' onclick=\"document.getElementById('insert_record_modal').close();\"><i class='fas fa-times'></i></button>\n");
         sb.append("  </div>\n");
 
-        switch (engineKey) {
-            case "KEYVALUE" -> sb.append("  <div class='form-group'><label class='form-label'>String Value</label><input type='text' name='kv_value' class='form-input' placeholder='value data...' required /></div>\n");
-            case "VECTOR" -> {
-                sb.append("  <div class='form-group'><label class='form-label'>Vector Coords (floats)</label><input type='text' name='vector_coords' class='form-input' placeholder='0.12, 0.45, 0.88' required /></div>\n");
-                sb.append("  <div class='form-group'><label class='form-label'>Metadata (JSON)</label><textarea name='vector_meta' class='form-input' rows='3'>{\"model\":\"text-embedding-3\",\"author\":\"system\"}</textarea></div>\n");
-            }
-            case "GRAPH" -> sb.append("  <div class='form-group'><label class='form-label'>Node Properties (JSON)</label><textarea name='node_props' class='form-input' rows='4'>{\"name\":\"User Node\",\"role\":\"admin\",\"connections\":4}</textarea></div>\n");
-            case "TIMESERIES" -> sb.append("  <div class='form-group'><label class='form-label'>Telemetry Metrics (JSON)</label><textarea name='ts_tags' class='form-input' rows='4'>{\"temperature\":24.5,\"cpu_load\":42,\"status\":\"OK\"}</textarea></div>\n");
-            case "COLUMN" -> sb.append("  <div class='form-group'><label class='form-label'>Row Data (JSON or key=val;)</label><textarea name='col_data' class='form-input' rows='4'>{\"region\":\"US-East\",\"revenue\":15200,\"quarter\":\"Q3\"}</textarea></div>\n");
-            case "GEOSPATIAL" -> {
-                sb.append("  <div style='display:grid; grid-template-columns:1fr 1fr; gap:8px;'><input type='text' name='geo_lat' class='form-input' placeholder='Lat (e.g. 8.98)' required /><input type='text' name='geo_lon' class='form-input' placeholder='Lon (e.g. -79.52)' required /></div>\n");
-                sb.append("  <div class='form-group' style='margin-top:8px;'><label class='form-label'>Geo Metadata (JSON)</label><textarea name='geo_meta' class='form-input' rows='3'>{\"place\":\"Panama City Hub\",\"type\":\"warehouse\"}</textarea></div>\n");
-            }
-            case "OBJECT" -> sb.append("  <div class='form-group'><label class='form-label'>Object JSON / Blob</label><textarea name='obj_payload' class='form-input' rows='4'>{\"fileName\":\"report.pdf\",\"sizeBytes\":1048576,\"mime\":\"application/pdf\"}</textarea></div>\n");
-            case "RECORDS" -> {
-                sb.append("  <div class='form-group'><label class='form-label'>Java 25 Record Type</label><input type='text' name='rec_class' class='form-input' value='CustomerProfile' required /></div>\n");
-                sb.append("  <div class='form-group'><label class='form-label'>Record Data (JSON)</label><textarea name='rec_payload' class='form-input' rows='3'>{\"firstName\":\"Carlos\",\"email\":\"carlos@example.com\",\"verified\":true}</textarea></div>\n");
-            }
-            default -> sb.append("  <div class='form-group'><label class='form-label'>Document JSON Body</label><textarea name='doc_payload' class='form-input' rows='4'>{\"title\":\"Sample Title\",\"status\":\"ACTIVE\",\"score\":98}</textarea></div>\n");
-        }
-        sb.append("  <button type='submit' class='btn-action btn-primary' style='margin-top:10px;'><i class='fas fa-save'></i> Persist to ").append(engineKey).append("</button>\n");
-        sb.append("</form>\n");
-        sb.append("</div>\n");
+        // Body Form
+        sb.append("  <form method='POST' action='").append(actionUrl).append("' style='padding: 20px 24px;'>\n");
+        sb.append("    <input type='hidden' name='action' value='insert_object' />\n");
+        sb.append("    <div style='display:grid; grid-template-columns: 1.1fr 1fr; gap:12px; margin-bottom:14px;'>\n");
+        sb.append("      <div>\n");
+        sb.append("        <label class='form-label'>ID Strategy</label>\n");
+        sb.append("        <select name='id_mode' class='form-input' style='background:#0f172a; color:#38bdf8; border:1px solid rgba(255,255,255,0.1);'>\n");
+        sb.append("          <option value='UUID' selected>3. Composite UUID (Host+Time+DB+Entropy)</option>\n");
+        sb.append("          <option value='AUTOINCREMENT'>2. Auto-increment Sequence</option>\n");
+        sb.append("          <option value='MANUAL'>1. Manual ID</option>\n");
+        sb.append("        </select>\n");
+        sb.append("      </div>\n");
+        sb.append("      <div>\n");
+        sb.append("        <label class='form-label'>Object / Document ID</label>\n");
+        sb.append("        <input type='text' name='target_id' class='form-input' placeholder='ID (optional for Auto/UUID)' />\n");
+        sb.append("      </div>\n");
+        sb.append("    </div>\n");
 
-        // QUERY / QUERY SPECIALIZED SECTION
-        sb.append("<div>\n");
-        sb.append("<h3 style='margin:0 0 12px 0; font-size:16px; color:#10b981;'><i class='fas fa-search'></i> Lookup / Query Engine Data</h3>\n");
-        sb.append("<form method='POST' action='").append(actionUrl).append("'>\n");
-        sb.append("  <input type='hidden' name='action' value='query_object' />\n");
-        sb.append("  <div class='form-group'><label class='form-label'>Lookup by ID / Key</label><div style='display:flex; gap:8px;'><input type='text' name='target_id' class='form-input' placeholder='Enter ID...' required /><button type='submit' class='btn-action btn-primary'><i class='fas fa-search'></i> Find</button></div></div>\n");
-        sb.append("</form>\n");
+        switch (engineKey) {
+            case "KEYVALUE" -> sb.append("    <div class='form-group'><label class='form-label'>String Value</label><input type='text' name='kv_value' class='form-input' placeholder='value data...' required /></div>\n");
+            case "VECTOR" -> {
+                sb.append("    <div class='form-group'><label class='form-label'>Vector Coords (floats)</label><input type='text' name='vector_coords' class='form-input' placeholder='0.12, 0.45, 0.88' required /></div>\n");
+                sb.append("    <div class='form-group'><label class='form-label'>Metadata (JSON)</label><textarea name='vector_meta' class='form-input' rows='3'>{\"model\":\"text-embedding-3\",\"author\":\"system\"}</textarea></div>\n");
+            }
+            case "GRAPH" -> sb.append("    <div class='form-group'><label class='form-label'>Node Properties (JSON)</label><textarea name='node_props' class='form-input' rows='4'>{\"name\":\"User Node\",\"role\":\"admin\",\"connections\":4}</textarea></div>\n");
+            case "TIMESERIES" -> sb.append("    <div class='form-group'><label class='form-label'>Telemetry Metrics (JSON)</label><textarea name='ts_tags' class='form-input' rows='4'>{\"temperature\":24.5,\"cpu_load\":42,\"status\":\"OK\"}</textarea></div>\n");
+            case "COLUMN" -> sb.append("    <div class='form-group'><label class='form-label'>Row Data (JSON or key=val;)</label><textarea name='col_data' class='form-input' rows='4'>{\"region\":\"US-East\",\"revenue\":15200,\"quarter\":\"Q3\"}</textarea></div>\n");
+            case "GEOSPATIAL" -> {
+                sb.append("    <div style='display:grid; grid-template-columns:1fr 1fr; gap:8px;'><input type='text' name='geo_lat' class='form-input' placeholder='Lat (e.g. 8.98)' required /><input type='text' name='geo_lon' class='form-input' placeholder='Lon (e.g. -79.52)' required /></div>\n");
+                sb.append("    <div class='form-group' style='margin-top:8px;'><label class='form-label'>Geo Metadata (JSON)</label><textarea name='geo_meta' class='form-input' rows='3'>{\"place\":\"Panama City Hub\",\"type\":\"warehouse\"}</textarea></div>\n");
+            }
+            case "OBJECT" -> sb.append("    <div class='form-group'><label class='form-label'>Object JSON / Blob</label><textarea name='obj_payload' class='form-input' rows='4'>{\"fileName\":\"report.pdf\",\"sizeBytes\":1048576,\"mime\":\"application/pdf\"}</textarea></div>\n");
+            case "RECORDS" -> {
+                sb.append("    <div class='form-group'><label class='form-label'>Java 25 Record Type</label><input type='text' name='rec_class' class='form-input' value='CustomerProfile' required /></div>\n");
+                sb.append("    <div class='form-group'><label class='form-label'>Record Data (JSON)</label><textarea name='rec_payload' class='form-input' rows='3'>{\"firstName\":\"Carlos\",\"email\":\"carlos@example.com\",\"verified\":true}</textarea></div>\n");
+            }
+            default -> sb.append("    <div class='form-group'><label class='form-label'>Document JSON Body</label><textarea name='doc_payload' class='form-input' rows='5'>{\"title\":\"Sample Title\",\"status\":\"ACTIVE\",\"score\":98}</textarea></div>\n");
+        }
+
+        // Footer
+        sb.append("    <div style='display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 14px;'>\n");
+        sb.append("      <button type='button' class='btn-action btn-secondary' onclick=\"document.getElementById('insert_record_modal').close();\">Cancel</button>\n");
+        sb.append("      <button type='submit' class='btn-action btn-primary'><i class='fas fa-save'></i> Persist Object</button>\n");
+        sb.append("    </div>\n");
+        sb.append("  </form>\n");
+        sb.append("</dialog>\n");
+
+        return Paragraph.of(sb.toString());
+    }
+
+    private Widget createQueryLookupCard(String engineKey, String targetDb, String queryResultDisplay) {
+        String actionUrl = JettraServer.resolvePath("/engines?engine=" + engineKey + "&target_db=" + targetDb);
+        StringBuilder sb = new StringBuilder();
+
+        sb.append("<div style='display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;'>\n");
+        sb.append("  <div style='display:flex; align-items:center; gap:10px;'>\n");
+        sb.append("    <i class='fas fa-search' style='color:#10b981; font-size:16px;'></i>\n");
+        sb.append("    <span style='font-size:14px; font-weight:600; color:#f8fafc;'>Query / Direct Lookup:</span>\n");
+        sb.append("  </div>\n");
+
+        sb.append("  <form method='POST' action='").append(actionUrl).append("' style='display:flex; gap:8px; flex:1; max-width:480px;'>\n");
+        sb.append("    <input type='hidden' name='action' value='query_object' />\n");
+        sb.append("    <input type='text' name='target_id' class='form-input' style='height:34px; font-size:13px;' placeholder='Enter Document / Object ID to query...' required />\n");
+        sb.append("    <button type='submit' class='btn-action btn-primary' style='padding:6px 14px; font-size:12px; height:34px;'><i class='fas fa-search'></i> Find</button>\n");
+        sb.append("  </form>\n");
+        sb.append("</div>\n");
 
         if (queryResultDisplay != null && !queryResultDisplay.isBlank()) {
-            sb.append("<div style='margin-top:14px;'><label class='form-label' style='color:#10b981;'>Query Output Result:</label><pre style='background:rgba(0,0,0,0.5); padding:10px; border-radius:6px; font-size:12px; color:#a7f3d0; max-height:160px; overflow-y:auto;'><code>").append(escapeHtml(queryResultDisplay)).append("</code></pre></div>\n");
+            sb.append("<div style='margin-top:14px; border-top:1px solid rgba(255,255,255,0.08); padding-top:12px;'>\n");
+            sb.append("  <label class='form-label' style='color:#10b981;'><i class='fas fa-terminal'></i> Query Output Result:</label>\n");
+            sb.append("  <pre style='background:rgba(0,0,0,0.5); padding:10px; border-radius:6px; font-size:12px; color:#a7f3d0; max-height:160px; overflow-y:auto; border:1px solid rgba(16,185,129,0.2);'><code>")
+              .append(escapeHtml(queryResultDisplay))
+              .append("</code></pre>\n");
+            sb.append("</div>\n");
         }
-        sb.append("</div>\n");
 
-        sb.append("</div>\n");
-
-        return Div.of(Paragraph.of(sb.toString())).modifier(new io.jettra.flux.core.Modifier().cssClass("store-card").style("margin-bottom:24px;"));
+        return Div.of(Paragraph.of(sb.toString())).modifier(new io.jettra.flux.core.Modifier().cssClass("store-card").style("margin-bottom:20px; padding: 14px 20px;"));
     }
 
     private Widget createLiveObjectsExplorer(String engineKey, String targetDb, String filterQuery) {
@@ -821,7 +853,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
         StringBuilder sb = new StringBuilder();
 
-        // Header with Live Search Filter and Export Buttons
+        // Header with Live Search Filter, Export Buttons, and "+ New Object" Modal Trigger
         sb.append("<div style='display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px;'>\n");
         sb.append("  <div>\n");
         sb.append("    <h3 style='margin:0; font-size:18px; font-weight:600;'><i class='fas fa-table' style='color:#38bdf8; margin-right:8px;'></i> Stored Objects in [").append(targetDb).append("]</h3>\n");
@@ -841,6 +873,9 @@ public class StoreEnginesPage extends StoreTemplatePage {
         sb.append("      <a href='").append(exportBaseUrl).append("&format=csv' class='btn-action btn-secondary' style='font-size:12px; padding:6px 10px; color:#38bdf8; border-color:rgba(56,189,248,0.3);'><i class='fas fa-file-csv'></i> CSV</a>\n");
         sb.append("      <a href='").append(exportBaseUrl).append("&format=pdf' class='btn-action btn-secondary' style='font-size:12px; padding:6px 10px; color:#f43f5e; border-color:rgba(244,63,94,0.3);'><i class='fas fa-file-pdf'></i> PDF</a>\n");
         sb.append("    </div>\n");
+
+        // Primary Action: Modal Trigger Button to Insert New Object
+        sb.append("    <button type='button' class='btn-action btn-primary' onclick=\"document.getElementById('insert_record_modal').showModal();\" style='font-size:12px; padding:6px 14px; font-weight:600;'><i class='fas fa-plus-circle'></i> Insert ").append(engineKey).append("</button>\n");
         sb.append("  </div>\n");
         sb.append("</div>\n");
 
