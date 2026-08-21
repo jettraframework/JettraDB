@@ -21,6 +21,8 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
 
 /**
@@ -54,7 +56,7 @@ public class StoreUsersPage extends StoreTemplatePage {
         String alertMessage = "";
         String alertType = "badge-active";
 
-        // Handle POST User Creation
+        // Handle POST User Actions (create_user, delete_user)
         if ("POST".equalsIgnoreCase(exchange.getRequestMethod())) {
             try {
                 String action = params != null ? params.get("action") : null;
@@ -81,9 +83,17 @@ public class StoreUsersPage extends StoreTemplatePage {
                         alertMessage = "User '" + username + "' successfully created with role '" + roleName + "' for database scope '" + dbScope + "'!";
                         alertType = "badge-active";
                     }
+                } else if ("delete_user".equalsIgnoreCase(action)) {
+                    String userIdStr = params.get("user_id");
+                    if (userIdStr != null && !userIdStr.isBlank()) {
+                        UUID uId = UUID.fromString(userIdStr);
+                        userRepo.delete(uId);
+                        alertMessage = "User account removed from database access control.";
+                        alertType = "badge-raft";
+                    }
                 }
             } catch (Exception e) {
-                alertMessage = "Error creating user: " + e.getMessage();
+                alertMessage = "Error in user management: " + e.getMessage();
                 alertType = "badge-raft";
             }
         }
@@ -95,7 +105,7 @@ public class StoreUsersPage extends StoreTemplatePage {
                 Paragraph.of("<p style='margin: 4px 0 0 0; color: #94a3b8; font-size: 14px;'>Manage database user accounts, scoped database permissions, RBAC roles, and authentication credentials.</p>")
             ),
             Row.of(
-                Paragraph.of("<a href='" + JettraServer.resolvePath("/securitydb/admin") + "' class='btn-action btn-secondary' style='margin-right: 8px;'><i class='fas fa-database'></i> Security DB Admin</a>"),
+                Paragraph.of("<a href='" + JettraServer.resolvePath("/databases") + "' class='btn-action btn-secondary' style='margin-right: 8px;'><i class='fas fa-server'></i> Databases</a>"),
                 Paragraph.of("<a href='" + JettraServer.resolvePath("/dashboard") + "' class='btn-action btn-secondary'><i class='fas fa-arrow-left'></i> Dashboard</a>")
             ).modifier(new io.jettra.flux.core.Modifier().style("align-items: center;"))
         ).modifier(new io.jettra.flux.core.Modifier().style("justify-content: space-between; align-items: center; margin-bottom: 24px;"));
@@ -108,19 +118,34 @@ public class StoreUsersPage extends StoreTemplatePage {
             "</div>\n"
         );
 
+        // Discover active databases to populate select
+        Set<String> discoveredDbs = new TreeSet<>();
+        discoveredDbs.add("records_store");
+        discoveredDbs.add("system_db");
+        String[] prefixes = {"rec:", "doc:", "vec:", "graph:", "ts:", "col:", "kv:", "geo:", "obj:"};
+        for (String p : prefixes) {
+            Map<String, byte[]> keys = engine.getStorageCore().scanPrefix(p);
+            for (String k : keys.keySet()) {
+                String rest = k.substring(p.length());
+                int colonIdx = rest.indexOf(':');
+                if (colonIdx > 0) {
+                    discoveredDbs.add(rest.substring(0, colonIdx));
+                }
+            }
+        }
+
+        // Filter DB
+        String filterDb = params != null && params.containsKey("filter_db") ? params.get("filter_db") : "*";
+
         // Load users from JettraSecurityDB
-        List<JUser> users = userRepo.findAll();
+        List<JUser> allUsers = userRepo.findAll();
+        List<JUser> users = "*".equals(filterDb) ? allUsers : allUsers.stream().filter(u -> filterDb.equalsIgnoreCase(u.lastName()) || "*".equals(u.lastName())).toList();
 
         // Build Users Table
         StringBuilder tableRows = new StringBuilder();
         if (users.isEmpty()) {
             tableRows.append("<tr>\n")
-                .append("  <td><b>admin</b></td>\n")
-                .append("  <td><code style='color:#38bdf8;'>admin@jettra.io</code></td>\n")
-                .append("  <td><span class='store-badge badge-engine'>* (GLOBAL ALL)</span></td>\n")
-                .append("  <td><span class='store-badge badge-raft'>ADMIN</span></td>\n")
-                .append("  <td><span class='store-badge badge-active'>ACTIVE</span></td>\n")
-                .append("  <td><span class='store-badge badge-engine'>SUPERUSER</span></td>\n")
+                .append("  <td colspan='6' style='text-align:center; color:#94a3b8; padding:24px;'>No users provisioned for database scope '").append(filterDb).append("'. Use the form below to create one.</td>\n")
                 .append("</tr>\n");
         } else {
             for (JUser u : users) {
@@ -128,7 +153,13 @@ public class StoreUsersPage extends StoreTemplatePage {
                 String dbScope = u.lastName() != null && !u.lastName().isBlank() ? u.lastName() : "* (ALL)";
                 if (u.jRoles() != null) {
                     for (JRole r : u.jRoles()) {
-                        roleBadges += "<span class='store-badge badge-raft' style='margin-right:4px; font-size:11px;'>" + r.name() + "</span>";
+                        String roleColor = switch (r.name()) {
+                            case "DB_ADMIN" -> "badge-raft";
+                            case "READ_WRITE" -> "badge-engine";
+                            case "MANAGER" -> "badge-active";
+                            default -> "";
+                        };
+                        roleBadges += "<span class='store-badge " + roleColor + "' style='margin-right:4px; font-size:11px;'>" + r.name() + "</span>";
                     }
                 }
                 if (roleBadges.isEmpty()) {
@@ -138,20 +169,35 @@ public class StoreUsersPage extends StoreTemplatePage {
                 String status = u.active() ? "<span class='store-badge badge-active'>ACTIVE</span>" : "<span class='store-badge' style='background:rgba(239,68,68,0.2); color:#f87171;'>DISABLED</span>";
 
                 tableRows.append("<tr>\n")
-                    .append("  <td><b>").append(u.firstName()).append("</b></td>\n")
+                    .append("  <td><b><i class='fas fa-user' style='color:#38bdf8; margin-right:6px;'></i> ").append(u.firstName()).append("</b></td>\n")
                     .append("  <td><code style='color:#38bdf8;'>").append(u.email() != null ? u.email() : "-").append("</code></td>\n")
-                    .append("  <td><span class='store-badge badge-engine'>").append(dbScope).append("</span></td>\n")
+                    .append("  <td><span class='store-badge badge-engine'><i class='fas fa-database' style='margin-right:4px;'></i> ").append(dbScope).append("</span></td>\n")
                     .append("  <td>").append(roleBadges).append("</td>\n")
                     .append("  <td>").append(status).append("</td>\n")
-                    .append("  <td><span style='font-family:monospace; font-size:12px; color:#94a3b8;'>").append(u.id() != null ? u.id().toString().substring(0, 8) + "..." : "-").append("</span></td>\n")
+                    .append("  <td>\n")
+                    .append("    <button onclick=\"deleteUser('").append(u.id()).append("')\" class='btn-action btn-danger' style='padding:4px 8px; font-size:11px;'><i class='fas fa-trash'></i> Revoke</button>\n")
+                    .append("  </td>\n")
                     .append("</tr>\n");
             }
         }
 
+        // Build filter options
+        StringBuilder filterOptions = new StringBuilder();
+        filterOptions.append("<option value='*'").append("*".equals(filterDb) ? " selected" : "").append(">All Databases / Global Scope</option>\n");
+        for (String db : discoveredDbs) {
+            filterOptions.append("<option value='").append(db).append("'").append(db.equals(filterDb) ? " selected" : "").append(">").append(db).append("</option>\n");
+        }
+
         Widget usersCard = Div.of(
             Row.of(
-                Paragraph.of("<h3 style='margin: 0; font-size: 18px; font-weight: 600;'><i class='fas fa-user-shield' style='color:#38bdf8; margin-right:8px;'></i> Database User Accounts (" + (users.isEmpty() ? 1 : users.size()) + ")</h3>"),
-                Span.of("Per-Database RBAC").modifier(new io.jettra.flux.core.Modifier().cssClass("store-badge badge-raft"))
+                Column.of(
+                    Paragraph.of("<h3 style='margin: 0; font-size: 18px; font-weight: 600;'><i class='fas fa-user-shield' style='color:#38bdf8; margin-right:8px;'></i> Database User Accounts (" + users.size() + ")</h3>"),
+                    Paragraph.of("<div style='font-size:12px; color:#94a3b8; margin-top:2px;'>Scope: <b style='color:#38bdf8;'>" + ("*".equals(filterDb) ? "All Scopes" : filterDb) + "</b></div>")
+                ),
+                Row.of(
+                    Paragraph.of("<label style='font-size:12px; color:#94a3b8; margin-right:6px;'>Filter by DB:</label>"),
+                    Paragraph.of("<select onchange=\"window.location.href='" + JettraServer.resolvePath("/users?filter_db=") + "' + this.value\" style='padding:6px 10px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#38bdf8; font-size:13px;'>\n" + filterOptions + "</select>")
+                ).modifier(new io.jettra.flux.core.Modifier().style("align-items:center;"))
             ).modifier(new io.jettra.flux.core.Modifier().style("justify-content: space-between; align-items: center; margin-bottom: 16px;")),
             Paragraph.of(
                 "<div class='table-responsive'>\n" +
@@ -163,7 +209,7 @@ public class StoreUsersPage extends StoreTemplatePage {
                 "        <th>Database Scope</th>\n" +
                 "        <th>Assigned Role</th>\n" +
                 "        <th>Account Status</th>\n" +
-                "        <th>User UUID</th>\n" +
+                "        <th>Actions</th>\n" +
                 "      </tr>\n" +
                 "    </thead>\n" +
                 "    <tbody>\n" +
@@ -174,52 +220,63 @@ public class StoreUsersPage extends StoreTemplatePage {
             )
         ).modifier(new io.jettra.flux.core.Modifier().cssClass("store-card").style("margin-bottom: 24px;"));
 
+        // Build Database options
+        StringBuilder dbOptionsHtml = new StringBuilder();
+        dbOptionsHtml.append("<option value='*'>* (All Databases / Global Scope)</option>\n");
+        for (String db : discoveredDbs) {
+            dbOptionsHtml.append("<option value='").append(db).append("'>").append(db).append("</option>\n");
+        }
+
         // Create User Form Card
         Widget createUserCard = Div.of(
-            Paragraph.of("<h3 style='margin: 0 0 12px 0; font-size: 16px; font-weight: 600;'><i class='fas fa-user-plus' style='color:#4ade80; margin-right:8px;'></i> Create New Database User & Assign Roles</h3>"),
-            Paragraph.of("<p style='font-size: 13px; color: #94a3b8; margin-bottom: 16px;'>Provision user credentials with granular role-based permissions scoped to a specific database or engine.</p>"),
+            Paragraph.of("<h3 style='margin: 0 0 12px 0; font-size: 16px; font-weight: 600;'><i class='fas fa-user-plus' style='color:#4ade80; margin-right:8px;'></i> Provision New User for Database</h3>"),
+            Paragraph.of("<p style='font-size: 13px; color: #94a3b8; margin-bottom: 16px;'>Assign user permissions scoped directly to a specific database namespace or globally across all 9 engines.</p>"),
             Paragraph.of(
                 "<form method='POST' action='" + JettraServer.resolvePath("/users") + "'>\n" +
                 "  <input type='hidden' name='action' value='create_user' />\n" +
                 "  <div style='display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:12px; margin-bottom:14px;'>\n" +
                 "    <div>\n" +
                 "      <label style='font-size:12px; color:#94a3b8; font-weight:600; display:block; margin-bottom:4px;'>Username</label>\n" +
-                "      <input class='form-input' type='text' name='username' placeholder='e.g. dev_user' required />\n" +
+                "      <input class='form-input' type='text' name='username' placeholder='e.g. carlos_mendez' required style='width:100%; padding:8px 10px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; box-sizing:border-box;'/>\n" +
                 "    </div>\n" +
                 "    <div>\n" +
                 "      <label style='font-size:12px; color:#94a3b8; font-weight:600; display:block; margin-bottom:4px;'>Email</label>\n" +
-                "      <input class='form-input' type='email' name='email' placeholder='dev@company.com' required />\n" +
+                "      <input class='form-input' type='email' name='email' placeholder='carlos@company.com' required style='width:100%; padding:8px 10px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; box-sizing:border-box;'/>\n" +
                 "    </div>\n" +
                 "    <div>\n" +
                 "      <label style='font-size:12px; color:#94a3b8; font-weight:600; display:block; margin-bottom:4px;'>Password</label>\n" +
-                "      <input class='form-input' type='password' name='password' placeholder='••••••••' required />\n" +
+                "      <input class='form-input' type='password' name='password' placeholder='••••••••' required style='width:100%; padding:8px 10px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; box-sizing:border-box;'/>\n" +
                 "    </div>\n" +
                 "    <div>\n" +
                 "      <label style='font-size:12px; color:#94a3b8; font-weight:600; display:block; margin-bottom:4px;'>Database Scope</label>\n" +
-                "      <select name='target_db' class='form-input'>\n" +
-                "        <option value='*'>* (All Databases / Global)</option>\n" +
-                "        <option value='customers_db'>customers_db (DOCUMENT)</option>\n" +
-                "        <option value='ai_embeddings_db'>ai_embeddings_db (VECTOR)</option>\n" +
-                "        <option value='knowledge_graph'>knowledge_graph (GRAPH)</option>\n" +
-                "        <option value='iot_telemetry'>iot_telemetry (TIMESERIES)</option>\n" +
-                "        <option value='analytics_olap'>analytics_olap (COLUMN)</option>\n" +
-                "        <option value='cache_store'>cache_store (KEYVALUE)</option>\n" +
-                "        <option value='gis_layers'>gis_layers (GEOSPATIAL)</option>\n" +
-                "        <option value='media_bucket'>media_bucket (OBJECT)</option>\n" +
+                "      <select name='target_db' style='width:100%; padding:8px 10px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; box-sizing:border-box;'>\n" +
+                dbOptionsHtml.toString() +
                 "      </select>\n" +
                 "    </div>\n" +
                 "    <div>\n" +
                 "      <label style='font-size:12px; color:#94a3b8; font-weight:600; display:block; margin-bottom:4px;'>Assigned Role</label>\n" +
-                "      <select name='role' class='form-input'>\n" +
+                "      <select name='role' style='width:100%; padding:8px 10px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; box-sizing:border-box;'>\n" +
                 "        <option value='DB_ADMIN'>DB_ADMIN (Full DDL & Read/Write)</option>\n" +
-                "        <option value='READ_WRITE'>READ_WRITE (Insert, Update, Query)</option>\n" +
+                "        <option value='READ_WRITE' selected>READ_WRITE (Insert, Update, Query)</option>\n" +
                 "        <option value='READ_ONLY'>READ_ONLY (Query Only)</option>\n" +
                 "        <option value='MANAGER'>MANAGER (Backup & Operations)</option>\n" +
                 "      </select>\n" +
                 "    </div>\n" +
                 "  </div>\n" +
-                "  <button type='submit' class='btn-action btn-primary'><i class='fas fa-user-plus'></i> Create & Provision User</button>\n" +
-                "</form>"
+                "  <button type='submit' class='btn-action btn-primary'><i class='fas fa-user-plus'></i> Provision User</button>\n" +
+                "</form>\n" +
+                "<form id='deleteUserForm' method='POST' action='" + JettraServer.resolvePath("/users") + "' style='display:none;'>\n" +
+                "  <input type='hidden' name='action' value='delete_user'/>\n" +
+                "  <input type='hidden' name='user_id' id='delUserId'/>\n" +
+                "</form>\n" +
+                "<script>\n" +
+                "function deleteUser(uid) {\n" +
+                "  if (confirm('Revoke access for this user account?')) {\n" +
+                "    document.getElementById('delUserId').value = uid;\n" +
+                "    document.getElementById('deleteUserForm').submit();\n" +
+                "  }\n" +
+                "}\n" +
+                "</script>"
             )
         ).modifier(new io.jettra.flux.core.Modifier().cssClass("store-card").style("margin-bottom: 24px;"));
 

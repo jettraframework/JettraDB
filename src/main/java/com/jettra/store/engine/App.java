@@ -88,24 +88,54 @@ public class App {
         }
         
         // ---------------------------------------------------------
-        // VERIFICATION BLOCK (Phase 1): Test Document Engine
+        // BOOTSTRAP & SEED DEMO MULTI-MODEL DATABASES
         // ---------------------------------------------------------
         try {
-            System.out.println("[Phase 1 Verification] Testing DocumentEngine...");
+            System.out.println("[Bootstrap] Initializing demo databases & components...");
+            
+            // 1. Records Engine Demo Database
+            RecordsEngine recordsEngine = (RecordsEngine) storageEngine.getEngine("RECORDS");
+            if (recordsEngine != null) {
+                io.jettra.json.JsonObject empRecord = new io.jettra.json.JsonObject();
+                empRecord.addProperty("id", "emp_101");
+                empRecord.addProperty("fullName", "Carlos Mendez");
+                empRecord.addProperty("department", "Core Engineering");
+                empRecord.addProperty("salary", 95000.0);
+                empRecord.addProperty("active", true);
+                recordsEngine.saveRecord("records_db", "emp_101", "com.enterprise.model.EmployeeRecord", empRecord);
+
+                io.jettra.json.JsonObject custRecord = new io.jettra.json.JsonObject();
+                custRecord.addProperty("id", "cust_201");
+                custRecord.addProperty("companyName", "Panama Global Logistics");
+                custRecord.addProperty("tier", "ENTERPRISE");
+                custRecord.addProperty("creditLimit", 500000.0);
+                recordsEngine.saveRecord("records_db", "cust_201", "com.enterprise.model.CustomerRecord", custRecord);
+                System.out.println("[Bootstrap] Seeded RECORDS engine: records_db [emp_101, cust_201]");
+            }
+
+            // 2. Document Engine Demo Database
             DocumentEngine docEngine = (DocumentEngine) storageEngine.getEngine("DOCUMENT");
-            
-            io.jettra.json.JsonObject doc = new io.jettra.json.JsonObject();
-            doc.addProperty("name", "Jettra Engine");
-            doc.addProperty("version", "1.0");
-            
-            docEngine.insert("sys_test", "test_doc_1", doc);
-            System.out.println("[Phase 1 Verification] Inserted document: sys_test:test_doc_1");
-            
-            io.jettra.json.JsonObject retrieved = docEngine.get("sys_test", "test_doc_1");
-            System.out.println("[Phase 1 Verification] Retrieved document: " + retrieved.toString());
+            if (docEngine != null) {
+                io.jettra.json.JsonObject prodDoc = new io.jettra.json.JsonObject();
+                prodDoc.addProperty("sku", "SKU-9901");
+                prodDoc.addProperty("title", "High-Performance Cloud Server");
+                prodDoc.addProperty("price", 1299.99);
+                prodDoc.addProperty("inStock", true);
+                docEngine.insert("ecommerce_db", "prod_9901", prodDoc);
+                System.out.println("[Bootstrap] Seeded DOCUMENT engine: ecommerce_db [prod_9901]");
+            }
+
+            // 3. Vector Engine Demo Database
+            VectorEngine vecEngine = (VectorEngine) storageEngine.getEngine("VECTOR");
+            if (vecEngine != null) {
+                io.jettra.json.JsonObject vecMeta = new io.jettra.json.JsonObject();
+                vecMeta.addProperty("label", "Semantic Query Embedding");
+                vecMeta.addProperty("model", "text-embedding-3-small");
+                vecEngine.insertVector("ai_search_db", "vec_embedding_01", new float[]{0.15f, 0.88f, 0.42f, 0.91f}, vecMeta);
+                System.out.println("[Bootstrap] Seeded VECTOR engine: ai_search_db [vec_embedding_01]");
+            }
         } catch (Exception e) {
-            System.err.println("[Phase 1 Verification] Failed: " + e.getMessage());
-            e.printStackTrace();
+            System.err.println("[Bootstrap] Non-fatal seed note: " + e.getMessage());
         }
         // ---------------------------------------------------------
         

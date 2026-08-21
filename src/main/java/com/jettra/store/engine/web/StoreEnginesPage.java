@@ -13,6 +13,8 @@ import io.jettra.server.JettraServer;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 
 /**
  * Interactive Type-Specific Database and Object Administrator for all 8 Multi-Model Storage Engines in JettraStoreEngine.
@@ -486,17 +488,49 @@ public class StoreEnginesPage extends StoreTemplatePage {
             default -> "Database";
         };
 
+        // Discover databases
+        Set<String> discoveredDbs = new TreeSet<>();
+        discoveredDbs.add(currentDb);
+        discoveredDbs.add(getDefaultDbForEngine(engineKey));
+        String prefix = switch (engineKey.toUpperCase()) {
+            case "RECORDS" -> "rec:";
+            case "VECTOR" -> "vec:";
+            case "GRAPH" -> "graph:";
+            case "TIMESERIES" -> "ts:";
+            case "COLUMN" -> "col:";
+            case "KEYVALUE" -> "kv:";
+            case "GEOSPATIAL" -> "geo:";
+            case "OBJECT" -> "obj:";
+            default -> "doc:";
+        };
+        Map<String, byte[]> scanned = engine.getStorageCore().scanPrefix(prefix);
+        for (String k : scanned.keySet()) {
+            String rest = k.substring(prefix.length());
+            int idx = rest.indexOf(':');
+            if (idx > 0) {
+                discoveredDbs.add(rest.substring(0, idx));
+            }
+        }
+
+        StringBuilder options = new StringBuilder();
+        for (String d : discoveredDbs) {
+            options.append("<option value='").append(d).append("'").append(d.equals(currentDb) ? " selected" : "").append(">").append(d).append("</option>\n");
+        }
+
         return Div.of(
             Row.of(
                 Column.of(
-                    Paragraph.of("<div style='font-size:14px; font-weight:600; color:#f8fafc;'><i class='fas fa-folder-open' style='color:#38bdf8; margin-right:6px;'></i> Active " + dbLabel + ": <span style='color:#38bdf8;'>" + currentDb + "</span></div>"),
-                    Paragraph.of("<div style='font-size:12px; color:#94a3b8;'>Engine Type: <b>" + engineKey + "</b> (Raft Synchronized & LSM-Tree Indexed)</div>")
+                    Paragraph.of("<div style='font-size:14px; font-weight:600; color:#f8fafc;'><i class='fas fa-folder-open' style='color:#38bdf8; margin-right:6px;'></i> Active " + dbLabel + ": <span style='color:#38bdf8; font-weight:700;'>" + currentDb + "</span></div>"),
+                    Paragraph.of("<div style='font-size:12px; color:#94a3b8;'>Engine Type: <b style='color:#f8fafc;'>" + engineKey + "</b> (Raft Synchronized & LSM-Tree Indexed) | <a href='" + JettraServer.resolvePath("/databases") + "' style='color:#38bdf8; text-decoration:none;'><i class='fas fa-server'></i> View All Databases</a></div>")
                 ),
                 Paragraph.of(
-                    "<form method='POST' action='" + JettraServer.resolvePath("/engines?engine=" + engineKey) + "' style='display:flex; gap:8px; margin:0;'>\n" +
+                    "<form method='POST' action='" + JettraServer.resolvePath("/engines?engine=" + engineKey) + "' style='display:flex; gap:8px; margin:0; align-items:center;'>\n" +
                     "  <input type='hidden' name='action' value='create_db' />\n" +
-                    "  <input class='form-input' style='width:240px; padding:6px 12px; font-size:13px;' type='text' name='target_db' value='" + currentDb + "' placeholder='Database / Namespace Name' required />\n" +
-                    "  <button type='submit' class='btn-action btn-primary' style='padding:6px 14px; font-size:13px;'><i class='fas fa-plus'></i> Switch / Create</button>\n" +
+                    "  <select onchange=\"window.location.href='" + JettraServer.resolvePath("/engines?engine=" + engineKey + "&target_db=") + "' + this.value\" style='padding:6px 10px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#38bdf8; font-size:13px;'>\n" +
+                    options.toString() +
+                    "  </select>\n" +
+                    "  <input class='form-input' style='width:180px; padding:6px 10px; font-size:13px;' type='text' name='target_db' placeholder='New DB / Collection' required />\n" +
+                    "  <button type='submit' class='btn-action btn-primary' style='padding:6px 12px; font-size:13px;'><i class='fas fa-plus'></i> Switch / Create</button>\n" +
                     "</form>"
                 )
             ).modifier(new io.jettra.flux.core.Modifier().style("justify-content: space-between; align-items: center;"))

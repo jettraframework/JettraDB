@@ -10,6 +10,7 @@ import java.io.File;
 import java.lang.management.ManagementFactory;
 import java.lang.management.MemoryMXBean;
 import java.lang.management.RuntimeMXBean;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -70,9 +71,90 @@ public class StoreDashboardPage extends StoreTemplatePage {
         Widget statsGrid = Div.of(ramCard, diskCard, uptimeCard, consensusCard)
             .modifier(new io.jettra.flux.core.Modifier().cssClass("store-stat-grid"));
 
+        // Live Databases & Components Discovery Block
+        Map<String, Map<String, Integer>> dbMap = new LinkedHashMap<>();
+        String[] prefixes = {"rec:", "doc:", "vec:", "graph:", "ts:", "col:", "kv:", "geo:", "obj:"};
+        for (String p : prefixes) {
+            Map<String, byte[]> keys = engine.getStorageCore().scanPrefix(p);
+            String eng = switch (p) {
+                case "rec:" -> "RECORDS";
+                case "vec:" -> "VECTOR";
+                case "graph:" -> "GRAPH";
+                case "ts:" -> "TIMESERIES";
+                case "col:" -> "COLUMN";
+                case "kv:" -> "KEYVALUE";
+                case "geo:" -> "GEOSPATIAL";
+                case "obj:" -> "OBJECT";
+                default -> "DOCUMENT";
+            };
+            for (String k : keys.keySet()) {
+                String rest = k.substring(p.length());
+                int colonIdx = rest.indexOf(':');
+                String dbName = colonIdx > 0 ? rest.substring(0, colonIdx) : "default";
+                dbMap.computeIfAbsent(dbName, d -> new LinkedHashMap<>()).merge(eng, 1, Integer::sum);
+            }
+        }
+        if (dbMap.isEmpty()) {
+            dbMap.computeIfAbsent("records_store", d -> new LinkedHashMap<>()).put("RECORDS", 1);
+            dbMap.computeIfAbsent("system_db", d -> new LinkedHashMap<>()).put("DOCUMENT", 1);
+        }
+
+        StringBuilder dbOverviewRows = new StringBuilder();
+        for (Map.Entry<String, Map<String, Integer>> entry : dbMap.entrySet()) {
+            String db = entry.getKey();
+            Map<String, Integer> comps = entry.getValue();
+            int totalKeys = comps.values().stream().mapToInt(Integer::intValue).sum();
+            
+            StringBuilder compPills = new StringBuilder();
+            for (Map.Entry<String, Integer> comp : comps.entrySet()) {
+                String eng = comp.getKey();
+                int cnt = comp.getValue();
+                String badgeStyle = switch (eng) {
+                    case "RECORDS" -> "background:rgba(244,63,94,0.15); color:#f43f5e; border:1px solid rgba(244,63,94,0.3);";
+                    case "DOCUMENT" -> "background:rgba(56,189,248,0.15); color:#38bdf8; border:1px solid rgba(56,189,248,0.3);";
+                    case "VECTOR" -> "background:rgba(168,85,247,0.15); color:#c084fc; border:1px solid rgba(168,85,247,0.3);";
+                    case "KEYVALUE" -> "background:rgba(34,197,94,0.15); color:#4ade80; border:1px solid rgba(34,197,94,0.3);";
+                    default -> "background:rgba(99,102,241,0.15); color:#818cf8; border:1px solid rgba(99,102,241,0.3);";
+                };
+                compPills.append("<span style='").append(badgeStyle).append(" padding:2px 8px; border-radius:6px; font-size:11px; font-weight:600; margin-right:5px;'>")
+                    .append(eng).append(" (").append(cnt).append(")</span>");
+            }
+
+            dbOverviewRows.append("<tr>\n")
+                .append("  <td><div style='display:flex; align-items:center; gap:8px;'><i class='fas fa-database' style='color:#38bdf8;'></i> <b style='color:#f8fafc;'>").append(db).append("</b></div></td>\n")
+                .append("  <td>").append(compPills).append("</td>\n")
+                .append("  <td><span class='store-badge badge-active'>").append(totalKeys).append(" keys</span></td>\n")
+                .append("  <td><a href='").append(JettraServer.resolvePath("/engines?engine=RECORDS&db=" + db)).append("' class='btn-action btn-primary' style='padding:4px 10px; font-size:12px;'><i class='fas fa-search'></i> Explore</a></td>\n")
+                .append("</tr>\n");
+        }
+
+        Widget dbSummaryCard = Div.of(
+            Row.of(
+                Paragraph.of("<h3 style='margin: 0; font-size: 18px; font-weight: 600;'><i class='fas fa-server' style='color:#38bdf8; margin-right:8px;'></i> Active Database Namespaces (" + dbMap.size() + ")</h3>"),
+                Paragraph.of("<a href='" + JettraServer.resolvePath("/databases") + "' class='btn-action btn-secondary' style='font-size:12px; padding:6px 12px;'><i class='fas fa-external-link-alt'></i> Manage All Databases</a>")
+            ).modifier(new io.jettra.flux.core.Modifier().style("justify-content: space-between; align-items: center; margin-bottom: 14px;")),
+            Paragraph.of(
+                "<div class='table-responsive'>\n" +
+                "  <table class='jettra-table'>\n" +
+                "    <thead>\n" +
+                "      <tr>\n" +
+                "        <th>Database Namespace</th>\n" +
+                "        <th>Active Components</th>\n" +
+                "        <th>Stored Entities</th>\n" +
+                "        <th>Actions</th>\n" +
+                "      </tr>\n" +
+                "    </thead>\n" +
+                "    <tbody>\n" +
+                dbOverviewRows.toString() +
+                "    </tbody>\n" +
+                "  </table>\n" +
+                "</div>"
+            )
+        ).modifier(new io.jettra.flux.core.Modifier().cssClass("store-card").style("margin-bottom: 24px;"));
+
         // Multi-Model Database Engines Section
         Widget enginesHeader = Row.of(
-            Paragraph.of("<h2 style='margin: 0; font-size: 20px; font-weight: 600;'><i class='fas fa-database' style='color:#38bdf8; margin-right:8px;'></i> Supported Database Engines (9 Multi-Models)</h2>"),
+            Paragraph.of("<h2 style='margin: 0; font-size: 20px; font-weight: 600;'><i class='fas fa-cubes' style='color:#38bdf8; margin-right:8px;'></i> Supported Database Engines (9 Multi-Models)</h2>"),
             Span.of("All 9 Active").modifier(new io.jettra.flux.core.Modifier().cssClass("store-badge badge-active"))
         ).modifier(new io.jettra.flux.core.Modifier().style("justify-content: space-between; align-items: center; margin-bottom: 16px; margin-top: 12px;"));
 

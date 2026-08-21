@@ -10,6 +10,7 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.jettra.store.engine.web.StoreComponentsPage;
 import com.jettra.store.engine.web.StoreDashboardPage;
+import com.jettra.store.engine.web.StoreDatabasesPage;
 import com.jettra.store.engine.web.StoreEnginesPage;
 import com.jettra.store.engine.web.StoreLoginPage;
 import com.jettra.store.engine.web.StoreUsersPage;
@@ -57,6 +58,7 @@ public class JettraServerOrchestrator {
         
         // 1. Initialize Handlers and Pages
         StoreDashboardPage dashboardPage = new StoreDashboardPage(engine);
+        StoreDatabasesPage databasesPage = new StoreDatabasesPage(engine, authManager);
         StoreEnginesPage enginesPage = new StoreEnginesPage(engine);
         StoreUsersPage usersPage = new StoreUsersPage(engine, authManager);
         StoreComponentsPage componentsPage = new StoreComponentsPage(engine);
@@ -82,6 +84,7 @@ public class JettraServerOrchestrator {
         jettraServer.addHandler("/", dashboardPage);
         jettraServer.addHandler("/dashboard", dashboardPage);
         jettraServer.addHandler("/wui", dashboardPage);
+        jettraServer.addHandler("/databases", databasesPage);
         jettraServer.addHandler("/engines", enginesPage);
         jettraServer.addHandler("/users", usersPage);
         jettraServer.addHandler("/components", componentsPage);
@@ -100,6 +103,7 @@ public class JettraServerOrchestrator {
             jettraGuiServer.addHandler("/", dashboardPage);
             jettraGuiServer.addHandler("/dashboard", dashboardPage);
             jettraGuiServer.addHandler("/wui", dashboardPage);
+            jettraGuiServer.addHandler("/databases", databasesPage);
             jettraGuiServer.addHandler("/engines", enginesPage);
             jettraGuiServer.addHandler("/users", usersPage);
             jettraGuiServer.addHandler("/components", componentsPage);
