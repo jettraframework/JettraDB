@@ -41,9 +41,18 @@ public class LsmBTreeHybrid {
 
     /**
      * Inserts or updates a record.
-     * Appends a new version rather than overwriting, allowing historical restorations.
+     * Appends a new version only when the content has actually changed or is new,
+     * avoiding duplicate versions on identical concurrent writes or Raft loopbacks.
      */
     public void put(String key, byte[] data, long timestamp) {
+        if (key == null || data == null) return;
+
+        // Prevent duplicate version if latest version already has identical data
+        byte[] latest = get(key);
+        if (latest != null && java.util.Arrays.equals(latest, data)) {
+            return;
+        }
+
         // Construct a versioned key: "key@timestamp"
         String versionedKey = key + "@" + timestamp;
         memTable.put(versionedKey, data);
@@ -114,6 +123,91 @@ public class LsmBTreeHybrid {
         return results;
     }
     
+    public record RecordVersion(
+        int versionNumber,
+        long timestamp,
+        String formattedDate,
+        byte[] data,
+        String payload,
+        boolean isCurrent
+    ) {}
+
+    /**
+     * Retrieves all historical versions of a record by key, ordered in descending order (latest version first).
+     * Version numbers start at v1 for the oldest record and increase incrementally up to vN for the latest.
+     */
+    public java.util.List<RecordVersion> getVersionHistory(String key) {
+        java.util.List<RecordVersion> versions = new java.util.ArrayList<>();
+        String prefix = key + "@";
+        java.time.format.DateTimeFormatter dtf = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+        
+        // Scan memTable for all timestamped versions of this key (sorted ascending by timestamp)
+        java.util.Map<Long, byte[]> timeMap = new java.util.TreeMap<>();
+        for (Map.Entry<String, byte[]> entry : memTable.entrySet()) {
+            String k = entry.getKey();
+            if (k.startsWith(prefix)) {
+                try {
+                    long ts = Long.parseLong(k.substring(prefix.length()));
+                    byte[] data = entry.getValue();
+                    if (data != null && data.length > 0) {
+                        timeMap.put(ts, data);
+                    }
+                } catch (Exception ignored) {}
+            }
+        }
+
+        // Also check if diskIndex has a record not in memTable
+        if (timeMap.isEmpty() && diskIndex.containsKey(key)) {
+            byte[] diskVal = get(key);
+            if (diskVal != null && diskVal.length > 0) {
+                timeMap.put(System.currentTimeMillis(), diskVal);
+            }
+        }
+
+        if (timeMap.isEmpty()) {
+            return versions;
+        }
+
+        int versionCounter = 1;
+        long latestTs = ((java.util.TreeMap<Long, byte[]>) timeMap).lastKey();
+
+        // 1. Build chronological list: v1 (oldest), v2, ..., vN (current)
+        java.util.List<RecordVersion> chronological = new java.util.ArrayList<>();
+        for (Map.Entry<Long, byte[]> entry : timeMap.entrySet()) {
+            long ts = entry.getKey();
+            byte[] data = entry.getValue();
+            String payloadStr = new String(data, java.nio.charset.StandardCharsets.UTF_8);
+            String formattedDate = java.time.Instant.ofEpochMilli(ts)
+                    .atZone(java.time.ZoneId.systemDefault())
+                    .format(dtf);
+            boolean isCurrent = (ts == latestTs);
+            chronological.add(new RecordVersion(versionCounter++, ts, formattedDate, data, payloadStr, isCurrent));
+        }
+
+        // 2. Return list in strictly DESCENDING order: [vN (current), ..., v2, v1]
+        for (int i = chronological.size() - 1; i >= 0; i--) {
+            versions.add(chronological.get(i));
+        }
+
+        return versions;
+    }
+
+    /**
+     * Returns total version count for a key.
+     */
+    public int getVersionCount(String key) {
+        String prefix = key + "@";
+        int count = 0;
+        for (String k : memTable.keySet()) {
+            if (k.startsWith(prefix)) {
+                byte[] v = memTable.get(k);
+                if (v != null && v.length > 0) count++;
+            }
+        }
+        if (count == 0 && get(key) != null) count = 1;
+        return Math.max(1, count);
+    }
+
     /**
      * Retrieves a specific historical version of a document.
      */
@@ -122,8 +216,19 @@ public class LsmBTreeHybrid {
         if (memTable.containsKey(versionedKey)) {
             return memTable.get(versionedKey);
         }
-        // TODO: Retrieve specific version from LSM levels / B-Tree blocks.
         return null;
+    }
+
+    /**
+     * Restores a record to a specific historical version by appending a new current version.
+     */
+    public boolean restoreVersion(String key, long timestamp) {
+        byte[] historicalData = getVersion(key, timestamp);
+        if (historicalData != null && historicalData.length > 0) {
+            put(key, historicalData, System.currentTimeMillis());
+            return true;
+        }
+        return false;
     }
 
     /**

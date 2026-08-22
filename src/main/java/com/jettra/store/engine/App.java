@@ -121,7 +121,7 @@ public class App {
                 prodDoc.addProperty("title", "High-Performance Cloud Server");
                 prodDoc.addProperty("price", 1299.99);
                 prodDoc.addProperty("inStock", true);
-                docEngine.insert("ecommerce_db", "prod_9901", prodDoc);
+                docEngine.insert("ecommerce_db", "default", "prod_9901", prodDoc);
                 System.out.println("[Bootstrap] Seeded DOCUMENT engine: ecommerce_db [prod_9901]");
             }
 

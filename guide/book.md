@@ -487,33 +487,60 @@ docker compose down -v
 
 ---
 
-# Chapter 6: The 8 Multi-Model Database Engines & Exhaustive APIs
+# Chapter 6: The 9 Multi-Model Database Engines & Exhaustive APIs
 
-`JettraStoreEngine` embeds 8 purpose-built database engines over a shared, high-throughput storage core. Each engine features native object typing, specialized serialization formats, and tailored administrative operations.
+`JettraStoreEngine` embeds 9 purpose-built database engines over a shared, high-throughput storage core. Each engine features native object typing, specialized serialization formats, and tailored administrative operations.
 
 ---
 
 ## 6.1 Document Engine (JSON / BSON / NoSQL)
 - **Use Case**: Hierarchical JSON records, schema-flexible document catalogs, and e-commerce models with validation rules.
 - **Specific Object Representation**: Structured JSON document with optional `_class` schema binding validated via `JettraRulesEngine`.
+- **ObjectId / DocumentId Generation Modes**:
+  1. **Manual Mode**: User or client specifies the exact primary key identifier (e.g. `cust_101`).
+  2. **Auto-increment Sequence (`AUTOINCREMENT` / `auto`)**: The storage engine maintains an internal atomic counter per collection generating ordered integer sequences (`1, 2, 3...`).
+  3. **Composite UUID (`UUID` / `uuid`)**: Generates a globally unique identifier combining CPU/host hardware fingerprint, high-precision millisecond timestamp, namespace digest, and cryptographic UUID entropy (e.g. `8a7f1c2d-18dc93a4-a1b2-9f82ab34`).
 - **Administrative Operations**:
-  - Insert / Upsert Document (`doc_id`, `_class`, `JSON fields`)
+  - Insert / Upsert Document (`doc_id`, `id_mode`, `_class`, `JSON fields`)
   - Query Document by ID
-  - Delete Document (replicated soft-delete tombstone)
+  - Document Version History Inspection (`/history`)
+  - Point-in-Time Version Restoration (`/restore`)
+  - Delete Document (writes tombstone)
   - Full Collection Scan & Listing
 - **REST Endpoints**:
-  - `POST /api/document/{collection}/{id}` : Insert or update document.
+  - `POST /api/document/{collection}` : Insert with Auto/UUID generated ID (`?id_mode=autoincrement|uuid`).
+  - `POST /api/document/{collection}/{id}` : Insert or update document (`?id_mode=manual|autoincrement|uuid`).
   - `GET  /api/document/{collection}/{id}` : Read document by ID.
-  - `DELETE /api/document/{collection}/{id}` : Delete document (writes tombstone).
+  - `GET  /api/document/{collection}/{id}/history` : List all historical versions and timestamps for document.
+  - `POST /api/document/{collection}/{id}/restore?timestamp={ts}` : Restore document to point-in-time snapshot.
+  - `DELETE /api/document/{collection}/{id}` : Delete document.
 
 ```bash
-# Insert customer document with schema validation
+# 1. Insert customer document with manual ID
 curl -X POST http://localhost:8086/api/document/customers/cust_101 \
+  -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{"_class": "com.jettra.model.Customer", "name": "Alice Corp", "tier": "Enterprise", "credits": 5000}'
 
-# Read document
-curl -X GET http://localhost:8086/api/document/customers/cust_101
+# 2. Insert invoice with Auto-increment sequence ID
+curl -X POST "http://localhost:8086/api/document/invoices/auto?id_mode=autoincrement" \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"customer": "Alice Corp", "total": 1250.00, "status": "PAID"}'
+
+# 3. Insert audit log with Composite UUID
+curl -X POST "http://localhost:8086/api/document/audit_logs/uuid?id_mode=uuid" \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"action": "USER_LOGIN", "ip": "192.168.1.50"}'
+
+# 4. View full version history of a document
+curl -X GET http://localhost:8086/api/document/customers/cust_101/history \
+  -H "Authorization: Bearer <token>"
+
+# 5. Restore document to a prior historical version
+curl -X POST "http://localhost:8086/api/document/customers/cust_101/restore?timestamp=1755735000000" \
+  -H "Authorization: Bearer <token>"
 ```
 
 ---
@@ -1126,6 +1153,19 @@ Enables administrative security management:
 - **`/components`**: Inspect active `.jettra` disk files, MemTable heap usage, compaction worker threads, and Raft consensus peer nodes.
 - **`/swagger-ui`**: Embedded OpenAPI explorer for testing all database REST endpoints directly in the browser.
 
+### 11.5 Multi-Model Sample Datasets & Interconnected Seed Generator
+Enables one-click visual loading of production-grade sample datasets across all 9 engines with over 10,000 realistic interconnected records and cross-engine pointers (`jref://`):
+- **`DOCUMENT` (`scrum_board_db`)**: 1,200 User Stories, Epics, Tasks, and Sprints with cross-references to HR assignees in `hr_enterprise_db`.
+- **`TIMESERIES` (`meteorology_iot_db`)**: 2,500 High-frequency meteorological measurements from weather stations (temperature, humidity, atmospheric pressure, solar irradiance, precipitation) across time intervals.
+- **`RECORDS` (`hr_enterprise_db`)**: 1,000 Java 25 Immutable Employee records, contracts, departments, and payroll components with biometric and GIS references.
+- **`VECTOR` (`ai_knowledge_db`)**: 800 Semantic neural embeddings for document search, product classification, and facial biometrics with cosine similarity indexing.
+- **`GRAPH` (`social_network_db`)**: 1,500 Labeled Property Graph vertices (Users, Teams, Projects) and directed relationships (`REPORTS_TO`, `COLLABORATES_WITH`, `LEADS`).
+- **`GEOSPATIAL` (`smart_city_gis_db`)**: 600 Geographic coordinates for weather stations, delivery hubs, and distribution centers with Haversine distance tracking.
+- **`COLUMN` (`ecommerce_olap_db`)**: 1,000 Analytical wide-column fact tables, quarterly revenue by region, and customer cohort aggregations.
+- **`KEYVALUE` (`distributed_cache_db`)**: 800 High-speed session tokens, feature flags, distributed rate limiters, and atomic counters.
+- **`OBJECT` (`digital_assets_db`)**: 500 Media objects, invoice PDF documents, image blobs, and content-type metadata.
+- **Complete Enterprise Suite**: Seeds all 9 engines simultaneously with a single click.
+
 ---
 
 # Chapter 12: Backups, Snapshot Replication & Disaster Recovery
@@ -1152,6 +1192,120 @@ When enabled, `BackupManager` scans the storage root on boot, extracts the lates
 Never use `OFFSET` for high-volume datasets. Keyset pagination searches the B-Tree index starting immediately after the last seen identifier:
 ```sql
 FIND IN facturas WHERE estado = 'EMITIDA' AFTER id 'INV_2026_09999' LIMIT 50;
+```
+
+---
+
+# Chapter 13: High-Performance Cross-Engine Fast References (`JettraReference`)
+
+JettraStoreEngine provides native, ultra-low-latency cross-engine reference pointers (**`JettraReference`**) that enable direct relationships between entities across all 9 multi-model storage engines, distinct database namespaces, and distributed cluster nodes.
+
+```
+                    ┌─────────────────────────────────────────────────────────────┐
+                    │                   Cross-Engine Reference                    │
+                    │                                                             │
+  [RECORDS Engine]  │  <PersonaRecord>                                            │
+  hr_db:emp_101     │    id: "emp_101"                                            │
+                    │    nombre: "Carlos Mendez"                                  │
+                    │    paisRef: "jref://DOCUMENT:geo_db/PAIS_PA" ─────────────┐ │
+                    └───────────────────────────────────────────────────────────┼─┘
+                                                                                │
+                                           Direct O(1) Memory Jump              │
+                                         (Zero Scan / Microsecond Lookup)       ▼
+                    ┌─────────────────────────────────────────────────────────────┐
+  [DOCUMENT Engine] │  <PaisDocument>                                             │
+  geo_db:PAIS_PA    │    codigo: "PA"                                             │
+                    │    nombre: "Panama"                                         │
+                    │    continente: "America Central"                            │
+                    └─────────────────────────────────────────────────────────────┘
+```
+
+### 13.1 Reference URI Format & Architecture
+The standard Jettra reference pointer follows the canonical URI scheme:
+```
+jref://[node@][ENGINE:]database/entityId
+```
+
+| Component | Description | Example |
+| :--- | :--- | :--- |
+| `node@` *(optional)* | Distributed cluster node hostname or ID | `node-01@` (omitted for local cluster instance) |
+| `ENGINE:` *(optional)* | Target engine (`DOCUMENT`, `RECORDS`, `VECTOR`, `GRAPH`, `TIMESERIES`, etc.) | `RECORDS:`, `VECTOR:` (defaults to `DOCUMENT`) |
+| `database` | Target database namespace | `geo_db`, `hr_db`, `ai_models` |
+| `entityId` | Target document / object primary key | `PAIS_PA`, `emp_101`, `face_vec_42` |
+
+### 13.2 JSON Representation & Deep Dereferencing
+References can be stored as inline URI strings or as rich structured reference objects with automatic dereferencing (`$jref`):
+
+```json
+{
+  "id": "emp_101",
+  "nombre": "Carlos Mendez",
+  "cargo": "Senior Distributed Systems Engineer",
+  "pais": {
+    "$jref": "jref://DOCUMENT:geo_db/PAIS_PA",
+    "_resolved": {
+      "codigo": "PA",
+      "nombre": "Panama",
+      "moneda": "USD / PAB"
+    }
+  },
+  "biometria": "jref://VECTOR:biometric_db/face_vec_carlos"
+}
+```
+
+### 13.3 Java 25 Driver Usage
+```java
+JettraClient client = new JettraClient("localhost", 50050);
+client.connect();
+client.login("admin", "admin123");
+
+// 1. Create a reference pointer
+JettraReference ref = client.createRef("DOCUMENT", "geo_db", "PAIS_PA");
+System.out.println("Reference URI: " + ref.toUri()); // jref://DOCUMENT:geo_db/PAIS_PA
+
+// 2. Direct O(1) Resolution
+String paisJson = client.resolveRef(ref);
+System.out.println("Loaded Country: " + paisJson);
+```
+
+### 13.4 Python Driver Usage
+```python
+from jettra_driver import JettraClient
+
+client = JettraClient("localhost", 50050)
+client.connect()
+client.login("admin", "admin123")
+
+# 1. Create and resolve cross-engine pointer
+ref = client.create_ref(engine="DOCUMENT", db="geo_db", entity_id="PAIS_PA")
+pais_data = client.resolve_ref(ref)
+print("Resolved Country:", pais_data)
+```
+
+### 13.5 Go Driver Usage
+```go
+client := jettra_driver.NewClient("localhost", 50050)
+client.Connect()
+client.Login("admin", "admin123")
+
+// 1. Direct resolution of cross-engine URI
+countryJSON, err := client.ResolveRef("jref://DOCUMENT:geo_db/PAIS_PA")
+if err == nil {
+    fmt.Println("Resolved Country:", countryJSON)
+}
+```
+
+### 13.6 Interactive Shell Commands (`JettraStoreShell`)
+```bash
+# Direct resolution of cross-engine reference URI
+jettra> ref resolve jref://DOCUMENT:geo_db/PAIS_PA
+Resolved Reference [jref://DOCUMENT:geo_db/PAIS_PA]:
+{"codigo": "PA", "nombre": "Panama", "continente": "America"}
+
+# Generate reference pointer URI and direct storage key
+jettra> ref create RECORDS hr_db emp_101
+Generated Reference URI: jref://RECORDS:hr_db/emp_101
+Direct Storage Key:      rec:hr_db:emp_101
 ```
 
 ---

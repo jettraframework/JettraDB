@@ -178,9 +178,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 KeyValueEngine kvEngine = (KeyValueEngine) engine.getEngine("KEYVALUE");
                 if (kvEngine != null) {
                     String value = params.getOrDefault("kv_value", "");
-                    String valType = params.getOrDefault("kv_type", "string");
-                    String finalVal = "json".equalsIgnoreCase(valType) ? value : value;
-                    kvEngine.put(db, targetId, finalVal);
+                    kvEngine.put(db, targetId, value);
                 }
             }
             case "VECTOR" -> {

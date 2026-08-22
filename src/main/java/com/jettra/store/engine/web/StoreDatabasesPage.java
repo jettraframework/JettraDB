@@ -2,6 +2,7 @@ package com.jettra.store.engine.web;
 
 import com.jettra.store.engine.auth.AuthManager;
 import com.jettra.store.engine.core.JettraStorageEngine;
+import com.jettra.store.engine.samples.SampleDatasetManager;
 import com.sun.net.httpserver.HttpExchange;
 import io.jettra.core.login.NoLoginRequired;
 import io.jettra.flux.core.Modifier;
@@ -43,12 +44,14 @@ public class StoreDatabasesPage extends StoreTemplatePage {
     private final AuthManager authManager;
     private final JUserRepository userRepo;
     private final JCredentialRepository credRepo;
+    private final SampleDatasetManager sampleDatasetManager;
 
     public StoreDatabasesPage(JettraStorageEngine engine, AuthManager authManager) {
         this.engine = engine;
         this.authManager = authManager;
         this.userRepo = new JUserRepositoryImpl();
         this.credRepo = new JCredentialRepositoryImpl();
+        this.sampleDatasetManager = new SampleDatasetManager(engine);
     }
 
     @Override
@@ -84,6 +87,14 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                         alertMessage = "Database '" + cleanDb + "' successfully initialized with component [" + eng + "]!";
                         alertType = "badge-active";
                     }
+                } else if ("rename_db".equalsIgnoreCase(action)) {
+                    String oldDb = params.get("old_db");
+                    String newDb = params.get("new_db");
+                    if (oldDb != null && newDb != null && !newDb.isBlank()) {
+                        int migrated = renameDatabase(oldDb.trim(), newDb.trim());
+                        alertMessage = "Database '" + oldDb + "' renamed to '" + newDb + "' (" + migrated + " keys migrated).";
+                        alertType = "badge-active";
+                    }
                 } else if ("drop_db".equalsIgnoreCase(action)) {
                     String targetDb = params.get("target_db");
                     if (targetDb != null && !targetDb.isBlank()) {
@@ -111,6 +122,11 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                         alertMessage = "Entity '" + rawKey + "' deleted from storage core.";
                         alertType = "badge-raft";
                     }
+                } else if ("load_sample_dataset".equalsIgnoreCase(action)) {
+                    String datasetKey = params.get("dataset_key");
+                    int loaded = sampleDatasetManager.loadDataset(datasetKey);
+                    alertMessage = "Sample Dataset [" + datasetKey + "] loaded successfully (" + loaded + " records populated across multi-model engines with cross-references)!";
+                    alertType = "badge-active";
                 } else if ("assign_user".equalsIgnoreCase(action)) {
                     String username = params.get("username");
                     String email = params.get("email");
@@ -486,80 +502,103 @@ public class StoreDatabasesPage extends StoreTemplatePage {
             "  </div>\n" +
             "</div>\n";
 
-        // Hidden forms and scripts
-        Widget jsFormsAndScripts = Div.of(
-            Form.of(
-                Hidden.of("action", "drop_db"),
-                Hidden.of("target_db").id("dropTargetDb")
-            ).action(JettraServer.resolvePath("/databases")).method("POST").id("dropDbForm").modifier(new Modifier().style("display:none;")),
-            Form.of(
-                Hidden.of("action", "delete_entity"),
-                Hidden.of("raw_key").id("deleteRawKey")
-            ).action(JettraServer.resolvePath("/databases")).method("POST").id("deleteEntityForm").modifier(new Modifier().style("display:none;")),
-            RawScript.of(
-                "function openCreateDbModal() { document.getElementById('createDbModal').style.display='flex'; }\n" +
-                "function openAddComponentModal(db) {\n" +
-                "  document.getElementById('modalTargetDbLabel').innerText = db;\n" +
-                "  document.getElementById('modalTargetDbInput').value = db;\n" +
-                "  document.getElementById('addComponentModal').style.display='flex';\n" +
-                "}\n" +
-                "function openAssignUserModal(db) {\n" +
-                "  document.getElementById('assignUserDbLabel').innerText = db;\n" +
-                "  document.getElementById('assignUserDbInput').value = db;\n" +
-                "  document.getElementById('assignUserModal').style.display='flex';\n" +
-                "}\n" +
-                "function closeModal(id) { document.getElementById(id).style.display='none'; }\n" +
-                "function toggleEntitiesViewer(db) {\n" +
-                "  var el = document.getElementById('entities_' + db);\n" +
-                "  if (el) el.style.display = (el.style.display === 'none' ? 'block' : 'none');\n" +
-                "}\n" +
-                "function deleteEntity(rawKey) {\n" +
-                "  if (confirm(\"Delete entity '\" + rawKey + \"'?\")) {\n" +
-                "    document.getElementById('deleteRawKey').value = rawKey;\n" +
-                "    document.getElementById('deleteEntityForm').submit();\n" +
-                "  }\n" +
-                "}\n" +
-                "function confirmDropDb(db) {\n" +
-                "  if (confirm(\"Are you sure you want to drop database '\" + db + \"' and all its multi-model components?\")) {\n" +
-                "    document.getElementById('dropTargetDb').value = db;\n" +
-                "    document.getElementById('dropDbForm').submit();\n" +
-                "  }\n" +
-                "}\n" +
-                "function updatePayloadTemplate(engine, targetId) {\n" +
-                "  var ta = document.getElementById(targetId);\n" +
-                "  if (engine === 'RECORDS') {\n" +
-                "    ta.value = '{\"_recordClass\": \"com.enterprise.model.EmployeeRecord\", \"_schema\": {\"id\":\"String\", \"fullName\":\"String\", \"salary\":\"Double\"}, \"components\": {\"id\": \"emp_101\", \"fullName\": \"Carlos Mendez\", \"salary\": 95000.0}}';\n" +
-                "  } else if (engine === 'VECTOR') {\n" +
-                "    ta.value = '{\"vector\": [0.12, 0.45, 0.78, 0.33], \"label\": \"search_embedding\"}';\n" +
-                "  } else if (engine === 'GRAPH') {\n" +
-                "    ta.value = '{\"name\": \"Engineering Department\", \"type\": \"ORGANIZATION\"}';\n" +
-                "  } else if (engine === 'TIMESERIES') {\n" +
-                "    ta.value = '{\"temperature\": 24.5, \"humidity\": 60.2, \"sensor\": \"DHT22\"}';\n" +
-                "  } else if (engine === 'COLUMN') {\n" +
-                "    ta.value = '{\"region\": \"LATAM\", \"q1_revenue\": 450000.0, \"units\": 1200}';\n" +
-                "  } else if (engine === 'KEYVALUE') {\n" +
-                "    ta.value = '{\"cached_token\": \"eyJhbGciOiJIUzI1NiJ9...\"}';\n" +
-                "  } else if (engine === 'GEOSPATIAL') {\n" +
-                "    ta.value = '{\"name\": \"Headquarters\", \"lat\": 8.9824, \"lon\": -79.5199}';\n" +
-                "  } else {\n" +
-                "    ta.value = '{\"status\": \"ACTIVE\", \"version\": \"1.0\"}';\n" +
-                "  }\n" +
-                "}"
-            )
-        );
+        // Rename Database Modal
+        String renameDbModalHtml =
+            "<div id='renameDbModal' class='espresso-modal-overlay' style='display:none; position:fixed; z-index:1050; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); justify-content:center; align-items:center;'>\n" +
+            "  <div class='store-card' style='max-width:480px; width:90%; background:#0f172a; border:1px solid rgba(56,189,248,0.4); border-radius:14px; padding:24px;'>\n" +
+            "    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;'>\n" +
+            "      <div style='display:flex; align-items:center; gap:8px;'><i class='fas fa-pen' style='color:#38bdf8;'></i><h3 style='margin:0; font-size:17px; font-weight:700;'>Rename Database</h3></div>\n" +
+            "      <button type='button' onclick=\"closeModal('renameDbModal')\" class='btn-action btn-secondary' style='padding:4px 8px;'><i class='fas fa-times'></i></button>\n" +
+            "    </div>\n" +
+            "    <form method='POST' action='" + JettraServer.resolvePath("/databases") + "'>\n" +
+            "      <input type='hidden' name='action' value='rename_db'/>\n" +
+            "      <input type='hidden' name='old_db' id='renameOldDbInput'/>\n" +
+            "      <div style='margin-bottom:14px;'>\n" +
+            "        <label style='display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;'>Current Database Name:</label>\n" +
+            "        <input type='text' id='renameOldDbDisplay' disabled style='width:100%; padding:10px 12px; background:#1e293b; border:1px solid rgba(255,255,255,0.1); border-radius:8px; color:#94a3b8; font-size:14px; box-sizing:border-box;'/>\n" +
+            "      </div>\n" +
+            "      <div style='margin-bottom:18px;'>\n" +
+            "        <label style='display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;'>New Database Name:</label>\n" +
+            "        <input type='text' name='new_db' placeholder='e.g. inventory_prod_db' required style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:8px; color:#f8fafc; font-size:14px; box-sizing:border-box;'/>\n" +
+            "      </div>\n" +
+            "      <div style='display:flex; justify-content:flex-end; gap:10px;'>\n" +
+            "        <button type='button' onclick=\"closeModal('renameDbModal')\" class='btn-action btn-secondary'>Cancel</button>\n" +
+            "        <button type='submit' class='btn-action btn-primary'><i class='fas fa-save'></i> Rename Database</button>\n" +
+            "      </div>\n" +
+            "    </form>\n" +
+            "  </div>\n" +
+            "</div>\n";
+
+        String scriptsHtml =
+            "<script>\n" +
+            "  function openModal(id) { document.getElementById(id).style.display = 'flex'; }\n" +
+            "  function closeModal(id) { document.getElementById(id).style.display = 'none'; }\n" +
+            "  function openCreateDbModal() { openModal('createDbModal'); }\n" +
+            "  function openAddComponentModal(db) {\n" +
+            "    document.getElementById('modalTargetDbInput').value = db;\n" +
+            "    document.getElementById('modalTargetDbLabel').innerText = db;\n" +
+            "    openModal('addComponentModal');\n" +
+            "  }\n" +
+            "  function openAssignUserModal(db) {\n" +
+            "    document.getElementById('assignUserDbInput').value = db;\n" +
+            "    document.getElementById('assignUserDbLabel').innerText = db;\n" +
+            "    openModal('assignUserModal');\n" +
+            "  }\n" +
+            "  function openRenameDbModal(oldDb) {\n" +
+            "    document.getElementById('renameOldDbInput').value = oldDb;\n" +
+            "    document.getElementById('renameOldDbDisplay').value = oldDb;\n" +
+            "    openModal('renameDbModal');\n" +
+            "  }\n" +
+            "  function toggleEntities(id) {\n" +
+            "    var el = document.getElementById(id);\n" +
+            "    el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'block' : 'none';\n" +
+            "  }\n" +
+            "  function updatePayloadTemplate(engine, targetId) {\n" +
+            "    var t = document.getElementById(targetId);\n" +
+            "    if (!t) return;\n" +
+            "    switch(engine) {\n" +
+            "      case 'RECORDS': t.value = '{\"_recordClass\": \"com.enterprise.model.EmployeeRecord\", \"_schema\": {\"id\":\"String\", \"fullName\":\"String\", \"salary\":\"Double\"}, \"components\": {\"id\": \"emp_101\", \"fullName\": \"Carlos Mendez\", \"salary\": 95000.0}}'; break;\n" +
+            "      case 'DOCUMENT': t.value = '{\"name\": \"Enterprise Doc\", \"active\": true, \"tier\": \"Premium\"}'; break;\n" +
+            "      case 'VECTOR': t.value = '{\"coords\": [0.12, 0.45, 0.88, 0.31], \"meta\": {\"title\": \"Paper Embedding\"}}'; break;\n" +
+            "      case 'GRAPH': t.value = '{\"label\": \"ServerNode\", \"properties\": {\"ip\": \"192.168.1.100\", \"status\": \"ACTIVE\"}}'; break;\n" +
+            "      case 'TIMESERIES': t.value = '{\"value\": 42.50, \"unit\": \"celsius\", \"tags\": {\"host\": \"server-01\"}}'; break;\n" +
+            "      case 'COLUMN': t.value = '{\"col1\": \"val1\", \"col2\": 100, \"status\": \"OK\"}'; break;\n" +
+            "      case 'KEYVALUE': t.value = 'raw_string_or_json_payload'; break;\n" +
+            "      case 'GEOSPATIAL': t.value = '{\"lat\": 8.9824, \"lon\": -79.5199, \"name\": \"Hub Panama\"}'; break;\n" +
+            "      case 'OBJECT': t.value = '{\"class\": \"BlobObject\", \"data\": \"base64_or_stream\"}'; break;\n" +
+            "    }\n" +
+            "  }\n" +
+            "</script>\n";
 
         return Column.of(
             titleBlock,
             alertWidget,
             statGrid,
-            Header.of(2,
-                Icon.of("fas fa-layer-group").modifier(new Modifier().style("color:#f43f5e; margin-right:8px;")),
-                Text.of("Provisioned Database Instances & Internal Components")
-            ).modifier(new Modifier().style("font-size:20px; font-weight:700; margin:24px 0 16px 0;")),
             databasesContainer,
             RawHtml.of(modalsHtml),
-            jsFormsAndScripts
+            RawHtml.of(renameDbModalHtml),
+            RawHtml.of(scriptsHtml)
         );
+    }
+
+    private int renameDatabase(String oldDb, String newDb) {
+        if (oldDb == null || newDb == null || oldDb.equalsIgnoreCase(newDb)) return 0;
+        String cleanNewDb = newDb.trim().toLowerCase().replaceAll("[^a-z0-9_]", "_");
+        String[] prefixes = {"rec:", "doc:", "vec:", "graph:", "ts:", "col:", "kv:", "geo:", "obj:", ""};
+        int count = 0;
+        for (String p : prefixes) {
+            String dbPrefix = p + oldDb + ":";
+            Map<String, byte[]> keys = engine.getStorageCore().scanPrefix(dbPrefix);
+            for (Map.Entry<String, byte[]> e : keys.entrySet()) {
+                String oldKey = e.getKey();
+                String keyId = oldKey.substring(dbPrefix.length());
+                String newKey = p + cleanNewDb + ":" + keyId;
+                engine.getStorageCore().put(newKey, e.getValue(), System.currentTimeMillis());
+                engine.getStorageCore().delete(oldKey, System.currentTimeMillis());
+                count++;
+            }
+        }
+        return count;
     }
 
     private Map<String, DatabaseMetadata> discoverDatabases() {
@@ -613,7 +652,7 @@ public class StoreDatabasesPage extends StoreTemplatePage {
 
     private int purgeDatabase(String targetDb) {
         int count = 0;
-        String[] prefixes = {"rec:", "doc:", "vec:", "graph:", "ts:", "col:", "kv:", "geo:", "obj:"};
+        String[] prefixes = {"rec:", "doc:", "vec:", "graph:", "ts:", "col:", "kv:", "geo:", "obj:", ""};
         for (String p : prefixes) {
             String dbPrefix = p + targetDb + ":";
             Map<String, byte[]> keys = engine.getStorageCore().scanPrefix(dbPrefix);
