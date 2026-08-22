@@ -3,31 +3,31 @@ package com.jettra.store.engine.web;
 import com.jettra.store.engine.auth.AuthManager;
 import com.jettra.store.engine.core.JettraStorageEngine;
 import com.sun.net.httpserver.HttpExchange;
+import io.jettra.flux.core.Modifier;
 import io.jettra.flux.core.Widget;
 import io.jettra.flux.widgets.*;
+import io.jettra.core.login.NoLoginRequired;
 import io.jettra.server.JettraServer;
 import io.jettra.server.autentification.entity.JCredential;
 import io.jettra.server.autentification.entity.JRole;
 import io.jettra.server.autentification.entity.JUser;
 import io.jettra.server.autentification.repository.JCredentialRepository;
 import io.jettra.server.autentification.repository.JCredentialRepositoryImpl;
-import io.jettra.server.autentification.repository.JRoleRepository;
-import io.jettra.server.autentification.repository.JRoleRepositoryImpl;
 import io.jettra.server.autentification.repository.JUserRepository;
 import io.jettra.server.autentification.repository.JUserRepositoryImpl;
-import io.jettra.core.login.NoLoginRequired;
 
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.List;
 import java.util.UUID;
+import java.util.HashSet;
+import java.util.ArrayList;
 
 /**
- * User & Security management page for JettraStoreEngine.
- * Supports per-database and per-engine scoped user management and RBAC role assignment.
+ * Visual User and RBAC Role Management Console for JettraStoreEngine.
+ * Built with pure JettraFlux components.
  */
 @NoLoginRequired
 public class StoreUsersPage extends StoreTemplatePage {
@@ -36,19 +36,17 @@ public class StoreUsersPage extends StoreTemplatePage {
     private final AuthManager authManager;
     private final JUserRepository userRepo;
     private final JCredentialRepository credRepo;
-    private final JRoleRepository roleRepo;
 
     public StoreUsersPage(JettraStorageEngine engine, AuthManager authManager) {
         this.engine = engine;
         this.authManager = authManager;
         this.userRepo = new JUserRepositoryImpl();
         this.credRepo = new JCredentialRepositoryImpl();
-        this.roleRepo = new JRoleRepositoryImpl();
     }
 
     @Override
     protected String getPageTitle() {
-        return "Users & Per-Database Security - JettraStoreEngine";
+        return "Users & Access Security - JettraStoreEngine";
     }
 
     @Override
@@ -56,7 +54,7 @@ public class StoreUsersPage extends StoreTemplatePage {
         String alertMessage = "";
         String alertType = "badge-active";
 
-        // Handle POST User Actions (create_user, delete_user)
+        // Handle POST Operations
         if ("POST".equalsIgnoreCase(exchange.getRequestMethod())) {
             try {
                 String action = params != null ? params.get("action") : null;
@@ -70,30 +68,29 @@ public class StoreUsersPage extends StoreTemplatePage {
                     if (username != null && !username.isBlank()) {
                         UUID newId = UUID.randomUUID();
                         JRole role = new JRole(UUID.randomUUID(), roleName != null ? roleName : "READ_WRITE", true);
-                        java.util.Set<JRole> roles = new java.util.HashSet<>();
+                        Set<JRole> roles = new HashSet<>();
                         roles.add(role);
 
                         String dbScope = targetDb != null && !targetDb.isBlank() ? targetDb : "*";
                         JUser newUser = new JUser(newId, username, dbScope, email != null ? email : username + "@jettra.io", "+123456", true, roles);
                         userRepo.save(newUser);
 
-                        JCredential cred = new JCredential(UUID.randomUUID(), newUser, username, password != null ? password : "password123", true, Instant.now());
+                        JCredential cred = new JCredential(UUID.randomUUID(), newUser, username, password != null && !password.isBlank() ? password : "password123", true, Instant.now());
                         credRepo.save(cred);
 
-                        alertMessage = "User '" + username + "' successfully created with role '" + roleName + "' for database scope '" + dbScope + "'!";
+                        alertMessage = "User '" + username + "' provisioned with role [" + roleName + "] for database scope '" + dbScope + "'!";
                         alertType = "badge-active";
                     }
                 } else if ("delete_user".equalsIgnoreCase(action)) {
-                    String userIdStr = params.get("user_id");
-                    if (userIdStr != null && !userIdStr.isBlank()) {
-                        UUID uId = UUID.fromString(userIdStr);
-                        userRepo.delete(uId);
-                        alertMessage = "User account removed from database access control.";
+                    String userId = params.get("user_id");
+                    if (userId != null && !userId.isBlank()) {
+                        userRepo.delete(UUID.fromString(userId));
+                        alertMessage = "User account revoked and access removed.";
                         alertType = "badge-raft";
                     }
                 }
             } catch (Exception e) {
-                alertMessage = "Error in user management: " + e.getMessage();
+                alertMessage = "Operation failed: " + e.getMessage();
                 alertType = "badge-raft";
             }
         }
@@ -101,22 +98,34 @@ public class StoreUsersPage extends StoreTemplatePage {
         // Title Block
         Widget titleBlock = Row.of(
             Column.of(
-                Paragraph.of("<h1 style='margin: 0; font-size: 26px; font-weight: 700;'><i class='fas fa-users-cog' style='color:#38bdf8; margin-right:8px;'></i> Users & Per-Database Security</h1>"),
-                Paragraph.of("<p style='margin: 4px 0 0 0; color: #94a3b8; font-size: 14px;'>Manage database user accounts, scoped database permissions, RBAC roles, and authentication credentials.</p>")
+                Header.of(1,
+                    Icon.of("fas fa-users-cog").modifier(new Modifier().style("color:#38bdf8; margin-right:8px;")),
+                    Text.of("Users & Per-Database Security")
+                ).modifier(new Modifier().style("margin: 0; font-size: 26px; font-weight: 700;")),
+                Paragraph.of(
+                    Text.of("Manage database user accounts, scoped database permissions, RBAC roles, and authentication credentials.")
+                ).modifier(new Modifier().style("margin: 4px 0 0 0; color: #94a3b8; font-size: 14px;"))
             ),
             Row.of(
-                Paragraph.of("<a href='" + JettraServer.resolvePath("/databases") + "' class='btn-action btn-secondary' style='margin-right: 8px;'><i class='fas fa-server'></i> Databases</a>"),
-                Paragraph.of("<a href='" + JettraServer.resolvePath("/dashboard") + "' class='btn-action btn-secondary'><i class='fas fa-arrow-left'></i> Dashboard</a>")
-            ).modifier(new io.jettra.flux.core.Modifier().style("align-items: center;"))
-        ).modifier(new io.jettra.flux.core.Modifier().style("justify-content: space-between; align-items: center; margin-bottom: 24px;"));
+                Link.of(JettraServer.resolvePath("/databases"),
+                    Icon.of("fas fa-server"),
+                    Text.of(" Databases")
+                ).modifier(new Modifier().cssClass("btn-action btn-secondary").style("margin-right: 8px;")),
+                Link.of(JettraServer.resolvePath("/dashboard"),
+                    Icon.of("fas fa-arrow-left"),
+                    Text.of(" Dashboard")
+                ).modifier(new Modifier().cssClass("btn-action btn-secondary"))
+            ).modifier(new Modifier().style("align-items: center;"))
+        ).modifier(new Modifier().style("justify-content: space-between; align-items: center; margin-bottom: 24px;"));
 
         // Alert Banner (if any)
-        Widget alertWidget = alertMessage.isEmpty() ? Paragraph.of("") : Paragraph.of(
-            "<div style='background: rgba(30, 41, 59, 0.9); border: 1px solid rgba(59,130,246,0.4); padding: 14px 20px; border-radius: 10px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between;'>\n" +
-            "  <div style='display:flex; align-items:center; gap:10px;'><i class='fas fa-user-check' style='color:#38bdf8; font-size:18px;'></i> <span style='font-size:14px; color:#f8fafc; font-weight:500;'>" + alertMessage + "</span></div>\n" +
-            "  <span class='store-badge " + alertType + "'>RBAC SYNCED</span>\n" +
-            "</div>\n"
-        );
+        Widget alertWidget = alertMessage.isEmpty() ? Div.of() : Div.of(
+            Div.of(
+                Icon.of("fas fa-user-check").modifier(new Modifier().style("color:#38bdf8; font-size:18px;")),
+                Span.of(alertMessage).modifier(new Modifier().style("font-size:14px; color:#f8fafc; font-weight:500;"))
+            ).modifier(new Modifier().style("display:flex; align-items:center; gap:10px;")),
+            Span.of("RBAC SYNCED").modifier(new Modifier().cssClass("store-badge " + alertType))
+        ).modifier(new Modifier().style("background: rgba(30, 41, 59, 0.9); border: 1px solid rgba(59,130,246,0.4); padding: 14px 20px; border-radius: 10px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between;"));
 
         // Discover active databases to populate select
         Set<String> discoveredDbs = new TreeSet<>();
@@ -142,16 +151,27 @@ public class StoreUsersPage extends StoreTemplatePage {
         List<JUser> users = "*".equals(filterDb) ? allUsers : allUsers.stream().filter(u -> filterDb.equalsIgnoreCase(u.lastName()) || "*".equals(u.lastName())).toList();
 
         // Build Users Table
-        StringBuilder tableRows = new StringBuilder();
+        List<Widget> tableHeaders = List.of(
+            Text.of("Username"),
+            Text.of("Email"),
+            Text.of("Database Scope"),
+            Text.of("Assigned Role"),
+            Text.of("Account Status"),
+            Text.of("Actions")
+        );
+
+        List<List<Widget>> tableRows = new ArrayList<>();
         if (users.isEmpty()) {
-            tableRows.append("<tr>\n")
-                .append("  <td colspan='6' style='text-align:center; color:#94a3b8; padding:24px;'>No users provisioned for database scope '").append(filterDb).append("'. Use the form below to create one.</td>\n")
-                .append("</tr>\n");
+            tableRows.add(List.of(
+                Span.of("No users provisioned for database scope '" + filterDb + "'. Use the form below to create one.")
+                    .modifier(new Modifier().style("color:#94a3b8; text-align:center;")),
+                Span.of(""), Span.of(""), Span.of(""), Span.of(""), Span.of("")
+            ));
         } else {
             for (JUser u : users) {
-                String roleBadges = "";
                 String dbScope = u.lastName() != null && !u.lastName().isBlank() ? u.lastName() : "* (ALL)";
-                if (u.jRoles() != null) {
+                List<Widget> roleBadges = new ArrayList<>();
+                if (u.jRoles() != null && !u.jRoles().isEmpty()) {
                     for (JRole r : u.jRoles()) {
                         String roleColor = switch (r.name()) {
                             case "DB_ADMIN" -> "badge-raft";
@@ -159,174 +179,185 @@ public class StoreUsersPage extends StoreTemplatePage {
                             case "MANAGER" -> "badge-active";
                             default -> "";
                         };
-                        roleBadges += "<span class='store-badge " + roleColor + "' style='margin-right:4px; font-size:11px;'>" + r.name() + "</span>";
+                        roleBadges.add(Span.of(r.name()).modifier(new Modifier().cssClass("store-badge " + roleColor).style("margin-right:4px; font-size:11px;")));
                     }
-                }
-                if (roleBadges.isEmpty()) {
-                    roleBadges = "<span class='store-badge badge-engine'>READ_WRITE</span>";
+                } else {
+                    roleBadges.add(Span.of("READ_WRITE").modifier(new Modifier().cssClass("store-badge badge-engine")));
                 }
 
-                String status = u.active() ? "<span class='store-badge badge-active'>ACTIVE</span>" : "<span class='store-badge' style='background:rgba(239,68,68,0.2); color:#f87171;'>DISABLED</span>";
+                Widget userCell = Div.of(
+                    Icon.of("fas fa-user").modifier(new Modifier().style("color:#38bdf8; margin-right:6px;")),
+                    Span.of(u.firstName()).modifier(new Modifier().style("font-weight:bold;"))
+                );
+                Widget emailCell = RawHtml.of("<code style='color:#38bdf8;'>" + (u.email() != null ? u.email() : "-") + "</code>");
+                Widget scopeCell = Span.of(
+                    Icon.of("fas fa-database").modifier(new Modifier().style("margin-right:4px;")),
+                    Text.of(" " + dbScope)
+                ).modifier(new Modifier().cssClass("store-badge badge-engine"));
+                Widget rolesCell = Div.of(roleBadges.toArray(new Widget[0]));
+                Widget statusCell = u.active()
+                    ? Span.of("ACTIVE").modifier(new Modifier().cssClass("store-badge badge-active"))
+                    : Span.of("DISABLED").modifier(new Modifier().cssClass("store-badge").style("background:rgba(239,68,68,0.2); color:#f87171;"));
 
-                tableRows.append("<tr>\n")
-                    .append("  <td><b><i class='fas fa-user' style='color:#38bdf8; margin-right:6px;'></i> ").append(u.firstName()).append("</b></td>\n")
-                    .append("  <td><code style='color:#38bdf8;'>").append(u.email() != null ? u.email() : "-").append("</code></td>\n")
-                    .append("  <td><span class='store-badge badge-engine'><i class='fas fa-database' style='margin-right:4px;'></i> ").append(dbScope).append("</span></td>\n")
-                    .append("  <td>").append(roleBadges).append("</td>\n")
-                    .append("  <td>").append(status).append("</td>\n")
-                    .append("  <td>\n")
-                    .append("    <button onclick=\"deleteUser('").append(u.id()).append("')\" class='btn-action btn-danger' style='padding:4px 8px; font-size:11px;'><i class='fas fa-trash'></i> Revoke</button>\n")
-                    .append("  </td>\n")
-                    .append("</tr>\n");
+                Button revokeBtn = Button.of(Icon.of("fas fa-trash"), Text.of(" Revoke"));
+                revokeBtn.attribute("onclick", "deleteUser('" + u.id() + "')");
+                revokeBtn.modifier(new Modifier().cssClass("btn-action btn-danger").style("padding:4px 8px; font-size:11px;"));
+
+                tableRows.add(List.of(userCell, emailCell, scopeCell, rolesCell, statusCell, revokeBtn));
             }
         }
 
-        // Build filter options
-        StringBuilder filterOptions = new StringBuilder();
-        filterOptions.append("<option value='*'").append("*".equals(filterDb) ? " selected" : "").append(">All Databases / Global Scope</option>\n");
-        for (String db : discoveredDbs) {
-            filterOptions.append("<option value='").append(db).append("'").append(db.equals(filterDb) ? " selected" : "").append(">").append(db).append("</option>\n");
-        }
+        Datatable datatable = Datatable.ofWidgets(tableHeaders, tableRows);
+        datatable.modifier(new Modifier().cssClass("jettra-table"));
+
+        List<String> filterOptionsList = new ArrayList<>();
+        filterOptionsList.add("*");
+        filterOptionsList.addAll(discoveredDbs);
+
+        Dropdown filterDropdown = Dropdown.of(filterOptionsList)
+            .selected(filterDb)
+            .placeholder(null);
+        filterDropdown.attribute("onchange", "window.location.href='" + JettraServer.resolvePath("/users?filter_db=") + "' + this.value");
+        filterDropdown.modifier(new Modifier().style("padding:6px 10px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#38bdf8; font-size:13px;"));
 
         Widget usersCard = Div.of(
             Row.of(
                 Column.of(
-                    Paragraph.of("<h3 style='margin: 0; font-size: 18px; font-weight: 600;'><i class='fas fa-user-shield' style='color:#38bdf8; margin-right:8px;'></i> Database User Accounts (" + users.size() + ")</h3>"),
-                    Paragraph.of("<div style='font-size:12px; color:#94a3b8; margin-top:2px;'>Scope: <b style='color:#38bdf8;'>" + ("*".equals(filterDb) ? "All Scopes" : filterDb) + "</b></div>")
+                    Header.of(3,
+                        Icon.of("fas fa-user-shield").modifier(new Modifier().style("color:#38bdf8; margin-right:8px;")),
+                        Text.of("Database User Accounts (" + users.size() + ")")
+                    ).modifier(new Modifier().style("margin: 0; font-size: 18px; font-weight: 600;")),
+                    Div.of(
+                        Text.of("Scope: "),
+                        Span.of("*".equals(filterDb) ? "All Scopes" : filterDb).modifier(new Modifier().style("color:#38bdf8; font-weight:bold;"))
+                    ).modifier(new Modifier().style("font-size:12px; color:#94a3b8; margin-top:2px;"))
                 ),
                 Row.of(
-                    Paragraph.of("<label style='font-size:12px; color:#94a3b8; margin-right:6px;'>Filter by DB:</label>"),
-                    Paragraph.of("<select onchange=\"window.location.href='" + JettraServer.resolvePath("/users?filter_db=") + "' + this.value\" style='padding:6px 10px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#38bdf8; font-size:13px;'>\n" + filterOptions + "</select>")
-                ).modifier(new io.jettra.flux.core.Modifier().style("align-items:center;"))
-            ).modifier(new io.jettra.flux.core.Modifier().style("justify-content: space-between; align-items: center; margin-bottom: 16px;")),
-            Paragraph.of(
-                "<div class='table-responsive'>\n" +
-                "  <table class='jettra-table'>\n" +
-                "    <thead>\n" +
-                "      <tr>\n" +
-                "        <th>Username</th>\n" +
-                "        <th>Email</th>\n" +
-                "        <th>Database Scope</th>\n" +
-                "        <th>Assigned Role</th>\n" +
-                "        <th>Account Status</th>\n" +
-                "        <th>Actions</th>\n" +
-                "      </tr>\n" +
-                "    </thead>\n" +
-                "    <tbody>\n" +
-                tableRows.toString() +
-                "    </tbody>\n" +
-                "  </table>\n" +
-                "</div>"
-            )
-        ).modifier(new io.jettra.flux.core.Modifier().cssClass("store-card").style("margin-bottom: 24px;"));
+                    Label.of("Filter by DB:").modifier(new Modifier().style("font-size:12px; color:#94a3b8; margin-right:6px;")),
+                    filterDropdown
+                ).modifier(new Modifier().style("align-items:center;"))
+            ).modifier(new Modifier().style("justify-content: space-between; align-items: center; margin-bottom: 16px;")),
+            Div.of(datatable).modifier(new Modifier().cssClass("table-responsive"))
+        ).modifier(new Modifier().cssClass("store-card").style("margin-bottom: 24px;"));
 
-        // Build Database options
-        StringBuilder dbOptionsHtml = new StringBuilder();
-        dbOptionsHtml.append("<option value='*'>* (All Databases / Global Scope)</option>\n");
-        for (String db : discoveredDbs) {
-            dbOptionsHtml.append("<option value='").append(db).append("'>").append(db).append("</option>\n");
-        }
+        // Build Database options for user creation
+        List<String> userDbOptions = new ArrayList<>();
+        userDbOptions.add("*");
+        userDbOptions.addAll(discoveredDbs);
+
+        Dropdown userDbDropdown = Dropdown.of(userDbOptions).selected("*").placeholder(null);
+        userDbDropdown.attribute("name", "target_db");
+        userDbDropdown.modifier(new Modifier().style("width:100%; padding:8px 10px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; box-sizing:border-box;"));
+
+        Dropdown roleDropdown = Dropdown.of("DB_ADMIN", "READ_WRITE", "READ_ONLY", "MANAGER").selected("READ_WRITE").placeholder(null);
+        roleDropdown.attribute("name", "role");
+        roleDropdown.modifier(new Modifier().style("width:100%; padding:8px 10px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; box-sizing:border-box;"));
 
         // Create User Form Card
         Widget createUserCard = Div.of(
-            Paragraph.of("<h3 style='margin: 0 0 12px 0; font-size: 16px; font-weight: 600;'><i class='fas fa-user-plus' style='color:#4ade80; margin-right:8px;'></i> Provision New User for Database</h3>"),
-            Paragraph.of("<p style='font-size: 13px; color: #94a3b8; margin-bottom: 16px;'>Assign user permissions scoped directly to a specific database namespace or globally across all 9 engines.</p>"),
-            Paragraph.of(
-                "<form method='POST' action='" + JettraServer.resolvePath("/users") + "'>\n" +
-                "  <input type='hidden' name='action' value='create_user' />\n" +
-                "  <div style='display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:12px; margin-bottom:14px;'>\n" +
-                "    <div>\n" +
-                "      <label style='font-size:12px; color:#94a3b8; font-weight:600; display:block; margin-bottom:4px;'>Username</label>\n" +
-                "      <input class='form-input' type='text' name='username' placeholder='e.g. carlos_mendez' required style='width:100%; padding:8px 10px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; box-sizing:border-box;'/>\n" +
-                "    </div>\n" +
-                "    <div>\n" +
-                "      <label style='font-size:12px; color:#94a3b8; font-weight:600; display:block; margin-bottom:4px;'>Email</label>\n" +
-                "      <input class='form-input' type='email' name='email' placeholder='carlos@company.com' required style='width:100%; padding:8px 10px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; box-sizing:border-box;'/>\n" +
-                "    </div>\n" +
-                "    <div>\n" +
-                "      <label style='font-size:12px; color:#94a3b8; font-weight:600; display:block; margin-bottom:4px;'>Password</label>\n" +
-                "      <input class='form-input' type='password' name='password' placeholder='••••••••' required style='width:100%; padding:8px 10px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; box-sizing:border-box;'/>\n" +
-                "    </div>\n" +
-                "    <div>\n" +
-                "      <label style='font-size:12px; color:#94a3b8; font-weight:600; display:block; margin-bottom:4px;'>Database Scope</label>\n" +
-                "      <select name='target_db' style='width:100%; padding:8px 10px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; box-sizing:border-box;'>\n" +
-                dbOptionsHtml.toString() +
-                "      </select>\n" +
-                "    </div>\n" +
-                "    <div>\n" +
-                "      <label style='font-size:12px; color:#94a3b8; font-weight:600; display:block; margin-bottom:4px;'>Assigned Role</label>\n" +
-                "      <select name='role' style='width:100%; padding:8px 10px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; box-sizing:border-box;'>\n" +
-                "        <option value='DB_ADMIN'>DB_ADMIN (Full DDL & Read/Write)</option>\n" +
-                "        <option value='READ_WRITE' selected>READ_WRITE (Insert, Update, Query)</option>\n" +
-                "        <option value='READ_ONLY'>READ_ONLY (Query Only)</option>\n" +
-                "        <option value='MANAGER'>MANAGER (Backup & Operations)</option>\n" +
-                "      </select>\n" +
-                "    </div>\n" +
-                "  </div>\n" +
-                "  <button type='submit' class='btn-action btn-primary'><i class='fas fa-user-plus'></i> Provision User</button>\n" +
-                "</form>\n" +
-                "<form id='deleteUserForm' method='POST' action='" + JettraServer.resolvePath("/users") + "' style='display:none;'>\n" +
-                "  <input type='hidden' name='action' value='delete_user'/>\n" +
-                "  <input type='hidden' name='user_id' id='delUserId'/>\n" +
-                "</form>\n" +
-                "<script>\n" +
+            Header.of(3,
+                Icon.of("fas fa-user-plus").modifier(new Modifier().style("color:#4ade80; margin-right:8px;")),
+                Text.of("Provision New User for Database")
+            ).modifier(new Modifier().style("margin: 0 0 12px 0; font-size: 16px; font-weight: 600;")),
+            Paragraph.of(Text.of("Assign user permissions scoped directly to a specific database namespace or globally across all 9 engines."))
+                .modifier(new Modifier().style("font-size: 13px; color: #94a3b8; margin-bottom: 16px;")),
+            Form.of(
+                Hidden.of("action", "create_user"),
+                Div.of(
+                    Div.of(
+                        Label.of("Username").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600; display:block; margin-bottom:4px;")),
+                        TextField.of("username", "e.g. carlos_mendez")
+                            .modifier(new Modifier().style("width:100%; padding:8px 10px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; box-sizing:border-box;"))
+                    ),
+                    Div.of(
+                        Label.of("Email").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600; display:block; margin-bottom:4px;")),
+                        TextField.of("email", "carlos@company.com")
+                            .modifier(new Modifier().style("width:100%; padding:8px 10px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; box-sizing:border-box;"))
+                    ),
+                    Div.of(
+                        Label.of("Password").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600; display:block; margin-bottom:4px;")),
+                        RawHtml.of("<input class='form-input' type='password' name='password' placeholder='••••••••' required style='width:100%; padding:8px 10px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; box-sizing:border-box;'/>")
+                    ),
+                    Div.of(
+                        Label.of("Database Scope").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600; display:block; margin-bottom:4px;")),
+                        userDbDropdown
+                    ),
+                    Div.of(
+                        Label.of("Assigned Role").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600; display:block; margin-bottom:4px;")),
+                        roleDropdown
+                    )
+                ).modifier(new Modifier().style("display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:12px; margin-bottom:14px;")),
+                Button.of(Icon.of("fas fa-user-plus"), Text.of(" Provision User"))
+                    .attribute("type", "submit")
+                    .modifier(new Modifier().cssClass("btn-action btn-primary"))
+            ).action(JettraServer.resolvePath("/users")).method("POST"),
+            Form.of(
+                Hidden.of("action", "delete_user"),
+                Hidden.of("user_id").id("delUserId")
+            ).action(JettraServer.resolvePath("/users")).method("POST").id("deleteUserForm").modifier(new Modifier().style("display:none;")),
+            RawScript.of(
                 "function deleteUser(uid) {\n" +
                 "  if (confirm('Revoke access for this user account?')) {\n" +
                 "    document.getElementById('delUserId').value = uid;\n" +
                 "    document.getElementById('deleteUserForm').submit();\n" +
                 "  }\n" +
-                "}\n" +
-                "</script>"
+                "}"
             )
-        ).modifier(new io.jettra.flux.core.Modifier().cssClass("store-card").style("margin-bottom: 24px;"));
+        ).modifier(new Modifier().cssClass("store-card").style("margin-bottom: 24px;"));
 
         // Roles & Policy Grid
         Widget rolesCard = Div.of(
-            Paragraph.of("<h3 style='margin: 0 0 12px 0; font-size: 16px; font-weight: 600;'><i class='fas fa-id-badge' style='color:#a855f7; margin-right:8px;'></i> Per-Database Role Matrix (RBAC)</h3>"),
-            Paragraph.of(
-                "<ul style='list-style:none; padding:0; margin:0; font-size:13px; color:#cbd5e1;'>\n" +
-                "  <li style='padding:8px 0; border-bottom:1px solid rgba(255,255,255,0.06); display:flex; justify-content:space-between; align-items:center;'>\n" +
-                "    <span><span class='store-badge badge-raft'>DB_ADMIN</span> Database Administrator</span>\n" +
-                "    <span style='color:#4ade80;'>Create/Drop Collections, Full R/W</span>\n" +
-                "  </li>\n" +
-                "  <li style='padding:8px 0; border-bottom:1px solid rgba(255,255,255,0.06); display:flex; justify-content:space-between; align-items:center;'>\n" +
-                "    <span><span class='store-badge badge-engine'>READ_WRITE</span> Application Read/Write</span>\n" +
-                "    <span style='color:#60a5fa;'>Insert, Update, Delete & Queries</span>\n" +
-                "  </li>\n" +
-                "  <li style='padding:8px 0; border-bottom:1px solid rgba(255,255,255,0.06); display:flex; justify-content:space-between; align-items:center;'>\n" +
-                "    <span><span class='store-badge' style='background:rgba(255,255,255,0.1); color:#e2e8f0;'>READ_ONLY</span> Data Analyst / Reader</span>\n" +
-                "    <span style='color:#94a3b8;'>Scan & Query Only</span>\n" +
-                "  </li>\n" +
-                "  <li style='padding:8px 0; display:flex; justify-content:space-between; align-items:center;'>\n" +
-                "    <span><span class='store-badge' style='background:rgba(245,158,11,0.2); color:#fbbf24;'>MANAGER</span> Ops & Backup Manager</span>\n" +
-                "    <span style='color:#f59e0b;'>WAL Snapshots & Recovery</span>\n" +
-                "  </li>\n" +
-                "</ul>"
-            )
-        ).modifier(new io.jettra.flux.core.Modifier().cssClass("store-card"));
+            Header.of(3,
+                Icon.of("fas fa-id-badge").modifier(new Modifier().style("color:#a855f7; margin-right:8px;")),
+                Text.of("Per-Database Role Matrix (RBAC)")
+            ).modifier(new Modifier().style("margin: 0 0 12px 0; font-size: 16px; font-weight: 600;")),
+            Div.of(
+                Div.of(
+                    Span.of(Span.of("DB_ADMIN").modifier(new Modifier().cssClass("store-badge badge-raft")), Text.of(" Database Administrator")),
+                    Span.of("Create/Drop Collections, Full R/W").modifier(new Modifier().style("color:#4ade80;"))
+                ).modifier(new Modifier().style("padding:8px 0; border-bottom:1px solid rgba(255,255,255,0.06); display:flex; justify-content:space-between; align-items:center;")),
+                Div.of(
+                    Span.of(Span.of("READ_WRITE").modifier(new Modifier().cssClass("store-badge badge-engine")), Text.of(" Application Read/Write")),
+                    Span.of("Insert, Update, Delete & Queries").modifier(new Modifier().style("color:#60a5fa;"))
+                ).modifier(new Modifier().style("padding:8px 0; border-bottom:1px solid rgba(255,255,255,0.06); display:flex; justify-content:space-between; align-items:center;")),
+                Div.of(
+                    Span.of(Span.of("READ_ONLY").modifier(new Modifier().cssClass("store-badge").style("background:rgba(255,255,255,0.1); color:#e2e8f0;")), Text.of(" Data Analyst / Reader")),
+                    Span.of("Scan & Query Only").modifier(new Modifier().style("color:#94a3b8;"))
+                ).modifier(new Modifier().style("padding:8px 0; border-bottom:1px solid rgba(255,255,255,0.06); display:flex; justify-content:space-between; align-items:center;")),
+                Div.of(
+                    Span.of(Span.of("MANAGER").modifier(new Modifier().cssClass("store-badge").style("background:rgba(245,158,11,0.2); color:#fbbf24;")), Text.of(" Ops & Backup Manager")),
+                    Span.of("WAL Snapshots & Recovery").modifier(new Modifier().style("color:#f59e0b;"))
+                ).modifier(new Modifier().style("padding:8px 0; display:flex; justify-content:space-between; align-items:center;"))
+            ).modifier(new Modifier().style("font-size:13px; color:#cbd5e1;"))
+        ).modifier(new Modifier().cssClass("store-card"));
 
         Widget tokenPolicyCard = Div.of(
-            Paragraph.of("<h3 style='margin: 0 0 12px 0; font-size: 16px; font-weight: 600;'><i class='fas fa-key' style='color:#f59e0b; margin-right:8px;'></i> Security Policies & Token Config</h3>"),
-            Paragraph.of(
-                "<ul style='list-style:none; padding:0; margin:0; font-size:13px; color:#cbd5e1;'>\n" +
-                "  <li style='padding:8px 0; border-bottom:1px solid rgba(255,255,255,0.06); display:flex; justify-content:space-between;'>\n" +
-                "    <span>JWT Expiration:</span> <code style='color:#f59e0b;'>3600000 ms (1 Hour)</code>\n" +
-                "  </li>\n" +
-                "  <li style='padding:8px 0; border-bottom:1px solid rgba(255,255,255,0.06); display:flex; justify-content:space-between;'>\n" +
-                "    <span>Algorithm:</span> <code style='color:#38bdf8;'>HMAC-SHA256 (JettraJWT)</code>\n" +
-                "  </li>\n" +
-                "  <li style='padding:8px 0; border-bottom:1px solid rgba(255,255,255,0.06); display:flex; justify-content:space-between;'>\n" +
-                "    <span>Credential Storage:</span> <code style='color:#34d399;'>JettraSecurityDB SQLite / Memory</code>\n" +
-                "  </li>\n" +
-                "  <li style='padding:8px 0; display:flex; justify-content:space-between;'>\n" +
-                "    <span>Password Hashing:</span> <code style='color:#a78bfa;'>SHA-256 with Salt</code>\n" +
-                "  </li>\n" +
-                "</ul>"
-            )
-        ).modifier(new io.jettra.flux.core.Modifier().cssClass("store-card"));
+            Header.of(3,
+                Icon.of("fas fa-key").modifier(new Modifier().style("color:#f59e0b; margin-right:8px;")),
+                Text.of("Security Policies & Token Config")
+            ).modifier(new Modifier().style("margin: 0 0 12px 0; font-size: 16px; font-weight: 600;")),
+            Div.of(
+                Div.of(
+                    Span.of("JWT Expiration:"),
+                    RawHtml.of("<code style='color:#f59e0b;'>3600000 ms (1 Hour)</code>")
+                ).modifier(new Modifier().style("padding:8px 0; border-bottom:1px solid rgba(255,255,255,0.06); display:flex; justify-content:space-between;")),
+                Div.of(
+                    Span.of("Algorithm:"),
+                    RawHtml.of("<code style='color:#38bdf8;'>HMAC-SHA256 (JettraJWT)</code>")
+                ).modifier(new Modifier().style("padding:8px 0; border-bottom:1px solid rgba(255,255,255,0.06); display:flex; justify-content:space-between;")),
+                Div.of(
+                    Span.of("Credential Storage:"),
+                    RawHtml.of("<code style='color:#34d399;'>JettraSecurityDB SQLite / Memory</code>")
+                ).modifier(new Modifier().style("padding:8px 0; border-bottom:1px solid rgba(255,255,255,0.06); display:flex; justify-content:space-between;")),
+                Div.of(
+                    Span.of("Password Hashing:"),
+                    RawHtml.of("<code style='color:#a78bfa;'>SHA-256 with Salt</code>")
+                ).modifier(new Modifier().style("padding:8px 0; display:flex; justify-content:space-between;"))
+            ).modifier(new Modifier().style("font-size:13px; color:#cbd5e1;"))
+        ).modifier(new Modifier().cssClass("store-card"));
 
         Widget bottomGrid = Div.of(rolesCard, tokenPolicyCard)
-            .modifier(new io.jettra.flux.core.Modifier().style("display: grid; grid-template-columns: 1fr 1fr; gap: 20px;"));
+            .modifier(new Modifier().style("display: grid; grid-template-columns: 1fr 1fr; gap: 20px;"));
 
         return Column.of(
             titleBlock,

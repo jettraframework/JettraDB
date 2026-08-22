@@ -2,71 +2,127 @@ package com.jettra.store.engine.web;
 
 import com.jettra.store.engine.auth.AuthManager;
 import com.sun.net.httpserver.HttpExchange;
+import io.jettra.flux.core.Modifier;
 import io.jettra.flux.core.Widget;
+import io.jettra.flux.model.CredentialFlux;
 import io.jettra.flux.pages.FluxBaseHandler;
 import io.jettra.flux.widgets.*;
 import io.jettra.core.login.NoLoginRequired;
 import io.jettra.server.JettraServer;
+import io.jettra.server.autentification.entity.JCredential;
+import io.jettra.server.autentification.entity.JUser;
+import io.jettra.server.autentification.repository.JCredentialRepository;
+import io.jettra.server.autentification.repository.JCredentialRepositoryImpl;
+import io.jettra.server.core.JettraContext;
+
+import java.io.IOException;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Authentication and Login page for JettraStoreEngine Web Console.
+ * Built with pure JettraFlux components and standard lifecycle hooks (onPost, onGet, buildUI).
  */
 @NoLoginRequired
 public class StoreLoginPage extends FluxBaseHandler {
 
     private final AuthManager authManager;
+    private final JCredentialRepository credRepo;
 
     public StoreLoginPage(AuthManager authManager) {
         this.authManager = authManager;
+        this.credRepo = new JCredentialRepositoryImpl();
+    }
+
+    @Override
+    protected String getTitle() {
+        return "Sign In - JettraStoreEngine Console";
+    }
+
+    @Override
+    protected boolean onGet(HttpExchange exchange, Map<String, String> params) throws IOException {
+        if (params != null && ("true".equals(params.get("logout")) || params.containsKey("logout"))) {
+            clearSessionCookie(exchange);
+            redirect(exchange, "/login");
+            return true;
+        }
+        return false;
+    }
+
+    @Override
+    protected boolean onPost(HttpExchange exchange, Map<String, String> params) throws IOException {
+        String username = params != null ? params.get("username") : null;
+        String password = params != null ? params.get("password") : null;
+
+        if (username == null || username.trim().isEmpty() || password == null || password.trim().isEmpty()) {
+            redirect(exchange, "/login?error=empty_fields");
+            return true;
+        }
+
+        username = username.trim();
+        password = password.trim();
+
+        boolean authenticated = false;
+        String userRole = "ADMIN";
+
+        // 1. Authenticate with AuthManager
+        try {
+            authManager.login(username, password);
+            authenticated = true;
+        } catch (Exception ignored) {}
+
+        // 2. Authenticate with JettraSecurityDB repository
+        if (!authenticated) {
+            try {
+                Optional<JCredential> credOpt = credRepo.findByUsernamePassword(username, password);
+                if (credOpt.isPresent() && credOpt.get().active()) {
+                    authenticated = true;
+                    JUser u = credOpt.get().jUser();
+                    if (u != null && u.jRoles() != null && !u.jRoles().isEmpty()) {
+                        userRole = u.jRoles().iterator().next().name();
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+
+        // 3. Fallback check for bootstrap admin credentials
+        if (!authenticated) {
+            if (("admin".equals(username) && "admin".equals(password)) ||
+                ("super-user".equals(username) && "superUserZ".equals(password))) {
+                authenticated = true;
+            }
+        }
+
+        if (authenticated) {
+            CredentialFlux credentialFlux = new CredentialFlux(username, username.toUpperCase(), userRole, "ENGINE", "");
+            if (JettraContext.getCurrent() != null) {
+                JettraContext.getCurrent().set(JettraContext.Scope.SESSION, "username", username);
+                JettraContext.getCurrent().set(JettraContext.Scope.SESSION, "credentialFlux", credentialFlux);
+            }
+            setSessionCookie(exchange, username, userRole, "ENGINE");
+            redirect(exchange, "/dashboard");
+            return true;
+        } else {
+            redirect(exchange, "/login?error=invalid_credentials");
+            return true;
+        }
     }
 
     @Override
     protected Widget buildUI(HttpExchange exchange, Map<String, String> params, String currentTheme) {
-        if (params != null && params.containsKey("logout")) {
-            // Handle logout if needed
-            io.jettra.server.core.JettraContext ctx = io.jettra.server.core.JettraContext.getCurrent();
-            if (ctx != null) {
-                ctx.set(io.jettra.server.core.JettraContext.Scope.SESSION, "username", null);
-                ctx.set(io.jettra.server.core.JettraContext.Scope.SESSION, "credentialFlux", null);
-            }
-        }
-
         String errorMessage = "";
-        if ("POST".equalsIgnoreCase(exchange.getRequestMethod())) {
-            String username = params != null ? params.get("username") : null;
-            String password = params != null ? params.get("password") : null;
-
-            if (username != null && password != null) {
-                boolean authenticated = false;
-                try {
-                    authManager.login(username, password);
-                    authenticated = true;
-                } catch (Exception e) {
-                    if (("admin".equals(username) && "admin".equals(password)) ||
-                        ("super-user".equals(username) && "superUserZ".equals(password))) {
-                        authenticated = true;
-                    }
-                }
-
-                if (authenticated) {
-                    io.jettra.server.core.JettraContext ctx = io.jettra.server.core.JettraContext.getCurrent();
-                    if (ctx != null) {
-                        ctx.set(io.jettra.server.core.JettraContext.Scope.SESSION, "username", username);
-                        ctx.set(io.jettra.server.core.JettraContext.Scope.SESSION, "credentialFlux",
-                            new io.jettra.flux.model.CredentialFlux(username, username.toUpperCase(), "ADMIN", "ENGINE", ""));
-                    }
-                    try {
-                        redirect(exchange, "/dashboard");
-                        return Column.of();
-                    } catch (Exception ignored) {}
-                } else {
-                    errorMessage = "Invalid username or password.";
-                }
+        if (params != null && params.containsKey("error")) {
+            String err = params.get("error");
+            if ("empty_fields".equalsIgnoreCase(err)) {
+                errorMessage = "Por favor ingrese tanto el usuario como la contraseña.";
+            } else if ("invalid_credentials".equalsIgnoreCase(err)) {
+                errorMessage = "Usuario o contraseña inválidos. Verifique sus credenciales.";
+            } else {
+                errorMessage = "Error de autenticación. Intente nuevamente.";
             }
         }
 
-        Widget customCss = Paragraph.of(
+        Widget customCss = RawHtml.of(
             "<style>\n" +
             "  .login-container { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%); font-family: system-ui, -apple-system, sans-serif; }\n" +
             "  .login-card { width: 100%; max-width: 420px; background: rgba(30, 41, 59, 0.85); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 16px; padding: 36px; box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4); backdrop-filter: blur(16px); }\n" +
@@ -80,38 +136,42 @@ public class StoreLoginPage extends FluxBaseHandler {
         );
 
         Widget logo = Row.of(
-            Icon.of("fas fa-layer-group").modifier(new io.jettra.flux.core.Modifier().style("color: #38bdf8; font-size: 28px; margin-right: 12px;")),
+            Icon.of("fas fa-layer-group").modifier(new Modifier().style("color: #38bdf8; font-size: 28px; margin-right: 12px;")),
             Column.of(
-                Paragraph.of("<h2 style='margin: 0; font-size: 22px; font-weight: 700; color: #f8fafc;'>JettraStoreEngine</h2>"),
-                Paragraph.of("<div style='font-size: 12px; color: #94a3b8;'>Multi-Model Database Administration</div>")
+                Header.of(2, Text.of("JettraStoreEngine")).modifier(new Modifier().style("margin: 0; font-size: 22px; font-weight: 700; color: #f8fafc;")),
+                Div.of(Text.of("Multi-Model Database Administration")).modifier(new Modifier().style("font-size: 12px; color: #94a3b8;"))
             )
-        ).modifier(new io.jettra.flux.core.Modifier().style("align-items: center; justify-content: center; margin-bottom: 28px;"));
+        ).modifier(new Modifier().style("align-items: center; justify-content: center; margin-bottom: 28px;"));
 
-        String alertHtml = errorMessage.isEmpty() ? "" : "<div style='background: rgba(239,68,68,0.2); border: 1px solid rgba(239,68,68,0.4); color: #fca5a5; padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 20px;'><i class='fas fa-exclamation-circle'></i> " + errorMessage + "</div>";
+        Widget alertWidget = errorMessage.isEmpty() ? Div.of() : Div.of(
+            Icon.of("fas fa-exclamation-circle").modifier(new Modifier().style("color:#f87171; font-size:16px; margin-right:8px;")),
+            Span.of(errorMessage).modifier(new Modifier().style("font-weight:500;"))
+        ).modifier(new Modifier().style("background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.35); color: #fca5a5; padding: 12px 16px; border-radius: 8px; font-size: 13px; margin-bottom: 20px; display: flex; align-items: center;"));
 
-        Widget form = Paragraph.of(
-            alertHtml +
-            "<form method='POST' action='" + JettraServer.resolvePath("/login") + "'>\n" +
-            "  <div class='form-group'>\n" +
-            "    <label class='form-label'><i class='fas fa-user'></i> Username</label>\n" +
-            "    <input class='form-input' type='text' name='username' value='admin' required autocomplete='username' />\n" +
-            "  </div>\n" +
-            "  <div class='form-group'>\n" +
-            "    <label class='form-label'><i class='fas fa-lock'></i> Password</label>\n" +
-            "    <input class='form-input' type='password' name='password' value='admin' required autocomplete='current-password' />\n" +
-            "  </div>\n" +
-            "  <button class='btn-submit' type='submit'><i class='fas fa-sign-in-alt'></i> Sign In to Store Console</button>\n" +
-            "</form>\n" +
-            "<div style='margin-top: 24px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.08); font-size: 12px; color: #64748b; text-align: center;'>\n" +
-            "  Default Credentials: <code style='color:#38bdf8;'>admin / admin</code> or <code style='color:#a855f7;'>super-user / superUserZ</code>\n" +
-            "</div>\n"
-        );
+        Widget form = Form.of(
+            Div.of(
+                Label.of(Icon.of("fas fa-user"), Text.of(" Username")).modifier(new Modifier().cssClass("form-label")),
+                TextField.of("username", "Username").value("admin").modifier(new Modifier().cssClass("form-input"))
+            ).modifier(new Modifier().cssClass("form-group")),
+            Div.of(
+                Label.of(Icon.of("fas fa-lock"), Text.of(" Password")).modifier(new Modifier().cssClass("form-label")),
+                PasswordField.of("password", "Password").value("admin").modifier(new Modifier().cssClass("form-input"))
+            ).modifier(new Modifier().cssClass("form-group")),
+            Button.of(Icon.of("fas fa-sign-in-alt"), Text.of(" Sign In to Store Console"))
+                .attribute("type", "submit")
+                .modifier(new Modifier().cssClass("btn-submit"))
+        ).action(JettraServer.resolvePath("/login")).method("POST");
 
-        Widget card = Div.of(logo, form)
-            .modifier(new io.jettra.flux.core.Modifier().cssClass("login-card"));
+        Widget footer = Div.of(
+            Text.of("Default Credentials: "),
+            RawHtml.of("<code style='color:#38bdf8;'>admin / admin</code> or <code style='color:#a855f7;'>super-user / superUserZ</code>")
+        ).modifier(new Modifier().style("margin-top: 24px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.08); font-size: 12px; color: #64748b; text-align: center;"));
+
+        Widget card = Div.of(logo, alertWidget, form, footer)
+            .modifier(new Modifier().cssClass("login-card"));
 
         Widget container = Div.of(card)
-            .modifier(new io.jettra.flux.core.Modifier().cssClass("login-container"));
+            .modifier(new Modifier().cssClass("login-container"));
 
         return Column.of(
             customCss,

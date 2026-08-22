@@ -4,12 +4,9 @@ import com.jettra.store.engine.auth.AuthManager;
 import com.jettra.store.engine.core.JettraStorageEngine;
 import com.sun.net.httpserver.HttpExchange;
 import io.jettra.core.login.NoLoginRequired;
+import io.jettra.flux.core.Modifier;
 import io.jettra.flux.core.Widget;
-import io.jettra.flux.widgets.Column;
-import io.jettra.flux.widgets.Div;
-import io.jettra.flux.widgets.Paragraph;
-import io.jettra.flux.widgets.Row;
-import io.jettra.flux.widgets.Span;
+import io.jettra.flux.widgets.*;
 import io.jettra.server.JettraServer;
 import io.jettra.server.autentification.entity.JCredential;
 import io.jettra.server.autentification.entity.JRole;
@@ -21,7 +18,14 @@ import io.jettra.server.autentification.repository.JUserRepositoryImpl;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.util.*;
+import java.util.Map;
+import java.util.List;
+import java.util.Set;
+import java.util.UUID;
+import java.util.HashSet;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.TreeSet;
 
 /**
  * Visual Database and Component Management Console for JettraStoreEngine.
@@ -30,6 +34,7 @@ import java.util.*;
  * - Full support for the Java 25 RECORDS engine
  * - Granular User & Role Administration per database
  * - Component inspector with item payloads, schema reflection, and deletion
+ * Built with pure JettraFlux components.
  */
 @NoLoginRequired
 public class StoreDatabasesPage extends StoreTemplatePage {
@@ -149,23 +154,39 @@ public class StoreDatabasesPage extends StoreTemplatePage {
         // Title Block
         Widget titleBlock = Row.of(
             Column.of(
-                Paragraph.of("<h1 style='margin: 0; font-size: 26px; font-weight: 700;'><i class='fas fa-server' style='color:#38bdf8; margin-right:8px;'></i> Databases & Components Console</h1>"),
-                Paragraph.of("<p style='margin: 4px 0 0 0; color: #94a3b8; font-size: 14px;'>Visual management of database namespaces, multi-model storage components, Java 25 Records, and per-database RBAC security.</p>")
+                Header.of(1,
+                    Icon.of("fas fa-server").modifier(new Modifier().style("color:#38bdf8; margin-right:8px;")),
+                    Text.of("Databases & Components Console")
+                ).modifier(new Modifier().style("margin: 0; font-size: 26px; font-weight: 700;")),
+                Paragraph.of(
+                    Text.of("Visual management of database namespaces, multi-model storage components, Java 25 Records, and per-database RBAC security.")
+                ).modifier(new Modifier().style("margin: 4px 0 0 0; color: #94a3b8; font-size: 14px;"))
             ),
             Row.of(
-                Paragraph.of("<button class='btn-action btn-primary' onclick=\"openCreateDbModal()\"><i class='fas fa-plus-circle'></i> New Database</button>"),
-                Paragraph.of("<a href='" + JettraServer.resolvePath("/users") + "' class='btn-action btn-secondary' style='margin-left:8px;'><i class='fas fa-users-cog'></i> User Security</a>"),
-                Paragraph.of("<a href='" + JettraServer.resolvePath("/engines") + "' class='btn-action btn-secondary' style='margin-left:8px;'><i class='fas fa-cubes'></i> Engines Matrix</a>")
-            ).modifier(new io.jettra.flux.core.Modifier().style("align-items: center;"))
-        ).modifier(new io.jettra.flux.core.Modifier().style("justify-content: space-between; align-items: center; margin-bottom: 24px;"));
+                Button.of(
+                    Icon.of("fas fa-plus-circle"),
+                    Text.of(" New Database")
+                ).attribute("onclick", "openCreateDbModal()")
+                 .modifier(new Modifier().cssClass("btn-action btn-primary")),
+                Link.of(JettraServer.resolvePath("/users"),
+                    Icon.of("fas fa-users-cog"),
+                    Text.of(" User Security")
+                ).modifier(new Modifier().cssClass("btn-action btn-secondary").style("margin-left:8px;")),
+                Link.of(JettraServer.resolvePath("/engines"),
+                    Icon.of("fas fa-cubes"),
+                    Text.of(" Engines Matrix")
+                ).modifier(new Modifier().cssClass("btn-action btn-secondary").style("margin-left:8px;"))
+            ).modifier(new Modifier().style("align-items: center;"))
+        ).modifier(new Modifier().style("justify-content: space-between; align-items: center; margin-bottom: 24px;"));
 
         // Alert Banner
-        Widget alertWidget = alertMessage.isEmpty() ? Paragraph.of("") : Paragraph.of(
-            "<div style='background: rgba(30, 41, 59, 0.9); border: 1px solid rgba(59,130,246,0.4); padding: 14px 20px; border-radius: 10px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between;'>\n" +
-            "  <div style='display:flex; align-items:center; gap:10px;'><i class='fas fa-check-circle' style='color:#38bdf8; font-size:18px;'></i> <span style='font-size:14px; color:#f8fafc; font-weight:500;'>" + alertMessage + "</span></div>\n" +
-            "  <span class='store-badge " + alertType + "'>SYNCHRONIZED</span>\n" +
-            "</div>\n"
-        );
+        Widget alertWidget = alertMessage.isEmpty() ? Div.of() : Div.of(
+            Div.of(
+                Icon.of("fas fa-check-circle").modifier(new Modifier().style("color:#38bdf8; font-size:18px;")),
+                Span.of(alertMessage).modifier(new Modifier().style("font-size:14px; color:#f8fafc; font-weight:500;"))
+            ).modifier(new Modifier().style("display:flex; align-items:center; gap:10px;")),
+            Span.of("SYNCHRONIZED").modifier(new Modifier().cssClass("store-badge " + alertType))
+        ).modifier(new Modifier().style("background: rgba(30, 41, 59, 0.9); border: 1px solid rgba(59,130,246,0.4); padding: 14px 20px; border-radius: 10px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between;"));
 
         // Stats Summary
         int totalDatabases = databases.size();
@@ -178,52 +199,63 @@ public class StoreDatabasesPage extends StoreTemplatePage {
             createStatCard("fas fa-cubes", "#a855f7", "Multi-Model Components", totalComponents + " Active Engine Models", "9 Supported Engines", "badge-raft"),
             createStatCard("fas fa-id-card", "#f43f5e", "Java 25 Records", totalRecords + " Typed Records", "JEP 450 Compact Headers", "badge-records"),
             createStatCard("fas fa-layer-group", "#10b981", "Total Stored Entities", totalObjects + " Total Objects", "Raft State Synchronized", "badge-active")
-        ).modifier(new io.jettra.flux.core.Modifier().cssClass("store-stat-grid"));
+        ).modifier(new Modifier().cssClass("store-stat-grid"));
 
         // Load all users
         List<JUser> allUsers = userRepo.findAll();
 
         // Build Database Interactive Cards & Components Explorer
-        StringBuilder dbHtml = new StringBuilder();
-        dbHtml.append("<div style='display: flex; flex-direction: column; gap: 24px; margin-bottom: 30px;'>\n");
+        List<Widget> dbCardList = new ArrayList<>();
 
         for (DatabaseMetadata dbMeta : databases.values()) {
             String dbName = dbMeta.getName();
             int objCount = dbMeta.getTotalObjects();
-            
+
             // Users scoped to this db
             List<JUser> dbUsers = allUsers.stream().filter(u -> dbName.equalsIgnoreCase(u.lastName()) || "*".equals(u.lastName())).toList();
 
-            dbHtml.append("<div class='store-card' style='position:relative; overflow:hidden;'>\n")
-                .append("  <div style='position:absolute; top:0; left:0; width:4px; height:100%; background: linear-gradient(180deg, #38bdf8, #f43f5e);'></div>\n")
-                .append("  <div style='display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px; margin-bottom:16px;'>\n")
-                .append("    <div style='display:flex; align-items:center; gap:12px;'>\n")
-                .append("      <div style='width:46px; height:46px; border-radius:10px; background:rgba(56,189,248,0.15); display:flex; align-items:center; justify-content:center; color:#38bdf8; font-size:22px;'><i class='fas fa-database'></i></div>\n")
-                .append("      <div>\n")
-                .append("        <div style='display:flex; align-items:center; gap:10px;'>\n")
-                .append("          <h2 style='margin:0; font-size:20px; font-weight:700; color:#f8fafc;'>").append(dbName).append("</h2>\n")
-                .append("          <span class='store-badge badge-active'><span class='pulse-dot'></span> ONLINE</span>\n")
-                .append("        </div>\n")
-                .append("        <span style='font-size:13px; color:#94a3b8;'>Storage Engine: <b style='color:#38bdf8;'>LSM-BTree Hybrid Core</b> | Raft Quorum Replication</span>\n")
-                .append("      </div>\n")
-                .append("    </div>\n")
-                .append("    <div style='display:flex; gap:8px; flex-wrap:wrap;'>\n")
-                .append("      <button onclick=\"openAddComponentModal('").append(dbName).append("')\" class='btn-action btn-primary' style='padding:6px 12px; font-size:12px;'><i class='fas fa-plus'></i> Add Component / Record</button>\n")
-                .append("      <button onclick=\"openAssignUserModal('").append(dbName).append("')\" class='btn-action btn-secondary' style='padding:6px 12px; font-size:12px;'><i class='fas fa-user-plus'></i> Assign User</button>\n")
-                .append("      <button onclick=\"toggleEntitiesViewer('").append(dbName).append("')\" class='btn-action btn-secondary' style='padding:6px 12px; font-size:12px;'><i class='fas fa-list'></i> Inspect Entities (").append(objCount).append(")</button>\n")
-                .append("      <a href='").append(JettraServer.resolvePath("/engines?engine=RECORDS&db=" + dbName)).append("' class='btn-action btn-secondary' style='padding:6px 12px; font-size:12px;'><i class='fas fa-search'></i> Explore Data</a>\n")
-                .append("      <button onclick=\"confirmDropDb('").append(dbName).append("')\" class='btn-action btn-danger' style='padding:6px 10px; font-size:12px;' title='Drop Database'><i class='fas fa-trash'></i></button>\n")
-                .append("    </div>\n")
-                .append("  </div>\n");
+            // Header of each DB card
+            Widget dbHeaderLeft = Div.of(
+                Div.of(Icon.of("fas fa-database"))
+                    .modifier(new Modifier().style("width:46px; height:46px; border-radius:10px; background:rgba(56,189,248,0.15); display:flex; align-items:center; justify-content:center; color:#38bdf8; font-size:22px;")),
+                Div.of(
+                    Div.of(
+                        Header.of(2, Text.of(dbName)).modifier(new Modifier().style("margin:0; font-size:20px; font-weight:700; color:#f8fafc;")),
+                        Span.of(RawHtml.of("<span class='pulse-dot'></span> ONLINE")).modifier(new Modifier().cssClass("store-badge badge-active"))
+                    ).modifier(new Modifier().style("display:flex; align-items:center; gap:10px;")),
+                    Div.of(
+                        Text.of("Storage Engine: "),
+                        Span.of("LSM-BTree Hybrid Core").modifier(new Modifier().style("color:#38bdf8; font-weight:bold;")),
+                        Text.of(" | Raft Quorum Replication")
+                    ).modifier(new Modifier().style("font-size:13px; color:#94a3b8;"))
+                )
+            ).modifier(new Modifier().style("display:flex; align-items:center; gap:12px;"));
+
+            Widget dbHeaderRight = Div.of(
+                Button.of(Icon.of("fas fa-plus"), Text.of(" Add Component / Record"))
+                    .attribute("onclick", "openAddComponentModal('" + dbName + "')")
+                    .modifier(new Modifier().cssClass("btn-action btn-primary").style("padding:6px 12px; font-size:12px;")),
+                Button.of(Icon.of("fas fa-user-plus"), Text.of(" Assign User"))
+                    .attribute("onclick", "openAssignUserModal('" + dbName + "')")
+                    .modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:6px 12px; font-size:12px;")),
+                Button.of(Icon.of("fas fa-list"), Text.of(" Inspect Entities (" + objCount + ")"))
+                    .attribute("onclick", "toggleEntitiesViewer('" + dbName + "')")
+                    .modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:6px 12px; font-size:12px;")),
+                Link.of(JettraServer.resolvePath("/engines?engine=RECORDS&db=" + dbName),
+                    Icon.of("fas fa-search"),
+                    Text.of(" Explore Data")
+                ).modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:6px 12px; font-size:12px;")),
+                Button.of(Icon.of("fas fa-trash"), Text.of(""))
+                    .attribute("onclick", "confirmDropDb('" + dbName + "')")
+                    .attribute("title", "Drop Database")
+                    .modifier(new Modifier().cssClass("btn-action btn-danger").style("padding:6px 10px; font-size:12px;"))
+            ).modifier(new Modifier().style("display:flex; gap:8px; flex-wrap:wrap;"));
+
+            Widget dbTopRow = Row.of(dbHeaderLeft, dbHeaderRight)
+                .modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px; margin-bottom:16px;"));
 
             // Multi-Model Components Inside This Database
-            dbHtml.append("  <div style='background:rgba(15,23,42,0.6); border-radius:10px; padding:16px; border:1px solid rgba(255,255,255,0.06); margin-bottom:16px;'>\n")
-                .append("    <div style='font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;'>\n")
-                .append("      <span><i class='fas fa-cubes' style='color:#a855f7; margin-right:6px;'></i> Internal Multi-Model Components (").append(dbMeta.getEngineCounts().size()).append(" Engines Initialized)</span>\n")
-                .append("      <span style='font-size:12px; color:#94a3b8;'>Total Keys: <b style='color:#f8fafc;'>").append(objCount).append("</b></span>\n")
-                .append("    </div>\n")
-                .append("    <div style='display:flex; flex-wrap:wrap; gap:10px;'>\n");
-
+            List<Widget> compBoxes = new ArrayList<>();
             for (Map.Entry<String, Integer> comp : dbMeta.getEngineCounts().entrySet()) {
                 String eng = comp.getKey();
                 int cnt = comp.getValue();
@@ -231,89 +263,106 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                 String icon = getIconForEngine(eng);
                 String desc = getDescForEngine(eng);
 
-                dbHtml.append("      <div style='").append(badgeStyle).append(" padding:10px 14px; border-radius:8px; display:flex; align-items:center; gap:10px; min-width:200px; justify-content:space-between;'>\n")
-                    .append("        <div style='display:flex; align-items:center; gap:8px;'>\n")
-                    .append("          <i class='").append(icon).append("' style='font-size:16px;'></i>\n")
-                    .append("          <div>\n")
-                    .append("            <div style='font-weight:700; font-size:13px;'>").append(eng).append("</div>\n")
-                    .append("            <div style='font-size:11px; opacity:0.8;'>").append(desc).append("</div>\n")
-                    .append("          </div>\n")
-                    .append("        </div>\n")
-                    .append("        <span style='background:rgba(0,0,0,0.3); padding:2px 8px; border-radius:6px; font-weight:700; font-size:12px;'>").append(cnt).append("</span>\n")
-                    .append("      </div>\n");
+                Widget compBox = Div.of(
+                    Div.of(
+                        Icon.of(icon).modifier(new Modifier().style("font-size:16px;")),
+                        Div.of(
+                            Div.of(Text.of(eng)).modifier(new Modifier().style("font-weight:700; font-size:13px;")),
+                            Div.of(Text.of(desc)).modifier(new Modifier().style("font-size:11px; opacity:0.8;"))
+                        )
+                    ).modifier(new Modifier().style("display:flex; align-items:center; gap:8px;")),
+                    Span.of(String.valueOf(cnt)).modifier(new Modifier().style("background:rgba(0,0,0,0.3); padding:2px 8px; border-radius:6px; font-weight:700; font-size:12px;"))
+                ).modifier(new Modifier().style(badgeStyle + " padding:10px 14px; border-radius:8px; display:flex; align-items:center; gap:10px; min-width:200px; justify-content:space-between;"));
+
+                compBoxes.add(compBox);
             }
 
-            dbHtml.append("    </div>\n")
-                .append("  </div>\n");
+            Widget internalComponentsBox = Div.of(
+                Div.of(
+                    Div.of(Icon.of("fas fa-cubes").modifier(new Modifier().style("color:#a855f7; margin-right:6px;")), Text.of("Internal Multi-Model Components (" + dbMeta.getEngineCounts().size() + " Engines Initialized)")),
+                    Div.of(Text.of("Total Keys: "), Span.of(String.valueOf(objCount)).modifier(new Modifier().style("color:#f8fafc; font-weight:bold;"))).modifier(new Modifier().style("font-size:12px; color:#94a3b8;"))
+                ).modifier(new Modifier().style("font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;")),
+                Div.of(compBoxes.toArray(new Widget[0])).modifier(new Modifier().style("display:flex; flex-wrap:wrap; gap:10px;"))
+            ).modifier(new Modifier().style("background:rgba(15,23,42,0.6); border-radius:10px; padding:16px; border:1px solid rgba(255,255,255,0.06); margin-bottom:16px;"));
 
             // Expandable Entities Inspector Table for this database
             List<EntityDetail> entities = getEntitiesForDatabase(dbName);
-            dbHtml.append("  <div id='entities_").append(dbName).append("' style='display:none; background:rgba(15,23,42,0.8); border-radius:10px; padding:16px; border:1px solid rgba(255,255,255,0.08); margin-bottom:16px;'>\n")
-                .append("    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;'>\n")
-                .append("      <h4 style='margin:0; font-size:15px; font-weight:700; color:#38bdf8;'><i class='fas fa-layer-group'></i> Stored Components & Entities in '").append(dbName).append("'</h4>\n")
-                .append("      <span style='font-size:12px; color:#94a3b8;'>Showing ").append(entities.size()).append(" persisted items</span>\n")
-                .append("    </div>\n");
+            List<Widget> entityHeaders = List.of(
+                Text.of("Engine"),
+                Text.of("Entity Key"),
+                Text.of("Type / Class"),
+                Text.of("Payload Preview"),
+                Text.of("Action")
+            );
 
-            if (entities.isEmpty()) {
-                dbHtml.append("    <div style='color:#94a3b8; font-size:13px; padding:12px; text-align:center;'>No components or entities stored yet. Click 'Add Component / Record' to insert one.</div>\n");
-            } else {
-                dbHtml.append("    <div class='table-responsive'>\n")
-                    .append("      <table class='jettra-table'>\n")
-                    .append("        <thead>\n")
-                    .append("          <tr>\n")
-                    .append("            <th>Engine</th>\n")
-                    .append("            <th>Entity Key</th>\n")
-                    .append("            <th>Type / Class</th>\n")
-                    .append("            <th>Payload Preview</th>\n")
-                    .append("            <th>Action</th>\n")
-                    .append("          </tr>\n")
-                    .append("        </thead>\n")
-                    .append("        <tbody>\n");
+            List<List<Widget>> entityRows = new ArrayList<>();
+            for (EntityDetail ed : entities) {
+                String badgeClass = "RECORDS".equals(ed.engine) ? "badge-records" : "badge-engine";
+                Widget engCell = Span.of(ed.engine).modifier(new Modifier().cssClass("store-badge " + badgeClass));
+                Widget keyCell = RawHtml.of("<code style='color:#38bdf8; font-weight:600;'>" + ed.keyId + "</code>");
+                Widget typeCell = Span.of(ed.typeOrClass).modifier(new Modifier().style("color:#cbd5e1; font-size:12px;"));
+                Widget previewCell = RawHtml.of("<code class='mono' style='color:#94a3b8; font-size:11px; max-width:320px; display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;'>" + ed.payloadPreview + "</code>");
+                Button deleteBtn = Button.of(Icon.of("fas fa-trash"), Text.of(""));
+                deleteBtn.attribute("onclick", "deleteEntity('" + ed.rawKey + "')");
+                deleteBtn.attribute("title", "Delete Entity");
+                deleteBtn.modifier(new Modifier().cssClass("btn-action btn-danger").style("padding:4px 8px; font-size:11px;"));
 
-                for (EntityDetail ed : entities) {
-                    String badgeClass = "RECORDS".equals(ed.engine) ? "badge-records" : "badge-engine";
-                    dbHtml.append("          <tr>\n")
-                        .append("            <td><span class='store-badge ").append(badgeClass).append("'>").append(ed.engine).append("</span></td>\n")
-                        .append("            <td><code style='color:#38bdf8; font-weight:600;'>").append(ed.keyId).append("</code></td>\n")
-                        .append("            <td><span style='color:#cbd5e1; font-size:12px;'>").append(ed.typeOrClass).append("</span></td>\n")
-                        .append("            <td><code class='mono' style='color:#94a3b8; font-size:11px; max-width:320px; display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;'>").append(ed.payloadPreview).append("</code></td>\n")
-                        .append("            <td><button onclick=\"deleteEntity('").append(ed.rawKey).append("')\" class='btn-action btn-danger' style='padding:4px 8px; font-size:11px;' title='Delete Entity'><i class='fas fa-trash'></i></button></td>\n")
-                        .append("          </tr>\n");
-                }
-
-                dbHtml.append("        </tbody>\n")
-                    .append("      </table>\n")
-                    .append("    </div>\n");
+                entityRows.add(List.of(engCell, keyCell, typeCell, previewCell, deleteBtn));
             }
 
-            dbHtml.append("  </div>\n");
+            Widget entitiesTableWidget = entityRows.isEmpty()
+                ? Div.of(Text.of("No components or entities stored yet. Click 'Add Component / Record' to insert one.")).modifier(new Modifier().style("color:#94a3b8; font-size:13px; padding:12px; text-align:center;"))
+                : Div.of(Datatable.ofWidgets(entityHeaders, entityRows).modifier(new Modifier().cssClass("jettra-table"))).modifier(new Modifier().cssClass("table-responsive"));
 
-            // Scoped Users and Permissions
-            dbHtml.append("  <div style='display:flex; justify-content:space-between; align-items:center; font-size:13px; color:#94a3b8; padding-top:10px; border-top:1px solid rgba(255,255,255,0.06);'>\n")
-                .append("    <div style='display:flex; align-items:center; gap:8px;'>\n")
-                .append("      <i class='fas fa-user-shield' style='color:#38bdf8;'></i>\n")
-                .append("      <span>Scoped Users (").append(dbUsers.size()).append("): </span>\n");
+            Widget entitiesViewer = Div.of(
+                Div.of(
+                    Header.of(4,
+                        Icon.of("fas fa-layer-group"),
+                        Text.of(" Stored Components & Entities in '" + dbName + "'")
+                    ).modifier(new Modifier().style("margin:0; font-size:15px; font-weight:700; color:#38bdf8;")),
+                    Span.of("Showing " + entities.size() + " persisted items").modifier(new Modifier().style("font-size:12px; color:#94a3b8;"))
+                ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;")),
+                entitiesTableWidget
+            ).id("entities_" + dbName).modifier(new Modifier().style("display:none; background:rgba(15,23,42,0.8); border-radius:10px; padding:16px; border:1px solid rgba(255,255,255,0.08); margin-bottom:16px;"));
 
+            // Scoped Users
+            List<Widget> userBadges = new ArrayList<>();
             if (dbUsers.isEmpty()) {
-                dbHtml.append("      <span style='color:#64748b;'>No users assigned specifically (inherited from global admin).</span>\n");
+                userBadges.add(Span.of("No users assigned specifically (inherited from global admin).").modifier(new Modifier().style("color:#64748b;")));
             } else {
                 for (JUser u : dbUsers) {
                     String role = u.jRoles() != null && !u.jRoles().isEmpty() ? u.jRoles().iterator().next().name() : "READ_WRITE";
                     String roleBadge = "DB_ADMIN".equals(role) ? "badge-raft" : "badge-engine";
-                    dbHtml.append("      <span class='store-badge ").append(roleBadge).append("' style='font-size:11px; margin-right:4px;'>")
-                        .append(u.firstName()).append(" (").append(role).append(")</span>\n");
+                    userBadges.add(Span.of(u.firstName() + " (" + role + ")").modifier(new Modifier().cssClass("store-badge " + roleBadge).style("font-size:11px; margin-right:4px;")));
                 }
             }
 
-            dbHtml.append("    </div>\n")
-                .append("    <button onclick=\"openAssignUserModal('").append(dbName).append("')\" style='background:none; border:none; color:#38bdf8; font-size:12px; cursor:pointer; text-decoration:underline;'>+ Assign User to ").append(dbName).append("</button>\n")
-                .append("  </div>\n")
-                .append("</div>\n");
+            Widget scopedUsersBar = Div.of(
+                Div.of(
+                    Icon.of("fas fa-user-shield").modifier(new Modifier().style("color:#38bdf8;")),
+                    Span.of("Scoped Users (" + dbUsers.size() + "): "),
+                    Div.of(userBadges.toArray(new Widget[0]))
+                ).modifier(new Modifier().style("display:flex; align-items:center; gap:8px;")),
+                Button.of(Text.of("+ Assign User to " + dbName))
+                    .attribute("onclick", "openAssignUserModal('" + dbName + "')")
+                    .modifier(new Modifier().style("background:none; border:none; color:#38bdf8; font-size:12px; cursor:pointer; text-decoration:underline;"))
+            ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; font-size:13px; color:#94a3b8; padding-top:10px; border-top:1px solid rgba(255,255,255,0.06);"));
+
+            Widget dbCard = Div.of(
+                RawHtml.of("<div style='position:absolute; top:0; left:0; width:4px; height:100%; background: linear-gradient(180deg, #38bdf8, #f43f5e);'></div>"),
+                dbTopRow,
+                internalComponentsBox,
+                entitiesViewer,
+                scopedUsersBar
+            ).modifier(new Modifier().cssClass("store-card").style("position:relative; overflow:hidden;"));
+
+            dbCardList.add(dbCard);
         }
 
-        dbHtml.append("</div>\n");
+        Widget databasesContainer = Div.of(dbCardList.toArray(new Widget[0]))
+            .modifier(new Modifier().style("display: flex; flex-direction: column; gap: 24px; margin-bottom: 30px;"));
 
-        // Modals: Create Database, Add Component, Assign User
+        // Modals
         String modalsHtml =
             // Modal 1: Create Database
             "<div id='createDbModal' style='display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center;'>\n" +
@@ -438,80 +487,84 @@ public class StoreDatabasesPage extends StoreTemplatePage {
             "</div>\n";
 
         // Hidden forms and scripts
-        String jsHtml =
-            "<form id='dropDbForm' method='POST' action='" + JettraServer.resolvePath("/databases") + "' style='display:none;'>\n" +
-            "  <input type='hidden' name='action' value='drop_db'/>\n" +
-            "  <input type='hidden' name='target_db' id='dropTargetDb'/>\n" +
-            "</form>\n" +
-            "<form id='deleteEntityForm' method='POST' action='" + JettraServer.resolvePath("/databases") + "' style='display:none;'>\n" +
-            "  <input type='hidden' name='action' value='delete_entity'/>\n" +
-            "  <input type='hidden' name='raw_key' id='deleteRawKey'/>\n" +
-            "</form>\n" +
-            "<script>\n" +
-            "function openCreateDbModal() { document.getElementById('createDbModal').style.display='flex'; }\n" +
-            "function openAddComponentModal(db) {\n" +
-            "  document.getElementById('modalTargetDbLabel').innerText = db;\n" +
-            "  document.getElementById('modalTargetDbInput').value = db;\n" +
-            "  document.getElementById('addComponentModal').style.display='flex';\n" +
-            "}\n" +
-            "function openAssignUserModal(db) {\n" +
-            "  document.getElementById('assignUserDbLabel').innerText = db;\n" +
-            "  document.getElementById('assignUserDbInput').value = db;\n" +
-            "  document.getElementById('assignUserModal').style.display='flex';\n" +
-            "}\n" +
-            "function closeModal(id) { document.getElementById(id).style.display='none'; }\n" +
-            "function toggleEntitiesViewer(db) {\n" +
-            "  var el = document.getElementById('entities_' + db);\n" +
-            "  if (el) el.style.display = (el.style.display === 'none' ? 'block' : 'none');\n" +
-            "}\n" +
-            "function deleteEntity(rawKey) {\n" +
-            "  if (confirm(\"Delete entity '\" + rawKey + \"'?\")) {\n" +
-            "    document.getElementById('deleteRawKey').value = rawKey;\n" +
-            "    document.getElementById('deleteEntityForm').submit();\n" +
-            "  }\n" +
-            "}\n" +
-            "function confirmDropDb(db) {\n" +
-            "  if (confirm(\"Are you sure you want to drop database '\" + db + \"' and all its multi-model components?\")) {\n" +
-            "    document.getElementById('dropTargetDb').value = db;\n" +
-            "    document.getElementById('dropDbForm').submit();\n" +
-            "  }\n" +
-            "}\n" +
-            "function updatePayloadTemplate(engine, targetId) {\n" +
-            "  var ta = document.getElementById(targetId);\n" +
-            "  if (engine === 'RECORDS') {\n" +
-            "    ta.value = '{\"_recordClass\": \"com.enterprise.model.EmployeeRecord\", \"_schema\": {\"id\":\"String\", \"fullName\":\"String\", \"salary\":\"Double\"}, \"components\": {\"id\": \"emp_101\", \"fullName\": \"Carlos Mendez\", \"salary\": 95000.0}}';\n" +
-            "  } else if (engine === 'VECTOR') {\n" +
-            "    ta.value = '{\"vector\": [0.12, 0.45, 0.78, 0.33], \"label\": \"search_embedding\"}';\n" +
-            "  } else if (engine === 'GRAPH') {\n" +
-            "    ta.value = '{\"name\": \"Engineering Department\", \"type\": \"ORGANIZATION\"}';\n" +
-            "  } else if (engine === 'TIMESERIES') {\n" +
-            "    ta.value = '{\"temperature\": 24.5, \"humidity\": 60.2, \"sensor\": \"DHT22\"}';\n" +
-            "  } else if (engine === 'COLUMN') {\n" +
-            "    ta.value = '{\"region\": \"LATAM\", \"q1_revenue\": 450000.0, \"units\": 1200}';\n" +
-            "  } else if (engine === 'KEYVALUE') {\n" +
-            "    ta.value = '{\"cached_token\": \"eyJhbGciOiJIUzI1NiJ9...\"}';\n" +
-            "  } else if (engine === 'GEOSPATIAL') {\n" +
-            "    ta.value = '{\"name\": \"Headquarters\", \"lat\": 8.9824, \"lon\": -79.5199}';\n" +
-            "  } else {\n" +
-            "    ta.value = '{\"status\": \"ACTIVE\", \"version\": \"1.0\"}';\n" +
-            "  }\n" +
-            "}\n" +
-            "</script>\n";
+        Widget jsFormsAndScripts = Div.of(
+            Form.of(
+                Hidden.of("action", "drop_db"),
+                Hidden.of("target_db").id("dropTargetDb")
+            ).action(JettraServer.resolvePath("/databases")).method("POST").id("dropDbForm").modifier(new Modifier().style("display:none;")),
+            Form.of(
+                Hidden.of("action", "delete_entity"),
+                Hidden.of("raw_key").id("deleteRawKey")
+            ).action(JettraServer.resolvePath("/databases")).method("POST").id("deleteEntityForm").modifier(new Modifier().style("display:none;")),
+            RawScript.of(
+                "function openCreateDbModal() { document.getElementById('createDbModal').style.display='flex'; }\n" +
+                "function openAddComponentModal(db) {\n" +
+                "  document.getElementById('modalTargetDbLabel').innerText = db;\n" +
+                "  document.getElementById('modalTargetDbInput').value = db;\n" +
+                "  document.getElementById('addComponentModal').style.display='flex';\n" +
+                "}\n" +
+                "function openAssignUserModal(db) {\n" +
+                "  document.getElementById('assignUserDbLabel').innerText = db;\n" +
+                "  document.getElementById('assignUserDbInput').value = db;\n" +
+                "  document.getElementById('assignUserModal').style.display='flex';\n" +
+                "}\n" +
+                "function closeModal(id) { document.getElementById(id).style.display='none'; }\n" +
+                "function toggleEntitiesViewer(db) {\n" +
+                "  var el = document.getElementById('entities_' + db);\n" +
+                "  if (el) el.style.display = (el.style.display === 'none' ? 'block' : 'none');\n" +
+                "}\n" +
+                "function deleteEntity(rawKey) {\n" +
+                "  if (confirm(\"Delete entity '\" + rawKey + \"'?\")) {\n" +
+                "    document.getElementById('deleteRawKey').value = rawKey;\n" +
+                "    document.getElementById('deleteEntityForm').submit();\n" +
+                "  }\n" +
+                "}\n" +
+                "function confirmDropDb(db) {\n" +
+                "  if (confirm(\"Are you sure you want to drop database '\" + db + \"' and all its multi-model components?\")) {\n" +
+                "    document.getElementById('dropTargetDb').value = db;\n" +
+                "    document.getElementById('dropDbForm').submit();\n" +
+                "  }\n" +
+                "}\n" +
+                "function updatePayloadTemplate(engine, targetId) {\n" +
+                "  var ta = document.getElementById(targetId);\n" +
+                "  if (engine === 'RECORDS') {\n" +
+                "    ta.value = '{\"_recordClass\": \"com.enterprise.model.EmployeeRecord\", \"_schema\": {\"id\":\"String\", \"fullName\":\"String\", \"salary\":\"Double\"}, \"components\": {\"id\": \"emp_101\", \"fullName\": \"Carlos Mendez\", \"salary\": 95000.0}}';\n" +
+                "  } else if (engine === 'VECTOR') {\n" +
+                "    ta.value = '{\"vector\": [0.12, 0.45, 0.78, 0.33], \"label\": \"search_embedding\"}';\n" +
+                "  } else if (engine === 'GRAPH') {\n" +
+                "    ta.value = '{\"name\": \"Engineering Department\", \"type\": \"ORGANIZATION\"}';\n" +
+                "  } else if (engine === 'TIMESERIES') {\n" +
+                "    ta.value = '{\"temperature\": 24.5, \"humidity\": 60.2, \"sensor\": \"DHT22\"}';\n" +
+                "  } else if (engine === 'COLUMN') {\n" +
+                "    ta.value = '{\"region\": \"LATAM\", \"q1_revenue\": 450000.0, \"units\": 1200}';\n" +
+                "  } else if (engine === 'KEYVALUE') {\n" +
+                "    ta.value = '{\"cached_token\": \"eyJhbGciOiJIUzI1NiJ9...\"}';\n" +
+                "  } else if (engine === 'GEOSPATIAL') {\n" +
+                "    ta.value = '{\"name\": \"Headquarters\", \"lat\": 8.9824, \"lon\": -79.5199}';\n" +
+                "  } else {\n" +
+                "    ta.value = '{\"status\": \"ACTIVE\", \"version\": \"1.0\"}';\n" +
+                "  }\n" +
+                "}"
+            )
+        );
 
         return Column.of(
             titleBlock,
             alertWidget,
             statGrid,
-            Paragraph.of("<h2 style='font-size:20px; font-weight:700; margin:24px 0 16px 0;'><i class='fas fa-layer-group' style='color:#f43f5e; margin-right:8px;'></i> Provisioned Database Instances & Internal Components</h2>"),
-            Paragraph.of(dbHtml.toString()),
-            Paragraph.of(modalsHtml),
-            Paragraph.of(jsHtml)
+            Header.of(2,
+                Icon.of("fas fa-layer-group").modifier(new Modifier().style("color:#f43f5e; margin-right:8px;")),
+                Text.of("Provisioned Database Instances & Internal Components")
+            ).modifier(new Modifier().style("font-size:20px; font-weight:700; margin:24px 0 16px 0;")),
+            databasesContainer,
+            RawHtml.of(modalsHtml),
+            jsFormsAndScripts
         );
     }
 
     private Map<String, DatabaseMetadata> discoverDatabases() {
         Map<String, DatabaseMetadata> databases = new LinkedHashMap<>();
-        
+
         String[] prefixes = {"rec:", "doc:", "vec:", "graph:", "ts:", "col:", "kv:", "geo:", "obj:"};
         for (String p : prefixes) {
             Map<String, byte[]> keys = engine.getStorageCore().scanPrefix(p);
@@ -645,16 +698,16 @@ public class StoreDatabasesPage extends StoreTemplatePage {
     private Widget createStatCard(String icon, String color, String title, String value, String sub, String badgeClass) {
         return Div.of(
             Row.of(
-                Div.of(Paragraph.of("<i class='" + icon + "' style='color:" + color + "; font-size:18px;'></i>"))
-                    .modifier(new io.jettra.flux.core.Modifier().style("width:36px; height:36px; border-radius:8px; background:" + color + "20; display:flex; align-items:center; justify-content:center;")),
-                Span.of(title).modifier(new io.jettra.flux.core.Modifier().style("font-size:13px; color:#94a3b8; font-weight:500;"))
-            ).modifier(new io.jettra.flux.core.Modifier().style("align-items:center; gap:10px; margin-bottom:10px;")),
-            Paragraph.of("<div style='font-size:22px; font-weight:700; color:#f8fafc; margin-bottom:4px;'>" + value + "</div>"),
+                Div.of(Icon.of(icon).modifier(new Modifier().style("color:" + color + "; font-size:18px;")))
+                    .modifier(new Modifier().style("width:36px; height:36px; border-radius:8px; background:" + color + "20; display:flex; align-items:center; justify-content:center;")),
+                Span.of(title).modifier(new Modifier().style("font-size:13px; color:#94a3b8; font-weight:500;"))
+            ).modifier(new Modifier().style("align-items:center; gap:10px; margin-bottom:10px;")),
+            Div.of(Text.of(value)).modifier(new Modifier().style("font-size:22px; font-weight:700; color:#f8fafc; margin-bottom:4px;")),
             Row.of(
-                Span.of(sub).modifier(new io.jettra.flux.core.Modifier().style("font-size:12px; color:#cbd5e1;")),
-                Span.of("ACTIVE").modifier(new io.jettra.flux.core.Modifier().cssClass("store-badge " + badgeClass).style("font-size:10px;"))
-            ).modifier(new io.jettra.flux.core.Modifier().style("justify-content:space-between; align-items:center; margin-top:8px;"))
-        ).modifier(new io.jettra.flux.core.Modifier().cssClass("store-card"));
+                Span.of(sub).modifier(new Modifier().style("font-size:12px; color:#cbd5e1;")),
+                Span.of("ACTIVE").modifier(new Modifier().cssClass("store-badge " + badgeClass).style("font-size:10px;"))
+            ).modifier(new Modifier().style("justify-content:space-between; align-items:center; margin-top:8px;"))
+        ).modifier(new Modifier().cssClass("store-card"));
     }
 
     public static class EntityDetail {

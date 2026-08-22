@@ -2,6 +2,7 @@ package com.jettra.store.engine.web;
 
 import io.jettra.flux.pages.FluxBaseHandler;
 import com.sun.net.httpserver.HttpExchange;
+import io.jettra.flux.core.Modifier;
 import io.jettra.flux.core.Widget;
 import io.jettra.flux.widgets.*;
 import io.jettra.core.login.NoLoginRequired;
@@ -28,7 +29,7 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
         String userInitial = loggedUser.substring(0, 1).toUpperCase();
 
         // Custom CSS styling with Google Fonts, glassmorphism, rich color palette, and micro-animations
-        Widget customCss = Paragraph.of(
+        Widget customCss = RawHtml.of(
             "<link rel='preconnect' href='https://fonts.googleapis.com'>\n" +
             "<link rel='preconnect' href='https://fonts.gstatic.com' crossorigin>\n" +
             "<link href='https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap' rel='stylesheet'>\n" +
@@ -98,18 +99,19 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
             storageMenu,
             SidebarCategory.of("Administration"),
             securityMenu,
+            SidebarCategory.of("System"),
             systemMenu
-        ).modifier(new io.jettra.flux.core.Modifier().cssClass("store-sidebar"));
+        ).modifier(new Modifier().cssClass("store-sidebar"));
 
         // Header
         Widget avatar = Avatar.label(userInitial).shape("circle")
-            .modifier(new io.jettra.flux.core.Modifier().style("background: linear-gradient(135deg, #38bdf8, #818cf8); color: white; font-weight: bold; width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center; margin-right: 8px;"));
+            .modifier(new Modifier().style("background: linear-gradient(135deg, #38bdf8, #818cf8); color: white; font-weight: bold; width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center; margin-right: 8px;"));
 
         Widget profileTrigger = Row.of(
             avatar,
-            Span.of(loggedUser).modifier(new io.jettra.flux.core.Modifier().style("font-weight: 600; font-size: 14px;")),
-            Icon.of("fas fa-chevron-down").modifier(new io.jettra.flux.core.Modifier().style("margin-left: 6px; font-size: 12px; color: #94a3b8;"))
-        ).modifier(new io.jettra.flux.core.Modifier().style("align-items: center; cursor: pointer; padding: 4px 10px; border-radius: 8px; background: rgba(255,255,255,0.05);"));
+            Span.of(loggedUser).modifier(new Modifier().style("font-weight: 600; font-size: 14px;")),
+            Icon.of("fas fa-chevron-down").modifier(new Modifier().style("margin-left: 6px; font-size: 12px; color: #94a3b8;"))
+        ).modifier(new Modifier().style("align-items: center; cursor: pointer; padding: 4px 10px; border-radius: 8px; background: rgba(255,255,255,0.05);"));
 
         Widget profileMenu = ((OverlayMenu) OverlayMenu.of(
             WidgetLet.of("Databases Console").icon("fas fa-server").url(JettraServer.resolvePath("/databases")),
@@ -120,16 +122,16 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
 
         Widget topHeader = Top.of(
             Row.of(
-                Icon.of("fas fa-bolt").modifier(new io.jettra.flux.core.Modifier().style("color: #38bdf8; margin-right: 8px; font-size: 20px;")),
-                Span.of("JettraStoreEngine").modifier(new io.jettra.flux.core.Modifier().style("font-weight: 700; font-size: 18px; font-family: 'Outfit', sans-serif; letter-spacing: 0.5px;")),
-                Span.of("v1.0 (Java 25)").modifier(new io.jettra.flux.core.Modifier().cssClass("store-badge badge-active").style("margin-left: 12px; font-size: 11px;")),
-                Span.of("<span class='pulse-dot' style='margin-right:6px;'></span> 9 ENGINES ACTIVE").modifier(new io.jettra.flux.core.Modifier().cssClass("store-badge badge-records").style("margin-left: 6px; font-size: 11px;"))
-            ).modifier(new io.jettra.flux.core.Modifier().style("align-items: center;")),
+                Icon.of("fas fa-bolt").modifier(new Modifier().style("color: #38bdf8; margin-right: 8px; font-size: 20px;")),
+                Span.of("JettraStoreEngine").modifier(new Modifier().style("font-weight: 700; font-size: 18px; font-family: 'Outfit', sans-serif; letter-spacing: 0.5px;")),
+                Span.of("v1.0 (Java 25)").modifier(new Modifier().cssClass("store-badge badge-active").style("margin-left: 12px; font-size: 11px;")),
+                Span.of(Span.of("").modifier(new Modifier().cssClass("pulse-dot").style("margin-right:6px;")), Text.of(" 9 ENGINES ACTIVE")).modifier(new Modifier().cssClass("store-badge badge-records").style("margin-left: 6px; font-size: 11px;"))
+            ).modifier(new Modifier().style("align-items: center;")),
             Row.of(
-                ThemeChanged.of().modifier(new io.jettra.flux.core.Modifier().style("margin-right: 16px;")),
+                ThemeChanged.of().modifier(new Modifier().style("margin-right: 16px;")),
                 profileMenu
-            ).modifier(new io.jettra.flux.core.Modifier().style("align-items: center;"))
-        ).modifier(new io.jettra.flux.core.Modifier().cssClass("store-header"));
+            ).modifier(new Modifier().style("align-items: center;"))
+        ).modifier(new Modifier().cssClass("store-header"));
 
         // Content
         Widget content = buildContent(exchange, params, currentTheme);

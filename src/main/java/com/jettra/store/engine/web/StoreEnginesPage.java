@@ -3,6 +3,7 @@ package com.jettra.store.engine.web;
 import com.jettra.store.engine.core.JettraStorageEngine;
 import com.jettra.store.engine.models.*;
 import com.sun.net.httpserver.HttpExchange;
+import io.jettra.flux.core.Modifier;
 import io.jettra.flux.core.Widget;
 import io.jettra.flux.widgets.*;
 import io.jettra.core.login.NoLoginRequired;
@@ -11,15 +12,16 @@ import io.jettra.json.JsonObject;
 import io.jettra.server.JettraServer;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 
 /**
- * Interactive Type-Specific Database and Object Administrator for all 8 Multi-Model Storage Engines in JettraStoreEngine.
- * Provides specialized management interfaces (not just generic JSON) for Document, KeyValue, Vector, Graph,
- * TimeSeries, Column, Geospatial, and Object engines, with full CRUD, search, inspection and deletion.
+ * Interactive Type-Specific Database and Object Administrator for all 9 Multi-Model Storage Engines in JettraStoreEngine.
+ * Provides specialized management interfaces for Document, KeyValue, Vector, Graph,
+ * TimeSeries, Column, Geospatial, Object, and Records engines, built entirely with JettraFlux components.
  */
 @NoLoginRequired
 public class StoreEnginesPage extends StoreTemplatePage {
@@ -87,23 +89,33 @@ public class StoreEnginesPage extends StoreTemplatePage {
         }
 
         // Title Block
+        Widget titleHeading = Header.of(1,
+            Icon.of("fas fa-database").modifier(new Modifier().style("color:#38bdf8; margin-right:8px;")),
+            Text.of("Multi-Model Database & Objects Administrator")
+        ).modifier(new Modifier().style("margin: 0; font-size: 26px; font-weight: 700;"));
+
+        Widget titleDesc = Paragraph.of(
+            Text.of("Administer databases and manage native typed objects across all 9 multi-model engines with specialized controls.")
+        ).modifier(new Modifier().style("margin: 4px 0 0 0; color: #94a3b8; font-size: 14px;"));
+
+        Widget backLink = Link.of(JettraServer.resolvePath("/dashboard"),
+            Icon.of("fas fa-arrow-left"),
+            Text.of(" Dashboard")
+        ).modifier(new Modifier().cssClass("btn-action btn-secondary"));
+
         Widget titleBlock = Row.of(
-            Column.of(
-                Paragraph.of("<h1 style='margin: 0; font-size: 26px; font-weight: 700;'><i class='fas fa-database' style='color:#38bdf8; margin-right:8px;'></i> Multi-Model Database & Objects Administrator</h1>"),
-                Paragraph.of("<p style='margin: 4px 0 0 0; color: #94a3b8; font-size: 14px;'>Administer databases and manage native typed objects across all 8 multi-model engines with specialized controls.</p>")
-            ),
-            Row.of(
-                Paragraph.of("<a href='" + JettraServer.resolvePath("/dashboard") + "' class='btn-action btn-secondary'><i class='fas fa-arrow-left'></i> Dashboard</a>")
-            ).modifier(new io.jettra.flux.core.Modifier().style("align-items: center;"))
-        ).modifier(new io.jettra.flux.core.Modifier().style("justify-content: space-between; align-items: center; margin-bottom: 24px;"));
+            Column.of(titleHeading, titleDesc),
+            Row.of(backLink).modifier(new Modifier().style("align-items: center;"))
+        ).modifier(new Modifier().style("justify-content: space-between; align-items: center; margin-bottom: 24px;"));
 
         // Alert Banner (if any)
-        Widget alertWidget = alertMessage.isEmpty() ? Paragraph.of("") : Paragraph.of(
-            "<div style='background: rgba(30, 41, 59, 0.9); border: 1px solid rgba(59,130,246,0.4); padding: 14px 20px; border-radius: 10px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between;'>\n" +
-            "  <div style='display:flex; align-items:center; gap:10px;'><i class='fas fa-info-circle' style='color:#38bdf8; font-size:18px;'></i> <span style='font-size:14px; color:#f8fafc; font-weight:500;'>" + alertMessage + "</span></div>\n" +
-            "  <span class='store-badge " + alertType + "'>STATUS</span>\n" +
-            "</div>\n"
-        );
+        Widget alertWidget = alertMessage.isEmpty() ? Div.of() : Div.of(
+            Div.of(
+                Icon.of("fas fa-info-circle").modifier(new Modifier().style("color:#38bdf8; font-size:18px;")),
+                Span.of(alertMessage).modifier(new Modifier().style("font-size:14px; color:#f8fafc; font-weight:500;"))
+            ).modifier(new Modifier().style("display:flex; align-items:center; gap:10px;")),
+            Span.of("STATUS").modifier(new Modifier().cssClass("store-badge " + alertType))
+        ).modifier(new Modifier().style("background: rgba(30, 41, 59, 0.9); border: 1px solid rgba(59,130,246,0.4); padding: 14px 20px; border-radius: 10px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between;"));
 
         // Engine Selection Tabs / Pills
         Widget engineNavPills = createEngineNavPills(selectedEngine);
@@ -148,7 +160,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
     private void executeTypeSpecificInsert(String engineName, String db, Map<String, String> params) {
         String targetId = params.getOrDefault("target_id", "rec_" + (System.currentTimeMillis() % 10000));
-        
+
         switch (engineName) {
             case "DOCUMENT" -> {
                 DocumentEngine docEngine = (DocumentEngine) engine.getEngine("DOCUMENT");
@@ -454,24 +466,23 @@ public class StoreEnginesPage extends StoreTemplatePage {
         String[] icons = {"fas fa-file-alt", "fas fa-key", "fas fa-project-diagram", "fas fa-share-alt", "fas fa-chart-line", "fas fa-table", "fas fa-globe-americas", "fas fa-archive", "fas fa-id-card"};
         String[] types = {"NoSQL JSON", "KV Cache", "AI Vector ANN", "LPG Graph", "IoT Telemetry", "OLAP Columns", "2D GIS Spatial", "Binary BLOB", "Java 25 Record"};
 
-        StringBuilder sb = new StringBuilder();
-        sb.append("<div style='display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; padding: 6px; background: rgba(30, 41, 59, 0.5); border-radius: 12px; border: 1px solid rgba(255,255,255,0.06);'>\n");
-
+        List<Widget> pills = new ArrayList<>();
         for (int i = 0; i < engines.length; i++) {
             String eng = engines[i];
             String icon = icons[i];
             String typeBadge = types[i];
             boolean active = eng.equalsIgnoreCase(current);
             String bg = active ? "background: #3b82f6; color: #ffffff; font-weight: 600; box-shadow: 0 0 12px rgba(59,130,246,0.4);" : "background: transparent; color: #94a3b8;";
-            sb.append("<a href='").append(JettraServer.resolvePath("/engines?engine=" + eng))
-              .append("' style='display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 8px; text-decoration: none; font-size: 13px; transition: all 0.2s; ").append(bg).append("'>")
-              .append("<i class='").append(icon).append("'></i> <span>").append(eng).append("</span>")
-              .append("<span style='font-size:10px; opacity:0.8; background:rgba(0,0,0,0.2); padding:2px 6px; border-radius:4px;'>").append(typeBadge).append("</span>")
-              .append("</a>\n");
-        }
-        sb.append("</div>\n");
 
-        return Paragraph.of(sb.toString());
+            pills.add(Link.of(JettraServer.resolvePath("/engines?engine=" + eng),
+                Icon.of(icon),
+                Span.of(eng),
+                Span.of(typeBadge).modifier(new Modifier().style("font-size:10px; opacity:0.8; background:rgba(0,0,0,0.2); padding:2px 6px; border-radius:4px;"))
+            ).modifier(new Modifier().style("display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 8px; text-decoration: none; font-size: 13px; transition: all 0.2s; " + bg)));
+        }
+
+        return Div.of(pills.toArray(new Widget[0]))
+            .modifier(new Modifier().style("display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; padding: 6px; background: rgba(30, 41, 59, 0.5); border-radius: 12px; border: 1px solid rgba(255,255,255,0.06);"));
     }
 
     private Widget createDatabaseProvisionBar(String engineKey, String currentDb) {
@@ -512,29 +523,49 @@ public class StoreEnginesPage extends StoreTemplatePage {
             }
         }
 
-        StringBuilder options = new StringBuilder();
-        for (String d : discoveredDbs) {
-            options.append("<option value='").append(d).append("'").append(d.equals(currentDb) ? " selected" : "").append(">").append(d).append("</option>\n");
-        }
+        Widget leftInfo = Column.of(
+            Div.of(
+                Icon.of("fas fa-folder-open").modifier(new Modifier().style("color:#38bdf8; margin-right:6px;")),
+                Text.of("Active " + dbLabel + ": "),
+                Span.of(currentDb).modifier(new Modifier().style("color:#38bdf8; font-weight:700;"))
+            ).modifier(new Modifier().style("font-size:14px; font-weight:600; color:#f8fafc;")),
+            Div.of(
+                Text.of("Engine Type: "),
+                Span.of(engineKey).modifier(new Modifier().style("color:#f8fafc; font-weight:bold;")),
+                Text.of(" (Raft Synchronized & LSM-Tree Indexed) | "),
+                Link.of(JettraServer.resolvePath("/databases"),
+                    Icon.of("fas fa-server"),
+                    Text.of(" View All Databases")
+                ).modifier(new Modifier().style("color:#38bdf8; text-decoration:none;"))
+            ).modifier(new Modifier().style("font-size:12px; color:#94a3b8;"))
+        );
+
+        Dropdown dbSelect = Dropdown.of(new ArrayList<>(discoveredDbs))
+            .selected(currentDb)
+            .placeholder(null);
+        dbSelect.attribute("onchange", "window.location.href='" + JettraServer.resolvePath("/engines?engine=" + engineKey + "&target_db=") + "' + this.value");
+        dbSelect.modifier(new Modifier().style("padding:6px 10px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#38bdf8; font-size:13px;"));
+
+        Widget switchForm = Form.of(
+            Hidden.of("action", "create_db"),
+            dbSelect,
+            TextField.of("target_db", "New DB / Collection")
+                .modifier(new Modifier().cssClass("form-input").style("width:180px; padding:6px 10px; font-size:13px;")),
+            Button.of(
+                Icon.of("fas fa-plus"),
+                Text.of(" Switch / Create")
+            ).attribute("type", "submit")
+             .modifier(new Modifier().cssClass("btn-action btn-primary").style("padding:6px 12px; font-size:13px;"))
+        ).action(JettraServer.resolvePath("/engines?engine=" + engineKey))
+         .method("POST")
+         .modifier(new Modifier().style("display:flex; gap:8px; margin:0; align-items:center;"));
 
         return Div.of(
             Row.of(
-                Column.of(
-                    Paragraph.of("<div style='font-size:14px; font-weight:600; color:#f8fafc;'><i class='fas fa-folder-open' style='color:#38bdf8; margin-right:6px;'></i> Active " + dbLabel + ": <span style='color:#38bdf8; font-weight:700;'>" + currentDb + "</span></div>"),
-                    Paragraph.of("<div style='font-size:12px; color:#94a3b8;'>Engine Type: <b style='color:#f8fafc;'>" + engineKey + "</b> (Raft Synchronized & LSM-Tree Indexed) | <a href='" + JettraServer.resolvePath("/databases") + "' style='color:#38bdf8; text-decoration:none;'><i class='fas fa-server'></i> View All Databases</a></div>")
-                ),
-                Paragraph.of(
-                    "<form method='POST' action='" + JettraServer.resolvePath("/engines?engine=" + engineKey) + "' style='display:flex; gap:8px; margin:0; align-items:center;'>\n" +
-                    "  <input type='hidden' name='action' value='create_db' />\n" +
-                    "  <select onchange=\"window.location.href='" + JettraServer.resolvePath("/engines?engine=" + engineKey + "&target_db=") + "' + this.value\" style='padding:6px 10px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#38bdf8; font-size:13px;'>\n" +
-                    options.toString() +
-                    "  </select>\n" +
-                    "  <input class='form-input' style='width:180px; padding:6px 10px; font-size:13px;' type='text' name='target_db' placeholder='New DB / Collection' required />\n" +
-                    "  <button type='submit' class='btn-action btn-primary' style='padding:6px 12px; font-size:13px;'><i class='fas fa-plus'></i> Switch / Create</button>\n" +
-                    "</form>"
-                )
-            ).modifier(new io.jettra.flux.core.Modifier().style("justify-content: space-between; align-items: center;"))
-        ).modifier(new io.jettra.flux.core.Modifier().cssClass("store-card").style("margin-bottom: 20px; padding: 14px 20px;"));
+                leftInfo,
+                switchForm
+            ).modifier(new Modifier().style("justify-content: space-between; align-items: center;"))
+        ).modifier(new Modifier().cssClass("store-card").style("margin-bottom: 20px; padding: 14px 20px;"));
     }
 
     private Widget createTypeSpecificCrudCard(String engineKey, String targetDb, String queryResultDisplay) {
@@ -545,263 +576,486 @@ public class StoreEnginesPage extends StoreTemplatePage {
             Row.of(
                 Column.of(insertFormWidget),
                 Column.of(querySearchWidget)
-            ).modifier(new io.jettra.flux.core.Modifier().style("display: grid; grid-template-columns: 1.1fr 1fr; gap: 24px;"))
-        ).modifier(new io.jettra.flux.core.Modifier().cssClass("store-card").style("margin-bottom: 24px;"));
+            ).modifier(new Modifier().style("display: grid; grid-template-columns: 1.1fr 1fr; gap: 24px;"))
+        ).modifier(new Modifier().cssClass("store-card").style("margin-bottom: 24px;"));
     }
 
     private Widget buildEngineInsertForm(String engineKey, String targetDb) {
-        StringBuilder sb = new StringBuilder();
         String actionUrl = JettraServer.resolvePath("/engines?engine=" + engineKey);
 
         switch (engineKey) {
             case "DOCUMENT" -> {
-                sb.append("<h3 style='margin: 0 0 10px 0; font-size: 16px; font-weight: 600;'><i class='fas fa-file-alt' style='color:#38bdf8; margin-right:8px;'></i> Insert Document (JSON / Schema)</h3>");
-                sb.append("<p style='font-size: 13px; color: #94a3b8; margin-bottom: 14px;'>Save structured JSON documents with optional Java Class and JettraRules validation.</p>");
-                sb.append("<form method='POST' action='").append(actionUrl).append("'>\n");
-                sb.append("  <input type='hidden' name='action' value='insert_object' />\n");
-                sb.append("  <input type='hidden' name='target_db' value='").append(targetDb).append("' />\n");
-                sb.append("  <div style='display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px;'>\n");
-                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Document ID</label><input class='form-input' type='text' name='target_id' value='doc_").append(System.currentTimeMillis() % 10000).append("' required /></div>\n");
-                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Schema / _class (Optional)</label><input class='form-input' type='text' name='doc_class' placeholder='com.jettra.model.Customer' /></div>\n");
-                sb.append("  </div>\n");
-                sb.append("  <label style='font-size:12px; color:#94a3b8; font-weight:600;'>Document JSON Fields</label>\n");
-                sb.append("  <textarea name='doc_payload' class='form-input' style='height: 110px; font-family: monospace; font-size: 12px; resize: vertical;' required>{\n  \"name\": \"Global Enterprise Inc\",\n  \"tier\": \"Platinum\",\n  \"active\": true,\n  \"credit_limit\": 75000\n}</textarea>\n");
-                sb.append("  <button type='submit' class='btn-action btn-primary' style='margin-top: 10px;'><i class='fas fa-save'></i> Save Document</button>\n");
-                sb.append("</form>");
+                Widget heading = Header.of(3,
+                    Icon.of("fas fa-file-alt").modifier(new Modifier().style("color:#38bdf8; margin-right:8px;")),
+                    Text.of("Insert Document (JSON / Schema)")
+                ).modifier(new Modifier().style("margin: 0 0 10px 0; font-size: 16px; font-weight: 600;"));
+
+                Widget desc = Paragraph.of(
+                    Text.of("Save structured JSON documents with optional Java Class and JettraRules validation.")
+                ).modifier(new Modifier().style("font-size: 13px; color: #94a3b8; margin-bottom: 14px;"));
+
+                Widget form = Form.of(
+                    Hidden.of("action", "insert_object"),
+                    Hidden.of("target_db", targetDb),
+                    Div.of(
+                        Div.of(
+                            Label.of("Document ID").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600;")),
+                            TextField.of("target_id", "ID").value("doc_" + (System.currentTimeMillis() % 10000)).modifier(new Modifier().cssClass("form-input"))
+                        ),
+                        Div.of(
+                            Label.of("Schema / _class (Optional)").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600;")),
+                            TextField.of("doc_class", "com.jettra.model.Customer").modifier(new Modifier().cssClass("form-input"))
+                        )
+                    ).modifier(new Modifier().style("display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px;")),
+                    Label.of("Document JSON Fields").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600;")),
+                    TextArea.create().name("doc_payload").rows(5).value("{\n  \"name\": \"Global Enterprise Inc\",\n  \"tier\": \"Platinum\",\n  \"active\": true,\n  \"credit_limit\": 75000\n}")
+                        .modifier(new Modifier().cssClass("form-input").style("height: 110px; font-family: monospace; font-size: 12px; resize: vertical;")),
+                    Button.of(Icon.of("fas fa-save"), Text.of(" Save Document"))
+                        .attribute("type", "submit")
+                        .modifier(new Modifier().cssClass("btn-action btn-primary").style("margin-top: 10px;"))
+                ).action(actionUrl).method("POST");
+
+                return Div.of(heading, desc, form);
             }
             case "KEYVALUE" -> {
-                sb.append("<h3 style='margin: 0 0 10px 0; font-size: 16px; font-weight: 600;'><i class='fas fa-key' style='color:#10b981; margin-right:8px;'></i> Set Key-Value Pair (High Speed Cache)</h3>");
-                sb.append("<p style='font-size: 13px; color: #94a3b8; margin-bottom: 14px;'>Store native string/raw cache keys with sub-millisecond MemTable reads.</p>");
-                sb.append("<form method='POST' action='").append(actionUrl).append("'>\n");
-                sb.append("  <input type='hidden' name='action' value='insert_object' />\n");
-                sb.append("  <input type='hidden' name='target_db' value='").append(targetDb).append("' />\n");
-                sb.append("  <div style='display:grid; grid-template-columns: 1.2fr 1fr; gap:10px; margin-bottom:10px;'>\n");
-                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Key (Lookup Identifier)</label><input class='form-input' type='text' name='target_id' value='session_tok_").append(System.currentTimeMillis() % 1000).append("' required /></div>\n");
-                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Value Type</label><select name='kv_type' class='form-input'><option value='string'>Plain String</option><option value='json'>Raw JSON / Payload</option><option value='number'>Numeric Counter</option></select></div>\n");
-                sb.append("  </div>\n");
-                sb.append("  <label style='font-size:12px; color:#94a3b8; font-weight:600;'>Value Data</label>\n");
-                sb.append("  <textarea name='kv_value' class='form-input' style='height: 80px; font-family: monospace; font-size: 13px; resize: vertical;' required>ACTIVE_USER_TOKEN_99A8BC71</textarea>\n");
-                sb.append("  <button type='submit' class='btn-action btn-primary' style='margin-top: 10px;'><i class='fas fa-save'></i> Put Key-Value</button>\n");
-                sb.append("</form>");
+                Widget heading = Header.of(3,
+                    Icon.of("fas fa-key").modifier(new Modifier().style("color:#10b981; margin-right:8px;")),
+                    Text.of("Set Key-Value Pair (High Speed Cache)")
+                ).modifier(new Modifier().style("margin: 0 0 10px 0; font-size: 16px; font-weight: 600;"));
+
+                Widget desc = Paragraph.of(
+                    Text.of("Store native string/raw cache keys with sub-millisecond MemTable reads.")
+                ).modifier(new Modifier().style("font-size: 13px; color: #94a3b8; margin-bottom: 14px;"));
+
+                Dropdown kvTypeDropdown = Dropdown.of("string", "json", "number")
+                    .selected("string")
+                    .placeholder(null);
+                kvTypeDropdown.attribute("name", "kv_type");
+                kvTypeDropdown.modifier(new Modifier().cssClass("form-input"));
+
+                Widget form = Form.of(
+                    Hidden.of("action", "insert_object"),
+                    Hidden.of("target_db", targetDb),
+                    Div.of(
+                        Div.of(
+                            Label.of("Key (Lookup Identifier)").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600;")),
+                            TextField.of("target_id", "Key").value("session_tok_" + (System.currentTimeMillis() % 1000)).modifier(new Modifier().cssClass("form-input"))
+                        ),
+                        Div.of(
+                            Label.of("Value Type").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600;")),
+                            kvTypeDropdown
+                        )
+                    ).modifier(new Modifier().style("display:grid; grid-template-columns: 1.2fr 1fr; gap:10px; margin-bottom:10px;")),
+                    Label.of("Value Data").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600;")),
+                    TextArea.create().name("kv_value").rows(3).value("ACTIVE_USER_TOKEN_99A8BC71")
+                        .modifier(new Modifier().cssClass("form-input").style("height: 80px; font-family: monospace; font-size: 13px; resize: vertical;")),
+                    Button.of(Icon.of("fas fa-save"), Text.of(" Put Key-Value"))
+                        .attribute("type", "submit")
+                        .modifier(new Modifier().cssClass("btn-action btn-primary").style("margin-top: 10px;"))
+                ).action(actionUrl).method("POST");
+
+                return Div.of(heading, desc, form);
             }
             case "VECTOR" -> {
-                sb.append("<h3 style='margin: 0 0 10px 0; font-size: 16px; font-weight: 600;'><i class='fas fa-project-diagram' style='color:#8b5cf6; margin-right:8px;'></i> Store Vector Embedding (AI / LLM)</h3>");
-                sb.append("<p style='font-size: 13px; color: #94a3b8; margin-bottom: 14px;'>Insert high-dimensional float vectors with associated metadata attributes.</p>");
-                sb.append("<form method='POST' action='").append(actionUrl).append("'>\n");
-                sb.append("  <input type='hidden' name='action' value='insert_object' />\n");
-                sb.append("  <input type='hidden' name='target_db' value='").append(targetDb).append("' />\n");
-                sb.append("  <div style='display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px;'>\n");
-                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Vector ID</label><input class='form-input' type='text' name='target_id' value='vec_").append(System.currentTimeMillis() % 1000).append("' required /></div>\n");
-                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Label / Classification</label><input class='form-input' type='text' name='vector_label' value='semantic_doc_embedding' /></div>\n");
-                sb.append("  </div>\n");
-                sb.append("  <label style='font-size:12px; color:#94a3b8; font-weight:600;'>Float Vector Components (comma-separated)</label>\n");
-                sb.append("  <input class='form-input' style='font-family:monospace; margin-bottom:10px;' type='text' name='vector_coords' value='0.12, 0.45, 0.88, 0.31' required />\n");
-                sb.append("  <label style='font-size:12px; color:#94a3b8; font-weight:600;'>Metadata JSON</label>\n");
-                sb.append("  <textarea name='vector_meta' class='form-input' style='height: 50px; font-family: monospace; font-size: 12px;'>{\"title\": \"LSM B-Tree Whitepaper\", \"category\": \"database\"}</textarea>\n");
-                sb.append("  <button type='submit' class='btn-action btn-primary' style='margin-top: 10px;'><i class='fas fa-save'></i> Save Vector Embedding</button>\n");
-                sb.append("</form>");
+                Widget heading = Header.of(3,
+                    Icon.of("fas fa-project-diagram").modifier(new Modifier().style("color:#8b5cf6; margin-right:8px;")),
+                    Text.of("Store Vector Embedding (AI / LLM)")
+                ).modifier(new Modifier().style("margin: 0 0 10px 0; font-size: 16px; font-weight: 600;"));
+
+                Widget desc = Paragraph.of(
+                    Text.of("Insert high-dimensional float vectors with associated metadata attributes.")
+                ).modifier(new Modifier().style("font-size: 13px; color: #94a3b8; margin-bottom: 14px;"));
+
+                Widget form = Form.of(
+                    Hidden.of("action", "insert_object"),
+                    Hidden.of("target_db", targetDb),
+                    Div.of(
+                        Div.of(
+                            Label.of("Vector ID").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600;")),
+                            TextField.of("target_id", "ID").value("vec_" + (System.currentTimeMillis() % 1000)).modifier(new Modifier().cssClass("form-input"))
+                        ),
+                        Div.of(
+                            Label.of("Label / Classification").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600;")),
+                            TextField.of("vector_label", "Label").value("semantic_doc_embedding").modifier(new Modifier().cssClass("form-input"))
+                        )
+                    ).modifier(new Modifier().style("display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px;")),
+                    Label.of("Float Vector Components (comma-separated)").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600;")),
+                    TextField.of("vector_coords", "Floats").value("0.12, 0.45, 0.88, 0.31")
+                        .modifier(new Modifier().cssClass("form-input").style("font-family:monospace; margin-bottom:10px;")),
+                    Label.of("Metadata JSON").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600;")),
+                    TextArea.create().name("vector_meta").rows(2).value("{\"title\": \"LSM B-Tree Whitepaper\", \"category\": \"database\"}")
+                        .modifier(new Modifier().cssClass("form-input").style("height: 50px; font-family: monospace; font-size: 12px;")),
+                    Button.of(Icon.of("fas fa-save"), Text.of(" Save Vector Embedding"))
+                        .attribute("type", "submit")
+                        .modifier(new Modifier().cssClass("btn-action btn-primary").style("margin-top: 10px;"))
+                ).action(actionUrl).method("POST");
+
+                return Div.of(heading, desc, form);
             }
             case "GRAPH" -> {
-                sb.append("<h3 style='margin: 0 0 10px 0; font-size: 16px; font-weight: 600;'><i class='fas fa-share-alt' style='color:#ec4899; margin-right:8px;'></i> Graph Vertex / Edge Manager</h3>");
-                sb.append("<p style='font-size: 13px; color: #94a3b8; margin-bottom: 14px;'>Manage Labeled Property Graph (LPG) vertices and directed relationships.</p>");
-                sb.append("<form method='POST' action='").append(actionUrl).append("'>\n");
-                sb.append("  <input type='hidden' name='action' value='insert_object' />\n");
-                sb.append("  <input type='hidden' name='target_db' value='").append(targetDb).append("' />\n");
-                sb.append("  <div style='display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px;'>\n");
-                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Element Type</label><select name='graph_mode' class='form-input'><option value='node'>Node (Vertex)</option><option value='edge'>Edge (Relationship)</option></select></div>\n");
-                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Node ID / Edge From</label><input class='form-input' type='text' name='target_id' value='node_").append(System.currentTimeMillis() % 1000).append("' required /></div>\n");
-                sb.append("  </div>\n");
-                sb.append("  <div style='display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px;'>\n");
-                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Edge Target (To) / Label</label><input class='form-input' type='text' name='edge_to' placeholder='node_2 (if edge)' /></div>\n");
-                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Label / Relation</label><input class='form-input' type='text' name='node_label' value='KNOWS' /></div>\n");
-                sb.append("  </div>\n");
-                sb.append("  <label style='font-size:12px; color:#94a3b8; font-weight:600;'>Attributes / Properties JSON</label>\n");
-                sb.append("  <textarea name='node_props' class='form-input' style='height: 55px; font-family: monospace; font-size: 12px;'>{\"name\": \"Alice\", \"role\": \"Lead Engineer\", \"weight\": 1.0}</textarea>\n");
-                sb.append("  <button type='submit' class='btn-action btn-primary' style='margin-top: 10px;'><i class='fas fa-plus-circle'></i> Save Graph Entity</button>\n");
-                sb.append("</form>");
+                Widget heading = Header.of(3,
+                    Icon.of("fas fa-share-alt").modifier(new Modifier().style("color:#ec4899; margin-right:8px;")),
+                    Text.of("Graph Vertex / Edge Manager")
+                ).modifier(new Modifier().style("margin: 0 0 10px 0; font-size: 16px; font-weight: 600;"));
+
+                Widget desc = Paragraph.of(
+                    Text.of("Manage Labeled Property Graph (LPG) vertices and directed relationships.")
+                ).modifier(new Modifier().style("font-size: 13px; color: #94a3b8; margin-bottom: 14px;"));
+
+                Dropdown modeDropdown = Dropdown.of("node", "edge").selected("node").placeholder(null);
+                modeDropdown.attribute("name", "graph_mode");
+                modeDropdown.modifier(new Modifier().cssClass("form-input"));
+
+                Widget form = Form.of(
+                    Hidden.of("action", "insert_object"),
+                    Hidden.of("target_db", targetDb),
+                    Div.of(
+                        Div.of(
+                            Label.of("Element Type").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600;")),
+                            modeDropdown
+                        ),
+                        Div.of(
+                            Label.of("Node ID / Edge From").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600;")),
+                            TextField.of("target_id", "ID").value("node_" + (System.currentTimeMillis() % 1000)).modifier(new Modifier().cssClass("form-input"))
+                        )
+                    ).modifier(new Modifier().style("display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px;")),
+                    Div.of(
+                        Div.of(
+                            Label.of("Edge Target (To) / Label").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600;")),
+                            TextField.of("edge_to", "node_2 (if edge)").modifier(new Modifier().cssClass("form-input"))
+                        ),
+                        Div.of(
+                            Label.of("Label / Relation").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600;")),
+                            TextField.of("node_label", "Label").value("KNOWS").modifier(new Modifier().cssClass("form-input"))
+                        )
+                    ).modifier(new Modifier().style("display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px;")),
+                    Label.of("Attributes / Properties JSON").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600;")),
+                    TextArea.create().name("node_props").rows(2).value("{\"name\": \"Alice\", \"role\": \"Lead Engineer\", \"weight\": 1.0}")
+                        .modifier(new Modifier().cssClass("form-input").style("height: 55px; font-family: monospace; font-size: 12px;")),
+                    Button.of(Icon.of("fas fa-plus-circle"), Text.of(" Save Graph Entity"))
+                        .attribute("type", "submit")
+                        .modifier(new Modifier().cssClass("btn-action btn-primary").style("margin-top: 10px;"))
+                ).action(actionUrl).method("POST");
+
+                return Div.of(heading, desc, form);
             }
             case "TIMESERIES" -> {
-                sb.append("<h3 style='margin: 0 0 10px 0; font-size: 16px; font-weight: 600;'><i class='fas fa-chart-line' style='color:#06b6d4; margin-right:8px;'></i> Ingest Time-Series Data Point</h3>");
-                sb.append("<p style='font-size: 13px; color: #94a3b8; margin-bottom: 14px;'>Append-only telemetry logs with monotonic timestamp ordering.</p>");
-                sb.append("<form method='POST' action='").append(actionUrl).append("'>\n");
-                sb.append("  <input type='hidden' name='action' value='insert_object' />\n");
-                sb.append("  <input type='hidden' name='target_db' value='").append(targetDb).append("' />\n");
-                sb.append("  <div style='display:grid; grid-template-columns: 1.2fr 1fr; gap:10px; margin-bottom:10px;'>\n");
-                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Timestamp (Millis)</label><input class='form-input' type='text' name='ts_timestamp' value='").append(System.currentTimeMillis()).append("' required /></div>\n");
-                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Metric Value (Numeric)</label><input class='form-input' type='number' step='any' name='ts_value' value='42.50' required /></div>\n");
-                sb.append("  </div>\n");
-                sb.append("  <div style='display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px;'>\n");
-                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Unit of Measure</label><input class='form-input' type='text' name='ts_unit' value='celsius' /></div>\n");
-                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Dimension Tags (JSON)</label><input class='form-input' style='font-family:monospace;' type='text' name='ts_tags' value='{\"host\": \"server-01\", \"rack\": \"A3\"}' /></div>\n");
-                sb.append("  </div>\n");
-                sb.append("  <button type='submit' class='btn-action btn-primary' style='margin-top: 10px;'><i class='fas fa-plus'></i> Ingest Time Point</button>\n");
-                sb.append("</form>");
+                Widget heading = Header.of(3,
+                    Icon.of("fas fa-chart-line").modifier(new Modifier().style("color:#06b6d4; margin-right:8px;")),
+                    Text.of("Ingest Time-Series Data Point")
+                ).modifier(new Modifier().style("margin: 0 0 10px 0; font-size: 16px; font-weight: 600;"));
+
+                Widget desc = Paragraph.of(
+                    Text.of("Append-only telemetry logs with monotonic timestamp ordering.")
+                ).modifier(new Modifier().style("font-size: 13px; color: #94a3b8; margin-bottom: 14px;"));
+
+                Widget form = Form.of(
+                    Hidden.of("action", "insert_object"),
+                    Hidden.of("target_db", targetDb),
+                    Div.of(
+                        Div.of(
+                            Label.of("Timestamp (Millis)").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600;")),
+                            TextField.of("ts_timestamp", "Timestamp").value(String.valueOf(System.currentTimeMillis())).modifier(new Modifier().cssClass("form-input"))
+                        ),
+                        Div.of(
+                            Label.of("Metric Value (Numeric)").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600;")),
+                            TextField.of("ts_value", "Value").value("42.50").modifier(new Modifier().cssClass("form-input"))
+                        )
+                    ).modifier(new Modifier().style("display:grid; grid-template-columns: 1.2fr 1fr; gap:10px; margin-bottom:10px;")),
+                    Div.of(
+                        Div.of(
+                            Label.of("Unit of Measure").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600;")),
+                            TextField.of("ts_unit", "Unit").value("celsius").modifier(new Modifier().cssClass("form-input"))
+                        ),
+                        Div.of(
+                            Label.of("Dimension Tags (JSON)").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600;")),
+                            TextField.of("ts_tags", "JSON").value("{\"host\": \"server-01\", \"rack\": \"A3\"}").modifier(new Modifier().cssClass("form-input").style("font-family:monospace;"))
+                        )
+                    ).modifier(new Modifier().style("display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px;")),
+                    Button.of(Icon.of("fas fa-plus"), Text.of(" Ingest Time Point"))
+                        .attribute("type", "submit")
+                        .modifier(new Modifier().cssClass("btn-action btn-primary").style("margin-top: 10px;"))
+                ).action(actionUrl).method("POST");
+
+                return Div.of(heading, desc, form);
             }
             case "COLUMN" -> {
-                sb.append("<h3 style='margin: 0 0 10px 0; font-size: 16px; font-weight: 600;'><i class='fas fa-table' style='color:#f97316; margin-right:8px;'></i> Insert OLAP Columnar Row</h3>");
-                sb.append("<p style='font-size: 13px; color: #94a3b8; margin-bottom: 14px;'>Fast analytical row insertion into columnar contiguous arrays.</p>");
-                sb.append("<form method='POST' action='").append(actionUrl).append("'>\n");
-                sb.append("  <input type='hidden' name='action' value='insert_object' />\n");
-                sb.append("  <input type='hidden' name='target_db' value='").append(targetDb).append("' />\n");
-                sb.append("  <div style='margin-bottom:10px;'><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Row Key</label><input class='form-input' type='text' name='target_id' value='order_").append(System.currentTimeMillis() % 10000).append("' required /></div>\n");
-                sb.append("  <label style='font-size:12px; color:#94a3b8; font-weight:600;'>Column Values (JSON or Key=Value pairs)</label>\n");
-                sb.append("  <textarea name='col_data' class='form-input' style='height: 90px; font-family: monospace; font-size: 12px;' required>{\n  \"customer_id\": 101,\n  \"order_total\": 450.00,\n  \"tax\": 31.50,\n  \"status\": \"COMPLETED\"\n}</textarea>\n");
-                sb.append("  <button type='submit' class='btn-action btn-primary' style='margin-top: 10px;'><i class='fas fa-save'></i> Save Column Row</button>\n");
-                sb.append("</form>");
+                Widget heading = Header.of(3,
+                    Icon.of("fas fa-table").modifier(new Modifier().style("color:#f97316; margin-right:8px;")),
+                    Text.of("Insert OLAP Columnar Row")
+                ).modifier(new Modifier().style("margin: 0 0 10px 0; font-size: 16px; font-weight: 600;"));
+
+                Widget desc = Paragraph.of(
+                    Text.of("Fast analytical row insertion into columnar contiguous arrays.")
+                ).modifier(new Modifier().style("font-size: 13px; color: #94a3b8; margin-bottom: 14px;"));
+
+                Widget form = Form.of(
+                    Hidden.of("action", "insert_object"),
+                    Hidden.of("target_db", targetDb),
+                    Div.of(
+                        Label.of("Row Key").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600;")),
+                        TextField.of("target_id", "Row Key").value("order_" + (System.currentTimeMillis() % 10000)).modifier(new Modifier().cssClass("form-input"))
+                    ).modifier(new Modifier().style("margin-bottom:10px;")),
+                    Label.of("Column Values (JSON or Key=Value pairs)").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600;")),
+                    TextArea.create().name("col_data").rows(4).value("{\n  \"customer_id\": 101,\n  \"order_total\": 450.00,\n  \"tax\": 31.50,\n  \"status\": \"COMPLETED\"\n}")
+                        .modifier(new Modifier().cssClass("form-input").style("height: 90px; font-family: monospace; font-size: 12px;")),
+                    Button.of(Icon.of("fas fa-save"), Text.of(" Save Column Row"))
+                        .attribute("type", "submit")
+                        .modifier(new Modifier().cssClass("btn-action btn-primary").style("margin-top: 10px;"))
+                ).action(actionUrl).method("POST");
+
+                return Div.of(heading, desc, form);
             }
             case "GEOSPATIAL" -> {
-                sb.append("<h3 style='margin: 0 0 10px 0; font-size: 16px; font-weight: 600;'><i class='fas fa-globe-americas' style='color:#14b8a6; margin-right:8px;'></i> Register 2D Geospatial Coordinate</h3>");
-                sb.append("<p style='font-size: 13px; color: #94a3b8; margin-bottom: 14px;'>Store geographical points with Latitude/Longitude and metadata properties.</p>");
-                sb.append("<form method='POST' action='").append(actionUrl).append("'>\n");
-                sb.append("  <input type='hidden' name='action' value='insert_object' />\n");
-                sb.append("  <input type='hidden' name='target_db' value='").append(targetDb).append("' />\n");
-                sb.append("  <div style='display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px;'>\n");
-                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Location ID</label><input class='form-input' type='text' name='target_id' value='loc_panama_").append(System.currentTimeMillis() % 1000).append("' required /></div>\n");
-                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Location Name</label><input class='form-input' type='text' name='geo_name' value='Panama Logistics Hub' /></div>\n");
-                sb.append("  </div>\n");
-                sb.append("  <div style='display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px;'>\n");
-                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Latitude</label><input class='form-input' type='number' step='any' name='geo_lat' value='8.9824' required /></div>\n");
-                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Longitude</label><input class='form-input' type='number' step='any' name='geo_lon' value='-79.5199' required /></div>\n");
-                sb.append("  </div>\n");
-                sb.append("  <label style='font-size:12px; color:#94a3b8; font-weight:600;'>GIS Metadata</label>\n");
-                sb.append("  <textarea name='geo_meta' class='form-input' style='height: 45px; font-family: monospace; font-size: 12px;'>{\"city\": \"Panama City\", \"radius_km\": 15, \"active\": true}</textarea>\n");
-                sb.append("  <button type='submit' class='btn-action btn-primary' style='margin-top: 10px;'><i class='fas fa-map-marker-alt'></i> Register Geo Point</button>\n");
-                sb.append("</form>");
+                Widget heading = Header.of(3,
+                    Icon.of("fas fa-globe-americas").modifier(new Modifier().style("color:#14b8a6; margin-right:8px;")),
+                    Text.of("Register 2D Geospatial Coordinate")
+                ).modifier(new Modifier().style("margin: 0 0 10px 0; font-size: 16px; font-weight: 600;"));
+
+                Widget desc = Paragraph.of(
+                    Text.of("Store geographical points with Latitude/Longitude and metadata properties.")
+                ).modifier(new Modifier().style("font-size: 13px; color: #94a3b8; margin-bottom: 14px;"));
+
+                Widget form = Form.of(
+                    Hidden.of("action", "insert_object"),
+                    Hidden.of("target_db", targetDb),
+                    Div.of(
+                        Div.of(
+                            Label.of("Location ID").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600;")),
+                            TextField.of("target_id", "ID").value("loc_panama_" + (System.currentTimeMillis() % 1000)).modifier(new Modifier().cssClass("form-input"))
+                        ),
+                        Div.of(
+                            Label.of("Location Name").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600;")),
+                            TextField.of("geo_name", "Panama Logistics Hub").value("Panama Logistics Hub").modifier(new Modifier().cssClass("form-input"))
+                        )
+                    ).modifier(new Modifier().style("display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px;")),
+                    Div.of(
+                        Div.of(
+                            Label.of("Latitude").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600;")),
+                            TextField.of("geo_lat", "8.9824").value("8.9824").modifier(new Modifier().cssClass("form-input"))
+                        ),
+                        Div.of(
+                            Label.of("Longitude").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600;")),
+                            TextField.of("geo_lon", "-79.5199").value("-79.5199").modifier(new Modifier().cssClass("form-input"))
+                        )
+                    ).modifier(new Modifier().style("display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px;")),
+                    Label.of("GIS Metadata").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600;")),
+                    TextArea.create().name("geo_meta").rows(2).value("{\"city\": \"Panama City\", \"radius_km\": 15, \"active\": true}")
+                        .modifier(new Modifier().cssClass("form-input").style("height: 45px; font-family: monospace; font-size: 12px;")),
+                    Button.of(Icon.of("fas fa-map-marker-alt"), Text.of(" Register Geo Point"))
+                        .attribute("type", "submit")
+                        .modifier(new Modifier().cssClass("btn-action btn-primary").style("margin-top: 10px;"))
+                ).action(actionUrl).method("POST");
+
+                return Div.of(heading, desc, form);
             }
             case "OBJECT" -> {
-                sb.append("<h3 style='margin: 0 0 10px 0; font-size: 16px; font-weight: 600;'><i class='fas fa-archive' style='color:#a855f7; margin-right:8px;'></i> Store Binary BLOB / Serialized Stream</h3>");
-                sb.append("<p style='font-size: 13px; color: #94a3b8; margin-bottom: 14px;'>Persist binary objects, files, and serialized class payloads.</p>");
-                sb.append("<form method='POST' action='").append(actionUrl).append("'>\n");
-                sb.append("  <input type='hidden' name='action' value='insert_object' />\n");
-                sb.append("  <input type='hidden' name='target_db' value='").append(targetDb).append("' />\n");
-                sb.append("  <div style='display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px;'>\n");
-                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Object Key / Filename</label><input class='form-input' type='text' name='target_id' value='invoice_2026_").append(System.currentTimeMillis() % 1000).append(".pdf' required /></div>\n");
-                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>MIME / Content Type</label><input class='form-input' type='text' name='obj_mime' value='application/pdf' /></div>\n");
-                sb.append("  </div>\n");
-                sb.append("  <div style='margin-bottom:10px;'><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Java Object Wrapper Class</label><input class='form-input' type='text' name='obj_class' value='com.jettra.storage.BlobDocument' /></div>\n");
-                sb.append("  <label style='font-size:12px; color:#94a3b8; font-weight:600;'>Payload (Base64 / Stream Text)</label>\n");
-                sb.append("  <textarea name='obj_payload' class='form-input' style='height: 60px; font-family: monospace; font-size: 12px;' required>JVBERi0xLjQKJcTl8uXr...[Base64 Stream Payload]...</textarea>\n");
-                sb.append("  <button type='submit' class='btn-action btn-primary' style='margin-top: 10px;'><i class='fas fa-upload'></i> Save Object BLOB</button>\n");
-                sb.append("</form>");
+                Widget heading = Header.of(3,
+                    Icon.of("fas fa-archive").modifier(new Modifier().style("color:#a855f7; margin-right:8px;")),
+                    Text.of("Store Binary BLOB / Serialized Stream")
+                ).modifier(new Modifier().style("margin: 0 0 10px 0; font-size: 16px; font-weight: 600;"));
+
+                Widget desc = Paragraph.of(
+                    Text.of("Persist binary objects, files, and serialized class payloads.")
+                ).modifier(new Modifier().style("font-size: 13px; color: #94a3b8; margin-bottom: 14px;"));
+
+                Widget form = Form.of(
+                    Hidden.of("action", "insert_object"),
+                    Hidden.of("target_db", targetDb),
+                    Div.of(
+                        Div.of(
+                            Label.of("Object Key / Filename").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600;")),
+                            TextField.of("target_id", "Filename").value("invoice_2026_" + (System.currentTimeMillis() % 1000) + ".pdf").modifier(new Modifier().cssClass("form-input"))
+                        ),
+                        Div.of(
+                            Label.of("MIME / Content Type").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600;")),
+                            TextField.of("obj_mime", "application/pdf").value("application/pdf").modifier(new Modifier().cssClass("form-input"))
+                        )
+                    ).modifier(new Modifier().style("display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px;")),
+                    Div.of(
+                        Label.of("Java Object Wrapper Class").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600;")),
+                        TextField.of("obj_class", "com.jettra.storage.BlobDocument").value("com.jettra.storage.BlobDocument").modifier(new Modifier().cssClass("form-input"))
+                    ).modifier(new Modifier().style("margin-bottom:10px;")),
+                    Label.of("Payload (Base64 / Stream Text)").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600;")),
+                    TextArea.create().name("obj_payload").rows(3).value("JVBERi0xLjQKJcTl8uXr...[Base64 Stream Payload]...")
+                        .modifier(new Modifier().cssClass("form-input").style("height: 60px; font-family: monospace; font-size: 12px;")),
+                    Button.of(Icon.of("fas fa-upload"), Text.of(" Save Object BLOB"))
+                        .attribute("type", "submit")
+                        .modifier(new Modifier().cssClass("btn-action btn-primary").style("margin-top: 10px;"))
+                ).action(actionUrl).method("POST");
+
+                return Div.of(heading, desc, form);
             }
             case "RECORDS" -> {
-                sb.append("<h3 style='margin: 0 0 10px 0; font-size: 16px; font-weight: 600;'><i class='fas fa-id-card' style='color:#f43f5e; margin-right:8px;'></i> Store Immutable Java Record</h3>");
-                sb.append("<p style='font-size: 13px; color: #94a3b8; margin-bottom: 14px;'>Persist typed Java records with structural schema reflection and component validation.</p>");
-                sb.append("<form method='POST' action='").append(actionUrl).append("'>\n");
-                sb.append("  <input type='hidden' name='action' value='insert_object' />\n");
-                sb.append("  <input type='hidden' name='target_db' value='").append(targetDb).append("' />\n");
-                sb.append("  <div style='display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px;'>\n");
-                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Record ID</label><input class='form-input' type='text' name='target_id' value='rec_").append(System.currentTimeMillis() % 1000).append("' required /></div>\n");
-                sb.append("    <div><label style='font-size:12px; color:#94a3b8; font-weight:600;'>Record Class</label><input class='form-input' type='text' name='rec_class' value='com.jettra.model.PersonRecord' required /></div>\n");
-                sb.append("  </div>\n");
-                sb.append("  <label style='font-size:12px; color:#94a3b8; font-weight:600;'>Record Components JSON (Fields & Values)</label>\n");
-                sb.append("  <textarea name='rec_payload' class='form-input' style='height: 90px; font-family: monospace; font-size: 12px;' required>{\n  \"id\": \"rec_01\",\n  \"fullName\": \"Alice Monroe\",\n  \"email\": \"alice@enterprise.org\",\n  \"active\": true,\n  \"salary\": 92500.00\n}</textarea>\n");
-                sb.append("  <button type='submit' class='btn-action btn-primary' style='margin-top: 10px;'><i class='fas fa-save'></i> Save Java Record</button>\n");
-                sb.append("</form>");
+                Widget heading = Header.of(3,
+                    Icon.of("fas fa-id-card").modifier(new Modifier().style("color:#f43f5e; margin-right:8px;")),
+                    Text.of("Store Immutable Java Record")
+                ).modifier(new Modifier().style("margin: 0 0 10px 0; font-size: 16px; font-weight: 600;"));
+
+                Widget desc = Paragraph.of(
+                    Text.of("Persist typed Java records with structural schema reflection and component validation.")
+                ).modifier(new Modifier().style("font-size: 13px; color: #94a3b8; margin-bottom: 14px;"));
+
+                Widget form = Form.of(
+                    Hidden.of("action", "insert_object"),
+                    Hidden.of("target_db", targetDb),
+                    Div.of(
+                        Div.of(
+                            Label.of("Record ID").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600;")),
+                            TextField.of("target_id", "ID").value("rec_" + (System.currentTimeMillis() % 1000)).modifier(new Modifier().cssClass("form-input"))
+                        ),
+                        Div.of(
+                            Label.of("Record Class").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600;")),
+                            TextField.of("rec_class", "com.jettra.model.PersonRecord").value("com.jettra.model.PersonRecord").modifier(new Modifier().cssClass("form-input"))
+                        )
+                    ).modifier(new Modifier().style("display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px;")),
+                    Label.of("Record Components JSON (Fields & Values)").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600;")),
+                    TextArea.create().name("rec_payload").rows(4).value("{\n  \"id\": \"rec_01\",\n  \"fullName\": \"Alice Monroe\",\n  \"email\": \"alice@enterprise.org\",\n  \"active\": true,\n  \"salary\": 92500.00\n}")
+                        .modifier(new Modifier().cssClass("form-input").style("height: 90px; font-family: monospace; font-size: 12px;")),
+                    Button.of(Icon.of("fas fa-save"), Text.of(" Save Java Record"))
+                        .attribute("type", "submit")
+                        .modifier(new Modifier().cssClass("btn-action btn-primary").style("margin-top: 10px;"))
+                ).action(actionUrl).method("POST");
+
+                return Div.of(heading, desc, form);
+            }
+            default -> {
+                return Div.of();
             }
         }
-        return Paragraph.of(sb.toString());
     }
 
     private Widget buildEngineQuerySearchForm(String engineKey, String targetDb, String queryResultDisplay) {
-        StringBuilder sb = new StringBuilder();
         String actionUrl = JettraServer.resolvePath("/engines?engine=" + engineKey);
         String jsonDisplay = queryResultDisplay.isEmpty() ? "{\n  \"message\": \"Execute a query, lookup, or similarity search to view live results.\"\n}" : queryResultDisplay;
 
-        sb.append("<h3 style='margin: 0 0 10px 0; font-size: 16px; font-weight: 600;'><i class='fas fa-search' style='color:#a78bfa; margin-right:8px;'></i> Query & Search Inspector</h3>");
-        sb.append("<p style='font-size: 13px; color: #94a3b8; margin-bottom: 14px;'>Execute primary key lookups or specialized queries (e.g. Vector Cosine Search, Geo Haversine).</p>");
+        Widget heading = Header.of(3,
+            Icon.of("fas fa-search").modifier(new Modifier().style("color:#a78bfa; margin-right:8px;")),
+            Text.of("Query & Search Inspector")
+        ).modifier(new Modifier().style("margin: 0 0 10px 0; font-size: 16px; font-weight: 600;"));
+
+        Widget desc = Paragraph.of(
+            Text.of("Execute primary key lookups or specialized queries (e.g. Vector Cosine Search, Geo Haversine).")
+        ).modifier(new Modifier().style("font-size: 13px; color: #94a3b8; margin-bottom: 14px;"));
 
         // Standard ID Query Form
-        sb.append("<form method='POST' action='").append(actionUrl).append("' style='margin-bottom:12px;'>\n");
-        sb.append("  <input type='hidden' name='action' value='query_object' />\n");
-        sb.append("  <input type='hidden' name='target_db' value='").append(targetDb).append("' />\n");
-        sb.append("  <div style='display:flex; gap:8px;'>\n");
-        sb.append("    <input class='form-input' style='flex:1;' type='text' name='target_id' placeholder='Enter Object ID / Key' required />\n");
-        sb.append("    <button type='submit' class='btn-action btn-secondary'><i class='fas fa-bolt'></i> Fetch</button>\n");
-        sb.append("  </div>\n");
-        sb.append("</form>\n");
+        Widget idQueryForm = Form.of(
+            Hidden.of("action", "query_object"),
+            Hidden.of("target_db", targetDb),
+            Div.of(
+                TextField.of("target_id", "Enter Object ID / Key")
+                    .modifier(new Modifier().cssClass("form-input").style("flex:1;")),
+                Button.of(Icon.of("fas fa-bolt"), Text.of(" Fetch"))
+                    .attribute("type", "submit")
+                    .modifier(new Modifier().cssClass("btn-action btn-secondary"))
+            ).modifier(new Modifier().style("display:flex; gap:8px;"))
+        ).action(actionUrl).method("POST").modifier(new Modifier().style("margin-bottom:12px;"));
 
         // Specialized Search for VECTOR
+        Widget vectorSearchWidget = Div.of();
         if ("VECTOR".equalsIgnoreCase(engineKey)) {
-            sb.append("<div style='background:rgba(30,41,59,0.7); border:1px solid rgba(139,92,246,0.3); border-radius:8px; padding:10px; margin-bottom:12px;'>\n");
-            sb.append("  <div style='font-size:12px; font-weight:600; color:#c084fc; margin-bottom:6px;'><i class='fas fa-brain'></i> Top-K Cosine Similarity Search</div>\n");
-            sb.append("  <form method='POST' action='").append(actionUrl).append("'>\n");
-            sb.append("    <input type='hidden' name='action' value='search_vector' />\n");
-            sb.append("    <input type='hidden' name='target_db' value='").append(targetDb).append("' />\n");
-            sb.append("    <div style='display:grid; grid-template-columns: 2fr 1fr; gap:8px; margin-bottom:6px;'>\n");
-            sb.append("      <input class='form-input' style='font-size:12px;' type='text' name='query_vector' value='0.10, 0.44, 0.85, 0.30' placeholder='Query Vector float[]' required />\n");
-            sb.append("      <input class='form-input' style='font-size:12px;' type='number' name='top_k' value='5' min='1' max='50' />\n");
-            sb.append("    </div>\n");
-            sb.append("    <button type='submit' class='btn-action btn-primary' style='padding:4px 10px; font-size:12px;'><i class='fas fa-search'></i> Run ANN Cosine Search</button>\n");
-            sb.append("  </form>\n");
-            sb.append("</div>\n");
+            vectorSearchWidget = Div.of(
+                Div.of(
+                    Icon.of("fas fa-brain"),
+                    Text.of(" Top-K Cosine Similarity Search")
+                ).modifier(new Modifier().style("font-size:12px; font-weight:600; color:#c084fc; margin-bottom:6px;")),
+                Form.of(
+                    Hidden.of("action", "search_vector"),
+                    Hidden.of("target_db", targetDb),
+                    Div.of(
+                        TextField.of("query_vector", "Query Vector float[]").value("0.10, 0.44, 0.85, 0.30")
+                            .modifier(new Modifier().cssClass("form-input").style("font-size:12px;")),
+                        TextField.of("top_k", "5").value("5")
+                            .modifier(new Modifier().cssClass("form-input").style("font-size:12px;"))
+                    ).modifier(new Modifier().style("display:grid; grid-template-columns: 2fr 1fr; gap:8px; margin-bottom:6px;")),
+                    Button.of(Icon.of("fas fa-search"), Text.of(" Run ANN Cosine Search"))
+                        .attribute("type", "submit")
+                        .modifier(new Modifier().cssClass("btn-action btn-primary").style("padding:4px 10px; font-size:12px;"))
+                ).action(actionUrl).method("POST")
+            ).modifier(new Modifier().style("background:rgba(30,41,59,0.7); border:1px solid rgba(139,92,246,0.3); border-radius:8px; padding:10px; margin-bottom:12px;"));
         }
 
         // Specialized Tool for GEOSPATIAL
+        Widget geoCalcWidget = Div.of();
         if ("GEOSPATIAL".equalsIgnoreCase(engineKey)) {
-            sb.append("<div style='background:rgba(30,41,59,0.7); border:1px solid rgba(20,184,166,0.3); border-radius:8px; padding:10px; margin-bottom:12px;'>\n");
-            sb.append("  <div style='font-size:12px; font-weight:600; color:#2dd4bf; margin-bottom:6px;'><i class='fas fa-route'></i> Haversine Distance Calculator</div>\n");
-            sb.append("  <form method='POST' action='").append(actionUrl).append("'>\n");
-            sb.append("    <input type='hidden' name='action' value='calc_distance' />\n");
-            sb.append("    <input type='hidden' name='target_db' value='").append(targetDb).append("' />\n");
-            sb.append("    <div style='display:grid; grid-template-columns: 1fr 1fr; gap:6px; margin-bottom:6px;'>\n");
-            sb.append("      <input class='form-input' style='font-size:11px;' type='number' step='any' name='dist_lat1' value='8.9824' placeholder='Lat 1' />\n");
-            sb.append("      <input class='form-input' style='font-size:11px;' type='number' step='any' name='dist_lon1' value='-79.5199' placeholder='Lon 1' />\n");
-            sb.append("      <input class='form-input' style='font-size:11px;' type='number' step='any' name='dist_lat2' value='8.9745' placeholder='Lat 2' />\n");
-            sb.append("      <input class='form-input' style='font-size:11px;' type='number' step='any' name='dist_lon2' value='-79.5532' placeholder='Lon 2' />\n");
-            sb.append("    </div>\n");
-            sb.append("    <button type='submit' class='btn-action btn-secondary' style='padding:4px 10px; font-size:12px;'><i class='fas fa-calculator'></i> Calculate Distance (km)</button>\n");
-            sb.append("  </form>\n");
-            sb.append("</div>\n");
+            geoCalcWidget = Div.of(
+                Div.of(
+                    Icon.of("fas fa-route"),
+                    Text.of(" Haversine Distance Calculator")
+                ).modifier(new Modifier().style("font-size:12px; font-weight:600; color:#2dd4bf; margin-bottom:6px;")),
+                Form.of(
+                    Hidden.of("action", "calc_distance"),
+                    Hidden.of("target_db", targetDb),
+                    Div.of(
+                        TextField.of("dist_lat1", "Lat 1").value("8.9824").modifier(new Modifier().cssClass("form-input").style("font-size:11px;")),
+                        TextField.of("dist_lon1", "Lon 1").value("-79.5199").modifier(new Modifier().cssClass("form-input").style("font-size:11px;")),
+                        TextField.of("dist_lat2", "Lat 2").value("8.9745").modifier(new Modifier().cssClass("form-input").style("font-size:11px;")),
+                        TextField.of("dist_lon2", "Lon 2").value("-79.5532").modifier(new Modifier().cssClass("form-input").style("font-size:11px;"))
+                    ).modifier(new Modifier().style("display:grid; grid-template-columns: 1fr 1fr; gap:6px; margin-bottom:6px;")),
+                    Button.of(Icon.of("fas fa-calculator"), Text.of(" Calculate Distance (km)"))
+                        .attribute("type", "submit")
+                        .modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:4px 10px; font-size:12px;"))
+                ).action(actionUrl).method("POST")
+            ).modifier(new Modifier().style("background:rgba(30,41,59,0.7); border:1px solid rgba(20,184,166,0.3); border-radius:8px; padding:10px; margin-bottom:12px;"));
         }
 
         // Live Engine Result Display
-        sb.append("<div style='background: rgba(15,23,42,0.9); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 10px;'>\n");
-        sb.append("  <div style='font-size: 11px; font-weight: 600; color: #94a3b8; margin-bottom: 4px;'><i class='fas fa-terminal'></i> LIVE ENGINE RESULT</div>\n");
-        sb.append("  <pre style='margin:0; font-family: monospace; font-size: 12px; color: #38bdf8; max-height: 120px; overflow-y: auto;'>").append(jsonDisplay).append("</pre>\n");
-        sb.append("</div>\n");
+        Widget liveResultDisplay = Div.of(
+            Div.of(
+                Icon.of("fas fa-terminal"),
+                Text.of(" LIVE ENGINE RESULT")
+            ).modifier(new Modifier().style("font-size: 11px; font-weight: 600; color: #94a3b8; margin-bottom: 4px;")),
+            RawHtml.of("<pre style='margin:0; font-family: monospace; font-size: 12px; color: #38bdf8; max-height: 120px; overflow-y: auto;'>" + jsonDisplay + "</pre>")
+        ).modifier(new Modifier().style("background: rgba(15,23,42,0.9); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 10px;"));
 
-        return Paragraph.of(sb.toString());
+        return Div.of(
+            heading,
+            desc,
+            idQueryForm,
+            vectorSearchWidget,
+            geoCalcWidget,
+            liveResultDisplay
+        );
     }
 
     private Widget createLiveObjectsExplorer(String engineKey, String targetDb) {
-        StringBuilder sb = new StringBuilder();
         String actionUrl = JettraServer.resolvePath("/engines?engine=" + engineKey);
 
-        sb.append("<div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;'>\n");
-        sb.append("  <h3 style='margin:0; font-size:18px; font-weight:600;'><i class='fas fa-list' style='color:#38bdf8; margin-right:8px;'></i> Stored Objects in ").append(engineKey).append(" [").append(targetDb).append("]</h3>\n");
-        sb.append("  <a href='").append(actionUrl).append("&target_db=").append(targetDb).append("' class='btn-action btn-secondary' style='padding:4px 10px; font-size:12px;'><i class='fas fa-sync'></i> Refresh Objects</a>\n");
-        sb.append("</div>\n");
+        Widget explorerHeader = Row.of(
+            Header.of(3,
+                Icon.of("fas fa-list").modifier(new Modifier().style("color:#38bdf8; margin-right:8px;")),
+                Text.of("Stored Objects in " + engineKey + " [" + targetDb + "]")
+            ).modifier(new Modifier().style("margin:0; font-size:18px; font-weight:600;")),
+            Link.of(actionUrl + "&target_db=" + targetDb,
+                Icon.of("fas fa-sync"),
+                Text.of(" Refresh Objects")
+            ).modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:4px 10px; font-size:12px;"))
+        ).modifier(new Modifier().style("justify-content:space-between; align-items:center; margin-bottom:14px;"));
 
-        sb.append("<div class='table-responsive'>\n");
-        sb.append("  <table class='jettra-table'>\n");
-        sb.append("    <thead>\n");
-        sb.append("      <tr>\n");
-        sb.append("        <th>Object ID / Key</th>\n");
-        sb.append("        <th>Type & Specific Representation</th>\n");
-        sb.append("        <th>Storage Preview</th>\n");
-        sb.append("        <th>Actions</th>\n");
-        sb.append("      </tr>\n");
-        sb.append("    </thead>\n");
-        sb.append("    <tbody>\n");
+        List<Widget> tableHeaders = List.of(
+            Text.of("Object ID / Key"),
+            Text.of("Type & Specific Representation"),
+            Text.of("Storage Preview"),
+            Text.of("Actions")
+        );
 
-        int count = 0;
+        List<List<Widget>> tableRows = new ArrayList<>();
+
         switch (engineKey) {
             case "DOCUMENT" -> {
                 DocumentEngine de = (DocumentEngine) engine.getEngine("DOCUMENT");
                 if (de != null) {
                     Map<String, JsonObject> items = de.list(targetDb);
                     for (Map.Entry<String, JsonObject> entry : items.entrySet()) {
-                        count++;
                         String id = entry.getKey();
                         String preview = entry.getValue() != null ? entry.getValue().toString() : "{}";
                         if (preview.length() > 65) preview = preview.substring(0, 65) + "...";
-                        sb.append("<tr>");
-                        sb.append("<td><b>").append(id).append("</b></td>");
-                        sb.append("<td><span class='store-badge badge-active'>DOCUMENT (JSON)</span></td>");
-                        sb.append("<td><code style='font-size:11px;'>").append(preview).append("</code></td>");
-                        sb.append("<td>").append(buildDeleteButton(actionUrl, targetDb, id)).append("</td>");
-                        sb.append("</tr>");
+                        tableRows.add(List.of(
+                            Span.of(id).modifier(new Modifier().style("font-weight:bold;")),
+                            Span.of("DOCUMENT (JSON)").modifier(new Modifier().cssClass("store-badge badge-active")),
+                            RawHtml.of("<code style='font-size:11px;'>" + preview + "</code>"),
+                            buildDeleteButtonWidget(actionUrl, targetDb, id)
+                        ));
                     }
                 }
             }
@@ -810,16 +1064,15 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 if (ke != null) {
                     Map<String, String> items = ke.list(targetDb);
                     for (Map.Entry<String, String> entry : items.entrySet()) {
-                        count++;
                         String id = entry.getKey();
                         String val = entry.getValue();
                         if (val.length() > 65) val = val.substring(0, 65) + "...";
-                        sb.append("<tr>");
-                        sb.append("<td><b>").append(id).append("</b></td>");
-                        sb.append("<td><span class='store-badge badge-engine'>KEY-VALUE STRING</span></td>");
-                        sb.append("<td><code style='font-size:11px;'>").append(val).append("</code></td>");
-                        sb.append("<td>").append(buildDeleteButton(actionUrl, targetDb, id)).append("</td>");
-                        sb.append("</tr>");
+                        tableRows.add(List.of(
+                            Span.of(id).modifier(new Modifier().style("font-weight:bold;")),
+                            Span.of("KEY-VALUE STRING").modifier(new Modifier().cssClass("store-badge badge-engine")),
+                            RawHtml.of("<code style='font-size:11px;'>" + val + "</code>"),
+                            buildDeleteButtonWidget(actionUrl, targetDb, id)
+                        ));
                     }
                 }
             }
@@ -828,16 +1081,15 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 if (ve != null) {
                     Map<String, JsonObject> items = ve.list(targetDb);
                     for (Map.Entry<String, JsonObject> entry : items.entrySet()) {
-                        count++;
                         String id = entry.getKey();
                         String preview = entry.getValue() != null ? entry.getValue().toString() : "{}";
                         if (preview.length() > 65) preview = preview.substring(0, 65) + "...";
-                        sb.append("<tr>");
-                        sb.append("<td><b>").append(id).append("</b></td>");
-                        sb.append("<td><span class='store-badge' style='background:rgba(139,92,246,0.2); color:#c084fc;'>VECTOR (float[])</span></td>");
-                        sb.append("<td><code style='font-size:11px;'>").append(preview).append("</code></td>");
-                        sb.append("<td>").append(buildDeleteButton(actionUrl, targetDb, id)).append("</td>");
-                        sb.append("</tr>");
+                        tableRows.add(List.of(
+                            Span.of(id).modifier(new Modifier().style("font-weight:bold;")),
+                            Span.of("VECTOR (float[])").modifier(new Modifier().cssClass("store-badge").style("background:rgba(139,92,246,0.2); color:#c084fc;")),
+                            RawHtml.of("<code style='font-size:11px;'>" + preview + "</code>"),
+                            buildDeleteButtonWidget(actionUrl, targetDb, id)
+                        ));
                     }
                 }
             }
@@ -846,16 +1098,15 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 if (ge != null) {
                     Map<String, JsonObject> nodes = ge.listNodes(targetDb);
                     for (Map.Entry<String, JsonObject> entry : nodes.entrySet()) {
-                        count++;
                         String id = entry.getKey();
                         String preview = entry.getValue() != null ? entry.getValue().toString() : "{}";
                         if (preview.length() > 65) preview = preview.substring(0, 65) + "...";
-                        sb.append("<tr>");
-                        sb.append("<td><b>").append(id).append("</b></td>");
-                        sb.append("<td><span class='store-badge' style='background:rgba(236,72,153,0.2); color:#f472b6;'>VERTEX (Node)</span></td>");
-                        sb.append("<td><code style='font-size:11px;'>").append(preview).append("</code></td>");
-                        sb.append("<td>").append(buildDeleteButton(actionUrl, targetDb, id)).append("</td>");
-                        sb.append("</tr>");
+                        tableRows.add(List.of(
+                            Span.of(id).modifier(new Modifier().style("font-weight:bold;")),
+                            Span.of("VERTEX (Node)").modifier(new Modifier().cssClass("store-badge").style("background:rgba(236,72,153,0.2); color:#f472b6;")),
+                            RawHtml.of("<code style='font-size:11px;'>" + preview + "</code>"),
+                            buildDeleteButtonWidget(actionUrl, targetDb, id)
+                        ));
                     }
                 }
             }
@@ -864,15 +1115,14 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 if (te != null) {
                     Map<String, JsonObject> points = te.list(targetDb);
                     for (Map.Entry<String, JsonObject> entry : points.entrySet()) {
-                        count++;
                         String ts = entry.getKey();
                         String preview = entry.getValue() != null ? entry.getValue().toString() : "{}";
-                        sb.append("<tr>");
-                        sb.append("<td><b>TS: ").append(ts).append("</b></td>");
-                        sb.append("<td><span class='store-badge' style='background:rgba(6,182,212,0.2); color:#22d3ee;'>TIME-SERIES POINT</span></td>");
-                        sb.append("<td><code style='font-size:11px;'>").append(preview).append("</code></td>");
-                        sb.append("<td>").append(buildDeleteButton(actionUrl, targetDb, ts)).append("</td>");
-                        sb.append("</tr>");
+                        tableRows.add(List.of(
+                            Span.of("TS: " + ts).modifier(new Modifier().style("font-weight:bold;")),
+                            Span.of("TIME-SERIES POINT").modifier(new Modifier().cssClass("store-badge").style("background:rgba(6,182,212,0.2); color:#22d3ee;")),
+                            RawHtml.of("<code style='font-size:11px;'>" + preview + "</code>"),
+                            buildDeleteButtonWidget(actionUrl, targetDb, ts)
+                        ));
                     }
                 }
             }
@@ -881,16 +1131,15 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 if (ce != null) {
                     Map<String, JsonObject> rows = ce.list(targetDb);
                     for (Map.Entry<String, JsonObject> entry : rows.entrySet()) {
-                        count++;
                         String id = entry.getKey();
                         String preview = entry.getValue() != null ? entry.getValue().toString() : "{}";
                         if (preview.length() > 65) preview = preview.substring(0, 65) + "...";
-                        sb.append("<tr>");
-                        sb.append("<td><b>").append(id).append("</b></td>");
-                        sb.append("<td><span class='store-badge' style='background:rgba(249,115,22,0.2); color:#fb923c;'>COLUMNAR ROW</span></td>");
-                        sb.append("<td><code style='font-size:11px;'>").append(preview).append("</code></td>");
-                        sb.append("<td>").append(buildDeleteButton(actionUrl, targetDb, id)).append("</td>");
-                        sb.append("</tr>");
+                        tableRows.add(List.of(
+                            Span.of(id).modifier(new Modifier().style("font-weight:bold;")),
+                            Span.of("COLUMNAR ROW").modifier(new Modifier().cssClass("store-badge").style("background:rgba(249,115,22,0.2); color:#fb923c;")),
+                            RawHtml.of("<code style='font-size:11px;'>" + preview + "</code>"),
+                            buildDeleteButtonWidget(actionUrl, targetDb, id)
+                        ));
                     }
                 }
             }
@@ -899,16 +1148,15 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 if (ge != null) {
                     Map<String, JsonObject> locs = ge.list(targetDb);
                     for (Map.Entry<String, JsonObject> entry : locs.entrySet()) {
-                        count++;
                         String id = entry.getKey();
                         String preview = entry.getValue() != null ? entry.getValue().toString() : "{}";
                         if (preview.length() > 65) preview = preview.substring(0, 65) + "...";
-                        sb.append("<tr>");
-                        sb.append("<td><b>").append(id).append("</b></td>");
-                        sb.append("<td><span class='store-badge' style='background:rgba(20,184,166,0.2); color:#2dd4bf;'>GIS 2D POINT</span></td>");
-                        sb.append("<td><code style='font-size:11px;'>").append(preview).append("</code></td>");
-                        sb.append("<td>").append(buildDeleteButton(actionUrl, targetDb, id)).append("</td>");
-                        sb.append("</tr>");
+                        tableRows.add(List.of(
+                            Span.of(id).modifier(new Modifier().style("font-weight:bold;")),
+                            Span.of("GIS 2D POINT").modifier(new Modifier().cssClass("store-badge").style("background:rgba(20,184,166,0.2); color:#2dd4bf;")),
+                            RawHtml.of("<code style='font-size:11px;'>" + preview + "</code>"),
+                            buildDeleteButtonWidget(actionUrl, targetDb, id)
+                        ));
                     }
                 }
             }
@@ -917,16 +1165,15 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 if (oe != null) {
                     Map<String, JsonObject> objs = oe.list(targetDb);
                     for (Map.Entry<String, JsonObject> entry : objs.entrySet()) {
-                        count++;
                         String id = entry.getKey();
                         String preview = entry.getValue() != null ? entry.getValue().toString() : "{}";
                         if (preview.length() > 65) preview = preview.substring(0, 65) + "...";
-                        sb.append("<tr>");
-                        sb.append("<td><b>").append(id).append("</b></td>");
-                        sb.append("<td><span class='store-badge' style='background:rgba(168,85,247,0.2); color:#c084fc;'>OBJECT BLOB</span></td>");
-                        sb.append("<td><code style='font-size:11px;'>").append(preview).append("</code></td>");
-                        sb.append("<td>").append(buildDeleteButton(actionUrl, targetDb, id)).append("</td>");
-                        sb.append("</tr>");
+                        tableRows.add(List.of(
+                            Span.of(id).modifier(new Modifier().style("font-weight:bold;")),
+                            Span.of("OBJECT BLOB").modifier(new Modifier().cssClass("store-badge").style("background:rgba(168,85,247,0.2); color:#c084fc;")),
+                            RawHtml.of("<code style='font-size:11px;'>" + preview + "</code>"),
+                            buildDeleteButtonWidget(actionUrl, targetDb, id)
+                        ));
                     }
                 }
             }
@@ -935,71 +1182,103 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 if (re != null) {
                     Map<String, JsonObject> recs = re.list(targetDb);
                     for (Map.Entry<String, JsonObject> entry : recs.entrySet()) {
-                        count++;
                         String id = entry.getKey();
                         String preview = entry.getValue() != null ? entry.getValue().toString() : "{}";
                         if (preview.length() > 65) preview = preview.substring(0, 65) + "...";
-                        sb.append("<tr>");
-                        sb.append("<td><b>").append(id).append("</b></td>");
-                        sb.append("<td><span class='store-badge' style='background:rgba(244,63,94,0.2); color:#fb7185;'>RECORD (Java 25)</span></td>");
-                        sb.append("<td><code style='font-size:11px;'>").append(preview).append("</code></td>");
-                        sb.append("<td>").append(buildDeleteButton(actionUrl, targetDb, id)).append("</td>");
-                        sb.append("</tr>");
+                        tableRows.add(List.of(
+                            Span.of(id).modifier(new Modifier().style("font-weight:bold;")),
+                            Span.of("RECORD (Java 25)").modifier(new Modifier().cssClass("store-badge").style("background:rgba(244,63,94,0.2); color:#fb7185;")),
+                            RawHtml.of("<code style='font-size:11px;'>" + preview + "</code>"),
+                            buildDeleteButtonWidget(actionUrl, targetDb, id)
+                        ));
                     }
                 }
             }
         }
 
-        if (count == 0) {
-            sb.append("<tr><td colspan='4' style='text-align:center; color:#94a3b8; padding:20px;'>No objects currently stored in ").append(engineKey).append(" [").append(targetDb).append("]. Use the form above to add objects.</td></tr>");
+        if (tableRows.isEmpty()) {
+            tableRows.add(List.of(
+                Span.of("No objects currently stored in " + engineKey + " [" + targetDb + "]. Use the form above to add objects.")
+                    .modifier(new Modifier().style("color:#94a3b8; text-align:center;")),
+                Span.of(""),
+                Span.of(""),
+                Span.of("")
+            ));
         }
 
-        sb.append("    </tbody>\n");
-        sb.append("  </table>\n");
-        sb.append("</div>\n");
+        Datatable datatable = Datatable.ofWidgets(tableHeaders, tableRows);
+        datatable.modifier(new Modifier().cssClass("jettra-table"));
 
-        return Div.of(Paragraph.of(sb.toString())).modifier(new io.jettra.flux.core.Modifier().cssClass("store-card").style("margin-bottom:24px;"));
+        Widget tableResponsive = Div.of(datatable).modifier(new Modifier().cssClass("table-responsive"));
+
+        return Div.of(explorerHeader, tableResponsive)
+            .modifier(new Modifier().cssClass("store-card").style("margin-bottom:24px;"));
     }
 
-    private String buildDeleteButton(String actionUrl, String db, String id) {
-        return "<form method='POST' action='" + actionUrl + "' style='display:inline; margin:0;'>\n" +
-               "  <input type='hidden' name='action' value='delete_object' />\n" +
-               "  <input type='hidden' name='target_db' value='" + db + "' />\n" +
-               "  <input type='hidden' name='target_id' value='" + id + "' />\n" +
-               "  <button type='submit' class='btn-action btn-secondary' style='color:#ef4444; padding:3px 8px; font-size:11px;' onclick='return confirm(\"Are you sure you want to delete object " + id + "?\");'><i class='fas fa-trash'></i> Delete</button>\n" +
-               "</form>";
+    private Widget buildDeleteButtonWidget(String actionUrl, String db, String id) {
+        Button delBtn = Button.of(
+            Icon.of("fas fa-trash"),
+            Text.of(" Delete")
+        );
+        delBtn.attribute("type", "submit");
+        delBtn.attribute("onclick", "return confirm(\"Are you sure you want to delete object " + id + "?\");");
+        delBtn.modifier(new Modifier().cssClass("btn-action btn-secondary").style("color:#ef4444; padding:3px 8px; font-size:11px;"));
+
+        return Form.of(
+            Hidden.of("action", "delete_object"),
+            Hidden.of("target_db", db),
+            Hidden.of("target_id", id),
+            delBtn
+        ).action(actionUrl).method("POST").modifier(new Modifier().style("display:inline; margin:0;"));
     }
 
     private Widget createEngineMatrixTable() {
-        return Div.of(
-            Paragraph.of("<h3 style='margin: 0 0 16px 0; font-size: 18px; font-weight: 600;'><i class='fas fa-table' style='color:#38bdf8; margin-right:8px;'></i> All 9 Supported Multi-Model Engines</h3>"),
-            Paragraph.of(
-                "<div class='table-responsive'>\n" +
-                "  <table class='jettra-table'>\n" +
-                "    <thead>\n" +
-                "      <tr>\n" +
-                "        <th>Engine Name</th>\n" +
-                "        <th>Primary Use Case</th>\n" +
-                "        <th>Storage Schema</th>\n" +
-                "        <th>Replication</th>\n" +
-                "        <th>REST API Route</th>\n" +
-                "        <th>Status</th>\n" +
-                "      </tr>\n" +
-                "    </thead>\n" +
-                "    <tbody>\n" +
-                "      <tr><td><i class='fas fa-file-alt' style='color:#3b82f6; margin-right:6px;'></i> <b>DOCUMENT</b></td><td>Hierarchical JSON / NoSQL documents</td><td>B-Tree / LSM Hybrid</td><td>Raft Sync</td><td><code>/api/document/{coll}/{id}</code></td><td><span class='store-badge badge-active'>ACTIVE</span></td></tr>\n" +
-                "      <tr><td><i class='fas fa-key' style='color:#10b981; margin-right:6px;'></i> <b>KEYVALUE</b></td><td>Session Cache, Distributed Key-Value</td><td>LSM MemTable + SSTable</td><td>Raft Sync</td><td><code>/api/model/keyvalue/*</code></td><td><span class='store-badge badge-active'>ACTIVE</span></td></tr>\n" +
-                "      <tr><td><i class='fas fa-project-diagram' style='color:#8b5cf6; margin-right:6px;'></i> <b>VECTOR</b></td><td>AI Embeddings, Cosine Similarity, ANN</td><td>Vector Index (float[])</td><td>Raft Sync</td><td><code>/api/model/vector/*</code></td><td><span class='store-badge badge-active'>ACTIVE</span></td></tr>\n" +
-                "      <tr><td><i class='fas fa-share-alt' style='color:#ec4899; margin-right:6px;'></i> <b>GRAPH</b></td><td>Knowledge Graphs, Social Networks, Traversal</td><td>Adjacency List + B-Tree</td><td>Raft Sync</td><td><code>/api/model/graph/*</code></td><td><span class='store-badge badge-active'>ACTIVE</span></td></tr>\n" +
-                "      <tr><td><i class='fas fa-chart-line' style='color:#06b6d4; margin-right:6px;'></i> <b>TIMESERIES</b></td><td>IoT Telemetry, Metrics, Server Logs</td><td>Append-only Chunked WAL</td><td>Raft Sync</td><td><code>/api/model/timeseries/*</code></td><td><span class='store-badge badge-active'>ACTIVE</span></td></tr>\n" +
-                "      <tr><td><i class='fas fa-table' style='color:#f97316; margin-right:6px;'></i> <b>COLUMN</b></td><td>OLAP Big Data Aggregations</td><td>Column Vectors & Run-Length</td><td>Raft Sync</td><td><code>/api/model/column/*</code></td><td><span class='store-badge badge-active'>ACTIVE</span></td></tr>\n" +
-                "      <tr><td><i class='fas fa-globe-americas' style='color:#14b8a6; margin-right:6px;'></i> <b>GEOSPATIAL</b></td><td>Spatial Coordinates, Radius, GIS</td><td>Geohash / QuadTree</td><td>Raft Sync</td><td><code>/api/model/geospatial/*</code></td><td><span class='store-badge badge-active'>ACTIVE</span></td></tr>\n" +
-                "      <tr><td><i class='fas fa-archive' style='color:#a855f7; margin-right:6px;'></i> <b>OBJECT</b></td><td>Binary BLOBs, Serialized Stream Files</td><td>Chunked Block Store</td><td>Raft Sync</td><td><code>/api/model/object/*</code></td><td><span class='store-badge badge-active'>ACTIVE</span></td></tr>\n" +
-                "      <tr><td><i class='fas fa-id-card' style='color:#f43f5e; margin-right:6px;'></i> <b>RECORDS</b></td><td>Immutable Java 25 Records, Component Validation</td><td>Compact Object Headers (rec:)</td><td>Raft Sync</td><td><code>/api/model/records/*</code></td><td><span class='store-badge badge-active'>ACTIVE</span></td></tr>\n" +
-                "    </tbody>\n" +
-                "  </table>\n" +
-                "</div>"
-            )
-        ).modifier(new io.jettra.flux.core.Modifier().cssClass("store-card"));
+        Widget header = Header.of(3,
+            Icon.of("fas fa-table").modifier(new Modifier().style("color:#38bdf8; margin-right:8px;")),
+            Text.of("All 9 Supported Multi-Model Engines")
+        ).modifier(new Modifier().style("margin: 0 0 16px 0; font-size: 18px; font-weight: 600;"));
+
+        List<Widget> headers = List.of(
+            Text.of("Engine Name"),
+            Text.of("Primary Use Case"),
+            Text.of("Storage Schema"),
+            Text.of("Replication"),
+            Text.of("REST API Route"),
+            Text.of("Status")
+        );
+
+        String[][] matrixData = {
+            {"fas fa-file-alt", "#3b82f6", "DOCUMENT", "Hierarchical JSON / NoSQL documents", "B-Tree / LSM Hybrid", "Raft Sync", "/api/document/{coll}/{id}", "ACTIVE"},
+            {"fas fa-key", "#10b981", "KEYVALUE", "Session Cache, Distributed Key-Value", "LSM MemTable + SSTable", "Raft Sync", "/api/model/keyvalue/*", "ACTIVE"},
+            {"fas fa-project-diagram", "#8b5cf6", "VECTOR", "AI Embeddings, Cosine Similarity, ANN", "Vector Index (float[])", "Raft Sync", "/api/model/vector/*", "ACTIVE"},
+            {"fas fa-share-alt", "#ec4899", "GRAPH", "Knowledge Graphs, Social Networks, Traversal", "Adjacency List + B-Tree", "Raft Sync", "/api/model/graph/*", "ACTIVE"},
+            {"fas fa-chart-line", "#06b6d4", "TIMESERIES", "IoT Telemetry, Metrics, Server Logs", "Append-only Chunked WAL", "Raft Sync", "/api/model/timeseries/*", "ACTIVE"},
+            {"fas fa-table", "#f97316", "COLUMN", "OLAP Big Data Aggregations", "Column Vectors & Run-Length", "Raft Sync", "/api/model/column/*", "ACTIVE"},
+            {"fas fa-globe-americas", "#14b8a6", "GEOSPATIAL", "Spatial Coordinates, Radius, GIS", "Geohash / QuadTree", "Raft Sync", "/api/model/geospatial/*", "ACTIVE"},
+            {"fas fa-archive", "#a855f7", "OBJECT", "Binary BLOBs, Serialized Stream Files", "Chunked Block Store", "Raft Sync", "/api/model/object/*", "ACTIVE"},
+            {"fas fa-id-card", "#f43f5e", "RECORDS", "Immutable Java 25 Records, Component Validation", "Compact Object Headers (rec:)", "Raft Sync", "/api/model/records/*", "ACTIVE"}
+        };
+
+        List<List<Widget>> rows = new ArrayList<>();
+        for (String[] rowData : matrixData) {
+            Widget nameCell = Div.of(
+                Icon.of(rowData[0]).modifier(new Modifier().style("color:" + rowData[1] + "; margin-right:6px;")),
+                Span.of(rowData[2]).modifier(new Modifier().style("font-weight:bold;"))
+            );
+            Widget useCaseCell = Text.of(rowData[3]);
+            Widget schemaCell = Text.of(rowData[4]);
+            Widget replCell = Text.of(rowData[5]);
+            Widget routeCell = RawHtml.of("<code>" + rowData[6] + "</code>");
+            Widget statusCell = Span.of(rowData[7]).modifier(new Modifier().cssClass("store-badge badge-active"));
+
+            rows.add(List.of(nameCell, useCaseCell, schemaCell, replCell, routeCell, statusCell));
+        }
+
+        Datatable datatable = Datatable.ofWidgets(headers, rows);
+        datatable.modifier(new Modifier().cssClass("jettra-table"));
+
+        Widget tableResponsive = Div.of(datatable).modifier(new Modifier().cssClass("table-responsive"));
+
+        return Div.of(header, tableResponsive).modifier(new Modifier().cssClass("store-card"));
     }
 }
