@@ -14,9 +14,11 @@ import io.jettra.server.JettraServer;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
 
 /**
@@ -1235,6 +1237,59 @@ public class StoreEnginesPage extends StoreTemplatePage {
         ).modifier(new Modifier().cssClass("store-card").style("margin-bottom: 24px; padding: 16px 20px;"));
     }
 
+    private Map<String, List<String>> discoverUnitsAndItems(String engineKey, String dbName) {
+        Map<String, List<String>> unitMap = new TreeMap<>();
+        String prefix = getPrefixForEngine(engineKey) + dbName + ":";
+        Map<String, byte[]> keys = engine.getStorageCore().scanPrefix(prefix);
+        
+        for (Map.Entry<String, byte[]> e : keys.entrySet()) {
+            String k = e.getKey();
+            if (!k.contains("@")) {
+                String rest = k.substring(prefix.length());
+                int idx = rest.indexOf(':');
+                if (idx > 0) {
+                    String unit = rest.substring(0, idx);
+                    String itemId = rest.substring(idx + 1);
+                    if (!itemId.isBlank() && !itemId.equals("init_01")) {
+                        unitMap.computeIfAbsent(unit, u -> new ArrayList<>()).add(itemId);
+                    } else if (itemId.equals("init_01")) {
+                        unitMap.computeIfAbsent(unit, u -> new ArrayList<>());
+                    }
+                } else if (!rest.isBlank() && !rest.equals("init_01")) {
+                    unitMap.computeIfAbsent("default", u -> new ArrayList<>()).add(rest);
+                }
+            }
+        }
+
+        if ("DOCUMENT".equalsIgnoreCase(engineKey)) {
+            String docPrefix = dbName + ":";
+            Map<String, byte[]> docKeys = engine.getStorageCore().scanPrefix(docPrefix);
+            for (Map.Entry<String, byte[]> e : docKeys.entrySet()) {
+                String k = e.getKey();
+                if (!k.contains("@")) {
+                    String rest = k.substring(docPrefix.length());
+                    int idx = rest.indexOf(':');
+                    if (idx > 0) {
+                        String unit = rest.substring(0, idx);
+                        String itemId = rest.substring(idx + 1);
+                        if (!itemId.isBlank() && !itemId.equals("init_01")) {
+                            List<String> list = unitMap.computeIfAbsent(unit, u -> new ArrayList<>());
+                            if (!list.contains(itemId)) list.add(itemId);
+                        }
+                    } else if (!rest.isBlank() && !rest.equals("init_01")) {
+                        List<String> list = unitMap.computeIfAbsent("default", u -> new ArrayList<>());
+                        if (!list.contains(rest)) list.add(rest);
+                    }
+                }
+            }
+        }
+
+        if (unitMap.isEmpty()) {
+            unitMap.put("default", new ArrayList<>());
+        }
+        return unitMap;
+    }
+
     private Widget createHierarchyTreeCard(String selectedEngine, String targetDb, String currentColl) {
         String actionUrl = JettraServer.resolvePath("/engines?engine=");
         Set<String> allDbs = discoverAllDatabases();
@@ -1258,118 +1313,117 @@ public class StoreEnginesPage extends StoreTemplatePage {
         ).modifier(new Modifier().style("justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;"));
 
         StringBuilder sb = new StringBuilder();
-        sb.append("<div class='espresso-tree' style='font-family:monospace; font-size:13px; color:#f8fafc; background:rgba(15,23,42,0.6); padding:16px 20px; border-radius:10px; border:1px solid rgba(255,255,255,0.06); max-height:460px; overflow-y:auto;'>\n");
+        sb.append("<div class='espresso-tree' style='font-family:monospace; font-size:13px; color:#f8fafc; background:rgba(15,23,42,0.6); padding:16px 20px; border-radius:10px; border:1px solid rgba(255,255,255,0.06); max-height:550px; overflow-y:auto;'>\n");
+
+        String[][] allEngSpecs = {
+            {"DOCUMENT", "#3b82f6", "fas fa-file-alt", "Collections", "Collection", "Document", "fas fa-file-code"},
+            {"KEYVALUE", "#10b981", "fas fa-key", "Namespaces / Buckets", "Bucket", "Key-Value Pair", "fas fa-cube"},
+            {"VECTOR", "#8b5cf6", "fas fa-project-diagram", "Vector Indexes", "Vector Index", "Vector Embedding", "fas fa-braille"},
+            {"GRAPH", "#ec4899", "fas fa-share-alt", "Node & Edge Labels", "Label", "Vertex / Edge", "fas fa-circle-nodes"},
+            {"TIMESERIES", "#06b6d4", "fas fa-chart-line", "Metrics / Telemetry", "Metric", "Time Point", "fas fa-stopwatch"},
+            {"COLUMN", "#f97316", "fas fa-table", "Column Families", "Column Family", "Dynamic Row", "fas fa-bars-staggered"},
+            {"GEOSPATIAL", "#14b8a6", "fas fa-globe-americas", "Spatial Layers", "Spatial Layer", "GIS Feature", "fas fa-location-dot"},
+            {"OBJECT", "#a855f7", "fas fa-archive", "Storage Buckets", "Storage Bucket", "BLOB Object", "fas fa-box-archive"},
+            {"RECORDS", "#f43f5e", "fas fa-id-card", "Record Tables", "Record Table", "Immutable Record", "fas fa-address-card"}
+        };
 
         for (String db : allDbs) {
             boolean isActiveDb = db.equalsIgnoreCase(targetDb);
             String dbBadge = isActiveDb ? "<span class='store-badge badge-active' style='font-size:10px; margin-left:6px;'>ACTIVE (CURRENT)</span>" : "<span class='store-badge' style='font-size:10px; margin-left:6px; background:rgba(255,255,255,0.08);'>DATABASE</span>";
 
-            sb.append("  <div style='margin-bottom:12px; padding:6px 10px; border-radius:6px; background:").append(isActiveDb ? "rgba(56,189,248,0.08)" : "transparent").append(";'>\n");
+            sb.append("  <div style='margin-bottom:14px; padding:8px 12px; border-radius:8px; background:").append(isActiveDb ? "rgba(56,189,248,0.06)" : "transparent").append("; border:").append(isActiveDb ? "1px solid rgba(56,189,248,0.2)" : "1px solid transparent").append(";'>\n");
             sb.append("    <div style='display:flex; justify-content:space-between; align-items:center;'>\n");
-            sb.append("      <span style='color:").append(isActiveDb ? "#38bdf8" : "#cbd5e1").append("; font-weight:700;'><i class='fas fa-database' style='margin-right:6px; color:#38bdf8;'></i> [Level 1: Database Container] ").append(db).append("</span>\n");
+            sb.append("      <span style='color:").append(isActiveDb ? "#38bdf8" : "#cbd5e1").append("; font-weight:700; font-size:14px;'><i class='fas fa-database' style='margin-right:6px; color:#38bdf8;'></i> [Level 1: Database Container] ").append(db).append("</span>\n");
             sb.append("      <div>").append(dbBadge);
             if (!isActiveDb) {
-                sb.append("        <a href='").append(actionUrl).append(selectedEngine).append("&target_db=").append(db).append("' style='color:#38bdf8; font-size:11px; margin-left:8px; text-decoration:none;'>[Explore DB]</a>\n");
+                sb.append("        <a href='").append(actionUrl).append(selectedEngine).append("&target_db=").append(db).append("' style='color:#38bdf8; font-size:11px; margin-left:8px; text-decoration:none; font-weight:600;'>[Explore DB]</a>\n");
             }
             sb.append("      </div>\n");
             sb.append("    </div>\n");
 
             if (isActiveDb) {
-                sb.append("    <div style='margin-left:20px; border-left: 2px dashed rgba(56,189,248,0.3); padding-left:14px; margin-top:8px;'>\n");
+                sb.append("    <div style='margin-left:22px; border-left: 2px dashed rgba(56,189,248,0.3); padding-left:16px; margin-top:10px;'>\n");
 
-                // 1. DOCUMENT Subtree
-                boolean isDocActive = "DOCUMENT".equalsIgnoreCase(selectedEngine);
-                sb.append("      <div style='margin-bottom:10px;'>\n");
-                sb.append("        <div style='display:flex; justify-content:space-between; align-items:center;'>\n");
-                sb.append("          <a href='").append(actionUrl).append("DOCUMENT&target_db=").append(db).append("' style='text-decoration:none; color:").append(isDocActive ? "#38bdf8; font-weight:bold;" : "#94a3b8;").append(";'>\n");
-                sb.append("            <i class='fas fa-file-alt' style='color:#3b82f6; margin-right:6px;'></i> <strong>DOCUMENT SUBTREE</strong> → <span style='color:#cbd5e1;'>Collections</span>\n");
-                sb.append("          </a>\n");
-                sb.append("          <button onclick=\"openAddUnitModal('DOCUMENT', 'Collection')\" style='background:none; border:1px solid rgba(59,130,246,0.3); color:#38bdf8; font-size:10px; padding:2px 6px; border-radius:4px; cursor:pointer;'>+ Collection</button>\n");
-                sb.append("        </div>\n");
+                for (String[] spec : allEngSpecs) {
+                    String engName = spec[0];
+                    String engColor = spec[1];
+                    String engIcon = spec[2];
+                    String unitPlural = spec[3];
+                    String unitSingle = spec[4];
+                    String itemLabel = spec[5];
+                    String itemIcon = spec[6];
+                    boolean isEngActive = engName.equalsIgnoreCase(selectedEngine);
 
-                // Discover document collections in this DB
-                Set<String> docColls = new TreeSet<>();
-                docColls.add("default");
-                String docPfx = db + ":";
-                Map<String, byte[]> docKeys = engine.getStorageCore().scanPrefix(docPfx);
-                for (String k : docKeys.keySet()) {
-                    String rest = k.substring(docPfx.length());
-                    int cIdx = rest.indexOf(':');
-                    if (cIdx > 0) docColls.add(rest.substring(0, cIdx));
-                }
-                for (String dc : docColls) {
-                    boolean isCurrColl = isDocActive && dc.equalsIgnoreCase(currentColl);
-                    sb.append("        <div style='margin-left:20px; margin-top:4px; font-size:12px; color:").append(isCurrColl ? "#38bdf8" : "#94a3b8").append(";'>\n");
-                    sb.append("          📁 [Level 2: Unit / Collection] <a href='").append(actionUrl).append("DOCUMENT&target_db=").append(db).append("&coll=").append(dc).append("' style='color:inherit; font-weight:600;'>").append(dc).append("</a>\n");
-                    sb.append("          <button onclick=\"openAddObjectModal('DOCUMENT', '").append(dc).append("')\" style='background:none; border:none; color:#38bdf8; font-size:10px; cursor:pointer; margin-left:6px;'>[+ Document]</button>\n");
-                    sb.append("          <div style='margin-left:20px; font-size:11px; color:#64748b;'>\n");
-                    sb.append("            └── <i class='fas fa-file-code' style='color:#38bdf8;'></i> [Level 3: StorageItem] JSON Documents (Auto-versioned v1..vN)\n");
-                    sb.append("          </div>\n");
-                    sb.append("        </div>\n");
-                }
-                sb.append("      </div>\n");
+                    Map<String, List<String>> unitsAndItems = discoverUnitsAndItems(engName, db);
+                    int totalItems = unitsAndItems.values().stream().mapToInt(List::size).sum();
 
-                // 2. KEYVALUE Subtree
-                boolean isKvActive = "KEYVALUE".equalsIgnoreCase(selectedEngine);
-                sb.append("      <div style='margin-bottom:10px;'>\n");
-                sb.append("        <div style='display:flex; justify-content:space-between; align-items:center;'>\n");
-                sb.append("          <a href='").append(actionUrl).append("KEYVALUE&target_db=").append(db).append("' style='text-decoration:none; color:").append(isKvActive ? "#38bdf8; font-weight:bold;" : "#94a3b8;").append(";'>\n");
-                sb.append("            <i class='fas fa-key' style='color:#10b981; margin-right:6px;'></i> <strong>KEYVALUE SUBTREE</strong> → <span style='color:#cbd5e1;'>Namespaces / Buckets</span>\n");
-                sb.append("          </a>\n");
-                sb.append("          <button onclick=\"openAddUnitModal('KEYVALUE', 'Bucket')\" style='background:none; border:1px solid rgba(16,185,129,0.3); color:#10b981; font-size:10px; padding:2px 6px; border-radius:4px; cursor:pointer;'>+ Bucket</button>\n");
-                sb.append("        </div>\n");
-                sb.append("        <div style='margin-left:20px; margin-top:4px; font-size:12px; color:#94a3b8;'>\n");
-                sb.append("          📁 [Level 2: Unit / Bucket] default_cache <button onclick=\"openAddObjectModal('KEYVALUE', 'default')\" style='background:none; border:none; color:#10b981; font-size:10px; cursor:pointer; margin-left:6px;'>[+ Key-Value]</button>\n");
-                sb.append("          <div style='margin-left:20px; font-size:11px; color:#64748b;'>└── <i class='fas fa-cube' style='color:#10b981;'></i> [Level 3: StorageItem] Key-Value Pairs</div>\n");
-                sb.append("        </div>\n");
-                sb.append("      </div>\n");
-
-                // 3. VECTOR Subtree
-                boolean isVecActive = "VECTOR".equalsIgnoreCase(selectedEngine);
-                sb.append("      <div style='margin-bottom:10px;'>\n");
-                sb.append("        <div style='display:flex; justify-content:space-between; align-items:center;'>\n");
-                sb.append("          <a href='").append(actionUrl).append("VECTOR&target_db=").append(db).append("' style='text-decoration:none; color:").append(isVecActive ? "#38bdf8; font-weight:bold;" : "#94a3b8;").append(";'>\n");
-                sb.append("            <i class='fas fa-project-diagram' style='color:#8b5cf6; margin-right:6px;'></i> <strong>VECTOR SUBTREE</strong> → <span style='color:#cbd5e1;'>Vector Indexes</span>\n");
-                sb.append("          </a>\n");
-                sb.append("          <button onclick=\"openAddUnitModal('VECTOR', 'Vector Index')\" style='background:none; border:1px solid rgba(139,92,246,0.3); color:#8b5cf6; font-size:10px; padding:2px 6px; border-radius:4px; cursor:pointer;'>+ Vector Index</button>\n");
-                sb.append("        </div>\n");
-                sb.append("        <div style='margin-left:20px; margin-top:4px; font-size:12px; color:#94a3b8;'>\n");
-                sb.append("          📁 [Level 2: Unit / Vector Index] default_index <button onclick=\"openAddObjectModal('VECTOR', 'default')\" style='background:none; border:none; color:#8b5cf6; font-size:10px; cursor:pointer; margin-left:6px;'>[+ Vector]</button>\n");
-                sb.append("          <div style='margin-left:20px; font-size:11px; color:#64748b;'>└── <i class='fas fa-braille' style='color:#8b5cf6;'></i> [Level 3: StorageItem] Embeddings (float[] + Payload)</div>\n");
-                sb.append("        </div>\n");
-                sb.append("      </div>\n");
-
-                // 4. RECORDS Subtree
-                boolean isRecActive = "RECORDS".equalsIgnoreCase(selectedEngine);
-                sb.append("      <div style='margin-bottom:10px;'>\n");
-                sb.append("        <div style='display:flex; justify-content:space-between; align-items:center;'>\n");
-                sb.append("          <a href='").append(actionUrl).append("RECORDS&target_db=").append(db).append("' style='text-decoration:none; color:").append(isRecActive ? "#38bdf8; font-weight:bold;" : "#94a3b8;").append(";'>\n");
-                sb.append("            <i class='fas fa-id-card' style='color:#f43f5e; margin-right:6px;'></i> <strong>RECORDS SUBTREE</strong> → <span style='color:#cbd5e1;'>Record Tables</span>\n");
-                sb.append("          </a>\n");
-                sb.append("          <button onclick=\"openAddUnitModal('RECORDS', 'Record Table')\" style='background:none; border:1px solid rgba(244,63,94,0.3); color:#f43f5e; font-size:10px; padding:2px 6px; border-radius:4px; cursor:pointer;'>+ Record Table</button>\n");
-                sb.append("        </div>\n");
-                sb.append("        <div style='margin-left:20px; margin-top:4px; font-size:12px; color:#94a3b8;'>\n");
-                sb.append("          📁 [Level 2: Unit / Record Table] schema_table <button onclick=\"openAddObjectModal('RECORDS', 'default')\" style='background:none; border:none; color:#f43f5e; font-size:10px; cursor:pointer; margin-left:6px;'>[+ Record]</button>\n");
-                sb.append("          <div style='margin-left:20px; font-size:11px; color:#64748b;'>└── <i class='fas fa-address-card' style='color:#f43f5e;'></i> [Level 3: StorageItem] Java 25 Immutable Records</div>\n");
-                sb.append("        </div>\n");
-                sb.append("      </div>\n");
-
-                // 5. Other Engines (COLUMN, GRAPH, TIMESERIES, GEOSPATIAL, OBJECT)
-                String[][] otherEngs = {
-                    {"COLUMN", "#f97316", "fas fa-table", "Column Families", "Column Family", "Dynamic Rows"},
-                    {"GRAPH", "#ec4899", "fas fa-share-alt", "Node & Edge Labels", "Label", "Vertices & Edges"},
-                    {"TIMESERIES", "#06b6d4", "fas fa-chart-line", "Metrics / Telemetry", "Metric", "Data Points"},
-                    {"GEOSPATIAL", "#14b8a6", "fas fa-globe-americas", "Spatial Layers", "Layer", "GIS Features"},
-                    {"OBJECT", "#a855f7", "fas fa-archive", "Storage Buckets", "Bucket", "BLOB Objects"}
-                };
-                for (String[] oe : otherEngs) {
-                    boolean isOeActive = oe[0].equalsIgnoreCase(selectedEngine);
-                    sb.append("      <div style='margin-bottom:8px;'>\n");
+                    sb.append("      <div style='margin-bottom:12px; background:").append(isEngActive ? "rgba(30,41,59,0.7)" : "rgba(15,23,42,0.3)").append("; padding:8px 10px; border-radius:6px; border:1px solid rgba(255,255,255,0.04);'>\n");
                     sb.append("        <div style='display:flex; justify-content:space-between; align-items:center;'>\n");
-                    sb.append("          <a href='").append(actionUrl).append(oe[0]).append("&target_db=").append(db).append("' style='text-decoration:none; color:").append(isOeActive ? "#38bdf8; font-weight:bold;" : "#94a3b8;").append(";'>\n");
-                    sb.append("            <i class='").append(oe[2]).append("' style='color:").append(oe[1]).append("; margin-right:6px;'></i> <strong>").append(oe[0]).append(" SUBTREE</strong> → <span style='color:#cbd5e1;'>").append(oe[3]).append("</span>\n");
+                    sb.append("          <a href='").append(actionUrl).append(engName).append("&target_db=").append(db).append("' style='text-decoration:none; color:").append(isEngActive ? "#38bdf8; font-weight:bold;" : "#94a3b8;").append(";'>\n");
+                    sb.append("            <i class='").append(engIcon).append("' style='color:").append(engColor).append("; margin-right:6px;'></i> <strong>").append(engName).append(" SUBTREE</strong> → <span style='color:#cbd5e1;'>").append(unitPlural).append(" (").append(unitsAndItems.size()).append(" ").append(unitsAndItems.size() == 1 ? unitSingle : unitPlural).append(", ").append(totalItems).append(" items)</span>\n");
                     sb.append("          </a>\n");
-                    sb.append("          <button onclick=\"openAddUnitModal('").append(oe[0]).append("', '").append(oe[4]).append("')\" style='background:none; border:1px solid ").append(oe[1]).append("55; color:").append(oe[1]).append("; font-size:10px; padding:2px 6px; border-radius:4px; cursor:pointer;'>+ ").append(oe[4]).append("</button>\n");
+                    sb.append("          <button onclick=\"openAddUnitModal('").append(engName).append("', '").append(unitSingle).append("')\" style='background:none; border:1px solid ").append(engColor).append("55; color:").append(engColor).append("; font-size:10px; padding:2px 8px; border-radius:4px; cursor:pointer;'>+ ").append(unitSingle).append("</button>\n");
+                    sb.append("        </div>\n");
+
+                    // Render Level 2 Subtree of Units & Level 3 Subtree of Items
+                    sb.append("        <div style='margin-left:18px; border-left: 2px dotted rgba(255,255,255,0.12); padding-left:12px; margin-top:6px;'>\n");
+
+                    for (Map.Entry<String, List<String>> unitEntry : unitsAndItems.entrySet()) {
+                        String unitName = unitEntry.getKey();
+                        List<String> items = unitEntry.getValue();
+                        boolean isCurrColl = isEngActive && unitName.equalsIgnoreCase(currentColl);
+
+                        sb.append("          <div style='margin-bottom:8px; margin-top:4px;'>\n");
+                        sb.append("            <div style='display:flex; justify-content:space-between; align-items:center;'>\n");
+                        sb.append("              <span style='color:").append(isCurrColl ? "#38bdf8" : "#cbd5e1").append("; font-size:12px; font-weight:600;'>\n");
+                        sb.append("                📁 [Level 2: Unit / ").append(unitSingle).append("] <a href='").append(actionUrl).append(engName).append("&target_db=").append(db).append("&coll=").append(unitName).append("' style='color:inherit; text-decoration:none;'>").append(unitName).append("</a> <span style='font-size:10px; color:#64748b; font-weight:normal;'>(").append(items.size()).append(" items)</span>\n");
+                        sb.append("              </span>\n");
+                        sb.append("              <button onclick=\"openAddObjectModal('").append(engName).append("', '").append(unitName).append("')\" style='background:none; border:none; color:").append(engColor).append("; font-size:10px; cursor:pointer;'>[+ Add ").append(itemLabel).append("]</button>\n");
+                        sb.append("            </div>\n");
+
+                        // Level 3 Subtree: Stored Items / Records
+                        sb.append("            <div style='margin-left:16px; border-left: 1px dashed rgba(255,255,255,0.08); padding-left:10px; margin-top:3px;'>\n");
+                        if (items.isEmpty()) {
+                            sb.append("              <div style='font-size:11px; color:#64748b; padding:2px 0;'>└── <em>(Empty unit - click [+ Add ").append(itemLabel).append("] to insert)</em></div>\n");
+                        } else {
+                            for (String itemId : items) {
+                                sb.append("              <div style='font-size:11px; color:#94a3b8; display:flex; justify-content:space-between; align-items:center; padding:2px 0;'>\n");
+                                sb.append("                <span>└── <i class='").append(itemIcon).append("' style='color:").append(engColor).append("; margin-right:4px;'></i> [Level 3: ").append(itemLabel).append("] <strong style='color:#f8fafc;'>").append(itemId).append("</strong>");
+
+                                if ("DOCUMENT".equalsIgnoreCase(engName)) {
+                                    int vCount = 1;
+                                    try {
+                                        int c1 = engine.getStorageCore().getVersionCount(db + ":" + unitName + ":" + itemId);
+                                        int c2 = engine.getStorageCore().getVersionCount(db + ":" + itemId);
+                                        int c3 = engine.getStorageCore().getVersionCount("doc:" + db + ":" + unitName + ":" + itemId);
+                                        vCount = Math.max(1, Math.max(c1, Math.max(c2, c3)));
+                                    } catch (Exception ignored) {}
+                                    sb.append(" <span class='store-badge badge-active' style='font-size:9px; padding:1px 4px;'>v").append(vCount).append("</span>");
+                                } else if ("RECORDS".equalsIgnoreCase(engName)) {
+                                    int vCount = 1;
+                                    try {
+                                        int c1 = engine.getStorageCore().getVersionCount("rec:" + db + ":" + unitName + ":" + itemId);
+                                        vCount = Math.max(1, c1);
+                                    } catch (Exception ignored) {}
+                                    sb.append(" <span class='store-badge badge-records' style='font-size:9px; padding:1px 4px;'>v").append(vCount).append("</span>");
+                                }
+                                sb.append("</span>\n");
+
+                                // Action Buttons for Level 3 item
+                                sb.append("                <div>\n");
+                                if ("DOCUMENT".equalsIgnoreCase(engName)) {
+                                    sb.append("                  <a href='").append(actionUrl).append(engName).append("&target_db=").append(db).append("&coll=").append(unitName).append("&target_id=").append(itemId).append("' style='color:#38bdf8; text-decoration:none; font-size:10px; margin-right:4px;'>[Select]</a>\n");
+                                } else {
+                                    sb.append("                  <a href='").append(actionUrl).append(engName).append("&target_db=").append(db).append("&target_id=").append(itemId).append("' style='color:#38bdf8; text-decoration:none; font-size:10px;'>[Inspect]</a>\n");
+                                }
+                                sb.append("                </div>\n");
+                                sb.append("              </div>\n");
+                            }
+                        }
+                        sb.append("            </div>\n");
+                        sb.append("          </div>\n");
+                    }
+
                     sb.append("        </div>\n");
                     sb.append("      </div>\n");
                 }
