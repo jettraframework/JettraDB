@@ -83,7 +83,8 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
 
         WidgetLet storageMenu = WidgetLet.of("Database Core").icon("fas fa-database");
         storageMenu.add(WidgetLet.of("Databases & Components").icon("fas fa-server").url(JettraServer.resolvePath("/databases")));
-        storageMenu.add(WidgetLet.of("All 9 Multi-Models").icon("fas fa-cubes").url(JettraServer.resolvePath("/engines")));
+//        storageMenu.add(WidgetLet.of("All 9 Multi-Models").icon("fas fa-cubes").url(JettraServer.resolvePath("/engines")));
+        storageMenu.add(WidgetLet.of("Engines").icon("fas fa-cubes").url(JettraServer.resolvePath("/engines")));
 
         WidgetLet securityMenu = WidgetLet.of("Security & Access").icon("fas fa-shield-alt");
         securityMenu.add(WidgetLet.of("Users & Per-DB Roles").icon("fas fa-users-cog").url(JettraServer.resolvePath("/users")));

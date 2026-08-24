@@ -271,9 +271,6 @@ public class StoreEnginesPage extends StoreTemplatePage {
         // Hierarchical Tree View (JettraFlux Tree Component across all databases & engines)
         Widget hierarchyTreeCard = createHierarchyTreeCard(selectedEngine, targetDb, currentCollection);
 
-        // Engine Selection Tabs / Pills
-        Widget engineNavPills = createEngineNavPills(selectedEngine);
-
         // Capabilities & Architecture Matrix
         Widget engineMatrix = createEngineMatrixTable();
 
@@ -284,7 +281,6 @@ public class StoreEnginesPage extends StoreTemplatePage {
             titleBlock,
             alertWidget,
             hierarchyTreeCard,
-            engineNavPills,
             engineMatrix,
             modalsWidget
         );
@@ -798,30 +794,6 @@ public class StoreEnginesPage extends StoreTemplatePage {
             }
         }
         return obj;
-    }
-
-    private Widget createEngineNavPills(String current) {
-        String[] engines = {"DOCUMENT", "KEYVALUE", "VECTOR", "GRAPH", "TIMESERIES", "COLUMN", "GEOSPATIAL", "OBJECT", "RECORDS"};
-        String[] icons = {"fas fa-file-alt", "fas fa-key", "fas fa-project-diagram", "fas fa-share-alt", "fas fa-chart-line", "fas fa-table", "fas fa-globe-americas", "fas fa-archive", "fas fa-id-card"};
-        String[] types = {"NoSQL JSON", "KV Cache", "AI Vector ANN", "LPG Graph", "IoT Telemetry", "OLAP Columns", "2D GIS Spatial", "Binary BLOB", "Java 25 Record"};
-
-        List<Widget> pills = new ArrayList<>();
-        for (int i = 0; i < engines.length; i++) {
-            String eng = engines[i];
-            String icon = icons[i];
-            String typeBadge = types[i];
-            boolean active = eng.equalsIgnoreCase(current);
-            String bg = active ? "background: #3b82f6; color: #ffffff; font-weight: 600; box-shadow: 0 0 12px rgba(59,130,246,0.4);" : "background: transparent; color: #94a3b8;";
-
-            pills.add(Link.of(JettraServer.resolvePath("/engines?engine=" + eng),
-                Icon.of(icon),
-                Span.of(eng),
-                Span.of(typeBadge).modifier(new Modifier().style("font-size:10px; opacity:0.8; background:rgba(0,0,0,0.2); padding:2px 6px; border-radius:4px;"))
-            ).modifier(new Modifier().style("display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 8px; text-decoration: none; font-size: 13px; transition: all 0.2s; " + bg)));
-        }
-
-        return Div.of(pills.toArray(new Widget[0]))
-            .modifier(new Modifier().style("display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; padding: 6px; background: rgba(30, 41, 59, 0.5); border-radius: 12px; border: 1px solid rgba(255,255,255,0.06);"));
     }
 
     private String getPrefixForEngine(String engineKey) {
