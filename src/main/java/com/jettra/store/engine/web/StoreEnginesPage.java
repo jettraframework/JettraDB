@@ -1802,7 +1802,9 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     Map<String, JsonObject> points = te.list(targetDb);
                     for (Map.Entry<String, JsonObject> entry : points.entrySet()) {
                         String ts = entry.getKey();
-                        String preview = entry.getValue() != null ? entry.getValue().toString() : "{}";
+                        String fullPayload = entry.getValue() != null ? entry.getValue().toString() : "{}";
+                        String preview = fullPayload;
+                        if (preview.length() > 60) preview = preview.substring(0, 60) + "...";
                         int vCount = getItemVersionCount("TIMESERIES", targetDb, currentColl, ts);
                         String versionsJson = getVersionsJson("TIMESERIES", targetDb, currentColl, ts);
 
@@ -1811,7 +1813,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
                             Span.of("TIME-SERIES POINT").modifier(new Modifier().cssClass("store-badge").style("background:rgba(6,182,212,0.2); color:#22d3ee;")),
                             Span.of("v" + vCount).modifier(new Modifier().cssClass("store-badge badge-records")),
                             RawHtml.of("<code style='font-size:11px;'>" + preview + "</code>"),
-                            buildActionButtonsWidget(actionUrl, targetDb, currentColl, ts, preview, versionsJson, "TIMESERIES")
+                            buildActionButtonsWidget(actionUrl, targetDb, currentColl, ts, fullPayload, versionsJson, "TIMESERIES")
                         ));
                     }
                 }
@@ -1822,7 +1824,9 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     Map<String, JsonObject> rows = ce.list(targetDb);
                     for (Map.Entry<String, JsonObject> entry : rows.entrySet()) {
                         String id = entry.getKey();
-                        String preview = entry.getValue() != null ? entry.getValue().toString() : "{}";
+                        String fullPayload = entry.getValue() != null ? entry.getValue().toString() : "{}";
+                        String preview = fullPayload;
+                        if (preview.length() > 60) preview = preview.substring(0, 60) + "...";
                         int vCount = getItemVersionCount("COLUMN", targetDb, currentColl, id);
                         String versionsJson = getVersionsJson("COLUMN", targetDb, currentColl, id);
 
@@ -1831,7 +1835,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
                             Span.of("COLUMNAR ROW").modifier(new Modifier().cssClass("store-badge").style("background:rgba(249,115,22,0.2); color:#fb923c;")),
                             Span.of("v" + vCount).modifier(new Modifier().cssClass("store-badge badge-records")),
                             RawHtml.of("<code style='font-size:11px;'>" + preview + "</code>"),
-                            buildActionButtonsWidget(actionUrl, targetDb, currentColl, id, preview, versionsJson, "COLUMN")
+                            buildActionButtonsWidget(actionUrl, targetDb, currentColl, id, fullPayload, versionsJson, "COLUMN")
                         ));
                     }
                 }
@@ -1842,7 +1846,9 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     Map<String, JsonObject> locs = ge.list(targetDb);
                     for (Map.Entry<String, JsonObject> entry : locs.entrySet()) {
                         String id = entry.getKey();
-                        String preview = entry.getValue() != null ? entry.getValue().toString() : "{}";
+                        String fullPayload = entry.getValue() != null ? entry.getValue().toString() : "{}";
+                        String preview = fullPayload;
+                        if (preview.length() > 60) preview = preview.substring(0, 60) + "...";
                         int vCount = getItemVersionCount("GEOSPATIAL", targetDb, currentColl, id);
                         String versionsJson = getVersionsJson("GEOSPATIAL", targetDb, currentColl, id);
 
@@ -1851,7 +1857,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
                             Span.of("GIS 2D POINT").modifier(new Modifier().cssClass("store-badge").style("background:rgba(20,184,166,0.2); color:#2dd4bf;")),
                             Span.of("v" + vCount).modifier(new Modifier().cssClass("store-badge badge-records")),
                             RawHtml.of("<code style='font-size:11px;'>" + preview + "</code>"),
-                            buildActionButtonsWidget(actionUrl, targetDb, currentColl, id, preview, versionsJson, "GEOSPATIAL")
+                            buildActionButtonsWidget(actionUrl, targetDb, currentColl, id, fullPayload, versionsJson, "GEOSPATIAL")
                         ));
                     }
                 }
@@ -1862,7 +1868,9 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     Map<String, JsonObject> objs = oe.list(targetDb);
                     for (Map.Entry<String, JsonObject> entry : objs.entrySet()) {
                         String id = entry.getKey();
-                        String preview = entry.getValue() != null ? entry.getValue().toString() : "{}";
+                        String fullPayload = entry.getValue() != null ? entry.getValue().toString() : "{}";
+                        String preview = fullPayload;
+                        if (preview.length() > 60) preview = preview.substring(0, 60) + "...";
                         int vCount = getItemVersionCount("OBJECT", targetDb, currentColl, id);
                         String versionsJson = getVersionsJson("OBJECT", targetDb, currentColl, id);
 
@@ -1871,7 +1879,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
                             Span.of("OBJECT BLOB").modifier(new Modifier().cssClass("store-badge").style("background:rgba(168,85,247,0.2); color:#c084fc;")),
                             Span.of("v" + vCount).modifier(new Modifier().cssClass("store-badge badge-records")),
                             RawHtml.of("<code style='font-size:11px;'>" + preview + "</code>"),
-                            buildActionButtonsWidget(actionUrl, targetDb, currentColl, id, preview, versionsJson, "OBJECT")
+                            buildActionButtonsWidget(actionUrl, targetDb, currentColl, id, fullPayload, versionsJson, "OBJECT")
                         ));
                     }
                 }
@@ -1882,7 +1890,9 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     Map<String, JsonObject> recs = re.list(targetDb);
                     for (Map.Entry<String, JsonObject> entry : recs.entrySet()) {
                         String id = entry.getKey();
-                        String preview = entry.getValue() != null ? entry.getValue().toString() : "{}";
+                        String fullPayload = entry.getValue() != null ? entry.getValue().toString() : "{}";
+                        String preview = fullPayload;
+                        if (preview.length() > 60) preview = preview.substring(0, 60) + "...";
                         int vCount = getItemVersionCount("RECORDS", targetDb, currentColl, id);
                         String versionsJson = getVersionsJson("RECORDS", targetDb, currentColl, id);
 
@@ -1891,7 +1901,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
                             Span.of("RECORD (Java 25)").modifier(new Modifier().cssClass("store-badge").style("background:rgba(244,63,94,0.2); color:#fb7185;")),
                             Span.of("v" + vCount).modifier(new Modifier().cssClass("store-badge badge-records")),
                             RawHtml.of("<code style='font-size:11px;'>" + preview + "</code>"),
-                            buildActionButtonsWidget(actionUrl, targetDb, currentColl, id, preview, versionsJson, "RECORDS")
+                            buildActionButtonsWidget(actionUrl, targetDb, currentColl, id, fullPayload, versionsJson, "RECORDS")
                         ));
                     }
                 }
