@@ -1,5 +1,6 @@
 package com.jettra.store.engine.web;
 
+import com.jettra.store.engine.core.IdGenerator;
 import com.jettra.store.engine.core.JettraStorageEngine;
 import com.jettra.store.engine.models.*;
 import com.sun.net.httpserver.HttpExchange;
@@ -302,7 +303,11 @@ public class StoreEnginesPage extends StoreTemplatePage {
     }
 
     private void executeTypeSpecificInsert(String engineName, String db, Map<String, String> params) {
-        String targetId = params.getOrDefault("target_id", "rec_" + (System.currentTimeMillis() % 10000));
+        String rawMode = params.getOrDefault("id_gen_mode", "UUID");
+        IdGenerator.IdMode idMode = IdGenerator.IdMode.fromString(rawMode);
+        String manualId = params.get("target_id");
+        String targetColl = params.getOrDefault("target_coll", "default");
+        String targetId = IdGenerator.generateId(db + ":" + targetColl, idMode, manualId);
 
         switch (engineName) {
             case "DOCUMENT" -> {
@@ -314,14 +319,15 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     if (docClass != null && !docClass.isBlank()) {
                         doc.addProperty("_class", docClass.trim());
                     }
-                    docEngine.insert(db, targetId, doc);
+                    docEngine.insert(db, targetColl, targetId, doc);
                 }
             }
             case "KEYVALUE" -> {
                 KeyValueEngine kvEngine = (KeyValueEngine) engine.getEngine("KEYVALUE");
                 if (kvEngine != null) {
                     String value = params.getOrDefault("kv_value", "");
-                    kvEngine.put(db, targetId, value);
+                    String resolvedKey = (targetColl.equals("default") || targetId.contains(":")) ? targetId : targetColl + ":" + targetId;
+                    kvEngine.put(db, resolvedKey, value);
                 }
             }
             case "VECTOR" -> {
@@ -333,6 +339,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     JsonObject meta = parseJsonOrWrap(metaStr);
                     String label = params.get("vector_label");
                     if (label != null && !label.isBlank()) meta.addProperty("label", label);
+                    meta.addProperty("_index", targetColl);
                     vecEngine.insertVector(db, targetId, floats, meta);
                 }
             }
@@ -343,11 +350,11 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     if ("edge".equalsIgnoreCase(graphMode)) {
                         String from = params.getOrDefault("edge_from", "node_1");
                         String to = params.getOrDefault("edge_to", "node_2");
-                        String label = params.getOrDefault("edge_label", "CONNECTED_TO");
+                        String label = params.getOrDefault("edge_label", targetColl.equals("default") ? "CONNECTED_TO" : targetColl);
                         String edgeProps = params.getOrDefault("edge_props", "{}");
                         graphEngine.addEdge(db, from, to, label, parseJsonOrWrap(edgeProps));
                     } else {
-                        String nodeLabel = params.getOrDefault("node_label", "Vertex");
+                        String nodeLabel = params.getOrDefault("node_label", targetColl.equals("default") ? "Vertex" : targetColl);
                         String nodeProps = params.getOrDefault("node_props", "{}");
                         JsonObject data = parseJsonOrWrap(nodeProps);
                         data.addProperty("label", nodeLabel);
@@ -365,6 +372,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     String tags = params.getOrDefault("ts_tags", "{}");
                     JsonObject dp = parseJsonOrWrap(tags);
                     dp.addProperty("value", val);
+                    dp.addProperty("metric", targetColl);
                     if (!unit.isBlank()) dp.addProperty("unit", unit);
                     tsEngine.insert(db, timestamp, dp);
                 }
@@ -374,6 +382,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 if (colEngine != null) {
                     String colData = params.getOrDefault("col_data", "{}");
                     JsonObject row = parseJsonOrColumns(colData);
+                    row.addProperty("_family", targetColl);
                     colEngine.insertRow(db, targetId, row);
                 }
             }
@@ -386,6 +395,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     JsonObject meta = parseJsonOrWrap(metaStr);
                     String name = params.get("geo_name");
                     if (name != null && !name.isBlank()) meta.addProperty("name", name);
+                    meta.addProperty("_layer", targetColl);
                     geoEngine.insertLocation(db, targetId, lat, lon, meta);
                 }
             }
@@ -397,6 +407,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     String mime = params.getOrDefault("obj_mime", "application/octet-stream");
                     JsonObject state = new JsonObject();
                     state.addProperty("mimeType", mime);
+                    state.addProperty("bucket", targetColl);
                     state.addProperty("sizeBytes", payload.getBytes(StandardCharsets.UTF_8).length);
                     state.addProperty("content", payload);
                     objEngine.saveObject(db, targetId, className, state);
@@ -408,6 +419,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     String recordClass = params.getOrDefault("rec_class", "com.jettra.model.PersonRecord");
                     String payload = params.getOrDefault("rec_payload", "{}");
                     JsonObject comps = parseJsonOrWrap(payload);
+                    comps.addProperty("_table", targetColl);
                     recEngine.saveRecord(db, targetId, recordClass, comps);
                 }
             }
@@ -1803,225 +1815,594 @@ public class StoreEnginesPage extends StoreTemplatePage {
     private Widget createEngineModals(String engineKey, String targetDb, String currentColl) {
         String actionUrl = JettraServer.resolvePath("/engines?engine=" + engineKey);
 
-        String modalsHtml =
-            // Modal 0: Create New Database Modal
-            "<div id='createDbModal' style='display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center;'>\n" +
-            "  <div class='store-card' style='width:520px; max-width:90%; background:#1e293b; border:1px solid rgba(56,189,248,0.4); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:24px;'>\n" +
-            "    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;'>\n" +
-            "      <h3 style='margin:0; font-size:18px; font-weight:700; color:#f8fafc;'><i class='fas fa-database' style='color:#38bdf8; margin-right:8px;'></i> Create Multi-Model Database (Container)</h3>\n" +
-            "      <button onclick=\"document.getElementById('createDbModal').style.display='none'\" style='background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;'><i class='fas fa-times'></i></button>\n" +
-            "    </div>\n" +
-            "    <form method='POST' action='" + actionUrl + "'>\n" +
-            "      <input type='hidden' name='action' value='create_db'/>\n" +
-            "      <div style='margin-bottom:12px;'>\n" +
-            "        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Database Name (StorageContainer):</label>\n" +
-            "        <input type='text' name='new_db_name' required placeholder='e.g. ecommerce_db, inventory_db' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>\n" +
-            "      </div>\n" +
-            "      <div style='margin-bottom:12px;'>\n" +
-            "        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Primary Multi-Model Engine Subtree:</label>\n" +
-            "        <select name='initial_engine' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#38bdf8; font-size:13px; box-sizing:border-box;'>\n" +
-            "          <option value='DOCUMENT' " + ("DOCUMENT".equalsIgnoreCase(engineKey) ? "selected" : "") + ">DOCUMENT (Hierarchical JSON / NoSQL Collections)</option>\n" +
-            "          <option value='KEYVALUE' " + ("KEYVALUE".equalsIgnoreCase(engineKey) ? "selected" : "") + ">KEYVALUE (Cache & Key-Value Pairs)</option>\n" +
-            "          <option value='VECTOR' " + ("VECTOR".equalsIgnoreCase(engineKey) ? "selected" : "") + ">VECTOR (AI Embeddings & Similarity)</option>\n" +
-            "          <option value='GRAPH' " + ("GRAPH".equalsIgnoreCase(engineKey) ? "selected" : "") + ">GRAPH (Nodes & Traversal Edges)</option>\n" +
-            "          <option value='TIMESERIES' " + ("TIMESERIES".equalsIgnoreCase(engineKey) ? "selected" : "") + ">TIMESERIES (IoT Telemetry & Metrics)</option>\n" +
-            "          <option value='COLUMN' " + ("COLUMN".equalsIgnoreCase(engineKey) ? "selected" : "") + ">COLUMN (Column Families & Aggregations)</option>\n" +
-            "          <option value='GEOSPATIAL' " + ("GEOSPATIAL".equalsIgnoreCase(engineKey) ? "selected" : "") + ">GEOSPATIAL (GIS 2D Layers & Coordinates)</option>\n" +
-            "          <option value='OBJECT' " + ("OBJECT".equalsIgnoreCase(engineKey) ? "selected" : "") + ">OBJECT (BLOB Buckets & Streams)</option>\n" +
-            "          <option value='RECORDS' " + ("RECORDS".equalsIgnoreCase(engineKey) ? "selected" : "") + ">RECORDS (Java 25 Immutable Records)</option>\n" +
-            "        </select>\n" +
-            "      </div>\n" +
-            "      <div style='margin-bottom:16px;'>\n" +
-            "        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Initial Subtree Unit (Collection / Bucket / Table):</label>\n" +
-            "        <input type='text' name='initial_unit' value='default' placeholder='e.g. products, cache, telemetry' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>\n" +
-            "      </div>\n" +
-            "      <div style='display:flex; justify-content:flex-end; gap:8px;'>\n" +
-            "        <button type='button' onclick=\"document.getElementById('createDbModal').style.display='none'\" class='btn-action btn-secondary'>Cancel</button>\n" +
-            "        <button type='submit' class='btn-action btn-primary'><i class='fas fa-plus'></i> Initialize Database</button>\n" +
-            "      </div>\n" +
-            "    </form>\n" +
-            "  </div>\n" +
-            "</div>\n" +
+        StringBuilder sb = new StringBuilder();
 
-            // Modal 0.5: Add Subtree Unit Modal
-            "<div id='createUnitModal' style='display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center;'>\n" +
-            "  <div class='store-card' style='width:520px; max-width:90%; background:#1e293b; border:1px solid rgba(139,92,246,0.4); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:24px;'>\n" +
-            "    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;'>\n" +
-            "      <h3 style='margin:0; font-size:18px; font-weight:700; color:#f8fafc;'><i class='fas fa-folder-plus' style='color:#a855f7; margin-right:8px;'></i> Add Subtree Unit (Level 2: StorageUnit)</h3>\n" +
-            "      <button onclick=\"document.getElementById('createUnitModal').style.display='none'\" style='background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;'><i class='fas fa-times'></i></button>\n" +
-            "    </div>\n" +
-            "    <form method='POST' action='" + actionUrl + "'>\n" +
-            "      <input type='hidden' name='action' value='create_unit'/>\n" +
-            "      <input type='hidden' name='target_db' value='" + targetDb + "'/>\n" +
-            "      <div style='margin-bottom:12px;'>\n" +
-            "        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Target Database:</label>\n" +
-            "        <input type='text' disabled value='" + targetDb + "' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.1); border-radius:6px; color:#38bdf8; font-size:13px; box-sizing:border-box;'/>\n" +
-            "      </div>\n" +
-            "      <div style='margin-bottom:12px;'>\n" +
-            "        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Engine Subtree Type:</label>\n" +
-            "        <select name='engine_type' id='modalUnitEngineSelect' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'>\n" +
-            "          <option value='DOCUMENT'>DOCUMENT (Colección / Collection)</option>\n" +
-            "          <option value='KEYVALUE'>KEYVALUE (Namespace / Bucket)</option>\n" +
-            "          <option value='VECTOR'>VECTOR (Vector Index / Collection)</option>\n" +
-            "          <option value='GRAPH'>GRAPH (Node & Edge Label)</option>\n" +
-            "          <option value='TIMESERIES'>TIMESERIES (Metric / Series Feed)</option>\n" +
-            "          <option value='COLUMN'>COLUMN (Column Family / Table)</option>\n" +
-            "          <option value='GEOSPATIAL'>GEOSPATIAL (Spatial Layer)</option>\n" +
-            "          <option value='OBJECT'>OBJECT (Storage Bucket / Container)</option>\n" +
-            "          <option value='RECORDS'>RECORDS (Record Table / Schema)</option>\n" +
-            "        </select>\n" +
-            "      </div>\n" +
-            "      <div style='margin-bottom:16px;'>\n" +
-            "        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;' id='modalUnitNameLabel'>Unit Name:</label>\n" +
-            "        <input type='text' name='unit_name' required placeholder='e.g. products, cache_layer, telemetry_feed' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>\n" +
-            "      </div>\n" +
-            "      <div style='display:flex; justify-content:flex-end; gap:8px;'>\n" +
-            "        <button type='button' onclick=\"document.getElementById('createUnitModal').style.display='none'\" class='btn-action btn-secondary'>Cancel</button>\n" +
-            "        <button type='submit' class='btn-action btn-primary' style='background:#a855f7;'><i class='fas fa-plus'></i> Add Unit</button>\n" +
-            "      </div>\n" +
-            "    </form>\n" +
-            "  </div>\n" +
-            "</div>\n" +
+        // Modal 0: Create New Database Modal
+        sb.append("<div id='createDbModal' style='display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center;'>\n")
+          .append("  <div class='store-card' style='width:520px; max-width:90%; background:#1e293b; border:1px solid rgba(56,189,248,0.4); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:24px;'>\n")
+          .append("    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;'>\n")
+          .append("      <h3 style='margin:0; font-size:18px; font-weight:700; color:#f8fafc;'><i class='fas fa-database' style='color:#38bdf8; margin-right:8px;'></i> Create Multi-Model Database</h3>\n")
+          .append("      <button onclick=\"document.getElementById('createDbModal').style.display='none'\" style='background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;'><i class='fas fa-times'></i></button>\n")
+          .append("    </div>\n")
+          .append("    <form method='POST' action='").append(actionUrl).append("'>\n")
+          .append("      <input type='hidden' name='action' value='create_db'/>\n")
+          .append("      <div style='margin-bottom:12px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Database Name (StorageContainer):</label>\n")
+          .append("        <input type='text' name='new_db_name' required placeholder='e.g. ecommerce_db, inventory_db' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:12px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Primary Multi-Model Engine Subtree:</label>\n")
+          .append("        <select name='initial_engine' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#38bdf8; font-size:13px; box-sizing:border-box;'>\n")
+          .append("          <option value='DOCUMENT' ").append("DOCUMENT".equalsIgnoreCase(engineKey) ? "selected" : "").append(">DOCUMENT (NoSQL Collections)</option>\n")
+          .append("          <option value='KEYVALUE' ").append("KEYVALUE".equalsIgnoreCase(engineKey) ? "selected" : "").append(">KEYVALUE (Cache & Buckets)</option>\n")
+          .append("          <option value='VECTOR' ").append("VECTOR".equalsIgnoreCase(engineKey) ? "selected" : "").append(">VECTOR (AI Embeddings)</option>\n")
+          .append("          <option value='GRAPH' ").append("GRAPH".equalsIgnoreCase(engineKey) ? "selected" : "").append(">GRAPH (Node & Edge Labels)</option>\n")
+          .append("          <option value='TIMESERIES' ").append("TIMESERIES".equalsIgnoreCase(engineKey) ? "selected" : "").append(">TIMESERIES (IoT Metrics)</option>\n")
+          .append("          <option value='COLUMN' ").append("COLUMN".equalsIgnoreCase(engineKey) ? "selected" : "").append(">COLUMN (Column Families)</option>\n")
+          .append("          <option value='GEOSPATIAL' ").append("GEOSPATIAL".equalsIgnoreCase(engineKey) ? "selected" : "").append(">GEOSPATIAL (Spatial Layers)</option>\n")
+          .append("          <option value='OBJECT' ").append("OBJECT".equalsIgnoreCase(engineKey) ? "selected" : "").append(">OBJECT (BLOB Buckets)</option>\n")
+          .append("          <option value='RECORDS' ").append("RECORDS".equalsIgnoreCase(engineKey) ? "selected" : "").append(">RECORDS (Java 25 Record Tables)</option>\n")
+          .append("        </select>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:16px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Initial Subtree Unit (Collection / Bucket / Table):</label>\n")
+          .append("        <input type='text' name='initial_unit' value='default' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>\n")
+          .append("      </div>\n")
+          .append("      <div style='display:flex; justify-content:flex-end; gap:8px;'>\n")
+          .append("        <button type='button' onclick=\"document.getElementById('createDbModal').style.display='none'\" class='btn-action btn-secondary'>Cancel</button>\n")
+          .append("        <button type='submit' class='btn-action btn-primary'><i class='fas fa-plus'></i> Initialize Database</button>\n")
+          .append("      </div>\n")
+          .append("    </form>\n")
+          .append("  </div>\n")
+          .append("</div>\n");
 
-            // Modal 1: Edit Document Modal
-            "<div id='editDocumentModal' style='display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center;'>\n" +
-            "  <div class='store-card' style='width:560px; max-width:90%; background:#1e293b; border:1px solid rgba(56,189,248,0.4); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:24px;'>\n" +
-            "    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;'>\n" +
-            "      <h3 style='margin:0; font-size:18px; font-weight:700; color:#f8fafc;'><i class='fas fa-edit' style='color:#38bdf8; margin-right:8px;'></i> Edit Document (<span id='editDocIdLabel'></span>)</h3>\n" +
-            "      <button onclick=\"document.getElementById('editDocumentModal').style.display='none'\" style='background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;'><i class='fas fa-times'></i></button>\n" +
-            "    </div>\n" +
-            "    <form method='POST' action='" + actionUrl + "'>\n" +
-            "      <input type='hidden' name='action' value='edit_document'/>\n" +
-            "      <input type='hidden' name='target_db' value='" + targetDb + "'/>\n" +
-            "      <input type='hidden' name='target_coll' value='" + currentColl + "'/>\n" +
-            "      <input type='hidden' name='target_id' id='editDocIdInput'/>\n" +
-            "      <div style='margin-bottom:12px;'>\n" +
-            "        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Schema / Class (Optional):</label>\n" +
-            "        <input type='text' name='doc_class' placeholder='com.enterprise.model.Customer' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>\n" +
-            "      </div>\n" +
-            "      <div style='margin-bottom:16px;'>\n" +
-            "        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>JSON Payload:</label>\n" +
-            "        <textarea id='editDocPayloadInput' name='doc_payload' rows='6' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:12px; font-family:monospace; box-sizing:border-box;'></textarea>\n" +
-            "      </div>\n" +
-            "      <div style='display:flex; justify-content:flex-end; gap:8px;'>\n" +
-            "        <button type='button' onclick=\"document.getElementById('editDocumentModal').style.display='none'\" class='btn-action btn-secondary'>Cancel</button>\n" +
-            "        <button type='submit' class='btn-action btn-primary'><i class='fas fa-save'></i> Save Changes (New Version)</button>\n" +
-            "      </div>\n" +
-            "    </form>\n" +
-            "  </div>\n" +
-            "</div>\n" +
+        // Modal 0.5: Add Subtree Unit Modal
+        sb.append("<div id='createUnitModal' style='display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center;'>\n")
+          .append("  <div class='store-card' style='width:520px; max-width:90%; background:#1e293b; border:1px solid rgba(139,92,246,0.4); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:24px;'>\n")
+          .append("    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;'>\n")
+          .append("      <h3 style='margin:0; font-size:18px; font-weight:700; color:#f8fafc;'><i class='fas fa-folder-plus' style='color:#a855f7; margin-right:8px;'></i> Add Subtree Unit (Level 2)</h3>\n")
+          .append("      <button onclick=\"document.getElementById('createUnitModal').style.display='none'\" style='background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;'><i class='fas fa-times'></i></button>\n")
+          .append("    </div>\n")
+          .append("    <form method='POST' action='").append(actionUrl).append("'>\n")
+          .append("      <input type='hidden' name='action' value='create_unit'/>\n")
+          .append("      <input type='hidden' name='target_db' value='").append(targetDb).append("'/>\n")
+          .append("      <div style='margin-bottom:12px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Target Database:</label>\n")
+          .append("        <input type='text' disabled value='").append(targetDb).append("' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.1); border-radius:6px; color:#38bdf8; font-size:13px; box-sizing:border-box;'/>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:12px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Engine Subtree Type:</label>\n")
+          .append("        <select name='engine_type' id='modalUnitEngineSelect' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'>\n")
+          .append("          <option value='DOCUMENT'>DOCUMENT (Colección / Collection)</option>\n")
+          .append("          <option value='KEYVALUE'>KEYVALUE (Namespace / Bucket)</option>\n")
+          .append("          <option value='VECTOR'>VECTOR (Vector Index / Collection)</option>\n")
+          .append("          <option value='GRAPH'>GRAPH (Node & Edge Label)</option>\n")
+          .append("          <option value='TIMESERIES'>TIMESERIES (Metric / Series Feed)</option>\n")
+          .append("          <option value='COLUMN'>COLUMN (Column Family / Table)</option>\n")
+          .append("          <option value='GEOSPATIAL'>GEOSPATIAL (Spatial Layer)</option>\n")
+          .append("          <option value='OBJECT'>OBJECT (Storage Bucket / Container)</option>\n")
+          .append("          <option value='RECORDS'>RECORDS (Record Table / Schema)</option>\n")
+          .append("        </select>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:16px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;' id='modalUnitNameLabel'>Unit Name:</label>\n")
+          .append("        <input type='text' name='unit_name' required placeholder='e.g. products, cache_layer, telemetry' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>\n")
+          .append("      </div>\n")
+          .append("      <div style='display:flex; justify-content:flex-end; gap:8px;'>\n")
+          .append("        <button type='button' onclick=\"document.getElementById('createUnitModal').style.display='none'\" class='btn-action btn-secondary'>Cancel</button>\n")
+          .append("        <button type='submit' class='btn-action btn-primary' style='background:#a855f7;'><i class='fas fa-plus'></i> Add Unit</button>\n")
+          .append("      </div>\n")
+          .append("    </form>\n")
+          .append("  </div>\n")
+          .append("</div>\n");
 
-            // Modal 2: Descending Versions Recovery Modal
-            "<div id='restoreVersionModal' style='display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center;'>\n" +
-            "  <div class='store-card' style='width:650px; max-width:92%; background:#1e293b; border:1px solid rgba(168,85,247,0.4); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:24px;'>\n" +
-            "    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;'>\n" +
-            "      <h3 style='margin:0; font-size:18px; font-weight:700; color:#f8fafc;'><i class='fas fa-history' style='color:#a855f7; margin-right:8px;'></i> Historical Versions (<span id='restoreDocIdLabel' style='color:#38bdf8;'></span>)</h3>\n" +
-            "      <button onclick=\"document.getElementById('restoreVersionModal').style.display='none'\" style='background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;'><i class='fas fa-times'></i></button>\n" +
-            "    </div>\n" +
-            "    <p style='font-size:13px; color:#cbd5e1; margin-top:0;'>Select a previous snapshot version (ordered descending: newest to oldest) to rollback:</p>\n" +
-            "    <form method='POST' action='" + actionUrl + "'>\n" +
-            "      <input type='hidden' name='action' value='restore_version'/>\n" +
-            "      <input type='hidden' name='target_db' value='" + targetDb + "'/>\n" +
-            "      <input type='hidden' name='target_coll' value='" + currentColl + "'/>\n" +
-            "      <input type='hidden' name='target_id' id='restoreDocIdInput'/>\n" +
-            "      <input type='hidden' name='version_ts' id='restoreVersionTsInput'/>\n" +
-            "      <div id='versionsListContainer' style='max-height:220px; overflow-y:auto; margin-bottom:16px; border:1px solid rgba(255,255,255,0.08); border-radius:8px; background:#0f172a;'>\n" +
-            "        <!-- Dynamic Descending Version Rows Injected by JS -->\n" +
-            "      </div>\n" +
-            "      <div style='display:flex; justify-content:flex-end; gap:8px;'>\n" +
-            "        <button type='button' onclick=\"document.getElementById('restoreVersionModal').style.display='none'\" class='btn-action btn-secondary'>Close</button>\n" +
-            "      </div>\n" +
-            "    </form>\n" +
-            "  </div>\n" +
-            "</div>\n" +
+        // Modal 1: [+ Add Document]
+        sb.append("<div id='addDocumentModal' style='display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center;'>\n")
+          .append("  <div class='store-card' style='width:560px; max-width:90%; background:#1e293b; border:1px solid rgba(59,130,246,0.4); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:24px;'>\n")
+          .append("    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;'>\n")
+          .append("      <h3 style='margin:0; font-size:18px; font-weight:700; color:#f8fafc;'><i class='fas fa-file-code' style='color:#3b82f6; margin-right:8px;'></i> [+ Add Document]</h3>\n")
+          .append("      <button onclick=\"document.getElementById('addDocumentModal').style.display='none'\" style='background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;'><i class='fas fa-times'></i></button>\n")
+          .append("    </div>\n")
+          .append("    <form method='POST' action='").append(JettraServer.resolvePath("/engines?engine=DOCUMENT")).append("'>\n")
+          .append("      <input type='hidden' name='action' value='insert_object'/>\n")
+          .append("      <input type='hidden' name='target_db' value='").append(targetDb).append("'/>\n")
+          .append("      <div style='margin-bottom:12px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Target Collection:</label>\n")
+          .append("        <input type='text' name='target_coll' value='").append(currentColl).append("' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#38bdf8; font-size:13px; box-sizing:border-box;'/>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:12px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>ID Generation Strategy:</label>\n")
+          .append("        <select name='id_gen_mode' onchange='handleIdModeChange(this)' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#38bdf8; font-size:13px; box-sizing:border-box;'>\n")
+          .append("          <option value='UUID' selected>1. UUID (Composite: CPU + Time + DB + UUID Entropy)</option>\n")
+          .append("          <option value='AUTOINCREMENT'>2. Autoincrementable (Sequential Counter: 1, 2, 3...)</option>\n")
+          .append("          <option value='MANUAL'>3. Manual Mode (Custom User Specified ID)</option>\n")
+          .append("        </select>\n")
+          .append("      </div>\n")
+          .append("      <div class='manual-id-group' style='margin-bottom:12px; display:none;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Custom Document ID:</label>\n")
+          .append("        <input type='text' name='target_id' placeholder='e.g. prod_1001, doc_special' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>\n")
+          .append("      </div>\n")
+          .append("      <div class='id-mode-banner' style='margin-bottom:12px; font-size:11px; color:#94a3b8; background:rgba(56,189,248,0.06); border-left:3px solid #38bdf8; padding:6px 10px; border-radius:4px;'>\n")
+          .append("        <i class='fas fa-fingerprint' style='color:#38bdf8; margin-right:4px;'></i> <span class='id-mode-desc'>Engine will auto-generate a Composite UUID integrating CPU hardware hash, timestamp, DB digest and UUID entropy.</span>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:12px;'><label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Class / Schema (Optional):</label><input type='text' name='doc_class' placeholder='com.jettra.model.Customer' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/></div>\n")
+          .append("      <div style='margin-bottom:16px;'><label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>JSON Payload:</label><textarea name='doc_payload' rows='5' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:12px; font-family:monospace; box-sizing:border-box;'>{\n  \"name\": \"Sample Document\",\n  \"status\": \"ACTIVE\",\n  \"rating\": 4.9\n}</textarea></div>\n")
+          .append("      <div style='display:flex; justify-content:flex-end; gap:8px;'><button type='button' onclick=\"document.getElementById('addDocumentModal').style.display='none'\" class='btn-action btn-secondary'>Cancel</button><button type='submit' class='btn-action btn-primary'><i class='fas fa-plus'></i> Save Document</button></div>\n")
+          .append("    </form>\n")
+          .append("  </div>\n")
+          .append("</div>\n");
 
-            // Modal 3: Advanced Search Modal
-            "<div id='advancedSearchModal' style='display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center;'>\n" +
-            "  <div class='store-card' style='width:560px; max-width:90%; background:#1e293b; border:1px solid rgba(59,130,246,0.4); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:24px;'>\n" +
-            "    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;'>\n" +
-            "      <h3 style='margin:0; font-size:18px; font-weight:700; color:#f8fafc;'><i class='fas fa-search-plus' style='color:#38bdf8; margin-right:8px;'></i> Advanced Search Inspector</h3>\n" +
-            "      <button onclick=\"document.getElementById('advancedSearchModal').style.display='none'\" style='background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;'><i class='fas fa-times'></i></button>\n" +
-            "    </div>\n" +
-            "    <form method='POST' action='" + actionUrl + "'>\n" +
-            "      <input type='hidden' name='action' value='query_object'/>\n" +
-            "      <input type='hidden' name='target_db' value='" + targetDb + "'/>\n" +
-            "      <input type='hidden' name='target_coll' value='" + currentColl + "'/>\n" +
-            "      <div style='margin-bottom:12px;'>\n" +
-            "        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Lookup ID / Key Filter:</label>\n" +
-            "        <input type='text' name='target_id' placeholder='e.g. doc_101 or prefix*' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>\n" +
-            "      </div>\n" +
-            "      <div style='margin-bottom:12px;'>\n" +
-            "        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>JSON Property Query (Key : Value):</label>\n" +
-            "        <input type='text' name='prop_filter' placeholder='tier: Platinum' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>\n" +
-            "      </div>\n" +
-            "      <div style='display:flex; justify-content:flex-end; gap:8px;'>\n" +
-            "        <button type='button' onclick=\"document.getElementById('advancedSearchModal').style.display='none'\" class='btn-action btn-secondary'>Cancel</button>\n" +
-            "        <button type='submit' class='btn-action btn-primary'><i class='fas fa-search'></i> Execute Query</button>\n" +
-            "      </div>\n" +
-            "    </form>\n" +
-            "  </div>\n" +
-            "</div>\n" +
+        // Modal 2: [+ Add Key-Value Pair]
+        sb.append("<div id='addKeyValueModal' style='display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center;'>\n")
+          .append("  <div class='store-card' style='width:520px; max-width:90%; background:#1e293b; border:1px solid rgba(16,185,129,0.4); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:24px;'>\n")
+          .append("    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;'>\n")
+          .append("      <h3 style='margin:0; font-size:18px; font-weight:700; color:#f8fafc;'><i class='fas fa-key' style='color:#10b981; margin-right:8px;'></i> [+ Add Key-Value Pair]</h3>\n")
+          .append("      <button onclick=\"document.getElementById('addKeyValueModal').style.display='none'\" style='background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;'><i class='fas fa-times'></i></button>\n")
+          .append("    </div>\n")
+          .append("    <form method='POST' action='").append(JettraServer.resolvePath("/engines?engine=KEYVALUE")).append("'>\n")
+          .append("      <input type='hidden' name='action' value='insert_object'/>\n")
+          .append("      <input type='hidden' name='target_db' value='").append(targetDb).append("'/>\n")
+          .append("      <div style='margin-bottom:12px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Bucket / Namespace:</label>\n")
+          .append("        <input type='text' name='target_coll' value='default' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#10b981; font-size:13px; box-sizing:border-box;'/>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:12px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>ID / Key Generation Strategy:</label>\n")
+          .append("        <select name='id_gen_mode' onchange='handleIdModeChange(this)' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#10b981; font-size:13px; box-sizing:border-box;'>\n")
+          .append("          <option value='UUID' selected>1. UUID (Composite: CPU + Time + DB + UUID Entropy)</option>\n")
+          .append("          <option value='AUTOINCREMENT'>2. Autoincrementable (Sequential Counter: 1, 2, 3...)</option>\n")
+          .append("          <option value='MANUAL'>3. Manual Mode (Custom User Specified Key)</option>\n")
+          .append("        </select>\n")
+          .append("      </div>\n")
+          .append("      <div class='manual-id-group' style='margin-bottom:12px; display:none;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Custom Key Name:</label>\n")
+          .append("        <input type='text' name='target_id' placeholder='e.g. sess_token_99, config_app' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>\n")
+          .append("      </div>\n")
+          .append("      <div class='id-mode-banner' style='margin-bottom:12px; font-size:11px; color:#94a3b8; background:rgba(16,185,129,0.06); border-left:3px solid #10b981; padding:6px 10px; border-radius:4px;'>\n")
+          .append("        <i class='fas fa-fingerprint' style='color:#10b981; margin-right:4px;'></i> <span class='id-mode-desc'>Engine will auto-generate a Composite UUID integrating CPU hardware hash, timestamp, DB digest and UUID entropy.</span>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:16px;'><label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>String or JSON Value:</label><textarea name='kv_value' rows='4' placeholder='Enter value to cache/store...' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:12px; font-family:monospace; box-sizing:border-box;'></textarea></div>\n")
+          .append("      <div style='display:flex; justify-content:flex-end; gap:8px;'><button type='button' onclick=\"document.getElementById('addKeyValueModal').style.display='none'\" class='btn-action btn-secondary'>Cancel</button><button type='submit' class='btn-action btn-primary' style='background:#10b981;'><i class='fas fa-save'></i> Store Key-Value</button></div>\n")
+          .append("    </form>\n")
+          .append("  </div>\n")
+          .append("</div>\n");
 
-            // JS Handlers
-            "<script>\n" +
-            "  function openAddUnitModal(engine, label) {\n" +
-            "    document.getElementById('modalUnitEngineSelect').value = engine;\n" +
-            "    document.getElementById('modalUnitNameLabel').innerText = label + ' Name:';\n" +
-            "    document.getElementById('createUnitModal').style.display = 'flex';\n" +
-            "  }\n" +
-            "  function openAddObjectModal(engine, unit) {\n" +
-            "    window.location.href = '" + actionUrl + "' + engine + '&target_db=" + targetDb + "&coll=' + unit;\n" +
-            "  }\n" +
-            "  function openEditModal(id, payload) {\n" +
-            "    document.getElementById('editDocIdInput').value = id;\n" +
-            "    document.getElementById('editDocIdLabel').innerText = id;\n" +
-            "    document.getElementById('editDocPayloadInput').value = payload;\n" +
-            "    document.getElementById('editDocumentModal').style.display = 'flex';\n" +
-            "  }\n" +
-            "  function openRestoreModal(id, versionsJsonStr) {\n" +
-            "    document.getElementById('restoreDocIdInput').value = id;\n" +
-            "    document.getElementById('restoreDocIdLabel').innerText = id;\n" +
-            "    var container = document.getElementById('versionsListContainer');\n" +
-            "    container.innerHTML = '';\n" +
-            "    try {\n" +
-            "      var versions = JSON.parse(versionsJsonStr);\n" +
-            "      if (!versions || versions.length === 0) {\n" +
-            "        container.innerHTML = '<div style=\"padding:16px; color:#94a3b8; text-align:center;\">No historical versions available for this document yet. Edit the document to create new versions.</div>';\n" +
-            "      } else {\n" +
-            "        var html = '<table style=\"width:100%; border-collapse:collapse; font-size:12px;\">';\n" +
-            "        html += '<tr style=\"background:rgba(255,255,255,0.04); color:#94a3b8; text-align:left;\"><th style=\"padding:8px 12px;\">Version</th><th style=\"padding:8px 12px;\">Timestamp / Date</th><th style=\"padding:8px 12px;\">Snapshot Preview</th><th style=\"padding:8px 12px; text-align:right;\">Action</th></tr>';\n" +
-            "        for (var i = 0; i < versions.length; i++) {\n" +
-            "          var v = versions[i];\n" +
-            "          var badge = v.isCurrent ? '<span class=\"store-badge badge-active\" style=\"font-size:10px;\">' + v.versionNumber + ' (CURRENT)</span>' : '<span class=\"store-badge badge-records\" style=\"font-size:10px;\">' + v.versionNumber + '</span>';\n" +
-            "          html += '<tr style=\"border-bottom:1px solid rgba(255,255,255,0.05);\">';\n" +
-            "          html += '<td style=\"padding:8px 12px; font-weight:bold;\">' + badge + '</td>';\n" +
-            "          html += '<td style=\"padding:8px 12px; color:#cbd5e1;\">' + (v.formattedDate || v.timestamp) + '</td>';\n" +
-            "          html += '<td style=\"padding:8px 12px; color:#94a3b8; font-family:monospace;\">' + (v.preview || '{}') + '</td>';\n" +
-            "          html += '<td style=\"padding:8px 12px; text-align:right;\">';\n" +
-            "          if (!v.isCurrent) {\n" +
-            "            html += '<button type=\"button\" onclick=\"submitRestore(' + v.timestamp + ')\" class=\"btn-action btn-primary\" style=\"background:#a855f7; padding:3px 10px; font-size:11px;\"><i class=\"fas fa-undo\"></i> Restore</button>';\n" +
-            "          } else {\n" +
-            "            html += '<span style=\"color:#10b981; font-size:11px;\">Active</span>';\n" +
-            "          }\n" +
-            "          html += '</td></tr>';\n" +
-            "        }\n" +
-            "        html += '</table>';\n" +
-            "        container.innerHTML = html;\n" +
-            "      }\n" +
-            "    } catch(e) {\n" +
-            "      container.innerHTML = '<div style=\"padding:16px; color:#ef4444;\">Error parsing version list: ' + e.message + '</div>';\n" +
-            "    }\n" +
-            "    document.getElementById('restoreVersionModal').style.display = 'flex';\n" +
-            "  }\n" +
-            "  function submitRestore(ts) {\n" +
-            "    if (confirm('Are you sure you want to restore document version from timestamp ' + ts + '?')) {\n" +
-            "      document.getElementById('restoreVersionTsInput').value = ts;\n" +
-            "      document.getElementById('restoreVersionModal').querySelector('form').submit();\n" +
-            "    }\n" +
-            "  }\n" +
-            "</script>\n";
+        // Modal 3: [+ Add Vector Embedding]
+        sb.append("<div id='addVectorModal' style='display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center;'>\n")
+          .append("  <div class='store-card' style='width:520px; max-width:90%; background:#1e293b; border:1px solid rgba(139,92,246,0.4); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:24px;'>\n")
+          .append("    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;'>\n")
+          .append("      <h3 style='margin:0; font-size:18px; font-weight:700; color:#f8fafc;'><i class='fas fa-project-diagram' style='color:#8b5cf6; margin-right:8px;'></i> [+ Add Vector Embedding]</h3>\n")
+          .append("      <button onclick=\"document.getElementById('addVectorModal').style.display='none'\" style='background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;'><i class='fas fa-times'></i></button>\n")
+          .append("    </div>\n")
+          .append("    <form method='POST' action='").append(JettraServer.resolvePath("/engines?engine=VECTOR")).append("'>\n")
+          .append("      <input type='hidden' name='action' value='insert_object'/>\n")
+          .append("      <input type='hidden' name='target_db' value='").append(targetDb).append("'/>\n")
+          .append("      <div style='margin-bottom:12px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Vector Index:</label>\n")
+          .append("        <input type='text' name='target_coll' value='default' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#8b5cf6; font-size:13px; box-sizing:border-box;'/>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:12px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Vector ID Generation Strategy:</label>\n")
+          .append("        <select name='id_gen_mode' onchange='handleIdModeChange(this)' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#8b5cf6; font-size:13px; box-sizing:border-box;'>\n")
+          .append("          <option value='UUID' selected>1. UUID (Composite: CPU + Time + DB + UUID Entropy)</option>\n")
+          .append("          <option value='AUTOINCREMENT'>2. Autoincrementable (Sequential Counter: 1, 2, 3...)</option>\n")
+          .append("          <option value='MANUAL'>3. Manual Mode (Custom User Specified ID)</option>\n")
+          .append("        </select>\n")
+          .append("      </div>\n")
+          .append("      <div class='manual-id-group' style='margin-bottom:12px; display:none;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Custom Vector ID:</label>\n")
+          .append("        <input type='text' name='target_id' placeholder='e.g. vec_emb_001' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>\n")
+          .append("      </div>\n")
+          .append("      <div class='id-mode-banner' style='margin-bottom:12px; font-size:11px; color:#94a3b8; background:rgba(139,92,246,0.06); border-left:3px solid #8b5cf6; padding:6px 10px; border-radius:4px;'>\n")
+          .append("        <i class='fas fa-fingerprint' style='color:#8b5cf6; margin-right:4px;'></i> <span class='id-mode-desc'>Engine will auto-generate a Composite UUID integrating CPU hardware hash, timestamp, DB digest and UUID entropy.</span>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:12px;'><label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Vector Coordinates (float array):</label><input type='text' name='vector_coords' value='0.12, 0.45, 0.88, 0.31, 0.65' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/></div>\n")
+          .append("      <div style='margin-bottom:16px;'><label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Metadata / Payload JSON:</label><textarea name='vector_meta' rows='3' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:12px; font-family:monospace; box-sizing:border-box;'>{\"category\": \"AI Model\", \"source\": \"embeddings_v3\"}</textarea></div>\n")
+          .append("      <div style='display:flex; justify-content:flex-end; gap:8px;'><button type='button' onclick=\"document.getElementById('addVectorModal').style.display='none'\" class='btn-action btn-secondary'>Cancel</button><button type='submit' class='btn-action btn-primary' style='background:#8b5cf6;'><i class='fas fa-project-diagram'></i> Insert Vector</button></div>\n")
+          .append("    </form>\n")
+          .append("  </div>\n")
+          .append("</div>\n");
 
-        return RawHtml.of(modalsHtml);
+        // Modal 4: [+ Add Vertex / Edge]
+        sb.append("<div id='addGraphModal' style='display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center;'>\n")
+          .append("  <div class='store-card' style='width:520px; max-width:90%; background:#1e293b; border:1px solid rgba(236,72,153,0.4); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:24px;'>\n")
+          .append("    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;'>\n")
+          .append("      <h3 style='margin:0; font-size:18px; font-weight:700; color:#f8fafc;'><i class='fas fa-share-alt' style='color:#ec4899; margin-right:8px;'></i> [+ Add Vertex / Edge]</h3>\n")
+          .append("      <button onclick=\"document.getElementById('addGraphModal').style.display='none'\" style='background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;'><i class='fas fa-times'></i></button>\n")
+          .append("    </div>\n")
+          .append("    <form method='POST' action='").append(JettraServer.resolvePath("/engines?engine=GRAPH")).append("'>\n")
+          .append("      <input type='hidden' name='action' value='insert_object'/>\n")
+          .append("      <input type='hidden' name='target_db' value='").append(targetDb).append("'/>\n")
+          .append("      <div style='display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px;'>\n")
+          .append("        <div><label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Element Type:</label><select name='graph_mode' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#ec4899; font-size:13px; box-sizing:border-box;'><option value='node'>Vertex (Node)</option><option value='edge'>Edge (Relationship)</option></select></div>\n")
+          .append("        <div><label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Node Label / Group:</label><input type='text' name='target_coll' value='User' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/></div>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:12px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>ID Generation Strategy:</label>\n")
+          .append("        <select name='id_gen_mode' onchange='handleIdModeChange(this)' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#ec4899; font-size:13px; box-sizing:border-box;'>\n")
+          .append("          <option value='UUID' selected>1. UUID (Composite: CPU + Time + DB + UUID Entropy)</option>\n")
+          .append("          <option value='AUTOINCREMENT'>2. Autoincrementable (Sequential Counter: 1, 2, 3...)</option>\n")
+          .append("          <option value='MANUAL'>3. Manual Mode (Custom User Specified ID)</option>\n")
+          .append("        </select>\n")
+          .append("      </div>\n")
+          .append("      <div class='manual-id-group' style='margin-bottom:12px; display:none;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Custom Vertex ID:</label>\n")
+          .append("        <input type='text' name='target_id' placeholder='e.g. user_node_101' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>\n")
+          .append("      </div>\n")
+          .append("      <div class='id-mode-banner' style='margin-bottom:12px; font-size:11px; color:#94a3b8; background:rgba(236,72,153,0.06); border-left:3px solid #ec4899; padding:6px 10px; border-radius:4px;'>\n")
+          .append("        <i class='fas fa-fingerprint' style='color:#ec4899; margin-right:4px;'></i> <span class='id-mode-desc'>Engine will auto-generate a Composite UUID integrating CPU hardware hash, timestamp, DB digest and UUID entropy.</span>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:16px;'><label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Graph Properties JSON:</label><textarea name='node_props' rows='3' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:12px; font-family:monospace; box-sizing:border-box;'>{\"name\": \"Alice\", \"role\": \"Admin\"}</textarea></div>\n")
+          .append("      <div style='display:flex; justify-content:flex-end; gap:8px;'><button type='button' onclick=\"document.getElementById('addGraphModal').style.display='none'\" class='btn-action btn-secondary'>Cancel</button><button type='submit' class='btn-action btn-primary' style='background:#ec4899;'><i class='fas fa-share-alt'></i> Save Graph Item</button></div>\n")
+          .append("    </form>\n")
+          .append("  </div>\n")
+          .append("</div>\n");
+
+        // Modal 5: [+ Add Time Point]
+        sb.append("<div id='addTimeSeriesModal' style='display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center;'>\n")
+          .append("  <div class='store-card' style='width:520px; max-width:90%; background:#1e293b; border:1px solid rgba(6,182,212,0.4); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:24px;'>\n")
+          .append("    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;'>\n")
+          .append("      <h3 style='margin:0; font-size:18px; font-weight:700; color:#f8fafc;'><i class='fas fa-chart-line' style='color:#06b6d4; margin-right:8px;'></i> [+ Add Time Point]</h3>\n")
+          .append("      <button onclick=\"document.getElementById('addTimeSeriesModal').style.display='none'\" style='background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;'><i class='fas fa-times'></i></button>\n")
+          .append("    </div>\n")
+          .append("    <form method='POST' action='").append(JettraServer.resolvePath("/engines?engine=TIMESERIES")).append("'>\n")
+          .append("      <input type='hidden' name='action' value='insert_object'/>\n")
+          .append("      <input type='hidden' name='target_db' value='").append(targetDb).append("'/>\n")
+          .append("      <div style='margin-bottom:12px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Metric Name:</label>\n")
+          .append("        <input type='text' name='target_coll' value='telemetry' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#06b6d4; font-size:13px; box-sizing:border-box;'/>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:12px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Point ID / Timestamp Strategy:</label>\n")
+          .append("        <select name='id_gen_mode' onchange='handleIdModeChange(this)' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#06b6d4; font-size:13px; box-sizing:border-box;'>\n")
+          .append("          <option value='UUID' selected>1. UUID (Composite: CPU + Time + DB + UUID Entropy)</option>\n")
+          .append("          <option value='AUTOINCREMENT'>2. Autoincrementable (Sequential Counter: 1, 2, 3...)</option>\n")
+          .append("          <option value='MANUAL'>3. Manual Mode (Custom User Specified ID)</option>\n")
+          .append("        </select>\n")
+          .append("      </div>\n")
+          .append("      <div class='manual-id-group' style='margin-bottom:12px; display:none;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Custom Point ID:</label>\n")
+          .append("        <input type='text' name='target_id' placeholder='e.g. ts_pt_1001' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>\n")
+          .append("      </div>\n")
+          .append("      <div class='id-mode-banner' style='margin-bottom:12px; font-size:11px; color:#94a3b8; background:rgba(6,182,212,0.06); border-left:3px solid #06b6d4; padding:6px 10px; border-radius:4px;'>\n")
+          .append("        <i class='fas fa-fingerprint' style='color:#06b6d4; margin-right:4px;'></i> <span class='id-mode-desc'>Engine will auto-generate a Composite UUID integrating CPU hardware hash, timestamp, DB digest and UUID entropy.</span>\n")
+          .append("      </div>\n")
+          .append("      <div style='display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px;'>\n")
+          .append("        <div><label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Value (Double):</label><input type='number' step='any' name='ts_value' value='98.6' required style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/></div>\n")
+          .append("        <div><label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Unit / Scale:</label><input type='text' name='ts_unit' placeholder='celsius, ms, %' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/></div>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:12px;'><label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Timestamp (ms):</label><input type='text' name='ts_timestamp' value='").append(System.currentTimeMillis()).append("' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/></div>\n")
+          .append("      <div style='margin-bottom:16px;'><label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Tags JSON:</label><textarea name='ts_tags' rows='2' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:12px; font-family:monospace; box-sizing:border-box;'>{\"sensor_id\": \"SN-01\", \"zone\": \"rack_A\"}</textarea></div>\n")
+          .append("      <div style='display:flex; justify-content:flex-end; gap:8px;'><button type='button' onclick=\"document.getElementById('addTimeSeriesModal').style.display='none'\" class='btn-action btn-secondary'>Cancel</button><button type='submit' class='btn-action btn-primary' style='background:#06b6d4;'><i class='fas fa-stopwatch'></i> Add Point</button></div>\n")
+          .append("    </form>\n")
+          .append("  </div>\n")
+          .append("</div>\n");
+
+        // Modal 6: [+ Add Dynamic Row] (Column)
+        sb.append("<div id='addColumnModal' style='display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center;'>\n")
+          .append("  <div class='store-card' style='width:520px; max-width:90%; background:#1e293b; border:1px solid rgba(249,115,22,0.4); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:24px;'>\n")
+          .append("    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;'>\n")
+          .append("      <h3 style='margin:0; font-size:18px; font-weight:700; color:#f8fafc;'><i class='fas fa-table' style='color:#f97316; margin-right:8px;'></i> [+ Add Dynamic Row]</h3>\n")
+          .append("      <button onclick=\"document.getElementById('addColumnModal').style.display='none'\" style='background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;'><i class='fas fa-times'></i></button>\n")
+          .append("    </div>\n")
+          .append("    <form method='POST' action='").append(JettraServer.resolvePath("/engines?engine=COLUMN")).append("'>\n")
+          .append("      <input type='hidden' name='action' value='insert_object'/>\n")
+          .append("      <input type='hidden' name='target_db' value='").append(targetDb).append("'/>\n")
+          .append("      <div style='margin-bottom:12px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Column Family:</label>\n")
+          .append("        <input type='text' name='target_coll' value='analytics' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f97316; font-size:13px; box-sizing:border-box;'/>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:12px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Row Key Generation Strategy:</label>\n")
+          .append("        <select name='id_gen_mode' onchange='handleIdModeChange(this)' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f97316; font-size:13px; box-sizing:border-box;'>\n")
+          .append("          <option value='UUID' selected>1. UUID (Composite: CPU + Time + DB + UUID Entropy)</option>\n")
+          .append("          <option value='AUTOINCREMENT'>2. Autoincrementable (Sequential Counter: 1, 2, 3...)</option>\n")
+          .append("          <option value='MANUAL'>3. Manual Mode (Custom User Specified Row Key)</option>\n")
+          .append("        </select>\n")
+          .append("      </div>\n")
+          .append("      <div class='manual-id-group' style='margin-bottom:12px; display:none;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Custom Row Key:</label>\n")
+          .append("        <input type='text' name='target_id' placeholder='e.g. row_2026_01' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>\n")
+          .append("      </div>\n")
+          .append("      <div class='id-mode-banner' style='margin-bottom:12px; font-size:11px; color:#94a3b8; background:rgba(249,115,22,0.06); border-left:3px solid #f97316; padding:6px 10px; border-radius:4px;'>\n")
+          .append("        <i class='fas fa-fingerprint' style='color:#f97316; margin-right:4px;'></i> <span class='id-mode-desc'>Engine will auto-generate a Composite UUID integrating CPU hardware hash, timestamp, DB digest and UUID entropy.</span>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:16px;'><label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Column Data (JSON or col:val):</label><textarea name='col_data' rows='4' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:12px; font-family:monospace; box-sizing:border-box;'>{\"views\": 1520, \"status\": \"PROCESSED\", \"latency_p99\": 14.2}</textarea></div>\n")
+          .append("      <div style='display:flex; justify-content:flex-end; gap:8px;'><button type='button' onclick=\"document.getElementById('addColumnModal').style.display='none'\" class='btn-action btn-secondary'>Cancel</button><button type='submit' class='btn-action btn-primary' style='background:#f97316;'><i class='fas fa-bars-staggered'></i> Insert Row</button></div>\n")
+          .append("    </form>\n")
+          .append("  </div>\n")
+          .append("</div>\n");
+
+        // Modal 7: [+ Add GIS Feature]
+        sb.append("<div id='addGeoModal' style='display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center;'>\n")
+          .append("  <div class='store-card' style='width:520px; max-width:90%; background:#1e293b; border:1px solid rgba(20,184,166,0.4); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:24px;'>\n")
+          .append("    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;'>\n")
+          .append("      <h3 style='margin:0; font-size:18px; font-weight:700; color:#f8fafc;'><i class='fas fa-globe-americas' style='color:#14b8a6; margin-right:8px;'></i> [+ Add GIS Feature]</h3>\n")
+          .append("      <button onclick=\"document.getElementById('addGeoModal').style.display='none'\" style='background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;'><i class='fas fa-times'></i></button>\n")
+          .append("    </div>\n")
+          .append("    <form method='POST' action='").append(JettraServer.resolvePath("/engines?engine=GEOSPATIAL")).append("'>\n")
+          .append("      <input type='hidden' name='action' value='insert_object'/>\n")
+          .append("      <input type='hidden' name='target_db' value='").append(targetDb).append("'/>\n")
+          .append("      <div style='margin-bottom:12px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Spatial Layer:</label>\n")
+          .append("        <input type='text' name='target_coll' value='stores_layer' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#14b8a6; font-size:13px; box-sizing:border-box;'/>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:12px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Feature ID Generation Strategy:</label>\n")
+          .append("        <select name='id_gen_mode' onchange='handleIdModeChange(this)' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#14b8a6; font-size:13px; box-sizing:border-box;'>\n")
+          .append("          <option value='UUID' selected>1. UUID (Composite: CPU + Time + DB + UUID Entropy)</option>\n")
+          .append("          <option value='AUTOINCREMENT'>2. Autoincrementable (Sequential Counter: 1, 2, 3...)</option>\n")
+          .append("          <option value='MANUAL'>3. Manual Mode (Custom User Specified ID)</option>\n")
+          .append("        </select>\n")
+          .append("      </div>\n")
+          .append("      <div class='manual-id-group' style='margin-bottom:12px; display:none;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Custom Feature ID:</label>\n")
+          .append("        <input type='text' name='target_id' placeholder='e.g. poi_station_01' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>\n")
+          .append("      </div>\n")
+          .append("      <div class='id-mode-banner' style='margin-bottom:12px; font-size:11px; color:#94a3b8; background:rgba(20,184,166,0.06); border-left:3px solid #14b8a6; padding:6px 10px; border-radius:4px;'>\n")
+          .append("        <i class='fas fa-fingerprint' style='color:#14b8a6; margin-right:4px;'></i> <span class='id-mode-desc'>Engine will auto-generate a Composite UUID integrating CPU hardware hash, timestamp, DB digest and UUID entropy.</span>\n")
+          .append("      </div>\n")
+          .append("      <div style='display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px;'>\n")
+          .append("        <div><label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Latitude (-90..90):</label><input type='number' step='any' name='geo_lat' value='8.9833' required style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/></div>\n")
+          .append("        <div><label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Longitude (-180..180):</label><input type='number' step='any' name='geo_lon' value='-79.5167' required style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/></div>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:16px;'><label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Place Name / Metadata:</label><input type='text' name='geo_name' value='Metropolitan Hub' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/></div>\n")
+          .append("      <div style='display:flex; justify-content:flex-end; gap:8px;'><button type='button' onclick=\"document.getElementById('addGeoModal').style.display='none'\" class='btn-action btn-secondary'>Cancel</button><button type='submit' class='btn-action btn-primary' style='background:#14b8a6;'><i class='fas fa-location-dot'></i> Save GIS Feature</button></div>\n")
+          .append("    </form>\n")
+          .append("  </div>\n")
+          .append("</div>\n");
+
+        // Modal 8: [+ Add BLOB Object]
+        sb.append("<div id='addObjectModal' style='display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center;'>\n")
+          .append("  <div class='store-card' style='width:520px; max-width:90%; background:#1e293b; border:1px solid rgba(168,85,247,0.4); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:24px;'>\n")
+          .append("    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;'>\n")
+          .append("      <h3 style='margin:0; font-size:18px; font-weight:700; color:#f8fafc;'><i class='fas fa-archive' style='color:#a855f7; margin-right:8px;'></i> [+ Add BLOB Object]</h3>\n")
+          .append("      <button onclick=\"document.getElementById('addObjectModal').style.display='none'\" style='background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;'><i class='fas fa-times'></i></button>\n")
+          .append("    </div>\n")
+          .append("    <form method='POST' action='").append(JettraServer.resolvePath("/engines?engine=OBJECT")).append("'>\n")
+          .append("      <input type='hidden' name='action' value='insert_object'/>\n")
+          .append("      <input type='hidden' name='target_db' value='").append(targetDb).append("'/>\n")
+          .append("      <div style='margin-bottom:12px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Storage Bucket:</label>\n")
+          .append("        <input type='text' name='target_coll' value='media_bucket' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#a855f7; font-size:13px; box-sizing:border-box;'/>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:12px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Object ID Generation Strategy:</label>\n")
+          .append("        <select name='id_gen_mode' onchange='handleIdModeChange(this)' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#a855f7; font-size:13px; box-sizing:border-box;'>\n")
+          .append("          <option value='UUID' selected>1. UUID (Composite: CPU + Time + DB + UUID Entropy)</option>\n")
+          .append("          <option value='AUTOINCREMENT'>2. Autoincrementable (Sequential Counter: 1, 2, 3...)</option>\n")
+          .append("          <option value='MANUAL'>3. Manual Mode (Custom User Specified ID)</option>\n")
+          .append("        </select>\n")
+          .append("      </div>\n")
+          .append("      <div class='manual-id-group' style='margin-bottom:12px; display:none;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Custom Object ID:</label>\n")
+          .append("        <input type='text' name='target_id' placeholder='e.g. media_video_100' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>\n")
+          .append("      </div>\n")
+          .append("      <div class='id-mode-banner' style='margin-bottom:12px; font-size:11px; color:#94a3b8; background:rgba(168,85,247,0.06); border-left:3px solid #a855f7; padding:6px 10px; border-radius:4px;'>\n")
+          .append("        <i class='fas fa-fingerprint' style='color:#a855f7; margin-right:4px;'></i> <span class='id-mode-desc'>Engine will auto-generate a Composite UUID integrating CPU hardware hash, timestamp, DB digest and UUID entropy.</span>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:12px;'><label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>MIME Content-Type:</label><input type='text' name='obj_mime' value='application/json' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/></div>\n")
+          .append("      <div style='margin-bottom:16px;'><label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Payload / Raw Content:</label><textarea name='obj_payload' rows='4' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:12px; font-family:monospace; box-sizing:border-box;'>Binary BLOB chunk stream content</textarea></div>\n")
+          .append("      <div style='display:flex; justify-content:flex-end; gap:8px;'><button type='button' onclick=\"document.getElementById('addObjectModal').style.display='none'\" class='btn-action btn-secondary'>Cancel</button><button type='submit' class='btn-action btn-primary' style='background:#a855f7;'><i class='fas fa-box-archive'></i> Save Object</button></div>\n")
+          .append("    </form>\n")
+          .append("  </div>\n")
+          .append("</div>\n");
+
+        // Modal 9: [+ Add Immutable Record]
+        sb.append("<div id='addRecordsModal' style='display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center;'>\n")
+          .append("  <div class='store-card' style='width:520px; max-width:90%; background:#1e293b; border:1px solid rgba(244,63,94,0.4); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:24px;'>\n")
+          .append("    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;'>\n")
+          .append("      <h3 style='margin:0; font-size:18px; font-weight:700; color:#f8fafc;'><i class='fas fa-id-card' style='color:#f43f5e; margin-right:8px;'></i> [+ Add Immutable Record]</h3>\n")
+          .append("      <button onclick=\"document.getElementById('addRecordsModal').style.display='none'\" style='background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;'><i class='fas fa-times'></i></button>\n")
+          .append("    </div>\n")
+          .append("    <form method='POST' action='").append(JettraServer.resolvePath("/engines?engine=RECORDS")).append("'>\n")
+          .append("      <input type='hidden' name='action' value='insert_object'/>\n")
+          .append("      <input type='hidden' name='target_db' value='").append(targetDb).append("'/>\n")
+          .append("      <div style='margin-bottom:12px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Record Table:</label>\n")
+          .append("        <input type='text' name='target_coll' value='employee_records' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f43f5e; font-size:13px; box-sizing:border-box;'/>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:12px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Record ID Generation Strategy:</label>\n")
+          .append("        <select name='id_gen_mode' onchange='handleIdModeChange(this)' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f43f5e; font-size:13px; box-sizing:border-box;'>\n")
+          .append("          <option value='UUID' selected>1. UUID (Composite: CPU + Time + DB + UUID Entropy)</option>\n")
+          .append("          <option value='AUTOINCREMENT'>2. Autoincrementable (Sequential Counter: 1, 2, 3...)</option>\n")
+          .append("          <option value='MANUAL'>3. Manual Mode (Custom User Specified ID)</option>\n")
+          .append("        </select>\n")
+          .append("      </div>\n")
+          .append("      <div class='manual-id-group' style='margin-bottom:12px; display:none;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Custom Record ID:</label>\n")
+          .append("        <input type='text' name='target_id' placeholder='e.g. emp_101, rec_person_01' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>\n")
+          .append("      </div>\n")
+          .append("      <div class='id-mode-banner' style='margin-bottom:12px; font-size:11px; color:#94a3b8; background:rgba(244,63,94,0.06); border-left:3px solid #f43f5e; padding:6px 10px; border-radius:4px;'>\n")
+          .append("        <i class='fas fa-fingerprint' style='color:#f43f5e; margin-right:4px;'></i> <span class='id-mode-desc'>Engine will auto-generate a Composite UUID integrating CPU hardware hash, timestamp, DB digest and UUID entropy.</span>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:12px;'><label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Java 25 Record Class:</label><input type='text' name='rec_class' value='com.jettra.model.PersonRecord' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/></div>\n")
+          .append("      <div style='margin-bottom:16px;'><label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Record Components JSON:</label><textarea name='rec_payload' rows='4' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:12px; font-family:monospace; box-sizing:border-box;'>{\"name\": \"Carlos Ruiz\", \"role\": \"Lead Architect\", \"department\": \"Engineering\"}</textarea></div>\n")
+          .append("      <div style='display:flex; justify-content:flex-end; gap:8px;'><button type='button' onclick=\"document.getElementById('addRecordsModal').style.display='none'\" class='btn-action btn-secondary'>Cancel</button><button type='submit' class='btn-action btn-primary' style='background:#f43f5e;'><i class='fas fa-address-card'></i> Save Record</button></div>\n")
+          .append("    </form>\n")
+          .append("  </div>\n")
+          .append("</div>\n");
+
+        // Edit Document Modal
+        sb.append("<div id='editDocumentModal' style='display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center;'>\n")
+          .append("  <div class='store-card' style='width:560px; max-width:90%; background:#1e293b; border:1px solid rgba(56,189,248,0.4); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:24px;'>\n")
+          .append("    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;'>\n")
+          .append("      <h3 style='margin:0; font-size:18px; font-weight:700; color:#f8fafc;'><i class='fas fa-edit' style='color:#38bdf8; margin-right:8px;'></i> Edit Document (<span id='editDocIdLabel'></span>)</h3>\n")
+          .append("      <button onclick=\"document.getElementById('editDocumentModal').style.display='none'\" style='background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;'><i class='fas fa-times'></i></button>\n")
+          .append("    </div>\n")
+          .append("    <form method='POST' action='").append(actionUrl).append("'>\n")
+          .append("      <input type='hidden' name='action' value='edit_document'/>\n")
+          .append("      <input type='hidden' name='target_db' value='").append(targetDb).append("'/>\n")
+          .append("      <input type='hidden' name='target_coll' value='").append(currentColl).append("'/>\n")
+          .append("      <input type='hidden' name='target_id' id='editDocIdInput'/>\n")
+          .append("      <div style='margin-bottom:12px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Schema / Class (Optional):</label>\n")
+          .append("        <input type='text' name='doc_class' placeholder='com.enterprise.model.Customer' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:16px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>JSON Payload:</label>\n")
+          .append("        <textarea id='editDocPayloadInput' name='doc_payload' rows='6' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:12px; font-family:monospace; box-sizing:border-box;'></textarea>\n")
+          .append("      </div>\n")
+          .append("      <div style='display:flex; justify-content:flex-end; gap:8px;'>\n")
+          .append("        <button type='button' onclick=\"document.getElementById('editDocumentModal').style.display='none'\" class='btn-action btn-secondary'>Cancel</button>\n")
+          .append("        <button type='submit' class='btn-action btn-primary'><i class='fas fa-save'></i> Save Changes (New Version)</button>\n")
+          .append("      </div>\n")
+          .append("    </form>\n")
+          .append("  </div>\n")
+          .append("</div>\n");
+
+        // Descending Versions Recovery Modal
+        sb.append("<div id='restoreVersionModal' style='display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center;'>\n")
+          .append("  <div class='store-card' style='width:650px; max-width:92%; background:#1e293b; border:1px solid rgba(168,85,247,0.4); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:24px;'>\n")
+          .append("    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;'>\n")
+          .append("      <h3 style='margin:0; font-size:18px; font-weight:700; color:#f8fafc;'><i class='fas fa-history' style='color:#a855f7; margin-right:8px;'></i> Historical Versions (<span id='restoreDocIdLabel' style='color:#38bdf8;'></span>)</h3>\n")
+          .append("      <button onclick=\"document.getElementById('restoreVersionModal').style.display='none'\" style='background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;'><i class='fas fa-times'></i></button>\n")
+          .append("    </div>\n")
+          .append("    <p style='font-size:13px; color:#cbd5e1; margin-top:0;'>Select a previous snapshot version (ordered descending: newest to oldest) to rollback:</p>\n")
+          .append("    <form method='POST' action='").append(actionUrl).append("'>\n")
+          .append("      <input type='hidden' name='action' value='restore_version'/>\n")
+          .append("      <input type='hidden' name='target_db' value='").append(targetDb).append("'/>\n")
+          .append("      <input type='hidden' name='target_coll' value='").append(currentColl).append("'/>\n")
+          .append("      <input type='hidden' name='target_id' id='restoreDocIdInput'/>\n")
+          .append("      <input type='hidden' name='version_ts' id='restoreVersionTsInput'/>\n")
+          .append("      <div id='versionsListContainer' style='max-height:220px; overflow-y:auto; margin-bottom:16px; border:1px solid rgba(255,255,255,0.08); border-radius:8px; background:#0f172a;'></div>\n")
+          .append("      <div style='display:flex; justify-content:flex-end; gap:8px;'>\n")
+          .append("        <button type='button' onclick=\"document.getElementById('restoreVersionModal').style.display='none'\" class='btn-action btn-secondary'>Close</button>\n")
+          .append("      </div>\n")
+          .append("    </form>\n")
+          .append("  </div>\n")
+          .append("</div>\n");
+
+        // Advanced Search Modal
+        sb.append("<div id='advancedSearchModal' style='display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center;'>\n")
+          .append("  <div class='store-card' style='width:560px; max-width:90%; background:#1e293b; border:1px solid rgba(59,130,246,0.4); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:24px;'>\n")
+          .append("    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;'>\n")
+          .append("      <h3 style='margin:0; font-size:18px; font-weight:700; color:#f8fafc;'><i class='fas fa-search-plus' style='color:#38bdf8; margin-right:8px;'></i> Advanced Search Inspector</h3>\n")
+          .append("      <button onclick=\"document.getElementById('advancedSearchModal').style.display='none'\" style='background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;'><i class='fas fa-times'></i></button>\n")
+          .append("    </div>\n")
+          .append("    <form method='POST' action='").append(actionUrl).append("'>\n")
+          .append("      <input type='hidden' name='action' value='query_object'/>\n")
+          .append("      <input type='hidden' name='target_db' value='").append(targetDb).append("'/>\n")
+          .append("      <input type='hidden' name='target_coll' value='").append(currentColl).append("'/>\n")
+          .append("      <div style='margin-bottom:12px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Lookup ID / Key Filter:</label>\n")
+          .append("        <input type='text' name='target_id' placeholder='e.g. doc_101 or prefix*' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:12px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>JSON Property Query (Key : Value):</label>\n")
+          .append("        <input type='text' name='prop_filter' placeholder='tier: Platinum' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>\n")
+          .append("      </div>\n")
+          .append("      <div style='display:flex; justify-content:flex-end; gap:8px;'>\n")
+          .append("        <button type='button' onclick=\"document.getElementById('advancedSearchModal').style.display='none'\" class='btn-action btn-secondary'>Cancel</button>\n")
+          .append("        <button type='submit' class='btn-action btn-primary'><i class='fas fa-search'></i> Execute Query</button>\n")
+          .append("      </div>\n")
+          .append("    </form>\n")
+          .append("  </div>\n")
+          .append("</div>\n");
+
+        // Dynamic JS Dispatcher & ID Strategy Controller
+        sb.append("<script>\n")
+          .append("  function openAddUnitModal(engine, label) {\n")
+          .append("    document.getElementById('modalUnitEngineSelect').value = engine;\n")
+          .append("    document.getElementById('modalUnitNameLabel').innerText = label + ' Name:';\n")
+          .append("    document.getElementById('createUnitModal').style.display = 'flex';\n")
+          .append("  }\n")
+          .append("  function openAddObjectModal(engine, unit) {\n")
+          .append("    var modalMap = {\n")
+          .append("      'DOCUMENT': 'addDocumentModal',\n")
+          .append("      'KEYVALUE': 'addKeyValueModal',\n")
+          .append("      'VECTOR': 'addVectorModal',\n")
+          .append("      'GRAPH': 'addGraphModal',\n")
+          .append("      'TIMESERIES': 'addTimeSeriesModal',\n")
+          .append("      'COLUMN': 'addColumnModal',\n")
+          .append("      'GEOSPATIAL': 'addGeoModal',\n")
+          .append("      'OBJECT': 'addObjectModal',\n")
+          .append("      'RECORDS': 'addRecordsModal'\n")
+          .append("    };\n")
+          .append("    var modalId = modalMap[engine] || 'addDocumentModal';\n")
+          .append("    var modal = document.getElementById(modalId);\n")
+          .append("    if (modal) {\n")
+          .append("      var unitInput = modal.querySelector('input[name=\"target_coll\"]') || modal.querySelector('input[name=\"node_label\"]');\n")
+          .append("      if (unitInput && unit) unitInput.value = unit;\n")
+          .append("      modal.style.display = 'flex';\n")
+          .append("    }\n")
+          .append("  }\n")
+          .append("  function handleIdModeChange(selectElem) {\n")
+          .append("    var form = selectElem.closest('form');\n")
+          .append("    if (!form) return;\n")
+          .append("    var mode = selectElem.value;\n")
+          .append("    var manualGroup = form.querySelector('.manual-id-group');\n")
+          .append("    var desc = form.querySelector('.id-mode-desc');\n")
+          .append("    var icon = form.querySelector('.id-mode-banner i');\n")
+          .append("    var input = form.querySelector('.manual-id-group input');\n")
+          .append("    if (mode === 'MANUAL') {\n")
+          .append("      if (manualGroup) manualGroup.style.display = 'block';\n")
+          .append("      if (input) input.required = true;\n")
+          .append("      if (desc) desc.innerText = 'Manual mode active: enter your custom identifier above.';\n")
+          .append("      if (icon) icon.className = 'fas fa-keyboard';\n")
+          .append("    } else if (mode === 'AUTOINCREMENT') {\n")
+          .append("      if (manualGroup) manualGroup.style.display = 'none';\n")
+          .append("      if (input) { input.required = false; input.value = ''; }\n")
+          .append("      if (desc) desc.innerText = 'Autoincrement mode active: engine internal counter will generate next sequential integer (1, 2, 3...).';\n")
+          .append("      if (icon) icon.className = 'fas fa-sort-numeric-down';\n")
+          .append("    } else {\n")
+          .append("      if (manualGroup) manualGroup.style.display = 'none';\n")
+          .append("      if (input) { input.required = false; input.value = ''; }\n")
+          .append("      if (desc) desc.innerText = 'Composite UUID mode active: generates unique ID combining CPU signature, timestamp, DB digest and UUID entropy.';\n")
+          .append("      if (icon) icon.className = 'fas fa-fingerprint';\n")
+          .append("    }\n")
+          .append("  }\n")
+          .append("  function openEditModal(id, payload) {\n")
+          .append("    document.getElementById('editDocIdInput').value = id;\n")
+          .append("    document.getElementById('editDocIdLabel').innerText = id;\n")
+          .append("    document.getElementById('editDocPayloadInput').value = payload;\n")
+          .append("    document.getElementById('editDocumentModal').style.display = 'flex';\n")
+          .append("  }\n")
+          .append("  function openRestoreModal(id, versionsJsonStr) {\n")
+          .append("    document.getElementById('restoreDocIdInput').value = id;\n")
+          .append("    document.getElementById('restoreDocIdLabel').innerText = id;\n")
+          .append("    var container = document.getElementById('versionsListContainer');\n")
+          .append("    container.innerHTML = '';\n")
+          .append("    try {\n")
+          .append("      var versions = JSON.parse(versionsJsonStr);\n")
+          .append("      if (!versions || versions.length === 0) {\n")
+          .append("        container.innerHTML = '<div style=\"padding:16px; color:#94a3b8; text-align:center;\">No historical versions available for this document yet. Edit the document to create new versions.</div>';\n")
+          .append("      } else {\n")
+          .append("        var html = '<table style=\"width:100%; border-collapse:collapse; font-size:12px;\">';\n")
+          .append("        html += '<tr style=\"background:rgba(255,255,255,0.04); color:#94a3b8; text-align:left;\"><th style=\"padding:8px 12px;\">Version</th><th style=\"padding:8px 12px;\">Timestamp / Date</th><th style=\"padding:8px 12px;\">Snapshot Preview</th><th style=\"padding:8px 12px; text-align:right;\">Action</th></tr>';\n")
+          .append("        for (var i = 0; i < versions.length; i++) {\n")
+          .append("          var v = versions[i];\n")
+          .append("          var badge = v.isCurrent ? '<span class=\"store-badge badge-active\" style=\"font-size:10px;\">' + v.versionNumber + ' (CURRENT)</span>' : '<span class=\"store-badge badge-records\" style=\"font-size:10px;\">' + v.versionNumber + '</span>';\n")
+          .append("          html += '<tr style=\"border-bottom:1px solid rgba(255,255,255,0.05);\">';\n")
+          .append("          html += '<td style=\"padding:8px 12px; font-weight:bold;\">' + badge + '</td>';\n")
+          .append("          html += '<td style=\"padding:8px 12px; color:#cbd5e1;\">' + (v.formattedDate || v.timestamp) + '</td>';\n")
+          .append("          html += '<td style=\"padding:8px 12px; color:#94a3b8; font-family:monospace;\">' + (v.preview || '{}') + '</td>';\n")
+          .append("          html += '<td style=\"padding:8px 12px; text-align:right;\">';\n")
+          .append("          if (!v.isCurrent) {\n")
+          .append("            html += '<button type=\"button\" onclick=\"submitRestore(' + v.timestamp + ')\" class=\"btn-action btn-primary\" style=\"background:#a855f7; padding:3px 10px; font-size:11px;\"><i class=\"fas fa-undo\"></i> Restore</button>';\n")
+          .append("          } else {\n")
+          .append("            html += '<span style=\"color:#10b981; font-size:11px;\">Active</span>';\n")
+          .append("          }\n")
+          .append("          html += '</td></tr>';\n")
+          .append("        }\n")
+          .append("        html += '</table>';\n")
+          .append("        container.innerHTML = html;\n")
+          .append("      }\n")
+          .append("    } catch(e) {\n")
+          .append("      container.innerHTML = '<div style=\"padding:16px; color:#ef4444;\">Error parsing version list: ' + e.message + '</div>';\n")
+          .append("    }\n")
+          .append("    document.getElementById('restoreVersionModal').style.display = 'flex';\n")
+          .append("  }\n")
+          .append("  function submitRestore(ts) {\n")
+          .append("    if (confirm('Are you sure you want to restore document version from timestamp ' + ts + '?')) {\n")
+          .append("      document.getElementById('restoreVersionTsInput').value = ts;\n")
+          .append("      document.getElementById('restoreVersionModal').querySelector('form').submit();\n")
+          .append("    }\n")
+          .append("  }\n")
+          .append("</script>\n");
+
+        return RawHtml.of(sb.toString());
     }
 
     private Widget createEngineMatrixTable() {
