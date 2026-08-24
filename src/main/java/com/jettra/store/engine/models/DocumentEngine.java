@@ -13,12 +13,15 @@ import io.jettra.rules.core.RuleResult;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
+import com.jettra.store.engine.core.abstractions.EngineContext;
+import com.jettra.store.engine.models.document.DocumentDatabase;
+
 /**
  * Handles Document-oriented storage (JSON-like).
  * Supports advanced Jettra references, embedded documents, annotations validation,
  * and multi-mode identifier generation (Manual, Auto-increment, Composite UUID).
  */
-public class DocumentEngine implements EngineFamily {
+public class DocumentEngine implements EngineFamily, EngineContext<DocumentDatabase> {
 
     private final JettraStorageEngine engine;
     private final JettraConsensusClient raftClient;
@@ -45,6 +48,61 @@ public class DocumentEngine implements EngineFamily {
     public void close() {
         System.out.println("Closing Document Engine...");
         raftClient.close();
+    }
+    
+    // EngineContext Implementation
+    
+    @Override
+    public String getEngineType() {
+        return "DOCUMENT";
+    }
+
+    @Override
+    public DocumentDatabase getContainer(String name) {
+        return new DocumentDatabase(name, this);
+    }
+
+    @Override
+    public DocumentDatabase createContainer(String name) {
+        return new DocumentDatabase(name, this);
+    }
+
+    @Override
+    public void dropContainer(String name) {
+        // Implement full deletion
+        String prefix = name + ":";
+        java.util.Map<String, byte[]> raw = engine.getStorageCore().scanPrefix(prefix);
+        for (String fullKey : raw.keySet()) {
+            engine.getStorageCore().delete(fullKey, System.currentTimeMillis());
+        }
+    }
+
+    @Override
+    public List<String> listContainerNames() {
+        List<String> list = new java.util.ArrayList<>();
+        String prefix = "doc:"; // Assuming prefix usage
+        java.util.Map<String, byte[]> raw = engine.getStorageCore().scanPrefix(prefix);
+        for (String k : raw.keySet()) {
+            String rest = k.substring(prefix.length());
+            int colonIdx = rest.indexOf(':');
+            if (colonIdx > 0) {
+                String dbName = rest.substring(0, colonIdx);
+                if (!list.contains(dbName)) {
+                    list.add(dbName);
+                }
+            }
+        }
+        return list;
+    }
+
+    @Override
+    public void initialize() {
+        init();
+    }
+
+    @Override
+    public void shutdown() {
+        close();
     }
     
     // Document Operations

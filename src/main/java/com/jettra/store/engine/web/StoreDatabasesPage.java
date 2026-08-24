@@ -378,161 +378,173 @@ public class StoreDatabasesPage extends StoreTemplatePage {
         Widget databasesContainer = Div.of(dbCardList.toArray(new Widget[0]))
             .modifier(new Modifier().style("display: flex; flex-direction: column; gap: 24px; margin-bottom: 30px;"));
 
-        // Modals
-        String modalsHtml =
-            // Modal 1: Create Database
-            "<div id='createDbModal' style='display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center;'>\n" +
-            "  <div class='store-card' style='width:540px; max-width:90%; background:#1e293b; border:1px solid rgba(255,255,255,0.15); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:28px;'>\n" +
-            "    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;'>\n" +
-            "      <h3 style='margin:0; font-size:20px; font-weight:700; color:#f8fafc;'><i class='fas fa-database' style='color:#38bdf8; margin-right:8px;'></i> Provision New Database</h3>\n" +
-            "      <button onclick=\"closeModal('createDbModal')\" style='background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;'><i class='fas fa-times'></i></button>\n" +
-            "    </div>\n" +
-            "    <form method='POST' action='" + JettraServer.resolvePath("/databases") + "'>\n" +
-            "      <input type='hidden' name='action' value='create_db'/>\n" +
-            "      <div style='margin-bottom:14px;'>\n" +
-            "        <label style='display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;'>Database Namespace Name:</label>\n" +
-            "        <input type='text' name='db_name' required placeholder='e.g. enterprise_store' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:8px; color:#f8fafc; font-size:14px; box-sizing:border-box;'/>\n" +
-            "      </div>\n" +
-            "      <div style='margin-bottom:14px;'>\n" +
-            "        <label style='display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;'>Initial Engine Component:</label>\n" +
-            "        <select name='initial_engine' onchange='updatePayloadTemplate(this.value, \"createPayload\")' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:8px; color:#f8fafc; font-size:14px; box-sizing:border-box;'>\n" +
-            "          <option value='RECORDS' selected>RECORDS (Java 25 Immutable Records)</option>\n" +
-            "          <option value='DOCUMENT'>DOCUMENT (NoSQL JSON Documents)</option>\n" +
-            "          <option value='VECTOR'>VECTOR (AI ANN Cosine Embeddings)</option>\n" +
-            "          <option value='GRAPH'>GRAPH (LPG Nodes & Relations)</option>\n" +
-            "          <option value='TIMESERIES'>TIMESERIES (IoT Sensor Telemetry)</option>\n" +
-            "          <option value='COLUMN'>COLUMN (OLAP Wide Column Tables)</option>\n" +
-            "          <option value='KEYVALUE'>KEYVALUE (High-Speed In-Memory Cache)</option>\n" +
-            "          <option value='GEOSPATIAL'>GEOSPATIAL (2D GIS Spatial Points)</option>\n" +
-            "          <option value='OBJECT'>OBJECT (Binary BLOBs & Media)</option>\n" +
-            "        </select>\n" +
-            "      </div>\n" +
-            "      <div style='margin-bottom:14px;'>\n" +
-            "        <label style='display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;'>Initial Entity ID / Key:</label>\n" +
-            "        <input type='text' name='initial_key' value='entity_01' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:8px; color:#f8fafc; font-size:14px; box-sizing:border-box;'/>\n" +
-            "      </div>\n" +
-            "      <div style='margin-bottom:20px;'>\n" +
-            "        <label style='display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;'>Initial Payload JSON:</label>\n" +
-            "        <textarea id='createPayload' name='payload' rows='4' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:8px; color:#f8fafc; font-size:13px; font-family:monospace; box-sizing:border-box;'>{\"_recordClass\": \"com.enterprise.model.InitRecord\", \"_schema\": {\"name\":\"String\", \"active\":\"Boolean\"}, \"components\": {\"name\": \"Enterprise System\", \"active\": true}}</textarea>\n" +
-            "      </div>\n" +
-            "      <div style='display:flex; justify-content:flex-end; gap:10px;'>\n" +
-            "        <button type='button' onclick=\"closeModal('createDbModal')\" class='btn-action btn-secondary'>Cancel</button>\n" +
-            "        <button type='submit' class='btn-action btn-primary'><i class='fas fa-check'></i> Create Database</button>\n" +
-            "      </div>\n" +
-            "    </form>\n" +
-            "  </div>\n" +
-            "</div>\n" +
+        // Modal 1: Create Database
+        Widget createDbHeader = Row.of(
+            Row.of(
+                Icon.of("fas fa-database").modifier(new Modifier().style("color:#38bdf8; margin-right:8px;")),
+                Header.of(3, Text.of("Provision New Database")).modifier(new Modifier().style("margin:0; font-size:20px; font-weight:700; color:#f8fafc;"))
+            ).modifier(new Modifier().style("display:flex; align-items:center;")),
+            Button.of(Icon.of("fas fa-times")).modifier(new Modifier().style("background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;").attribute("onclick", "document.getElementById('createDbModal').close();"))
+        ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;"));
 
-            // Modal 2: Add Component to Existing Database
-            "<div id='addComponentModal' style='display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center;'>\n" +
-            "  <div class='store-card' style='width:540px; max-width:90%; background:#1e293b; border:1px solid rgba(255,255,255,0.15); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:28px;'>\n" +
-            "    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;'>\n" +
-            "      <h3 style='margin:0; font-size:20px; font-weight:700; color:#f8fafc;'><i class='fas fa-plus-circle' style='color:#f43f5e; margin-right:8px;'></i> Add Component to <span id='modalTargetDbLabel'></span></h3>\n" +
-            "      <button onclick=\"closeModal('addComponentModal')\" style='background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;'><i class='fas fa-times'></i></button>\n" +
-            "    </div>\n" +
-            "    <form method='POST' action='" + JettraServer.resolvePath("/databases") + "'>\n" +
-            "      <input type='hidden' name='action' value='add_component'/>\n" +
-            "      <input type='hidden' name='target_db' id='modalTargetDbInput'/>\n" +
-            "      <div style='margin-bottom:14px;'>\n" +
-            "        <label style='display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;'>Engine Component Type:</label>\n" +
-            "        <select name='engine_type' onchange='updatePayloadTemplate(this.value, \"addComponentPayload\")' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:8px; color:#f8fafc; font-size:14px; box-sizing:border-box;'>\n" +
-            "          <option value='RECORDS' selected>RECORDS (Java 25 Immutable Records)</option>\n" +
-            "          <option value='DOCUMENT'>DOCUMENT (NoSQL JSON Documents)</option>\n" +
-            "          <option value='VECTOR'>VECTOR (AI Embeddings)</option>\n" +
-            "          <option value='GRAPH'>GRAPH (Graph Node)</option>\n" +
-            "          <option value='TIMESERIES'>TIMESERIES (Metric Point)</option>\n" +
-            "          <option value='COLUMN'>COLUMN (Columnar Row)</option>\n" +
-            "          <option value='KEYVALUE'>KEYVALUE (Cache Key)</option>\n" +
-            "          <option value='GEOSPATIAL'>GEOSPATIAL (GIS Location)</option>\n" +
-            "          <option value='OBJECT'>OBJECT (Binary Stream)</option>\n" +
-            "        </select>\n" +
-            "      </div>\n" +
-            "      <div style='margin-bottom:14px;'>\n" +
-            "        <label style='display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;'>Entity Key / ID:</label>\n" +
-            "        <input type='text' name='key_id' placeholder='e.g. record_101' required style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:8px; color:#f8fafc; font-size:14px; box-sizing:border-box;'/>\n" +
-            "      </div>\n" +
-            "      <div style='margin-bottom:20px;'>\n" +
-            "        <label style='display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;'>Payload JSON:</label>\n" +
-            "        <textarea id='addComponentPayload' name='payload' rows='4' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:8px; color:#f8fafc; font-size:13px; font-family:monospace; box-sizing:border-box;'>{\"_recordClass\": \"com.enterprise.model.EmployeeRecord\", \"_schema\": {\"id\":\"String\", \"fullName\":\"String\", \"salary\":\"Double\"}, \"components\": {\"id\": \"emp_101\", \"fullName\": \"Carlos Mendez\", \"salary\": 95000.0}}</textarea>\n" +
-            "      </div>\n" +
-            "      <div style='display:flex; justify-content:flex-end; gap:10px;'>\n" +
-            "        <button type='button' onclick=\"closeModal('addComponentModal')\" class='btn-action btn-secondary'>Cancel</button>\n" +
-            "        <button type='submit' class='btn-action btn-primary'><i class='fas fa-save'></i> Save Component</button>\n" +
-            "      </div>\n" +
-            "    </form>\n" +
-            "  </div>\n" +
-            "</div>\n" +
+        Widget createDbForm = Form.of(
+            RawHtml.of("<input type='hidden' name='action' value='create_db'/>"),
+            Div.of(
+                RawHtml.of("<label style='display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;'>Database Namespace Name:</label>"),
+                RawHtml.of("<input type='text' name='db_name' required placeholder='e.g. enterprise_store' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:8px; color:#f8fafc; font-size:14px; box-sizing:border-box;'/>")
+            ).modifier(new Modifier().style("margin-bottom:14px;")),
+            Div.of(
+                RawHtml.of("<label style='display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;'>Initial Engine Component:</label>"),
+                RawHtml.of("<select name='initial_engine' onchange='updatePayloadTemplate(this.value, \"createPayload\")' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:8px; color:#f8fafc; font-size:14px; box-sizing:border-box;'>\n" +
+                    "          <option value='RECORDS' selected>RECORDS (Java 25 Immutable Records)</option>\n" +
+                    "          <option value='DOCUMENT'>DOCUMENT (NoSQL JSON Documents)</option>\n" +
+                    "          <option value='VECTOR'>VECTOR (AI ANN Cosine Embeddings)</option>\n" +
+                    "          <option value='GRAPH'>GRAPH (LPG Nodes & Relations)</option>\n" +
+                    "          <option value='TIMESERIES'>TIMESERIES (IoT Sensor Telemetry)</option>\n" +
+                    "          <option value='COLUMN'>COLUMN (OLAP Wide Column Tables)</option>\n" +
+                    "          <option value='KEYVALUE'>KEYVALUE (High-Speed In-Memory Cache)</option>\n" +
+                    "          <option value='GEOSPATIAL'>GEOSPATIAL (2D GIS Spatial Points)</option>\n" +
+                    "          <option value='OBJECT'>OBJECT (Binary BLOBs & Media)</option>\n" +
+                    "        </select>")
+            ).modifier(new Modifier().style("margin-bottom:14px;")),
+            Div.of(
+                RawHtml.of("<label style='display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;'>Initial Entity ID / Key:</label>"),
+                RawHtml.of("<input type='text' name='initial_key' value='entity_01' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:8px; color:#f8fafc; font-size:14px; box-sizing:border-box;'/>")
+            ).modifier(new Modifier().style("margin-bottom:14px;")),
+            Div.of(
+                RawHtml.of("<label style='display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;'>Initial Payload JSON:</label>"),
+                RawHtml.of("<textarea id='createPayload' name='payload' rows='4' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:8px; color:#f8fafc; font-size:13px; font-family:monospace; box-sizing:border-box;'>{\"_recordClass\": \"com.enterprise.model.InitRecord\", \"_schema\": {\"name\":\"String\", \"active\":\"Boolean\"}, \"components\": {\"name\": \"Enterprise System\", \"active\": true}}</textarea>")
+            ).modifier(new Modifier().style("margin-bottom:20px;")),
+            Div.of(
+                Button.of(Text.of("Cancel")).modifier(new Modifier().cssClass("btn-action btn-secondary").attribute("type", "button").attribute("onclick", "document.getElementById('createDbModal').close();")),
+                Button.of(Icon.of("fas fa-check"), Text.of(" Create Database")).modifier(new Modifier().cssClass("btn-action btn-primary").attribute("type", "submit"))
+            ).modifier(new Modifier().style("display:flex; justify-content:flex-end; gap:10px;"))
+        ).attribute("method", "POST").attribute("action", JettraServer.resolvePath("/databases"));
 
-            // Modal 3: Assign User to Database Scope
-            "<div id='assignUserModal' style='display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center;'>\n" +
-            "  <div class='store-card' style='width:520px; max-width:90%; background:#1e293b; border:1px solid rgba(255,255,255,0.15); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:28px;'>\n" +
-            "    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;'>\n" +
-            "      <h3 style='margin:0; font-size:20px; font-weight:700; color:#f8fafc;'><i class='fas fa-user-shield' style='color:#38bdf8; margin-right:8px;'></i> Assign User to <span id='assignUserDbLabel'></span></h3>\n" +
-            "      <button onclick=\"closeModal('assignUserModal')\" style='background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;'><i class='fas fa-times'></i></button>\n" +
-            "    </div>\n" +
-            "    <form method='POST' action='" + JettraServer.resolvePath("/databases") + "'>\n" +
-            "      <input type='hidden' name='action' value='assign_user'/>\n" +
-            "      <input type='hidden' name='target_db' id='assignUserDbInput'/>\n" +
-            "      <div style='margin-bottom:14px;'>\n" +
-            "        <label style='display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;'>Username:</label>\n" +
-            "        <input type='text' name='username' placeholder='e.g. dev_analyst' required style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:8px; color:#f8fafc; font-size:14px; box-sizing:border-box;'/>\n" +
-            "      </div>\n" +
-            "      <div style='margin-bottom:14px;'>\n" +
-            "        <label style='display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;'>Email Address:</label>\n" +
-            "        <input type='email' name='email' placeholder='analyst@company.com' required style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:8px; color:#f8fafc; font-size:14px; box-sizing:border-box;'/>\n" +
-            "      </div>\n" +
-            "      <div style='margin-bottom:14px;'>\n" +
-            "        <label style='display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;'>Password:</label>\n" +
-            "        <input type='password' name='password' placeholder='••••••••' required style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:8px; color:#f8fafc; font-size:14px; box-sizing:border-box;'/>\n" +
-            "      </div>\n" +
-            "      <div style='margin-bottom:20px;'>\n" +
-            "        <label style='display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;'>Assigned RBAC Role:</label>\n" +
-            "        <select name='role' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:8px; color:#f8fafc; font-size:14px; box-sizing:border-box;'>\n" +
-            "          <option value='DB_ADMIN'>DB_ADMIN (Full DDL & Read/Write)</option>\n" +
-            "          <option value='READ_WRITE' selected>READ_WRITE (Insert, Update, Query)</option>\n" +
-            "          <option value='READ_ONLY'>READ_ONLY (Query Only)</option>\n" +
-            "          <option value='MANAGER'>MANAGER (Backup & Operations)</option>\n" +
-            "        </select>\n" +
-            "      </div>\n" +
-            "      <div style='display:flex; justify-content:flex-end; gap:10px;'>\n" +
-            "        <button type='button' onclick=\"closeModal('assignUserModal')\" class='btn-action btn-secondary'>Cancel</button>\n" +
-            "        <button type='submit' class='btn-action btn-primary'><i class='fas fa-user-check'></i> Provision User</button>\n" +
-            "      </div>\n" +
-            "    </form>\n" +
-            "  </div>\n" +
-            "</div>\n";
+        Widget createDbModal = Dialog.of(createDbHeader, createDbForm)
+            .id("createDbModal")
+            .modifier(new Modifier().cssClass("store-card").style("width:540px; max-width:90%; background:#1e293b; border:1px solid rgba(255,255,255,0.15); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:28px; margin:auto;"));
 
-        // Rename Database Modal
-        String renameDbModalHtml =
-            "<div id='renameDbModal' class='espresso-modal-overlay' style='display:none; position:fixed; z-index:1050; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); justify-content:center; align-items:center;'>\n" +
-            "  <div class='store-card' style='max-width:480px; width:90%; background:#0f172a; border:1px solid rgba(56,189,248,0.4); border-radius:14px; padding:24px;'>\n" +
-            "    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;'>\n" +
-            "      <div style='display:flex; align-items:center; gap:8px;'><i class='fas fa-pen' style='color:#38bdf8;'></i><h3 style='margin:0; font-size:17px; font-weight:700;'>Rename Database</h3></div>\n" +
-            "      <button type='button' onclick=\"closeModal('renameDbModal')\" class='btn-action btn-secondary' style='padding:4px 8px;'><i class='fas fa-times'></i></button>\n" +
-            "    </div>\n" +
-            "    <form method='POST' action='" + JettraServer.resolvePath("/databases") + "'>\n" +
-            "      <input type='hidden' name='action' value='rename_db'/>\n" +
-            "      <input type='hidden' name='old_db' id='renameOldDbInput'/>\n" +
-            "      <div style='margin-bottom:14px;'>\n" +
-            "        <label style='display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;'>Current Database Name:</label>\n" +
-            "        <input type='text' id='renameOldDbDisplay' disabled style='width:100%; padding:10px 12px; background:#1e293b; border:1px solid rgba(255,255,255,0.1); border-radius:8px; color:#94a3b8; font-size:14px; box-sizing:border-box;'/>\n" +
-            "      </div>\n" +
-            "      <div style='margin-bottom:18px;'>\n" +
-            "        <label style='display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;'>New Database Name:</label>\n" +
-            "        <input type='text' name='new_db' placeholder='e.g. inventory_prod_db' required style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:8px; color:#f8fafc; font-size:14px; box-sizing:border-box;'/>\n" +
-            "      </div>\n" +
-            "      <div style='display:flex; justify-content:flex-end; gap:10px;'>\n" +
-            "        <button type='button' onclick=\"closeModal('renameDbModal')\" class='btn-action btn-secondary'>Cancel</button>\n" +
-            "        <button type='submit' class='btn-action btn-primary'><i class='fas fa-save'></i> Rename Database</button>\n" +
-            "      </div>\n" +
-            "    </form>\n" +
-            "  </div>\n" +
-            "</div>\n";
+        // Modal 2: Add Component
+        Widget addComponentHeader = Row.of(
+            Row.of(
+                Icon.of("fas fa-plus-circle").modifier(new Modifier().style("color:#f43f5e; margin-right:8px;")),
+                RawHtml.of("<h3 style='margin:0; font-size:20px; font-weight:700; color:#f8fafc;'>Add Component to <span id='modalTargetDbLabel'></span></h3>")
+            ).modifier(new Modifier().style("display:flex; align-items:center;")),
+            Button.of(Icon.of("fas fa-times")).modifier(new Modifier().style("background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;").attribute("onclick", "document.getElementById('addComponentModal').close();"))
+        ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;"));
 
-        String scriptsHtml =
+        Widget addComponentForm = Form.of(
+            RawHtml.of("<input type='hidden' name='action' value='add_component'/>"),
+            RawHtml.of("<input type='hidden' name='target_db' id='modalTargetDbInput'/>"),
+            Div.of(
+                RawHtml.of("<label style='display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;'>Engine Component Type:</label>"),
+                RawHtml.of("<select name='engine_type' onchange='updatePayloadTemplate(this.value, \"addComponentPayload\")' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:8px; color:#f8fafc; font-size:14px; box-sizing:border-box;'>\n" +
+                    "          <option value='RECORDS' selected>RECORDS (Java 25 Immutable Records)</option>\n" +
+                    "          <option value='DOCUMENT'>DOCUMENT (NoSQL JSON Documents)</option>\n" +
+                    "          <option value='VECTOR'>VECTOR (AI Embeddings)</option>\n" +
+                    "          <option value='GRAPH'>GRAPH (Graph Node)</option>\n" +
+                    "          <option value='TIMESERIES'>TIMESERIES (Metric Point)</option>\n" +
+                    "          <option value='COLUMN'>COLUMN (Columnar Row)</option>\n" +
+                    "          <option value='KEYVALUE'>KEYVALUE (Cache Key)</option>\n" +
+                    "          <option value='GEOSPATIAL'>GEOSPATIAL (GIS Location)</option>\n" +
+                    "          <option value='OBJECT'>OBJECT (Binary Stream)</option>\n" +
+                    "        </select>")
+            ).modifier(new Modifier().style("margin-bottom:14px;")),
+            Div.of(
+                RawHtml.of("<label style='display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;'>Entity Key / ID:</label>"),
+                RawHtml.of("<input type='text' name='key_id' placeholder='e.g. record_101' required style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:8px; color:#f8fafc; font-size:14px; box-sizing:border-box;'/>")
+            ).modifier(new Modifier().style("margin-bottom:14px;")),
+            Div.of(
+                RawHtml.of("<label style='display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;'>Payload JSON:</label>"),
+                RawHtml.of("<textarea id='addComponentPayload' name='payload' rows='4' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:8px; color:#f8fafc; font-size:13px; font-family:monospace; box-sizing:border-box;'>{\"_recordClass\": \"com.enterprise.model.EmployeeRecord\", \"_schema\": {\"id\":\"String\", \"fullName\":\"String\", \"salary\":\"Double\"}, \"components\": {\"id\": \"emp_101\", \"fullName\": \"Carlos Mendez\", \"salary\": 95000.0}}</textarea>")
+            ).modifier(new Modifier().style("margin-bottom:20px;")),
+            Div.of(
+                Button.of(Text.of("Cancel")).modifier(new Modifier().cssClass("btn-action btn-secondary").attribute("type", "button").attribute("onclick", "document.getElementById('addComponentModal').close();")),
+                Button.of(Icon.of("fas fa-save"), Text.of(" Save Component")).modifier(new Modifier().cssClass("btn-action btn-primary").attribute("type", "submit"))
+            ).modifier(new Modifier().style("display:flex; justify-content:flex-end; gap:10px;"))
+        ).attribute("method", "POST").attribute("action", JettraServer.resolvePath("/databases"));
+
+        Widget addComponentModal = Dialog.of(addComponentHeader, addComponentForm)
+            .id("addComponentModal")
+            .modifier(new Modifier().cssClass("store-card").style("width:540px; max-width:90%; background:#1e293b; border:1px solid rgba(255,255,255,0.15); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:28px; margin:auto;"));
+
+        // Modal 3: Assign User
+        Widget assignUserHeader = Row.of(
+            Row.of(
+                Icon.of("fas fa-user-shield").modifier(new Modifier().style("color:#38bdf8; margin-right:8px;")),
+                RawHtml.of("<h3 style='margin:0; font-size:20px; font-weight:700; color:#f8fafc;'>Assign User to <span id='assignUserDbLabel'></span></h3>")
+            ).modifier(new Modifier().style("display:flex; align-items:center;")),
+            Button.of(Icon.of("fas fa-times")).modifier(new Modifier().style("background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;").attribute("onclick", "document.getElementById('assignUserModal').close();"))
+        ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;"));
+
+        Widget assignUserForm = Form.of(
+            RawHtml.of("<input type='hidden' name='action' value='assign_user'/>"),
+            RawHtml.of("<input type='hidden' name='target_db' id='assignUserDbInput'/>"),
+            Div.of(
+                RawHtml.of("<label style='display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;'>Username:</label>"),
+                RawHtml.of("<input type='text' name='username' placeholder='e.g. dev_analyst' required style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:8px; color:#f8fafc; font-size:14px; box-sizing:border-box;'/>")
+            ).modifier(new Modifier().style("margin-bottom:14px;")),
+            Div.of(
+                RawHtml.of("<label style='display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;'>Email Address:</label>"),
+                RawHtml.of("<input type='email' name='email' placeholder='analyst@company.com' required style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:8px; color:#f8fafc; font-size:14px; box-sizing:border-box;'/>")
+            ).modifier(new Modifier().style("margin-bottom:14px;")),
+            Div.of(
+                RawHtml.of("<label style='display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;'>Password:</label>"),
+                RawHtml.of("<input type='password' name='password' placeholder='••••••••' required style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:8px; color:#f8fafc; font-size:14px; box-sizing:border-box;'/>")
+            ).modifier(new Modifier().style("margin-bottom:14px;")),
+            Div.of(
+                RawHtml.of("<label style='display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;'>Assigned RBAC Role:</label>"),
+                RawHtml.of("<select name='role' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:8px; color:#f8fafc; font-size:14px; box-sizing:border-box;'>\n" +
+                    "          <option value='DB_ADMIN'>DB_ADMIN (Full DDL & Read/Write)</option>\n" +
+                    "          <option value='READ_WRITE' selected>READ_WRITE (Insert, Update, Query)</option>\n" +
+                    "          <option value='READ_ONLY'>READ_ONLY (Query Only)</option>\n" +
+                    "          <option value='MANAGER'>MANAGER (Backup & Operations)</option>\n" +
+                    "        </select>")
+            ).modifier(new Modifier().style("margin-bottom:20px;")),
+            Div.of(
+                Button.of(Text.of("Cancel")).modifier(new Modifier().cssClass("btn-action btn-secondary").attribute("type", "button").attribute("onclick", "document.getElementById('assignUserModal').close();")),
+                Button.of(Icon.of("fas fa-user-check"), Text.of(" Provision User")).modifier(new Modifier().cssClass("btn-action btn-primary").attribute("type", "submit"))
+            ).modifier(new Modifier().style("display:flex; justify-content:flex-end; gap:10px;"))
+        ).attribute("method", "POST").attribute("action", JettraServer.resolvePath("/databases"));
+
+        Widget assignUserModal = Dialog.of(assignUserHeader, assignUserForm)
+            .id("assignUserModal")
+            .modifier(new Modifier().cssClass("store-card").style("width:520px; max-width:90%; background:#1e293b; border:1px solid rgba(255,255,255,0.15); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:28px; margin:auto;"));
+
+        // Modal 4: Rename Database
+        Widget renameDbHeader = Row.of(
+            Row.of(
+                Icon.of("fas fa-pen").modifier(new Modifier().style("color:#38bdf8; margin-right:8px;")),
+                Header.of(3, Text.of("Rename Database")).modifier(new Modifier().style("margin:0; font-size:17px; font-weight:700; color:#f8fafc;"))
+            ).modifier(new Modifier().style("display:flex; align-items:center;")),
+            Button.of(Icon.of("fas fa-times")).modifier(new Modifier().style("background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer; padding:4px 8px;").attribute("onclick", "document.getElementById('renameDbModal').close();"))
+        ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;"));
+
+        Widget renameDbForm = Form.of(
+            RawHtml.of("<input type='hidden' name='action' value='rename_db'/>"),
+            RawHtml.of("<input type='hidden' name='old_db' id='renameOldDbInput'/>"),
+            Div.of(
+                RawHtml.of("<label style='display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;'>Current Database Name:</label>"),
+                RawHtml.of("<input type='text' id='renameOldDbDisplay' disabled style='width:100%; padding:10px 12px; background:#1e293b; border:1px solid rgba(255,255,255,0.1); border-radius:8px; color:#94a3b8; font-size:14px; box-sizing:border-box;'/>")
+            ).modifier(new Modifier().style("margin-bottom:14px;")),
+            Div.of(
+                RawHtml.of("<label style='display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;'>New Database Name:</label>"),
+                RawHtml.of("<input type='text' name='new_db' placeholder='e.g. inventory_prod_db' required style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:8px; color:#f8fafc; font-size:14px; box-sizing:border-box;'/>")
+            ).modifier(new Modifier().style("margin-bottom:18px;")),
+            Div.of(
+                Button.of(Text.of("Cancel")).modifier(new Modifier().cssClass("btn-action btn-secondary").attribute("type", "button").attribute("onclick", "document.getElementById('renameDbModal').close();")),
+                Button.of(Icon.of("fas fa-save"), Text.of(" Rename Database")).modifier(new Modifier().cssClass("btn-action btn-primary").attribute("type", "submit"))
+            ).modifier(new Modifier().style("display:flex; justify-content:flex-end; gap:10px;"))
+        ).attribute("method", "POST").attribute("action", JettraServer.resolvePath("/databases"));
+
+        Widget renameDbModal = Dialog.of(renameDbHeader, renameDbForm)
+            .id("renameDbModal")
+            .modifier(new Modifier().cssClass("store-card").style("max-width:480px; width:90%; background:#0f172a; border:1px solid rgba(56,189,248,0.4); border-radius:14px; padding:24px; margin:auto;"));
+
+        Widget scriptsWidget = RawHtml.of(
             "<script>\n" +
-            "  function openModal(id) { document.getElementById(id).style.display = 'flex'; }\n" +
-            "  function closeModal(id) { document.getElementById(id).style.display = 'none'; }\n" +
+            "  function openModal(id) { document.getElementById(id).showModal(); }\n" +
             "  function openCreateDbModal() { openModal('createDbModal'); }\n" +
             "  function openAddComponentModal(db) {\n" +
             "    document.getElementById('modalTargetDbInput').value = db;\n" +
@@ -568,16 +580,19 @@ public class StoreDatabasesPage extends StoreTemplatePage {
             "      case 'OBJECT': t.value = '{\"class\": \"BlobObject\", \"data\": \"base64_or_stream\"}'; break;\n" +
             "    }\n" +
             "  }\n" +
-            "</script>\n";
+            "</script>\n"
+        );
 
         return Column.of(
             titleBlock,
             alertWidget,
             statGrid,
             databasesContainer,
-            RawHtml.of(modalsHtml),
-            RawHtml.of(renameDbModalHtml),
-            RawHtml.of(scriptsHtml)
+            createDbModal,
+            addComponentModal,
+            assignUserModal,
+            renameDbModal,
+            scriptsWidget
         );
     }
 

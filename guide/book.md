@@ -496,50 +496,45 @@ docker compose down -v
 ## 6.1 Document Engine (JSON / BSON / NoSQL)
 - **Use Case**: Hierarchical JSON records, schema-flexible document catalogs, and e-commerce models with validation rules.
 - **Specific Object Representation**: Structured JSON document with optional `_class` schema binding validated via `JettraRulesEngine`.
+- **Storage Core Hierarchy**: All documents are persisted in the underlying LSM/B-Tree engine using a strict namespace structure: `[database]:[collection]:[id]`. This permits fast range scans and prefix extraction without collision between multi-model engines. If the `collection` is omitted, documents are assigned to the `default` collection.
 - **ObjectId / DocumentId Generation Modes**:
   1. **Manual Mode**: User or client specifies the exact primary key identifier (e.g. `cust_101`).
   2. **Auto-increment Sequence (`AUTOINCREMENT` / `auto`)**: The storage engine maintains an internal atomic counter per collection generating ordered integer sequences (`1, 2, 3...`).
-  3. **Composite UUID (`UUID` / `uuid`)**: Generates a globally unique identifier combining CPU/host hardware fingerprint, high-precision millisecond timestamp, namespace digest, and cryptographic UUID entropy (e.g. `8a7f1c2d-18dc93a4-a1b2-9f82ab34`).
+  3. **Composite UUID (`UUID` / `uuid`)**: Generates a globally unique identifier combining CPU/host hardware fingerprint, high-precision millisecond timestamp, namespace digest, and cryptographic UUID entropy.
 - **Administrative Operations**:
-  - Insert / Upsert Document (`doc_id`, `id_mode`, `_class`, `JSON fields`)
-  - Query Document by ID
+  - Insert / Upsert Document (`db`, `collection`, `doc_id`, `id_mode`, `_class`, `JSON fields`)
+  - Query Document by ID or fetch by Collection Prefix
   - Document Version History Inspection (`/history`)
   - Point-in-Time Version Restoration (`/restore`)
   - Delete Document (writes tombstone)
   - Full Collection Scan & Listing
 - **REST Endpoints**:
-  - `POST /api/document/{collection}` : Insert with Auto/UUID generated ID (`?id_mode=autoincrement|uuid`).
-  - `POST /api/document/{collection}/{id}` : Insert or update document (`?id_mode=manual|autoincrement|uuid`).
-  - `GET  /api/document/{collection}/{id}` : Read document by ID.
-  - `GET  /api/document/{collection}/{id}/history` : List all historical versions and timestamps for document.
-  - `POST /api/document/{collection}/{id}/restore?timestamp={ts}` : Restore document to point-in-time snapshot.
-  - `DELETE /api/document/{collection}/{id}` : Delete document.
+  - `POST /api/document/{database}/{collection}` : Insert with Auto/UUID generated ID (`?id_mode=autoincrement|uuid`).
+  - `POST /api/document/{database}/{collection}/{id}` : Insert or update document (`?id_mode=manual|autoincrement|uuid`).
+  - `GET  /api/document/{database}/{collection}/{id}` : Read document by ID.
+  - `GET  /api/document/{database}/{collection}/{id}/history` : List all historical versions and timestamps for document.
+  - `POST /api/document/{database}/{collection}/{id}/restore?timestamp={ts}` : Restore document to point-in-time snapshot.
+  - `DELETE /api/document/{database}/{collection}/{id}` : Delete document.
 
 ```bash
-# 1. Insert customer document with manual ID
-curl -X POST http://localhost:8086/api/document/customers/cust_101 \
+# 1. Insert customer document into 'crm' db, 'customers' collection, with manual ID
+curl -X POST http://localhost:8086/api/document/crm/customers/cust_101 \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{"_class": "com.jettra.model.Customer", "name": "Alice Corp", "tier": "Enterprise", "credits": 5000}'
 
-# 2. Insert invoice with Auto-increment sequence ID
-curl -X POST "http://localhost:8086/api/document/invoices/auto?id_mode=autoincrement" \
+# 2. Insert invoice into 'accounting' db, 'invoices' collection with Auto-increment sequence ID
+curl -X POST "http://localhost:8086/api/document/accounting/invoices/auto?id_mode=autoincrement" \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{"customer": "Alice Corp", "total": 1250.00, "status": "PAID"}'
 
-# 3. Insert audit log with Composite UUID
-curl -X POST "http://localhost:8086/api/document/audit_logs/uuid?id_mode=uuid" \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{"action": "USER_LOGIN", "ip": "192.168.1.50"}'
-
-# 4. View full version history of a document
-curl -X GET http://localhost:8086/api/document/customers/cust_101/history \
+# 3. View full version history of a document
+curl -X GET http://localhost:8086/api/document/crm/customers/cust_101/history \
   -H "Authorization: Bearer <token>"
 
-# 5. Restore document to a prior historical version
-curl -X POST "http://localhost:8086/api/document/customers/cust_101/restore?timestamp=1755735000000" \
+# 4. Restore document to a prior historical version
+curl -X POST "http://localhost:8086/api/document/crm/customers/cust_101/restore?timestamp=1755735000000" \
   -H "Authorization: Bearer <token>"
 ```
 
