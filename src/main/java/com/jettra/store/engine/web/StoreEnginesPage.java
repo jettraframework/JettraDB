@@ -2,6 +2,7 @@ package com.jettra.store.engine.web;
 
 import com.jettra.store.engine.core.IdGenerator;
 import com.jettra.store.engine.core.JettraStorageEngine;
+import com.jettra.store.engine.core.LsmBTreeHybrid;
 import com.jettra.store.engine.models.*;
 import com.sun.net.httpserver.HttpExchange;
 import io.jettra.flux.core.Modifier;
@@ -134,39 +135,37 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     queryResultDisplay = executeGeoDistance(params);
                     alertMessage = "Geospatial distance calculated successfully!";
                     alertType = "badge-engine";
-                } else if ("edit_document".equalsIgnoreCase(action)) {
-                    String docPayload = params.getOrDefault("doc_payload", "{}");
-                    String docClass = params.get("doc_class");
-                    JsonObject doc = parseJsonOrWrap(docPayload);
-                    if (docClass != null && !docClass.isBlank()) {
-                        doc.addProperty("_class", docClass.trim());
-                    }
-                    DocumentEngine de = (DocumentEngine) engine.getEngine("DOCUMENT");
-                    if (de != null) {
-                        de.insert(targetDb, targetId, doc);
-                        alertMessage = "Document '" + targetId + "' updated successfully (new version created)!";
-                        alertType = "badge-active";
-                    }
+                } else if ("edit_document".equalsIgnoreCase(action) || "edit_object".equalsIgnoreCase(action) || "edit_record".equalsIgnoreCase(action)) {
+                    String engType = params.getOrDefault("engine_type", selectedEngine);
+                    String coll = params.getOrDefault("target_coll", params.getOrDefault("coll", "default"));
+                    String rawPayload = params.getOrDefault("record_payload", params.getOrDefault("doc_payload", "{}"));
+                    executeTypeSpecificEdit(engType, targetDb, targetId, coll, rawPayload, params);
+                    alertMessage = "[" + engType + "] Record '" + targetId + "' updated successfully (new version created)!";
+                    alertType = "badge-active";
                 } else if ("restore_version".equalsIgnoreCase(action)) {
                     long targetTs = Long.parseLong(params.getOrDefault("version_ts", "0"));
-                    String coll = params.getOrDefault("target_coll", "default");
+                    String engType = params.getOrDefault("engine_type", selectedEngine);
+                    String coll = params.getOrDefault("target_coll", params.getOrDefault("coll", "default"));
                     boolean restored = false;
                     if (targetTs > 0) {
-                        restored = engine.getStorageCore().restoreVersion(targetDb + ":" + targetId, targetTs);
-                        if (!restored) {
-                            restored = engine.getStorageCore().restoreVersion(targetDb + ":" + coll + ":" + targetId, targetTs);
-                        }
-                        if (!restored) {
-                            restored = engine.getStorageCore().restoreVersion("doc:" + targetDb + ":" + targetId, targetTs);
-                        }
-                        if (!restored) {
-                            restored = engine.getStorageCore().restoreVersion("doc:" + targetDb + ":" + coll + ":" + targetId, targetTs);
+                        String prefix = getPrefixForEngine(engType);
+                        String[] candidateKeys = {
+                            prefix + targetDb + ":" + coll + ":" + targetId,
+                            prefix + targetDb + ":" + targetId,
+                            targetDb + ":" + coll + ":" + targetId,
+                            targetDb + ":" + targetId
+                        };
+                        for (String k : candidateKeys) {
+                            if (engine.getStorageCore().restoreVersion(k, targetTs)) {
+                                restored = true;
+                                break;
+                            }
                         }
                     }
                     if (restored) {
-                        alertMessage = "Document '" + targetId + "' successfully restored to version snapshot from timestamp " + targetTs + "!";
+                        alertMessage = "[" + engType + "] Record '" + targetId + "' successfully restored to version snapshot from timestamp " + targetTs + "!";
                     } else {
-                        alertMessage = "Restored document '" + targetId + "' with timestamp " + targetTs;
+                        alertMessage = "Restored [" + engType + "] record '" + targetId + "' with timestamp " + targetTs;
                     }
                     alertType = "badge-active";
                 } else if ("create_collection".equalsIgnoreCase(action)) {
@@ -424,6 +423,189 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 }
             }
         }
+    }
+
+    private void executeTypeSpecificEdit(String engineName, String db, String id, String coll, String payload, Map<String, String> params) {
+        switch (engineName) {
+            case "DOCUMENT" -> {
+                DocumentEngine de = (DocumentEngine) engine.getEngine("DOCUMENT");
+                if (de != null) {
+                    String json = params.getOrDefault("doc_payload", payload);
+                    JsonObject doc = parseJsonOrWrap(json);
+                    String docClass = params.get("doc_class");
+                    if (docClass != null && !docClass.isBlank()) doc.addProperty("_class", docClass.trim());
+                    de.insert(db, coll != null && !coll.isBlank() ? coll : "default", id, doc);
+                }
+            }
+            case "KEYVALUE" -> {
+                KeyValueEngine ke = (KeyValueEngine) engine.getEngine("KEYVALUE");
+                if (ke != null) {
+                    String val = params.getOrDefault("kv_value", payload);
+                    String resolvedKey = (coll == null || coll.equals("default") || id.contains(":")) ? id : coll + ":" + id;
+                    ke.put(db, resolvedKey, val);
+                }
+            }
+            case "VECTOR" -> {
+                VectorEngine ve = (VectorEngine) engine.getEngine("VECTOR");
+                if (ve != null) {
+                    float[] coords = new float[]{0.12f, 0.45f, 0.88f, 0.31f};
+                    if (params.containsKey("vector_coords") && !params.get("vector_coords").isBlank()) {
+                        coords = parseFloats(params.get("vector_coords"));
+                    }
+                    String metaStr = params.getOrDefault("vector_meta", payload);
+                    JsonObject vecObj = parseJsonOrWrap(metaStr);
+                    vecObj.addProperty("_index", coll != null ? coll : "default");
+                    ve.insertVector(db, id, coords, vecObj);
+                }
+            }
+            case "GRAPH" -> {
+                GraphEngine ge = (GraphEngine) engine.getEngine("GRAPH");
+                if (ge != null) {
+                    String nodeProps = params.getOrDefault("node_props", payload);
+                    JsonObject gObj = parseJsonOrWrap(nodeProps);
+                    String nodeLabel = params.getOrDefault("node_label", coll != null && !coll.isBlank() ? coll : "Vertex");
+                    gObj.addProperty("label", nodeLabel);
+                    ge.addNode(db, id, gObj);
+                }
+            }
+            case "TIMESERIES" -> {
+                TimeSeriesEngine te = (TimeSeriesEngine) engine.getEngine("TIMESERIES");
+                if (te != null) {
+                    long ts = System.currentTimeMillis();
+                    String rawTs = params.get("ts_timestamp");
+                    if (rawTs != null && !rawTs.isBlank()) {
+                        try { ts = Long.parseLong(rawTs.trim()); } catch (Exception ignored) {}
+                    } else {
+                        try { ts = Long.parseLong(id); } catch (Exception ignored) {}
+                    }
+                    String tagsStr = params.getOrDefault("ts_tags", payload);
+                    JsonObject tsObj = parseJsonOrWrap(tagsStr);
+                    if (params.containsKey("ts_value")) {
+                        try { tsObj.addProperty("value", Double.parseDouble(params.get("ts_value"))); } catch (Exception ignored) {}
+                    }
+                    if (params.containsKey("ts_unit") && !params.get("ts_unit").isBlank()) {
+                        tsObj.addProperty("unit", params.get("ts_unit"));
+                    }
+                    tsObj.addProperty("metric", coll != null ? coll : "telemetry");
+                    te.insert(db, ts, tsObj);
+                }
+            }
+            case "COLUMN" -> {
+                ColumnEngine ce = (ColumnEngine) engine.getEngine("COLUMN");
+                if (ce != null) {
+                    String colData = params.getOrDefault("col_data", payload);
+                    JsonObject colObj = parseJsonOrColumns(colData);
+                    colObj.addProperty("_family", coll != null ? coll : "analytics");
+                    ce.insertRow(db, id, colObj);
+                }
+            }
+            case "GEOSPATIAL" -> {
+                GeospatialEngine ge = (GeospatialEngine) engine.getEngine("GEOSPATIAL");
+                if (ge != null) {
+                    double lat = 8.9824;
+                    double lon = -79.5199;
+                    if (params.containsKey("geo_lat")) {
+                        try { lat = Double.parseDouble(params.get("geo_lat")); } catch (Exception ignored) {}
+                    }
+                    if (params.containsKey("geo_lon")) {
+                        try { lon = Double.parseDouble(params.get("geo_lon")); } catch (Exception ignored) {}
+                    }
+                    String name = params.getOrDefault("geo_name", id);
+                    JsonObject geoObj = parseJsonOrWrap(payload);
+                    geoObj.addProperty("name", name);
+                    geoObj.addProperty("_layer", coll != null ? coll : "stores_layer");
+                    ge.insertLocation(db, id, lat, lon, geoObj);
+                }
+            }
+            case "OBJECT" -> {
+                ObjectEngine oe = (ObjectEngine) engine.getEngine("OBJECT");
+                if (oe != null) {
+                    String objMime = params.getOrDefault("obj_mime", "application/json");
+                    String objPayload = params.getOrDefault("obj_payload", payload);
+                    JsonObject state = new JsonObject();
+                    state.addProperty("mimeType", objMime);
+                    state.addProperty("bucket", coll != null ? coll : "media_bucket");
+                    state.addProperty("sizeBytes", objPayload.getBytes(StandardCharsets.UTF_8).length);
+                    state.addProperty("content", objPayload);
+                    oe.saveObject(db, id, "GenericBlob", state);
+                }
+            }
+            case "RECORDS" -> {
+                RecordsEngine re = (RecordsEngine) engine.getEngine("RECORDS");
+                if (re != null) {
+                    String recClass = params.getOrDefault("rec_class", "com.jettra.model.PersonRecord");
+                    String recPayload = params.getOrDefault("rec_payload", payload);
+                    JsonObject recObj = parseJsonOrWrap(recPayload);
+                    recObj.addProperty("_table", coll != null ? coll : "default");
+                    re.saveRecord(db, id, recClass, recObj);
+                }
+            }
+        }
+    }
+
+    private String getVersionsJson(String engineKey, String db, String coll, String id) {
+        String prefix = getPrefixForEngine(engineKey);
+        String[] candidateKeys = {
+            prefix + db + ":" + coll + ":" + id,
+            prefix + db + ":" + id,
+            db + ":" + coll + ":" + id,
+            db + ":" + id
+        };
+
+        List<LsmBTreeHybrid.RecordVersion> history = new ArrayList<>();
+        for (String k : candidateKeys) {
+            history = engine.getStorageCore().getVersionHistory(k);
+            if (!history.isEmpty()) break;
+        }
+
+        JsonArray vArr = new JsonArray();
+        for (LsmBTreeHybrid.RecordVersion v : history) {
+            JsonObject vo = new JsonObject();
+            vo.addProperty("versionNumber", "v" + v.versionNumber());
+            vo.addProperty("timestamp", v.timestamp());
+            vo.addProperty("formattedDate", v.formattedDate());
+            vo.addProperty("isCurrent", v.isCurrent());
+            String pShort = v.payload();
+            if (pShort != null && pShort.length() > 80) pShort = pShort.substring(0, 80) + "...";
+            vo.addProperty("preview", pShort != null ? pShort : "{}");
+            vArr.add(vo);
+        }
+        return vArr.toString();
+    }
+
+    private String getItemPayload(String engineKey, String db, String coll, String id) {
+        String prefix = getPrefixForEngine(engineKey);
+        String[] candidateKeys = {
+            prefix + db + ":" + coll + ":" + id,
+            prefix + db + ":" + id,
+            db + ":" + coll + ":" + id,
+            db + ":" + id
+        };
+
+        for (String k : candidateKeys) {
+            byte[] b = engine.getStorageCore().get(k);
+            if (b != null && b.length > 0) {
+                return new String(b, StandardCharsets.UTF_8);
+            }
+        }
+        return "{}";
+    }
+
+    private int getItemVersionCount(String engineKey, String db, String coll, String id) {
+        String prefix = getPrefixForEngine(engineKey);
+        String[] candidateKeys = {
+            prefix + db + ":" + coll + ":" + id,
+            prefix + db + ":" + id,
+            db + ":" + coll + ":" + id,
+            db + ":" + id
+        };
+
+        int max = 1;
+        for (String k : candidateKeys) {
+            int c = engine.getStorageCore().getVersionCount(k);
+            if (c > max) max = c;
+        }
+        return max;
     }
 
     private String executeTypeSpecificQuery(String engineName, String db, String id, Map<String, String> params) {
@@ -1402,31 +1584,21 @@ public class StoreEnginesPage extends StoreTemplatePage {
                                 sb.append("              <div style='font-size:11px; color:#94a3b8; display:flex; justify-content:space-between; align-items:center; padding:2px 0;'>\n");
                                 sb.append("                <span>└── <i class='").append(itemIcon).append("' style='color:").append(engColor).append("; margin-right:4px;'></i> [Level 3: ").append(itemLabel).append("] <strong style='color:#f8fafc;'>").append(itemId).append("</strong>");
 
-                                if ("DOCUMENT".equalsIgnoreCase(engName)) {
-                                    int vCount = 1;
-                                    try {
-                                        int c1 = engine.getStorageCore().getVersionCount(db + ":" + unitName + ":" + itemId);
-                                        int c2 = engine.getStorageCore().getVersionCount(db + ":" + itemId);
-                                        int c3 = engine.getStorageCore().getVersionCount("doc:" + db + ":" + unitName + ":" + itemId);
-                                        vCount = Math.max(1, Math.max(c1, Math.max(c2, c3)));
-                                    } catch (Exception ignored) {}
-                                    sb.append(" <span class='store-badge badge-active' style='font-size:9px; padding:1px 4px;'>v").append(vCount).append("</span>");
-                                } else if ("RECORDS".equalsIgnoreCase(engName)) {
-                                    int vCount = 1;
-                                    try {
-                                        int c1 = engine.getStorageCore().getVersionCount("rec:" + db + ":" + unitName + ":" + itemId);
-                                        vCount = Math.max(1, c1);
-                                    } catch (Exception ignored) {}
-                                    sb.append(" <span class='store-badge badge-records' style='font-size:9px; padding:1px 4px;'>v").append(vCount).append("</span>");
-                                }
+                                int vCount = getItemVersionCount(engName, db, unitName, itemId);
+                                String itemPayload = getItemPayload(engName, db, unitName, itemId);
+                                String itemVersions = getVersionsJson(engName, db, unitName, itemId);
+
+                                sb.append(" <span class='store-badge' style='background:rgba(56,189,248,0.15); color:#38bdf8; font-size:9px; padding:1px 5px;'>v").append(vCount).append("</span>");
                                 sb.append("</span>\n");
 
-                                // Action Buttons for Level 3 item
-                                sb.append("                <div>\n");
+                                // Action Buttons for Level 3 item (Edit, Versions, Select)
+                                sb.append("                <div style='display:flex; align-items:center; gap:4px;'>\n");
+                                sb.append("                  <button type='button' onclick=\"openUniversalEditModal('").append(engName).append("', '").append(db).append("', '").append(unitName).append("', '").append(itemId).append("', `").append(itemPayload.replace("`", "\\`").replace("\\", "\\\\")).append("`)\" style='background:none; border:1px solid rgba(56,189,248,0.3); color:#38bdf8; font-size:10px; padding:1px 6px; border-radius:3px; cursor:pointer;'><i class='fas fa-edit'></i> Edit</button>\n");
+                                sb.append("                  <button type='button' onclick=\"openUniversalRestoreModal('").append(engName).append("', '").append(db).append("', '").append(unitName).append("', '").append(itemId).append("', `").append(itemVersions.replace("`", "\\`")).append("`)\" style='background:none; border:1px solid rgba(168,85,247,0.3); color:#a855f7; font-size:10px; padding:1px 6px; border-radius:3px; cursor:pointer;'><i class='fas fa-history'></i> v").append(vCount).append("</button>\n");
                                 if ("DOCUMENT".equalsIgnoreCase(engName)) {
-                                    sb.append("                  <a href='").append(actionUrl).append(engName).append("&target_db=").append(db).append("&coll=").append(unitName).append("&target_id=").append(itemId).append("' style='color:#38bdf8; text-decoration:none; font-size:10px; margin-right:4px;'>[Select]</a>\n");
+                                    sb.append("                  <a href='").append(actionUrl).append(engName).append("&target_db=").append(db).append("&coll=").append(unitName).append("&target_id=").append(itemId).append("' style='color:#94a3b8; text-decoration:none; font-size:10px; margin-left:2px;'>[Select]</a>\n");
                                 } else {
-                                    sb.append("                  <a href='").append(actionUrl).append(engName).append("&target_db=").append(db).append("&target_id=").append(itemId).append("' style='color:#38bdf8; text-decoration:none; font-size:10px;'>[Inspect]</a>\n");
+                                    sb.append("                  <a href='").append(actionUrl).append(engName).append("&target_db=").append(db).append("&target_id=").append(itemId).append("' style='color:#94a3b8; text-decoration:none; font-size:10px; margin-left:2px;'>[Inspect]</a>\n");
                                 }
                                 sb.append("                </div>\n");
                                 sb.append("              </div>\n");
@@ -1544,42 +1716,16 @@ public class StoreEnginesPage extends StoreTemplatePage {
                         String id = entry.getKey();
                         String fullPayload = entry.getValue() != null ? entry.getValue().toString() : "{}";
                         String preview = fullPayload;
-                        if (preview.length() > 60) preview = preview.substring(0, 60) + "...";
-                        
-                        // Compute versions list (ordered descending)
-                        String storageKey = targetDb + ":" + id;
-                        var versionHistory = engine.getStorageCore().getVersionHistory(storageKey);
-                        if (versionHistory.isEmpty()) {
-                            versionHistory = engine.getStorageCore().getVersionHistory(targetDb + ":" + currentColl + ":" + id);
-                        }
-                        if (versionHistory.isEmpty()) {
-                            versionHistory = engine.getStorageCore().getVersionHistory("doc:" + targetDb + ":" + id);
-                        }
-                        
-                        int vCount = versionHistory.isEmpty() ? 1 : versionHistory.size();
+                        int vCount = getItemVersionCount("DOCUMENT", targetDb, currentColl, id);
                         String vBadge = "v" + vCount;
-
-                        // Build JSON array of descending versions for dialog
-                        JsonArray vArr = new JsonArray();
-                        for (var v : versionHistory) {
-                            JsonObject vo = new JsonObject();
-                            vo.addProperty("versionNumber", "v" + v.versionNumber());
-                            vo.addProperty("timestamp", v.timestamp());
-                            vo.addProperty("formattedDate", v.formattedDate());
-                            vo.addProperty("isCurrent", v.isCurrent());
-                            String pShort = v.payload();
-                            if (pShort != null && pShort.length() > 80) pShort = pShort.substring(0, 80) + "...";
-                            vo.addProperty("preview", pShort);
-                            vArr.add(vo);
-                        }
-                        String versionsJson = vArr.toString();
+                        String versionsJson = getVersionsJson("DOCUMENT", targetDb, currentColl, id);
 
                         allRows.add(List.of(
                             Span.of(id).modifier(new Modifier().style("font-weight:bold; color:#f8fafc;")),
                             Span.of("DOCUMENT (JSON)").modifier(new Modifier().cssClass("store-badge badge-active")),
                             Span.of(vBadge).modifier(new Modifier().cssClass("store-badge badge-records")),
                             RawHtml.of("<code style='font-size:11px;'>" + preview + "</code>"),
-                            buildActionButtonsWidget(actionUrl, targetDb, id, fullPayload, versionsJson, "DOCUMENT")
+                            buildActionButtonsWidget(actionUrl, targetDb, currentColl, id, fullPayload, versionsJson, "DOCUMENT")
                         ));
                     }
                 }
@@ -1593,12 +1739,15 @@ public class StoreEnginesPage extends StoreTemplatePage {
                         String val = entry.getValue();
                         String preview = val;
                         if (val.length() > 60) preview = preview.substring(0, 60) + "...";
+                        int vCount = getItemVersionCount("KEYVALUE", targetDb, currentColl, id);
+                        String versionsJson = getVersionsJson("KEYVALUE", targetDb, currentColl, id);
+
                         allRows.add(List.of(
                             Span.of(id).modifier(new Modifier().style("font-weight:bold; color:#f8fafc;")),
                             Span.of("KEY-VALUE STRING").modifier(new Modifier().cssClass("store-badge badge-engine")),
-                            Span.of("v1").modifier(new Modifier().cssClass("store-badge")),
+                            Span.of("v" + vCount).modifier(new Modifier().cssClass("store-badge badge-records")),
                             RawHtml.of("<code style='font-size:11px;'>" + preview + "</code>"),
-                            buildActionButtonsWidget(actionUrl, targetDb, id, val, "[]", "KEYVALUE")
+                            buildActionButtonsWidget(actionUrl, targetDb, currentColl, id, val, versionsJson, "KEYVALUE")
                         ));
                     }
                 }
@@ -1612,12 +1761,15 @@ public class StoreEnginesPage extends StoreTemplatePage {
                         String preview = entry.getValue() != null ? entry.getValue().toString() : "{}";
                         String full = preview;
                         if (preview.length() > 60) preview = preview.substring(0, 60) + "...";
+                        int vCount = getItemVersionCount("VECTOR", targetDb, currentColl, id);
+                        String versionsJson = getVersionsJson("VECTOR", targetDb, currentColl, id);
+
                         allRows.add(List.of(
                             Span.of(id).modifier(new Modifier().style("font-weight:bold; color:#f8fafc;")),
                             Span.of("VECTOR (float[])").modifier(new Modifier().cssClass("store-badge").style("background:rgba(139,92,246,0.2); color:#c084fc;")),
-                            Span.of("v1").modifier(new Modifier().cssClass("store-badge")),
+                            Span.of("v" + vCount).modifier(new Modifier().cssClass("store-badge badge-records")),
                             RawHtml.of("<code style='font-size:11px;'>" + preview + "</code>"),
-                            buildActionButtonsWidget(actionUrl, targetDb, id, full, "[]", "VECTOR")
+                            buildActionButtonsWidget(actionUrl, targetDb, currentColl, id, full, versionsJson, "VECTOR")
                         ));
                     }
                 }
@@ -1631,12 +1783,15 @@ public class StoreEnginesPage extends StoreTemplatePage {
                         String preview = entry.getValue() != null ? entry.getValue().toString() : "{}";
                         String full = preview;
                         if (preview.length() > 60) preview = preview.substring(0, 60) + "...";
+                        int vCount = getItemVersionCount("GRAPH", targetDb, currentColl, id);
+                        String versionsJson = getVersionsJson("GRAPH", targetDb, currentColl, id);
+
                         allRows.add(List.of(
                             Span.of(id).modifier(new Modifier().style("font-weight:bold; color:#f8fafc;")),
                             Span.of("VERTEX (Node)").modifier(new Modifier().cssClass("store-badge").style("background:rgba(236,72,153,0.2); color:#f472b6;")),
-                            Span.of("v1").modifier(new Modifier().cssClass("store-badge")),
+                            Span.of("v" + vCount).modifier(new Modifier().cssClass("store-badge badge-records")),
                             RawHtml.of("<code style='font-size:11px;'>" + preview + "</code>"),
-                            buildActionButtonsWidget(actionUrl, targetDb, id, full, "[]", "GRAPH")
+                            buildActionButtonsWidget(actionUrl, targetDb, currentColl, id, full, versionsJson, "GRAPH")
                         ));
                     }
                 }
@@ -1648,12 +1803,15 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     for (Map.Entry<String, JsonObject> entry : points.entrySet()) {
                         String ts = entry.getKey();
                         String preview = entry.getValue() != null ? entry.getValue().toString() : "{}";
+                        int vCount = getItemVersionCount("TIMESERIES", targetDb, currentColl, ts);
+                        String versionsJson = getVersionsJson("TIMESERIES", targetDb, currentColl, ts);
+
                         allRows.add(List.of(
                             Span.of("TS: " + ts).modifier(new Modifier().style("font-weight:bold; color:#f8fafc;")),
                             Span.of("TIME-SERIES POINT").modifier(new Modifier().cssClass("store-badge").style("background:rgba(6,182,212,0.2); color:#22d3ee;")),
-                            Span.of("v1").modifier(new Modifier().cssClass("store-badge")),
+                            Span.of("v" + vCount).modifier(new Modifier().cssClass("store-badge badge-records")),
                             RawHtml.of("<code style='font-size:11px;'>" + preview + "</code>"),
-                            buildActionButtonsWidget(actionUrl, targetDb, ts, preview, "[]", "TIMESERIES")
+                            buildActionButtonsWidget(actionUrl, targetDb, currentColl, ts, preview, versionsJson, "TIMESERIES")
                         ));
                     }
                 }
@@ -1665,12 +1823,15 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     for (Map.Entry<String, JsonObject> entry : rows.entrySet()) {
                         String id = entry.getKey();
                         String preview = entry.getValue() != null ? entry.getValue().toString() : "{}";
+                        int vCount = getItemVersionCount("COLUMN", targetDb, currentColl, id);
+                        String versionsJson = getVersionsJson("COLUMN", targetDb, currentColl, id);
+
                         allRows.add(List.of(
                             Span.of(id).modifier(new Modifier().style("font-weight:bold; color:#f8fafc;")),
                             Span.of("COLUMNAR ROW").modifier(new Modifier().cssClass("store-badge").style("background:rgba(249,115,22,0.2); color:#fb923c;")),
-                            Span.of("v1").modifier(new Modifier().cssClass("store-badge")),
+                            Span.of("v" + vCount).modifier(new Modifier().cssClass("store-badge badge-records")),
                             RawHtml.of("<code style='font-size:11px;'>" + preview + "</code>"),
-                            buildActionButtonsWidget(actionUrl, targetDb, id, preview, "[]", "COLUMN")
+                            buildActionButtonsWidget(actionUrl, targetDb, currentColl, id, preview, versionsJson, "COLUMN")
                         ));
                     }
                 }
@@ -1682,12 +1843,15 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     for (Map.Entry<String, JsonObject> entry : locs.entrySet()) {
                         String id = entry.getKey();
                         String preview = entry.getValue() != null ? entry.getValue().toString() : "{}";
+                        int vCount = getItemVersionCount("GEOSPATIAL", targetDb, currentColl, id);
+                        String versionsJson = getVersionsJson("GEOSPATIAL", targetDb, currentColl, id);
+
                         allRows.add(List.of(
                             Span.of(id).modifier(new Modifier().style("font-weight:bold; color:#f8fafc;")),
                             Span.of("GIS 2D POINT").modifier(new Modifier().cssClass("store-badge").style("background:rgba(20,184,166,0.2); color:#2dd4bf;")),
-                            Span.of("v1").modifier(new Modifier().cssClass("store-badge")),
+                            Span.of("v" + vCount).modifier(new Modifier().cssClass("store-badge badge-records")),
                             RawHtml.of("<code style='font-size:11px;'>" + preview + "</code>"),
-                            buildActionButtonsWidget(actionUrl, targetDb, id, preview, "[]", "GEOSPATIAL")
+                            buildActionButtonsWidget(actionUrl, targetDb, currentColl, id, preview, versionsJson, "GEOSPATIAL")
                         ));
                     }
                 }
@@ -1699,12 +1863,15 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     for (Map.Entry<String, JsonObject> entry : objs.entrySet()) {
                         String id = entry.getKey();
                         String preview = entry.getValue() != null ? entry.getValue().toString() : "{}";
+                        int vCount = getItemVersionCount("OBJECT", targetDb, currentColl, id);
+                        String versionsJson = getVersionsJson("OBJECT", targetDb, currentColl, id);
+
                         allRows.add(List.of(
                             Span.of(id).modifier(new Modifier().style("font-weight:bold; color:#f8fafc;")),
                             Span.of("OBJECT BLOB").modifier(new Modifier().cssClass("store-badge").style("background:rgba(168,85,247,0.2); color:#c084fc;")),
-                            Span.of("v1").modifier(new Modifier().cssClass("store-badge")),
+                            Span.of("v" + vCount).modifier(new Modifier().cssClass("store-badge badge-records")),
                             RawHtml.of("<code style='font-size:11px;'>" + preview + "</code>"),
-                            buildActionButtonsWidget(actionUrl, targetDb, id, preview, "[]", "OBJECT")
+                            buildActionButtonsWidget(actionUrl, targetDb, currentColl, id, preview, versionsJson, "OBJECT")
                         ));
                     }
                 }
@@ -1716,12 +1883,15 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     for (Map.Entry<String, JsonObject> entry : recs.entrySet()) {
                         String id = entry.getKey();
                         String preview = entry.getValue() != null ? entry.getValue().toString() : "{}";
+                        int vCount = getItemVersionCount("RECORDS", targetDb, currentColl, id);
+                        String versionsJson = getVersionsJson("RECORDS", targetDb, currentColl, id);
+
                         allRows.add(List.of(
                             Span.of(id).modifier(new Modifier().style("font-weight:bold; color:#f8fafc;")),
                             Span.of("RECORD (Java 25)").modifier(new Modifier().cssClass("store-badge").style("background:rgba(244,63,94,0.2); color:#fb7185;")),
-                            Span.of("v1").modifier(new Modifier().cssClass("store-badge")),
+                            Span.of("v" + vCount).modifier(new Modifier().cssClass("store-badge badge-records")),
                             RawHtml.of("<code style='font-size:11px;'>" + preview + "</code>"),
-                            buildActionButtonsWidget(actionUrl, targetDb, id, preview, "[]", "RECORDS")
+                            buildActionButtonsWidget(actionUrl, targetDb, currentColl, id, preview, versionsJson, "RECORDS")
                         ));
                     }
                 }
@@ -1782,30 +1952,32 @@ public class StoreEnginesPage extends StoreTemplatePage {
             .modifier(new Modifier().cssClass("store-card").style("margin-bottom:24px;"));
     }
 
-    private Widget buildActionButtonsWidget(String actionUrl, String db, String id, String fullPayload, String versionsJson, String engineType) {
+    private Widget buildActionButtonsWidget(String actionUrl, String db, String unit, String id, String fullPayload, String versionsJson, String engineType) {
         // 1. Edit Button
-        Button editBtn = Button.of(Icon.of("fas fa-edit"), Text.of(""));
-        editBtn.attribute("onclick", "openEditModal('" + id + "', `" + fullPayload.replace("`", "\\`").replace("\\", "\\\\") + "`)");
-        editBtn.attribute("title", "Edit Document / Payload");
+        Button editBtn = Button.of(Icon.of("fas fa-edit"), Text.of(" Edit"));
+        editBtn.attribute("onclick", "openUniversalEditModal('" + engineType + "', '" + db + "', '" + unit + "', '" + id + "', `" + fullPayload.replace("`", "\\`").replace("\\", "\\\\") + "`)");
+        editBtn.attribute("title", "Edit " + engineType + " Record");
         editBtn.modifier(new Modifier().cssClass("btn-action btn-secondary").style("color:#38bdf8; padding:3px 8px; font-size:11px; margin-right:4px;"));
 
         // 2. Version Recovery (Restore) Button
-        Button restoreBtn = Button.of(Icon.of("fas fa-history"), Text.of(""));
-        restoreBtn.attribute("onclick", "openRestoreModal('" + id + "', `" + versionsJson.replace("`", "\\`") + "`)");
-        restoreBtn.attribute("title", "Version Recovery & Restore (Ordered Descending)");
+        Button restoreBtn = Button.of(Icon.of("fas fa-history"), Text.of(" Versions"));
+        restoreBtn.attribute("onclick", "openUniversalRestoreModal('" + engineType + "', '" + db + "', '" + unit + "', '" + id + "', `" + versionsJson.replace("`", "\\`") + "`)");
+        restoreBtn.attribute("title", "View Historical Versions & Restore (Ordered Descending)");
         restoreBtn.modifier(new Modifier().cssClass("btn-action btn-secondary").style("color:#a855f7; padding:3px 8px; font-size:11px; margin-right:4px;"));
 
         // 3. Delete Button
         Button delBtn = Button.of(Icon.of("fas fa-trash"), Text.of(""));
         delBtn.attribute("type", "submit");
-        delBtn.attribute("onclick", "return confirm(\"Are you sure you want to delete object " + id + "?\");");
+        delBtn.attribute("onclick", "return confirm(\"Are you sure you want to delete " + engineType + " object " + id + "?\");");
         delBtn.attribute("title", "Delete Object");
         delBtn.modifier(new Modifier().cssClass("btn-action btn-secondary").style("color:#ef4444; padding:3px 8px; font-size:11px;"));
 
         Widget delForm = Form.of(
             Hidden.of("action", "delete_object"),
             Hidden.of("target_db", db),
+            Hidden.of("target_coll", unit),
             Hidden.of("target_id", id),
+            Hidden.of("engine_type", engineType),
             delBtn
         ).action(actionUrl).method("POST").modifier(new Modifier().style("display:inline; margin:0;"));
 
@@ -2224,25 +2396,33 @@ public class StoreEnginesPage extends StoreTemplatePage {
           .append("  </div>\n")
           .append("</div>\n");
 
-        // Edit Document Modal
+        // 1. Edit Document Modal [Document]
         sb.append("<div id='editDocumentModal' style='display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center;'>\n")
-          .append("  <div class='store-card' style='width:560px; max-width:90%; background:#1e293b; border:1px solid rgba(56,189,248,0.4); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:24px;'>\n")
+          .append("  <div class='store-card' style='width:580px; max-width:92%; background:#1e293b; border:1px solid rgba(59,130,246,0.4); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:24px;'>\n")
           .append("    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;'>\n")
-          .append("      <h3 style='margin:0; font-size:18px; font-weight:700; color:#f8fafc;'><i class='fas fa-edit' style='color:#38bdf8; margin-right:8px;'></i> Edit Document (<span id='editDocIdLabel'></span>)</h3>\n")
+          .append("      <h3 style='margin:0; font-size:18px; font-weight:700; color:#f8fafc;'><i class='fas fa-file-code' style='color:#3b82f6; margin-right:8px;'></i> Edit Document: <span id='editDocIdDisplay' style='color:#38bdf8;'></span></h3>\n")
           .append("      <button onclick=\"document.getElementById('editDocumentModal').style.display='none'\" style='background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;'><i class='fas fa-times'></i></button>\n")
           .append("    </div>\n")
           .append("    <form method='POST' action='").append(actionUrl).append("'>\n")
-          .append("      <input type='hidden' name='action' value='edit_document'/>\n")
-          .append("      <input type='hidden' name='target_db' value='").append(targetDb).append("'/>\n")
-          .append("      <input type='hidden' name='target_coll' value='").append(currentColl).append("'/>\n")
+          .append("      <input type='hidden' name='action' value='edit_object'/>\n")
+          .append("      <input type='hidden' name='engine_type' value='DOCUMENT'/>\n")
+          .append("      <input type='hidden' name='target_db' id='editDocDbInput'/>\n")
           .append("      <input type='hidden' name='target_id' id='editDocIdInput'/>\n")
+          .append("      <div style='display:flex; gap:12px; margin-bottom:12px; font-size:12px; color:#94a3b8; background:rgba(255,255,255,0.03); padding:8px 12px; border-radius:6px;'>\n")
+          .append("        <div><strong>Database:</strong> <span id='editDocDbDisplay' style='color:#f8fafc;'></span></div>\n")
+          .append("        <div><strong>Engine:</strong> <span class='store-badge badge-active'>DOCUMENT</span></div>\n")
+          .append("      </div>\n")
           .append("      <div style='margin-bottom:12px;'>\n")
-          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Schema / Class (Optional):</label>\n")
-          .append("        <input type='text' name='doc_class' placeholder='com.enterprise.model.Customer' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Collection:</label>\n")
+          .append("        <input type='text' name='target_coll' id='editDocCollInput' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#38bdf8; font-size:13px; box-sizing:border-box;'/>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:12px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Class / Schema (Optional):</label>\n")
+          .append("        <input type='text' name='doc_class' id='editDocClassInput' placeholder='com.jettra.model.Customer' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>\n")
           .append("      </div>\n")
           .append("      <div style='margin-bottom:16px;'>\n")
-          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>JSON Payload:</label>\n")
-          .append("        <textarea id='editDocPayloadInput' name='doc_payload' rows='6' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:12px; font-family:monospace; box-sizing:border-box;'></textarea>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>JSON Document Payload:</label>\n")
+          .append("        <textarea name='doc_payload' id='editDocPayloadInput' rows='6' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:12px; font-family:monospace; box-sizing:border-box;'></textarea>\n")
           .append("      </div>\n")
           .append("      <div style='display:flex; justify-content:flex-end; gap:8px;'>\n")
           .append("        <button type='button' onclick=\"document.getElementById('editDocumentModal').style.display='none'\" class='btn-action btn-secondary'>Cancel</button>\n")
@@ -2252,23 +2432,283 @@ public class StoreEnginesPage extends StoreTemplatePage {
           .append("  </div>\n")
           .append("</div>\n");
 
-        // Descending Versions Recovery Modal
-        sb.append("<div id='restoreVersionModal' style='display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center;'>\n")
-          .append("  <div class='store-card' style='width:650px; max-width:92%; background:#1e293b; border:1px solid rgba(168,85,247,0.4); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:24px;'>\n")
+        // 2. Edit Key-Value Pair Modal [Key-Value Pair]
+        sb.append("<div id='editKeyValueModal' style='display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center;'>\n")
+          .append("  <div class='store-card' style='width:540px; max-width:92%; background:#1e293b; border:1px solid rgba(16,185,129,0.4); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:24px;'>\n")
           .append("    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;'>\n")
-          .append("      <h3 style='margin:0; font-size:18px; font-weight:700; color:#f8fafc;'><i class='fas fa-history' style='color:#a855f7; margin-right:8px;'></i> Historical Versions (<span id='restoreDocIdLabel' style='color:#38bdf8;'></span>)</h3>\n")
-          .append("      <button onclick=\"document.getElementById('restoreVersionModal').style.display='none'\" style='background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;'><i class='fas fa-times'></i></button>\n")
+          .append("      <h3 style='margin:0; font-size:18px; font-weight:700; color:#f8fafc;'><i class='fas fa-key' style='color:#10b981; margin-right:8px;'></i> Edit Key-Value Pair: <span id='editKvIdDisplay' style='color:#10b981;'></span></h3>\n")
+          .append("      <button onclick=\"document.getElementById('editKeyValueModal').style.display='none'\" style='background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;'><i class='fas fa-times'></i></button>\n")
           .append("    </div>\n")
-          .append("    <p style='font-size:13px; color:#cbd5e1; margin-top:0;'>Select a previous snapshot version (ordered descending: newest to oldest) to rollback:</p>\n")
+          .append("    <form method='POST' action='").append(actionUrl).append("'>\n")
+          .append("      <input type='hidden' name='action' value='edit_object'/>\n")
+          .append("      <input type='hidden' name='engine_type' value='KEYVALUE'/>\n")
+          .append("      <input type='hidden' name='target_db' id='editKvDbInput'/>\n")
+          .append("      <input type='hidden' name='target_id' id='editKvIdInput'/>\n")
+          .append("      <div style='display:flex; gap:12px; margin-bottom:12px; font-size:12px; color:#94a3b8; background:rgba(255,255,255,0.03); padding:8px 12px; border-radius:6px;'>\n")
+          .append("        <div><strong>Database:</strong> <span id='editKvDbDisplay' style='color:#f8fafc;'></span></div>\n")
+          .append("        <div><strong>Engine:</strong> <span class='store-badge badge-kv'>KEYVALUE</span></div>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:12px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Bucket / Namespace:</label>\n")
+          .append("        <input type='text' name='target_coll' id='editKvCollInput' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#10b981; font-size:13px; box-sizing:border-box;'/>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:16px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Stored Value / Payload:</label>\n")
+          .append("        <textarea name='kv_value' id='editKvValueInput' rows='6' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:12px; font-family:monospace; box-sizing:border-box;'></textarea>\n")
+          .append("      </div>\n")
+          .append("      <div style='display:flex; justify-content:flex-end; gap:8px;'>\n")
+          .append("        <button type='button' onclick=\"document.getElementById('editKeyValueModal').style.display='none'\" class='btn-action btn-secondary'>Cancel</button>\n")
+          .append("        <button type='submit' class='btn-action btn-primary' style='background:#10b981;'><i class='fas fa-save'></i> Save Value (New Version)</button>\n")
+          .append("      </div>\n")
+          .append("    </form>\n")
+          .append("  </div>\n")
+          .append("</div>\n");
+
+        // 3. Edit Vector Embedding Modal [Vector Embedding]
+        sb.append("<div id='editVectorModal' style='display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center;'>\n")
+          .append("  <div class='store-card' style='width:560px; max-width:92%; background:#1e293b; border:1px solid rgba(139,92,246,0.4); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:24px;'>\n")
+          .append("    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;'>\n")
+          .append("      <h3 style='margin:0; font-size:18px; font-weight:700; color:#f8fafc;'><i class='fas fa-project-diagram' style='color:#a855f7; margin-right:8px;'></i> Edit Vector Embedding: <span id='editVecIdDisplay' style='color:#c084fc;'></span></h3>\n")
+          .append("      <button onclick=\"document.getElementById('editVectorModal').style.display='none'\" style='background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;'><i class='fas fa-times'></i></button>\n")
+          .append("    </div>\n")
+          .append("    <form method='POST' action='").append(actionUrl).append("'>\n")
+          .append("      <input type='hidden' name='action' value='edit_object'/>\n")
+          .append("      <input type='hidden' name='engine_type' value='VECTOR'/>\n")
+          .append("      <input type='hidden' name='target_db' id='editVecDbInput'/>\n")
+          .append("      <input type='hidden' name='target_id' id='editVecIdInput'/>\n")
+          .append("      <div style='display:flex; gap:12px; margin-bottom:12px; font-size:12px; color:#94a3b8; background:rgba(255,255,255,0.03); padding:8px 12px; border-radius:6px;'>\n")
+          .append("        <div><strong>Database:</strong> <span id='editVecDbDisplay' style='color:#f8fafc;'></span></div>\n")
+          .append("        <div><strong>Engine:</strong> <span class='store-badge badge-vector'>VECTOR</span></div>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:12px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Vector Index / Collection:</label>\n")
+          .append("        <input type='text' name='target_coll' id='editVecCollInput' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#c084fc; font-size:13px; box-sizing:border-box;'/>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:12px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Vector Coordinates (float array):</label>\n")
+          .append("        <input type='text' name='vector_coords' id='editVecCoordsInput' placeholder='0.12, 0.45, 0.88, 0.31' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; font-family:monospace; box-sizing:border-box;'/>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:16px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Metadata JSON:</label>\n")
+          .append("        <textarea name='vector_meta' id='editVecMetaInput' rows='4' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:12px; font-family:monospace; box-sizing:border-box;'></textarea>\n")
+          .append("      </div>\n")
+          .append("      <div style='display:flex; justify-content:flex-end; gap:8px;'>\n")
+          .append("        <button type='button' onclick=\"document.getElementById('editVectorModal').style.display='none'\" class='btn-action btn-secondary'>Cancel</button>\n")
+          .append("        <button type='submit' class='btn-action btn-primary' style='background:#a855f7;'><i class='fas fa-save'></i> Save Vector (New Version)</button>\n")
+          .append("      </div>\n")
+          .append("    </form>\n")
+          .append("  </div>\n")
+          .append("</div>\n");
+
+        // 4. Edit Graph Vertex / Edge Modal [Vertex / Edge]
+        sb.append("<div id='editGraphModal' style='display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center;'>\n")
+          .append("  <div class='store-card' style='width:560px; max-width:92%; background:#1e293b; border:1px solid rgba(236,72,153,0.4); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:24px;'>\n")
+          .append("    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;'>\n")
+          .append("      <h3 style='margin:0; font-size:18px; font-weight:700; color:#f8fafc;'><i class='fas fa-circle-nodes' style='color:#ec4899; margin-right:8px;'></i> Edit Vertex / Edge: <span id='editGraphIdDisplay' style='color:#f472b6;'></span></h3>\n")
+          .append("      <button onclick=\"document.getElementById('editGraphModal').style.display='none'\" style='background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;'><i class='fas fa-times'></i></button>\n")
+          .append("    </div>\n")
+          .append("    <form method='POST' action='").append(actionUrl).append("'>\n")
+          .append("      <input type='hidden' name='action' value='edit_object'/>\n")
+          .append("      <input type='hidden' name='engine_type' value='GRAPH'/>\n")
+          .append("      <input type='hidden' name='target_db' id='editGraphDbInput'/>\n")
+          .append("      <input type='hidden' name='target_id' id='editGraphIdInput'/>\n")
+          .append("      <div style='display:flex; gap:12px; margin-bottom:12px; font-size:12px; color:#94a3b8; background:rgba(255,255,255,0.03); padding:8px 12px; border-radius:6px;'>\n")
+          .append("        <div><strong>Database:</strong> <span id='editGraphDbDisplay' style='color:#f8fafc;'></span></div>\n")
+          .append("        <div><strong>Engine:</strong> <span class='store-badge badge-graph'>GRAPH</span></div>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:12px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Node Label / Group:</label>\n")
+          .append("        <input type='text' name='target_coll' id='editGraphCollInput' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#ec4899; font-size:13px; box-sizing:border-box;'/>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:16px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Graph Properties JSON:</label>\n")
+          .append("        <textarea name='node_props' id='editGraphPropsInput' rows='5' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:12px; font-family:monospace; box-sizing:border-box;'></textarea>\n")
+          .append("      </div>\n")
+          .append("      <div style='display:flex; justify-content:flex-end; gap:8px;'>\n")
+          .append("        <button type='button' onclick=\"document.getElementById('editGraphModal').style.display='none'\" class='btn-action btn-secondary'>Cancel</button>\n")
+          .append("        <button type='submit' class='btn-action btn-primary' style='background:#ec4899;'><i class='fas fa-save'></i> Save Vertex (New Version)</button>\n")
+          .append("      </div>\n")
+          .append("    </form>\n")
+          .append("  </div>\n")
+          .append("</div>\n");
+
+        // 5. Edit Time Point Modal [Time Point]
+        sb.append("<div id='editTimeSeriesModal' style='display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center;'>\n")
+          .append("  <div class='store-card' style='width:560px; max-width:92%; background:#1e293b; border:1px solid rgba(6,182,212,0.4); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:24px;'>\n")
+          .append("    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;'>\n")
+          .append("      <h3 style='margin:0; font-size:18px; font-weight:700; color:#f8fafc;'><i class='fas fa-clock' style='color:#06b6d4; margin-right:8px;'></i> Edit Time Point: <span id='editTsIdDisplay' style='color:#22d3ee;'></span></h3>\n")
+          .append("      <button onclick=\"document.getElementById('editTimeSeriesModal').style.display='none'\" style='background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;'><i class='fas fa-times'></i></button>\n")
+          .append("    </div>\n")
+          .append("    <form method='POST' action='").append(actionUrl).append("'>\n")
+          .append("      <input type='hidden' name='action' value='edit_object'/>\n")
+          .append("      <input type='hidden' name='engine_type' value='TIMESERIES'/>\n")
+          .append("      <input type='hidden' name='target_db' id='editTsDbInput'/>\n")
+          .append("      <input type='hidden' name='target_id' id='editTsIdInput'/>\n")
+          .append("      <div style='display:flex; gap:12px; margin-bottom:12px; font-size:12px; color:#94a3b8; background:rgba(255,255,255,0.03); padding:8px 12px; border-radius:6px;'>\n")
+          .append("        <div><strong>Database:</strong> <span id='editTsDbDisplay' style='color:#f8fafc;'></span></div>\n")
+          .append("        <div><strong>Engine:</strong> <span class='store-badge badge-ts'>TIMESERIES</span></div>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:12px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Metric Name / Series:</label>\n")
+          .append("        <input type='text' name='target_coll' id='editTsCollInput' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#06b6d4; font-size:13px; box-sizing:border-box;'/>\n")
+          .append("      </div>\n")
+          .append("      <div style='display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px;'>\n")
+          .append("        <div><label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Value (Double):</label><input type='number' step='any' name='ts_value' id='editTsValueInput' required style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/></div>\n")
+          .append("        <div><label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Unit / Scale:</label><input type='text' name='ts_unit' id='editTsUnitInput' placeholder='celsius, ms, %' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/></div>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:12px;'><label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Timestamp (ms):</label><input type='text' name='ts_timestamp' id='editTsTimestampInput' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/></div>\n")
+          .append("      <div style='margin-bottom:16px;'><label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Tags JSON:</label><textarea name='ts_tags' id='editTsTagsInput' rows='3' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:12px; font-family:monospace; box-sizing:border-box;'></textarea></div>\n")
+          .append("      <div style='display:flex; justify-content:flex-end; gap:8px;'>\n")
+          .append("        <button type='button' onclick=\"document.getElementById('editTimeSeriesModal').style.display='none'\" class='btn-action btn-secondary'>Cancel</button>\n")
+          .append("        <button type='submit' class='btn-action btn-primary' style='background:#06b6d4;'><i class='fas fa-save'></i> Save Point (New Version)</button>\n")
+          .append("      </div>\n")
+          .append("    </form>\n")
+          .append("  </div>\n")
+          .append("</div>\n");
+
+        // 6. Edit Dynamic Row Modal [Dynamic Row]
+        sb.append("<div id='editColumnModal' style='display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center;'>\n")
+          .append("  <div class='store-card' style='width:560px; max-width:92%; background:#1e293b; border:1px solid rgba(249,115,22,0.4); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:24px;'>\n")
+          .append("    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;'>\n")
+          .append("      <h3 style='margin:0; font-size:18px; font-weight:700; color:#f8fafc;'><i class='fas fa-table' style='color:#f97316; margin-right:8px;'></i> Edit Dynamic Row: <span id='editColIdDisplay' style='color:#fb923c;'></span></h3>\n")
+          .append("      <button onclick=\"document.getElementById('editColumnModal').style.display='none'\" style='background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;'><i class='fas fa-times'></i></button>\n")
+          .append("    </div>\n")
+          .append("    <form method='POST' action='").append(actionUrl).append("'>\n")
+          .append("      <input type='hidden' name='action' value='edit_object'/>\n")
+          .append("      <input type='hidden' name='engine_type' value='COLUMN'/>\n")
+          .append("      <input type='hidden' name='target_db' id='editColDbInput'/>\n")
+          .append("      <input type='hidden' name='target_id' id='editColIdInput'/>\n")
+          .append("      <div style='display:flex; gap:12px; margin-bottom:12px; font-size:12px; color:#94a3b8; background:rgba(255,255,255,0.03); padding:8px 12px; border-radius:6px;'>\n")
+          .append("        <div><strong>Database:</strong> <span id='editColDbDisplay' style='color:#f8fafc;'></span></div>\n")
+          .append("        <div><strong>Engine:</strong> <span class='store-badge badge-column'>COLUMN</span></div>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:12px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Column Family:</label>\n")
+          .append("        <input type='text' name='target_coll' id='editColCollInput' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f97316; font-size:13px; box-sizing:border-box;'/>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:16px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Column Data (JSON):</label>\n")
+          .append("        <textarea name='col_data' id='editColDataInput' rows='5' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:12px; font-family:monospace; box-sizing:border-box;'></textarea>\n")
+          .append("      </div>\n")
+          .append("      <div style='display:flex; justify-content:flex-end; gap:8px;'>\n")
+          .append("        <button type='button' onclick=\"document.getElementById('editColumnModal').style.display='none'\" class='btn-action btn-secondary'>Cancel</button>\n")
+          .append("        <button type='submit' class='btn-action btn-primary' style='background:#f97316;'><i class='fas fa-save'></i> Save Row (New Version)</button>\n")
+          .append("      </div>\n")
+          .append("    </form>\n")
+          .append("  </div>\n")
+          .append("</div>\n");
+
+        // 7. Edit GIS Feature Modal [GIS Feature]
+        sb.append("<div id='editGeoModal' style='display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center;'>\n")
+          .append("  <div class='store-card' style='width:560px; max-width:92%; background:#1e293b; border:1px solid rgba(20,184,166,0.4); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:24px;'>\n")
+          .append("    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;'>\n")
+          .append("      <h3 style='margin:0; font-size:18px; font-weight:700; color:#f8fafc;'><i class='fas fa-location-dot' style='color:#14b8a6; margin-right:8px;'></i> Edit GIS Feature: <span id='editGeoIdDisplay' style='color:#2dd4bf;'></span></h3>\n")
+          .append("      <button onclick=\"document.getElementById('editGeoModal').style.display='none'\" style='background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;'><i class='fas fa-times'></i></button>\n")
+          .append("    </div>\n")
+          .append("    <form method='POST' action='").append(actionUrl).append("'>\n")
+          .append("      <input type='hidden' name='action' value='edit_object'/>\n")
+          .append("      <input type='hidden' name='engine_type' value='GEOSPATIAL'/>\n")
+          .append("      <input type='hidden' name='target_db' id='editGeoDbInput'/>\n")
+          .append("      <input type='hidden' name='target_id' id='editGeoIdInput'/>\n")
+          .append("      <div style='display:flex; gap:12px; margin-bottom:12px; font-size:12px; color:#94a3b8; background:rgba(255,255,255,0.03); padding:8px 12px; border-radius:6px;'>\n")
+          .append("        <div><strong>Database:</strong> <span id='editGeoDbDisplay' style='color:#f8fafc;'></span></div>\n")
+          .append("        <div><strong>Engine:</strong> <span class='store-badge badge-geo'>GEOSPATIAL</span></div>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:12px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Spatial Layer:</label>\n")
+          .append("        <input type='text' name='target_coll' id='editGeoCollInput' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#14b8a6; font-size:13px; box-sizing:border-box;'/>\n")
+          .append("      </div>\n")
+          .append("      <div style='display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px;'>\n")
+          .append("        <div><label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Latitude (-90..90):</label><input type='number' step='any' name='geo_lat' id='editGeoLatInput' required style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/></div>\n")
+          .append("        <div><label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Longitude (-180..180):</label><input type='number' step='any' name='geo_lon' id='editGeoLonInput' required style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/></div>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:16px;'><label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Place Name / Metadata:</label><input type='text' name='geo_name' id='editGeoNameInput' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/></div>\n")
+          .append("      <div style='display:flex; justify-content:flex-end; gap:8px;'>\n")
+          .append("        <button type='button' onclick=\"document.getElementById('editGeoModal').style.display='none'\" class='btn-action btn-secondary'>Cancel</button>\n")
+          .append("        <button type='submit' class='btn-action btn-primary' style='background:#14b8a6;'><i class='fas fa-save'></i> Save GIS Feature (New Version)</button>\n")
+          .append("      </div>\n")
+          .append("    </form>\n")
+          .append("  </div>\n")
+          .append("</div>\n");
+
+        // 8. Edit BLOB Object Modal [BLOB Object]
+        sb.append("<div id='editObjectModal' style='display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center;'>\n")
+          .append("  <div class='store-card' style='width:560px; max-width:92%; background:#1e293b; border:1px solid rgba(168,85,247,0.4); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:24px;'>\n")
+          .append("    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;'>\n")
+          .append("      <h3 style='margin:0; font-size:18px; font-weight:700; color:#f8fafc;'><i class='fas fa-box-archive' style='color:#a855f7; margin-right:8px;'></i> Edit BLOB Object: <span id='editObjIdDisplay' style='color:#c084fc;'></span></h3>\n")
+          .append("      <button onclick=\"document.getElementById('editObjectModal').style.display='none'\" style='background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;'><i class='fas fa-times'></i></button>\n")
+          .append("    </div>\n")
+          .append("    <form method='POST' action='").append(actionUrl).append("'>\n")
+          .append("      <input type='hidden' name='action' value='edit_object'/>\n")
+          .append("      <input type='hidden' name='engine_type' value='OBJECT'/>\n")
+          .append("      <input type='hidden' name='target_db' id='editObjDbInput'/>\n")
+          .append("      <input type='hidden' name='target_id' id='editObjIdInput'/>\n")
+          .append("      <div style='display:flex; gap:12px; margin-bottom:12px; font-size:12px; color:#94a3b8; background:rgba(255,255,255,0.03); padding:8px 12px; border-radius:6px;'>\n")
+          .append("        <div><strong>Database:</strong> <span id='editObjDbDisplay' style='color:#f8fafc;'></span></div>\n")
+          .append("        <div><strong>Engine:</strong> <span class='store-badge badge-object'>OBJECT</span></div>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:12px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Storage Bucket:</label>\n")
+          .append("        <input type='text' name='target_coll' id='editObjCollInput' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#a855f7; font-size:13px; box-sizing:border-box;'/>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:12px;'><label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>MIME Content-Type:</label><input type='text' name='obj_mime' id='editObjMimeInput' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/></div>\n")
+          .append("      <div style='margin-bottom:16px;'><label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Payload / Raw Content:</label><textarea name='obj_payload' id='editObjPayloadInput' rows='5' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:12px; font-family:monospace; box-sizing:border-box;'></textarea></div>\n")
+          .append("      <div style='display:flex; justify-content:flex-end; gap:8px;'>\n")
+          .append("        <button type='button' onclick=\"document.getElementById('editObjectModal').style.display='none'\" class='btn-action btn-secondary'>Cancel</button>\n")
+          .append("        <button type='submit' class='btn-action btn-primary' style='background:#a855f7;'><i class='fas fa-save'></i> Save Object (New Version)</button>\n")
+          .append("      </div>\n")
+          .append("    </form>\n")
+          .append("  </div>\n")
+          .append("</div>\n");
+
+        // 9. Edit Immutable Record Modal [Immutable Record]
+        sb.append("<div id='editRecordsModal' style='display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center;'>\n")
+          .append("  <div class='store-card' style='width:560px; max-width:92%; background:#1e293b; border:1px solid rgba(244,63,94,0.4); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:24px;'>\n")
+          .append("    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;'>\n")
+          .append("      <h3 style='margin:0; font-size:18px; font-weight:700; color:#f8fafc;'><i class='fas fa-address-card' style='color:#f43f5e; margin-right:8px;'></i> Edit Immutable Record: <span id='editRecIdDisplay' style='color:#fb7185;'></span></h3>\n")
+          .append("      <button onclick=\"document.getElementById('editRecordsModal').style.display='none'\" style='background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;'><i class='fas fa-times'></i></button>\n")
+          .append("    </div>\n")
+          .append("    <form method='POST' action='").append(actionUrl).append("'>\n")
+          .append("      <input type='hidden' name='action' value='edit_object'/>\n")
+          .append("      <input type='hidden' name='engine_type' value='RECORDS'/>\n")
+          .append("      <input type='hidden' name='target_db' id='editRecDbInput'/>\n")
+          .append("      <input type='hidden' name='target_id' id='editRecIdInput'/>\n")
+          .append("      <div style='display:flex; gap:12px; margin-bottom:12px; font-size:12px; color:#94a3b8; background:rgba(255,255,255,0.03); padding:8px 12px; border-radius:6px;'>\n")
+          .append("        <div><strong>Database:</strong> <span id='editRecDbDisplay' style='color:#f8fafc;'></span></div>\n")
+          .append("        <div><strong>Engine:</strong> <span class='store-badge badge-records'>RECORDS</span></div>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:12px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Record Table:</label>\n")
+          .append("        <input type='text' name='target_coll' id='editRecCollInput' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f43f5e; font-size:13px; box-sizing:border-box;'/>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:12px;'><label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Java 25 Record Class:</label><input type='text' name='rec_class' id='editRecClassInput' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/></div>\n")
+          .append("      <div style='margin-bottom:16px;'><label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Record Components JSON:</label><textarea name='rec_payload' id='editRecPayloadInput' rows='5' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:12px; font-family:monospace; box-sizing:border-box;'></textarea></div>\n")
+          .append("      <div style='display:flex; justify-content:flex-end; gap:8px;'>\n")
+          .append("        <button type='button' onclick=\"document.getElementById('editRecordsModal').style.display='none'\" class='btn-action btn-secondary'>Cancel</button>\n")
+          .append("        <button type='submit' class='btn-action btn-primary' style='background:#f43f5e;'><i class='fas fa-save'></i> Save Record (New Version)</button>\n")
+          .append("      </div>\n")
+          .append("    </form>\n")
+          .append("  </div>\n")
+          .append("</div>\n");
+
+        // Universal Multi-Model Descending Versions Recovery Modal
+        sb.append("<div id='universalRestoreModal' style='display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center;'>\n")
+          .append("  <div class='store-card' style='width:680px; max-width:94%; background:#1e293b; border:1px solid rgba(168,85,247,0.4); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:24px;'>\n")
+          .append("    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;'>\n")
+          .append("      <h3 style='margin:0; font-size:18px; font-weight:700; color:#f8fafc;'><i class='fas fa-history' style='color:#a855f7; margin-right:8px;'></i> Historical Versions: <span id='restoreEngineLabel' class='store-badge' style='background:rgba(168,85,247,0.2); color:#c084fc; font-size:11px;'></span> (<span id='restoreRecordIdLabel' style='color:#38bdf8;'></span>)</h3>\n")
+          .append("      <button onclick=\"document.getElementById('universalRestoreModal').style.display='none'\" style='background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;'><i class='fas fa-times'></i></button>\n")
+          .append("    </div>\n")
+          .append("    <p style='font-size:13px; color:#cbd5e1; margin-top:0;'>Select any previous snapshot version (ordered descending: newest to oldest) to rollback:</p>\n")
           .append("    <form method='POST' action='").append(actionUrl).append("'>\n")
           .append("      <input type='hidden' name='action' value='restore_version'/>\n")
-          .append("      <input type='hidden' name='target_db' value='").append(targetDb).append("'/>\n")
-          .append("      <input type='hidden' name='target_coll' value='").append(currentColl).append("'/>\n")
-          .append("      <input type='hidden' name='target_id' id='restoreDocIdInput'/>\n")
+          .append("      <input type='hidden' name='engine_type' id='restoreEngineTypeInput'/>\n")
+          .append("      <input type='hidden' name='target_db' id='restoreRecordDbInput'/>\n")
+          .append("      <input type='hidden' name='target_coll' id='restoreRecordCollInput'/>\n")
+          .append("      <input type='hidden' name='target_id' id='restoreRecordIdInput'/>\n")
           .append("      <input type='hidden' name='version_ts' id='restoreVersionTsInput'/>\n")
-          .append("      <div id='versionsListContainer' style='max-height:220px; overflow-y:auto; margin-bottom:16px; border:1px solid rgba(255,255,255,0.08); border-radius:8px; background:#0f172a;'></div>\n")
+          .append("      <div id='universalVersionsContainer' style='max-height:240px; overflow-y:auto; margin-bottom:16px; border:1px solid rgba(255,255,255,0.08); border-radius:8px; background:#0f172a;'></div>\n")
           .append("      <div style='display:flex; justify-content:flex-end; gap:8px;'>\n")
-          .append("        <button type='button' onclick=\"document.getElementById('restoreVersionModal').style.display='none'\" class='btn-action btn-secondary'>Close</button>\n")
+          .append("        <button type='button' onclick=\"document.getElementById('universalRestoreModal').style.display='none'\" class='btn-action btn-secondary'>Close</button>\n")
           .append("      </div>\n")
           .append("    </form>\n")
           .append("  </div>\n")
@@ -2347,27 +2787,124 @@ public class StoreEnginesPage extends StoreTemplatePage {
           .append("      if (desc) desc.innerText = 'Autoincrement mode active: engine internal counter will generate next sequential integer (1, 2, 3...).';\n")
           .append("      if (icon) icon.className = 'fas fa-sort-numeric-down';\n")
           .append("    } else {\n")
-          .append("      if (manualGroup) manualGroup.style.display = 'none';\n")
+.append("      if (manualGroup) manualGroup.style.display = 'none';\n")
           .append("      if (input) { input.required = false; input.value = ''; }\n")
           .append("      if (desc) desc.innerText = 'Composite UUID mode active: generates unique ID combining CPU signature, timestamp, DB digest and UUID entropy.';\n")
           .append("      if (icon) icon.className = 'fas fa-fingerprint';\n")
           .append("    }\n")
           .append("  }\n")
-          .append("  function openEditModal(id, payload) {\n")
-          .append("    document.getElementById('editDocIdInput').value = id;\n")
-          .append("    document.getElementById('editDocIdLabel').innerText = id;\n")
-          .append("    document.getElementById('editDocPayloadInput').value = payload;\n")
-          .append("    document.getElementById('editDocumentModal').style.display = 'flex';\n")
+          .append("  function openUniversalEditModal(engine, db, unit, id, payload) {\n")
+          .append("    var parsed = null;\n")
+          .append("    try {\n")
+          .append("      if (typeof payload === 'string' && (payload.trim().startsWith('{') || payload.trim().startsWith('['))) {\n")
+          .append("        parsed = JSON.parse(payload);\n")
+          .append("      }\n")
+          .append("    } catch (e) {}\n")
+          .append("\n")
+          .append("    if (engine === 'DOCUMENT') {\n")
+          .append("      document.getElementById('editDocDbInput').value = db;\n")
+          .append("      document.getElementById('editDocDbDisplay').innerText = db;\n")
+          .append("      document.getElementById('editDocCollInput').value = unit || 'default';\n")
+          .append("      document.getElementById('editDocIdInput').value = id;\n")
+          .append("      document.getElementById('editDocIdDisplay').innerText = id;\n")
+          .append("      if (parsed && parsed._class) document.getElementById('editDocClassInput').value = parsed._class;\n")
+          .append("      document.getElementById('editDocPayloadInput').value = payload;\n")
+          .append("      document.getElementById('editDocumentModal').style.display = 'flex';\n")
+          .append("    } else if (engine === 'KEYVALUE') {\n")
+          .append("      document.getElementById('editKvDbInput').value = db;\n")
+          .append("      document.getElementById('editKvDbDisplay').innerText = db;\n")
+          .append("      document.getElementById('editKvCollInput').value = unit || 'default';\n")
+          .append("      document.getElementById('editKvIdInput').value = id;\n")
+          .append("      document.getElementById('editKvIdDisplay').innerText = id;\n")
+          .append("      document.getElementById('editKvValueInput').value = payload;\n")
+          .append("      document.getElementById('editKeyValueModal').style.display = 'flex';\n")
+          .append("    } else if (engine === 'VECTOR') {\n")
+          .append("      document.getElementById('editVecDbInput').value = db;\n")
+          .append("      document.getElementById('editVecDbDisplay').innerText = db;\n")
+          .append("      document.getElementById('editVecCollInput').value = unit || 'default';\n")
+          .append("      document.getElementById('editVecIdInput').value = id;\n")
+          .append("      document.getElementById('editVecIdDisplay').innerText = id;\n")
+          .append("      if (parsed && Array.isArray(parsed.coordinates)) {\n")
+          .append("        document.getElementById('editVecCoordsInput').value = parsed.coordinates.join(', ');\n")
+          .append("      } else {\n")
+          .append("        document.getElementById('editVecCoordsInput').value = '0.12, 0.45, 0.88, 0.31';\n")
+          .append("      }\n")
+          .append("      document.getElementById('editVecMetaInput').value = payload;\n")
+          .append("      document.getElementById('editVectorModal').style.display = 'flex';\n")
+          .append("    } else if (engine === 'GRAPH') {\n")
+          .append("      document.getElementById('editGraphDbInput').value = db;\n")
+          .append("      document.getElementById('editGraphDbDisplay').innerText = db;\n")
+          .append("      document.getElementById('editGraphCollInput').value = (parsed && parsed.label) ? parsed.label : (unit || 'Vertex');\n")
+          .append("      document.getElementById('editGraphIdInput').value = id;\n")
+          .append("      document.getElementById('editGraphIdDisplay').innerText = id;\n")
+          .append("      document.getElementById('editGraphPropsInput').value = payload;\n")
+          .append("      document.getElementById('editGraphModal').style.display = 'flex';\n")
+          .append("    } else if (engine === 'TIMESERIES') {\n")
+          .append("      document.getElementById('editTsDbInput').value = db;\n")
+          .append("      document.getElementById('editTsDbDisplay').innerText = db;\n")
+          .append("      document.getElementById('editTsCollInput').value = (parsed && parsed.metric) ? parsed.metric : (unit || 'telemetry');\n")
+          .append("      document.getElementById('editTsIdInput').value = id;\n")
+          .append("      document.getElementById('editTsIdDisplay').innerText = id;\n")
+          .append("      document.getElementById('editTsTimestampInput').value = (parsed && parsed.timestamp) ? parsed.timestamp : id;\n")
+          .append("      if (parsed && parsed.value !== undefined) document.getElementById('editTsValueInput').value = parsed.value;\n")
+          .append("      if (parsed && parsed.unit) document.getElementById('editTsUnitInput').value = parsed.unit;\n")
+          .append("      document.getElementById('editTsTagsInput').value = payload;\n")
+          .append("      document.getElementById('editTimeSeriesModal').style.display = 'flex';\n")
+          .append("    } else if (engine === 'COLUMN') {\n")
+          .append("      document.getElementById('editColDbInput').value = db;\n")
+          .append("      document.getElementById('editColDbDisplay').innerText = db;\n")
+          .append("      document.getElementById('editColCollInput').value = (parsed && parsed._family) ? parsed._family : (unit || 'analytics');\n")
+          .append("      document.getElementById('editColIdInput').value = id;\n")
+          .append("      document.getElementById('editColIdDisplay').innerText = id;\n")
+          .append("      document.getElementById('editColDataInput').value = payload;\n")
+          .append("      document.getElementById('editColumnModal').style.display = 'flex';\n")
+          .append("    } else if (engine === 'GEOSPATIAL') {\n")
+          .append("      document.getElementById('editGeoDbInput').value = db;\n")
+          .append("      document.getElementById('editGeoDbDisplay').innerText = db;\n")
+          .append("      document.getElementById('editGeoCollInput').value = (parsed && parsed._layer) ? parsed._layer : (unit || 'stores_layer');\n")
+          .append("      document.getElementById('editGeoIdInput').value = id;\n")
+          .append("      document.getElementById('editGeoIdDisplay').innerText = id;\n")
+          .append("      if (parsed && (parsed.lat !== undefined || parsed.latitude !== undefined)) {\n")
+          .append("        document.getElementById('editGeoLatInput').value = parsed.lat !== undefined ? parsed.lat : parsed.latitude;\n")
+          .append("      }\n")
+          .append("      if (parsed && (parsed.lon !== undefined || parsed.longitude !== undefined)) {\n")
+          .append("        document.getElementById('editGeoLonInput').value = parsed.lon !== undefined ? parsed.lon : parsed.longitude;\n")
+          .append("      }\n")
+          .append("      if (parsed && parsed.name) document.getElementById('editGeoNameInput').value = parsed.name;\n")
+          .append("      document.getElementById('editGeoModal').style.display = 'flex';\n")
+          .append("    } else if (engine === 'OBJECT') {\n")
+          .append("      document.getElementById('editObjDbInput').value = db;\n")
+          .append("      document.getElementById('editObjDbDisplay').innerText = db;\n")
+          .append("      document.getElementById('editObjCollInput').value = (parsed && parsed.bucket) ? parsed.bucket : (unit || 'media_bucket');\n")
+          .append("      document.getElementById('editObjIdInput').value = id;\n")
+          .append("      document.getElementById('editObjIdDisplay').innerText = id;\n")
+          .append("      if (parsed && parsed.mimeType) document.getElementById('editObjMimeInput').value = parsed.mimeType;\n")
+          .append("      document.getElementById('editObjPayloadInput').value = (parsed && parsed.content) ? parsed.content : payload;\n")
+          .append("      document.getElementById('editObjectModal').style.display = 'flex';\n")
+          .append("    } else if (engine === 'RECORDS') {\n")
+          .append("      document.getElementById('editRecDbInput').value = db;\n")
+          .append("      document.getElementById('editRecDbDisplay').innerText = db;\n")
+          .append("      document.getElementById('editRecCollInput').value = (parsed && parsed._table) ? parsed._table : (unit || 'default');\n")
+          .append("      document.getElementById('editRecIdInput').value = id;\n")
+          .append("      document.getElementById('editRecIdDisplay').innerText = id;\n")
+          .append("      if (parsed && parsed._class) document.getElementById('editRecClassInput').value = parsed._class;\n")
+          .append("      document.getElementById('editRecPayloadInput').value = payload;\n")
+          .append("      document.getElementById('editRecordsModal').style.display = 'flex';\n")
+          .append("    }\n")
           .append("  }\n")
-          .append("  function openRestoreModal(id, versionsJsonStr) {\n")
-          .append("    document.getElementById('restoreDocIdInput').value = id;\n")
-          .append("    document.getElementById('restoreDocIdLabel').innerText = id;\n")
-          .append("    var container = document.getElementById('versionsListContainer');\n")
+          .append("  function openUniversalRestoreModal(engine, db, unit, id, versionsJsonStr) {\n")
+          .append("    document.getElementById('restoreEngineLabel').innerText = engine;\n")
+          .append("    document.getElementById('restoreEngineTypeInput').value = engine;\n")
+          .append("    document.getElementById('restoreRecordDbInput').value = db;\n")
+          .append("    document.getElementById('restoreRecordCollInput').value = unit || 'default';\n")
+          .append("    document.getElementById('restoreRecordIdInput').value = id;\n")
+          .append("    document.getElementById('restoreRecordIdLabel').innerText = id;\n")
+          .append("    var container = document.getElementById('universalVersionsContainer');\n")
           .append("    container.innerHTML = '';\n")
           .append("    try {\n")
           .append("      var versions = JSON.parse(versionsJsonStr);\n")
           .append("      if (!versions || versions.length === 0) {\n")
-          .append("        container.innerHTML = '<div style=\"padding:16px; color:#94a3b8; text-align:center;\">No historical versions available for this document yet. Edit the document to create new versions.</div>';\n")
+          .append("        container.innerHTML = '<div style=\"padding:16px; color:#94a3b8; text-align:center;\">No historical snapshot versions recorded for this item yet. Edit the item to create new versions.</div>';\n")
           .append("      } else {\n")
           .append("        var html = '<table style=\"width:100%; border-collapse:collapse; font-size:12px;\">';\n")
           .append("        html += '<tr style=\"background:rgba(255,255,255,0.04); color:#94a3b8; text-align:left;\"><th style=\"padding:8px 12px;\">Version</th><th style=\"padding:8px 12px;\">Timestamp / Date</th><th style=\"padding:8px 12px;\">Snapshot Preview</th><th style=\"padding:8px 12px; text-align:right;\">Action</th></tr>';\n")
@@ -2380,7 +2917,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
           .append("          html += '<td style=\"padding:8px 12px; color:#94a3b8; font-family:monospace;\">' + (v.preview || '{}') + '</td>';\n")
           .append("          html += '<td style=\"padding:8px 12px; text-align:right;\">';\n")
           .append("          if (!v.isCurrent) {\n")
-          .append("            html += '<button type=\"button\" onclick=\"submitRestore(' + v.timestamp + ')\" class=\"btn-action btn-primary\" style=\"background:#a855f7; padding:3px 10px; font-size:11px;\"><i class=\"fas fa-undo\"></i> Restore</button>';\n")
+          .append("            html += '<button type=\"button\" onclick=\"submitUniversalRestore(' + v.timestamp + ')\" class=\"btn-action btn-primary\" style=\"background:#a855f7; padding:3px 10px; font-size:11px;\"><i class=\"fas fa-undo\"></i> Restore</button>';\n")
           .append("          } else {\n")
           .append("            html += '<span style=\"color:#10b981; font-size:11px;\">Active</span>';\n")
           .append("          }\n")
@@ -2392,12 +2929,12 @@ public class StoreEnginesPage extends StoreTemplatePage {
           .append("    } catch(e) {\n")
           .append("      container.innerHTML = '<div style=\"padding:16px; color:#ef4444;\">Error parsing version list: ' + e.message + '</div>';\n")
           .append("    }\n")
-          .append("    document.getElementById('restoreVersionModal').style.display = 'flex';\n")
+          .append("    document.getElementById('universalRestoreModal').style.display = 'flex';\n")
           .append("  }\n")
-          .append("  function submitRestore(ts) {\n")
-          .append("    if (confirm('Are you sure you want to restore document version from timestamp ' + ts + '?')) {\n")
+          .append("  function submitUniversalRestore(ts) {\n")
+          .append("    if (confirm('Are you sure you want to restore item version from timestamp ' + ts + '?')) {\n")
           .append("      document.getElementById('restoreVersionTsInput').value = ts;\n")
-          .append("      document.getElementById('restoreVersionModal').querySelector('form').submit();\n")
+          .append("      document.getElementById('universalRestoreModal').querySelector('form').submit();\n")
           .append("    }\n")
           .append("  }\n")
           .append("</script>\n");
