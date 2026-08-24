@@ -186,14 +186,45 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 } else if ("create_index".equalsIgnoreCase(action)) {
                     String indexName = params.get("index_name");
                     String fieldName = params.get("index_field");
-                    String indexType = params.get("index_type");
-                    alertMessage = "Index '" + indexName + "' (" + indexType + ") on field '" + fieldName + "' created for database '" + targetDb + "'!";
-                    alertType = "badge-active";
+                    String indexType = params.getOrDefault("index_type", "BTREE");
+                    String coll = params.getOrDefault("target_coll", "default");
+                    if (indexName != null && !indexName.isBlank()) {
+                        JsonObject idxJson = new JsonObject();
+                        idxJson.addProperty("name", indexName.trim());
+                        idxJson.addProperty("field", fieldName != null && !fieldName.isBlank() ? fieldName.trim() : "id");
+                        idxJson.addProperty("type", indexType);
+                        idxJson.addProperty("collection", coll);
+                        idxJson.addProperty("createdAt", System.currentTimeMillis());
+                        engine.getStorageCore().put("idx:" + targetDb + ":" + indexName.trim(), idxJson.toString().getBytes(StandardCharsets.UTF_8), System.currentTimeMillis());
+                        alertMessage = "Index '" + indexName + "' (" + indexType + ") on field '" + fieldName + "' created for database '" + targetDb + "'!";
+                        alertType = "badge-active";
+                    }
+                } else if ("delete_index".equalsIgnoreCase(action)) {
+                    String indexName = params.get("index_name");
+                    if (indexName != null) {
+                        engine.getStorageCore().delete("idx:" + targetDb + ":" + indexName, System.currentTimeMillis());
+                        alertMessage = "Index '" + indexName + "' deleted from database '" + targetDb + "'!";
+                        alertType = "badge-raft";
+                    }
                 } else if ("save_schema".equalsIgnoreCase(action)) {
                     String schemaName = params.get("schema_name");
                     String schemaJson = params.get("schema_json");
-                    alertMessage = "Schema definition '" + schemaName + "' registered and active for '" + targetDb + "'!";
-                    alertType = "badge-active";
+                    if (schemaName != null && !schemaName.isBlank()) {
+                        JsonObject sc = new JsonObject();
+                        sc.addProperty("name", schemaName.trim());
+                        sc.addProperty("schema", schemaJson != null ? schemaJson : "{}");
+                        sc.addProperty("createdAt", System.currentTimeMillis());
+                        engine.getStorageCore().put("schema:" + targetDb + ":" + schemaName.trim(), sc.toString().getBytes(StandardCharsets.UTF_8), System.currentTimeMillis());
+                        alertMessage = "Schema definition '" + schemaName + "' registered and active for '" + targetDb + "'!";
+                        alertType = "badge-active";
+                    }
+                } else if ("delete_schema".equalsIgnoreCase(action)) {
+                    String schemaName = params.get("schema_name");
+                    if (schemaName != null) {
+                        engine.getStorageCore().delete("schema:" + targetDb + ":" + schemaName, System.currentTimeMillis());
+                        alertMessage = "Schema '" + schemaName + "' deleted from database '" + targetDb + "'!";
+                        alertType = "badge-raft";
+                    }
                 } else if ("delete_object".equalsIgnoreCase(action)) {
                     executeTypeSpecificDelete(selectedEngine, targetDb, targetId, params);
                     alertMessage = "Object '" + targetId + "' successfully deleted from " + selectedEngine + " [" + targetDb + "]!";
@@ -253,9 +284,6 @@ public class StoreEnginesPage extends StoreTemplatePage {
         // Engine-Specific Object Creation & Management Card
         Widget typeSpecificCrudCard = createTypeSpecificCrudCard(selectedEngine, targetDb, queryResultDisplay);
 
-        // Schema & Index Management Card (especially for DOCUMENT & relational/records)
-        Widget schemaIndexAdminCard = createSchemaAndIndexManagementCard(selectedEngine, targetDb);
-
         // Live Objects Explorer for active Engine & Database (with Pagination, Edit, Restore & Advanced Search)
         int currentPage = 1;
         try {
@@ -268,7 +296,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
         // Capabilities & Architecture Matrix
         Widget engineMatrix = createEngineMatrixTable();
 
-        // Modals for Advanced Search, Document Edit, and Version Recovery
+        // Modals for Advanced Search, Document Edit, Version Recovery, Indexes and Schemas
         Widget modalsWidget = createEngineModals(selectedEngine, targetDb, currentCollection);
 
         return Column.of(
@@ -279,7 +307,6 @@ public class StoreEnginesPage extends StoreTemplatePage {
             dbProvisionBar,
             documentCollectionsBar,
             typeSpecificCrudCard,
-            schemaIndexAdminCard,
             liveObjectsExplorer,
             engineMatrix,
             modalsWidget
@@ -1363,72 +1390,46 @@ public class StoreEnginesPage extends StoreTemplatePage {
         );
     }
 
-    private Widget createSchemaAndIndexManagementCard(String engineKey, String targetDb) {
-        String actionUrl = JettraServer.resolvePath("/engines?engine=" + engineKey);
-        
-        Widget schemaHeader = Header.of(3,
-            Icon.of("fas fa-project-diagram").modifier(new Modifier().style("color:#38bdf8; margin-right:8px;")),
-            Text.of("Schema & Index Administration [" + targetDb + "]")
-        ).modifier(new Modifier().style("margin: 0 0 10px 0; font-size: 16px; font-weight: 600;"));
+    private Map<String, JsonObject> discoverIndexes(String dbName) {
+        Map<String, JsonObject> indexes = new TreeMap<>();
+        String prefix = "idx:" + dbName + ":";
+        Map<String, byte[]> keys = engine.getStorageCore().scanPrefix(prefix);
+        for (Map.Entry<String, byte[]> e : keys.entrySet()) {
+            String k = e.getKey();
+            if (!k.contains("@")) {
+                String idxName = k.substring(prefix.length());
+                if (!idxName.isBlank()) {
+                    String val = new String(e.getValue(), StandardCharsets.UTF_8);
+                    indexes.put(idxName, parseJsonOrWrap(val));
+                }
+            }
+        }
+        if (indexes.isEmpty()) {
+            JsonObject defIdx = new JsonObject();
+            defIdx.addProperty("name", "idx_primary_id");
+            defIdx.addProperty("field", "_id");
+            defIdx.addProperty("type", "BTREE");
+            defIdx.addProperty("collection", "default");
+            indexes.put("idx_primary_id", defIdx);
+        }
+        return indexes;
+    }
 
-        Widget schemaDesc = Paragraph.of(
-            Text.of("Manage validation schemas, secondary indexes, and composite indexes for " + engineKey + " in '" + targetDb + "'.")
-        ).modifier(new Modifier().style("font-size: 13px; color: #94a3b8; margin-bottom: 14px;"));
-
-        // Index Form
-        Widget indexForm = Form.of(
-            Hidden.of("action", "create_index"),
-            Hidden.of("target_db", targetDb),
-            Div.of(
-                Div.of(
-                    Label.of("Index Name").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600;")),
-                    TextField.of("index_name", "idx_field").value("idx_email").modifier(new Modifier().cssClass("form-input"))
-                ),
-                Div.of(
-                    Label.of("Field / Property").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600;")),
-                    TextField.of("index_field", "field").value("email").modifier(new Modifier().cssClass("form-input"))
-                ),
-                Div.of(
-                    Label.of("Index Type").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600;")),
-                    Dropdown.of("BTREE", "HASH", "FULLTEXT", "VECTOR_HNSW").selected("BTREE").placeholder(null)
-                        .modifier(new Modifier().cssClass("form-input"))
-                )
-            ).modifier(new Modifier().style("display:grid; grid-template-columns: 1fr 1fr 1fr; gap:10px; margin-bottom:10px;")),
-            Button.of(Icon.of("fas fa-bolt"), Text.of(" Create Index"))
-                .attribute("type", "submit")
-                .modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:5px 12px; font-size:12px;"))
-        ).action(actionUrl).method("POST");
-
-        // Schema Register Form
-        Widget schemaForm = Form.of(
-            Hidden.of("action", "save_schema"),
-            Hidden.of("target_db", targetDb),
-            Div.of(
-                Label.of("Schema Class / Name").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600;")),
-                TextField.of("schema_name", "Schema Name").value("com.enterprise.model.CustomerSchema").modifier(new Modifier().cssClass("form-input").style("margin-bottom:6px;")),
-                Label.of("JSON Schema Definition").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600;")),
-                TextArea.create().name("schema_json").rows(3).value("{\n  \"type\": \"object\",\n  \"required\": [\"name\", \"active\"],\n  \"properties\": {\"name\": {\"type\": \"string\"}, \"active\": {\"type\": \"boolean\"}}\n}")
-                    .modifier(new Modifier().cssClass("form-input").style("height:70px; font-family:monospace; font-size:11px;"))
-            ),
-            Button.of(Icon.of("fas fa-shield-alt"), Text.of(" Register Schema"))
-                .attribute("type", "submit")
-                .modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:5px 12px; font-size:12px; margin-top:8px;"))
-        ).action(actionUrl).method("POST");
-
-        return Div.of(
-            schemaHeader,
-            schemaDesc,
-            Row.of(
-                Column.of(
-                    Header.of(4, Icon.of("fas fa-list-ol"), Text.of(" Active Database Indexes")).modifier(new Modifier().style("font-size:13px; color:#cbd5e1; margin:0 0 8px 0;")),
-                    indexForm
-                ),
-                Column.of(
-                    Header.of(4, Icon.of("fas fa-code"), Text.of(" Database Validation Schema")).modifier(new Modifier().style("font-size:13px; color:#cbd5e1; margin:0 0 8px 0;")),
-                    schemaForm
-                )
-            ).modifier(new Modifier().style("display:grid; grid-template-columns: 1fr 1fr; gap:20px;"))
-        ).modifier(new Modifier().cssClass("store-card").style("margin-bottom: 24px; padding: 16px 20px;"));
+    private Map<String, JsonObject> discoverSchemas(String dbName) {
+        Map<String, JsonObject> schemas = new TreeMap<>();
+        String prefix = "schema:" + dbName + ":";
+        Map<String, byte[]> keys = engine.getStorageCore().scanPrefix(prefix);
+        for (Map.Entry<String, byte[]> e : keys.entrySet()) {
+            String k = e.getKey();
+            if (!k.contains("@")) {
+                String scName = k.substring(prefix.length());
+                if (!scName.isBlank()) {
+                    String val = new String(e.getValue(), StandardCharsets.UTF_8);
+                    schemas.put(scName, parseJsonOrWrap(val));
+                }
+            }
+        }
+        return schemas;
     }
 
     private Map<String, List<String>> discoverUnitsAndItems(String engineKey, String dbName) {
@@ -1611,6 +1612,83 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     sb.append("        </div>\n");
                     sb.append("      </div>\n");
                 }
+
+                // Render Indexes & Schemas Subtree for this Database
+                Map<String, JsonObject> dbIndexes = discoverIndexes(db);
+                Map<String, JsonObject> dbSchemas = discoverSchemas(db);
+
+                sb.append("      <div style='margin-bottom:12px; background:rgba(30,41,59,0.7); padding:8px 10px; border-radius:6px; border:1px solid rgba(234,179,8,0.25);'>\n");
+                sb.append("        <div style='display:flex; justify-content:space-between; align-items:center;'>\n");
+                sb.append("          <span style='color:#eab308; font-weight:bold;'>\n");
+                sb.append("            <i class='fas fa-bolt' style='color:#eab308; margin-right:6px;'></i> <strong>INDEXES & SCHEMAS SUBTREE</strong> → <span style='color:#cbd5e1;'>Index Registry & Validation Schemas (").append(dbIndexes.size()).append(" Indexes, ").append(dbSchemas.size()).append(" Schemas)</span>\n");
+                sb.append("          </span>\n");
+                sb.append("          <div style='display:flex; gap:4px;'>\n");
+                sb.append("            <button type='button' onclick=\"openAddIndexModal('").append(db).append("')\" style='background:none; border:1px solid rgba(234,179,8,0.5); color:#eab308; font-size:10px; padding:2px 8px; border-radius:4px; cursor:pointer;'><i class='fas fa-plus'></i> Add Index</button>\n");
+                sb.append("            <button type='button' onclick=\"openAddSchemaModal('").append(db).append("')\" style='background:none; border:1px solid rgba(56,189,248,0.5); color:#38bdf8; font-size:10px; padding:2px 8px; border-radius:4px; cursor:pointer;'><i class='fas fa-shield-alt'></i> Add Schema</button>\n");
+                sb.append("          </div>\n");
+                sb.append("        </div>\n");
+
+                sb.append("        <div style='margin-left:18px; border-left: 2px dotted rgba(234,179,8,0.3); padding-left:12px; margin-top:6px;'>\n");
+
+                // Level 2: Secondary & Composite Indexes Unit
+                sb.append("          <div style='margin-bottom:8px; margin-top:4px;'>\n");
+                sb.append("            <div style='display:flex; justify-content:space-between; align-items:center;'>\n");
+                sb.append("              <span style='color:#fde047; font-size:12px; font-weight:600;'>📁 [Level 2: Unit / Index Family] Secondary & Composite Indexes <span style='font-size:10px; color:#64748b; font-weight:normal;'>(").append(dbIndexes.size()).append(" items)</span></span>\n");
+                sb.append("              <button type='button' onclick=\"openAddIndexModal('").append(db).append("')\" style='background:none; border:none; color:#eab308; font-size:10px; cursor:pointer;'>[+ Add Index]</button>\n");
+                sb.append("            </div>\n");
+                sb.append("            <div style='margin-left:16px; border-left: 1px dashed rgba(255,255,255,0.08); padding-left:10px; margin-top:3px;'>\n");
+                if (dbIndexes.isEmpty()) {
+                    sb.append("              <div style='font-size:11px; color:#64748b; padding:2px 0;'>└── <em>(No secondary indexes - click [+ Add Index] to create)</em></div>\n");
+                } else {
+                    for (Map.Entry<String, JsonObject> idxEntry : dbIndexes.entrySet()) {
+                        String idxName = idxEntry.getKey();
+                        JsonObject idxObj = idxEntry.getValue();
+                        String idxType = idxObj.has("type") && idxObj.get("type") != null ? idxObj.get("type").toString().replace("\"", "") : "BTREE";
+                        String idxField = idxObj.has("field") && idxObj.get("field") != null ? idxObj.get("field").toString().replace("\"", "") : "id";
+                        String idxColl = idxObj.has("collection") && idxObj.get("collection") != null ? idxObj.get("collection").toString().replace("\"", "") : "default";
+
+                        sb.append("              <div style='font-size:11px; color:#94a3b8; display:flex; justify-content:space-between; align-items:center; padding:2px 0;'>\n");
+                        sb.append("                <span>└── <i class='fas fa-bolt' style='color:#eab308; margin-right:4px;'></i> [Level 3: Index] <strong style='color:#f8fafc;'>").append(idxName).append("</strong> <span class='store-badge' style='background:rgba(234,179,8,0.15); color:#fde047; font-size:9px; padding:1px 5px;'>").append(idxType).append("</span> on field '<code style='color:#38bdf8;'>").append(idxField).append("</code>' (unit: ").append(idxColl).append(")</span>\n");
+                        sb.append("                <form method='POST' action='").append(actionUrl).append(selectedEngine).append("' style='display:inline; margin:0;'>\n");
+                        sb.append("                  <input type='hidden' name='action' value='delete_index'/>\n");
+                        sb.append("                  <input type='hidden' name='target_db' value='").append(db).append("'/>\n");
+                        sb.append("                  <input type='hidden' name='index_name' value='").append(idxName).append("'/>\n");
+                        sb.append("                  <button type='submit' onclick=\"return confirm('Delete index ").append(idxName).append("?');\" style='background:none; border:none; color:#ef4444; font-size:10px; cursor:pointer;'><i class='fas fa-trash'></i></button>\n");
+                        sb.append("                </form>\n");
+                        sb.append("              </div>\n");
+                    }
+                }
+                sb.append("            </div>\n");
+                sb.append("          </div>\n");
+
+                // Level 2: Validation Schemas Unit
+                sb.append("          <div style='margin-bottom:8px; margin-top:4px;'>\n");
+                sb.append("            <div style='display:flex; justify-content:space-between; align-items:center;'>\n");
+                sb.append("              <span style='color:#38bdf8; font-size:12px; font-weight:600;'>📁 [Level 2: Unit / Schema Registry] Validation Schemas <span style='font-size:10px; color:#64748b; font-weight:normal;'>(").append(dbSchemas.size()).append(" items)</span></span>\n");
+                sb.append("              <button type='button' onclick=\"openAddSchemaModal('").append(db).append("')\" style='background:none; border:none; color:#38bdf8; font-size:10px; cursor:pointer;'>[+ Add Schema]</button>\n");
+                sb.append("            </div>\n");
+                sb.append("            <div style='margin-left:16px; border-left: 1px dashed rgba(255,255,255,0.08); padding-left:10px; margin-top:3px;'>\n");
+                if (dbSchemas.isEmpty()) {
+                    sb.append("              <div style='font-size:11px; color:#64748b; padding:2px 0;'>└── <em>(No validation schema registered - click [+ Add Schema] to register)</em></div>\n");
+                } else {
+                    for (Map.Entry<String, JsonObject> scEntry : dbSchemas.entrySet()) {
+                        String scName = scEntry.getKey();
+                        sb.append("              <div style='font-size:11px; color:#94a3b8; display:flex; justify-content:space-between; align-items:center; padding:2px 0;'>\n");
+                        sb.append("                <span>└── <i class='fas fa-shield-alt' style='color:#38bdf8; margin-right:4px;'></i> [Level 3: Schema] <strong style='color:#f8fafc;'>").append(scName).append("</strong></span>\n");
+                        sb.append("                <form method='POST' action='").append(actionUrl).append(selectedEngine).append("' style='display:inline; margin:0;'>\n");
+                        sb.append("                  <input type='hidden' name='action' value='delete_schema'/>\n");
+                        sb.append("                  <input type='hidden' name='target_db' value='").append(db).append("'/>\n");
+                        sb.append("                  <input type='hidden' name='schema_name' value='").append(scName).append("'/>\n");
+                        sb.append("                  <button type='submit' onclick=\"return confirm('Delete schema ").append(scName).append("?');\" style='background:none; border:none; color:#ef4444; font-size:10px; cursor:pointer;'><i class='fas fa-trash'></i></button>\n");
+                        sb.append("                </form>\n");
+                        sb.append("              </div>\n");
+                    }
+                }
+                sb.append("            </div>\n");
+                sb.append("          </div>\n");
+
+                sb.append("        </div>\n");
+                sb.append("      </div>\n");
 
                 sb.append("    </div>\n");
             }
@@ -2751,8 +2829,88 @@ public class StoreEnginesPage extends StoreTemplatePage {
           .append("  </div>\n")
           .append("</div>\n");
 
+        // Modal: Create Secondary / Composite Index Modal
+        sb.append("<div id='createIndexModal' style='display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center;'>\n")
+          .append("  <div class='store-card' style='width:520px; max-width:92%; background:#1e293b; border:1px solid rgba(234,179,8,0.4); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:24px;'>\n")
+          .append("    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;'>\n")
+          .append("      <h3 style='margin:0; font-size:18px; font-weight:700; color:#f8fafc;'><i class='fas fa-bolt' style='color:#eab308; margin-right:8px;'></i> Create Secondary / Composite Index</h3>\n")
+          .append("      <button onclick=\"document.getElementById('createIndexModal').style.display='none'\" style='background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;'><i class='fas fa-times'></i></button>\n")
+          .append("    </div>\n")
+          .append("    <form method='POST' action='").append(actionUrl).append("'>\n")
+          .append("      <input type='hidden' name='action' value='create_index'/>\n")
+          .append("      <input type='hidden' name='target_db' id='createIndexDbInput'/>\n")
+          .append("      <div style='margin-bottom:12px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Target Database:</label>\n")
+          .append("        <input type='text' id='createIndexDbDisplay' disabled style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.1); border-radius:6px; color:#eab308; font-size:13px; box-sizing:border-box;'/>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:12px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Index Name:</label>\n")
+          .append("        <input type='text' name='index_name' required placeholder='e.g. idx_email, idx_price, idx_coords' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:12px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Indexed Field / Property:</label>\n")
+          .append("        <input type='text' name='index_field' required placeholder='e.g. email, status, coordinates' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:16px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Index Algorithm / Structure:</label>\n")
+          .append("        <select name='index_type' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#fde047; font-size:13px; box-sizing:border-box;'>\n")
+          .append("          <option value='BTREE' selected>B-Tree (Balanced Index for equality & range queries)</option>\n")
+          .append("          <option value='HASH'>Hash (O(1) exact equality lookup index)</option>\n")
+          .append("          <option value='FULLTEXT'>Full-Text (Inverted index for token/keyword search)</option>\n")
+          .append("          <option value='VECTOR_HNSW'>Vector HNSW (Hierarchical Navigable Small World for ANN)</option>\n")
+          .append("          <option value='SPATIAL_2D'>Spatial 2D (QuadTree/Geohash spatial index)</option>\n")
+          .append("        </select>\n")
+          .append("      </div>\n")
+          .append("      <div style='display:flex; justify-content:flex-end; gap:8px;'>\n")
+          .append("        <button type='button' onclick=\"document.getElementById('createIndexModal').style.display='none'\" class='btn-action btn-secondary'>Cancel</button>\n")
+          .append("        <button type='submit' class='btn-action btn-primary' style='background:#eab308; color:#0f172a;'><i class='fas fa-bolt'></i> Build Index</button>\n")
+          .append("      </div>\n")
+          .append("    </form>\n")
+          .append("  </div>\n")
+          .append("</div>\n");
+
+        // Modal: Register Validation Schema Modal
+        sb.append("<div id='createSchemaModal' style='display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center;'>\n")
+          .append("  <div class='store-card' style='width:560px; max-width:92%; background:#1e293b; border:1px solid rgba(56,189,248,0.4); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:24px;'>\n")
+          .append("    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;'>\n")
+          .append("      <h3 style='margin:0; font-size:18px; font-weight:700; color:#f8fafc;'><i class='fas fa-shield-alt' style='color:#38bdf8; margin-right:8px;'></i> Register Validation Schema</h3>\n")
+          .append("      <button onclick=\"document.getElementById('createSchemaModal').style.display='none'\" style='background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;'><i class='fas fa-times'></i></button>\n")
+          .append("    </div>\n")
+          .append("    <form method='POST' action='").append(actionUrl).append("'>\n")
+          .append("      <input type='hidden' name='action' value='save_schema'/>\n")
+          .append("      <input type='hidden' name='target_db' id='createSchemaDbInput'/>\n")
+          .append("      <div style='margin-bottom:12px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Target Database:</label>\n")
+          .append("        <input type='text' id='createSchemaDbDisplay' disabled style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.1); border-radius:6px; color:#38bdf8; font-size:13px; box-sizing:border-box;'/>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:12px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Schema Class / Name:</label>\n")
+          .append("        <input type='text' name='schema_name' required placeholder='e.g. com.enterprise.model.CustomerSchema' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>\n")
+          .append("      </div>\n")
+          .append("      <div style='margin-bottom:16px;'>\n")
+          .append("        <label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>JSON Schema Definition:</label>\n")
+          .append("        <textarea name='schema_json' rows='5' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:12px; font-family:monospace; box-sizing:border-box;'>{\n  \"type\": \"object\",\n  \"required\": [\"name\", \"active\"],\n  \"properties\": {\n    \"name\": {\"type\": \"string\"},\n    \"active\": {\"type\": \"boolean\"}\n  }\n}</textarea>\n")
+          .append("      </div>\n")
+          .append("      <div style='display:flex; justify-content:flex-end; gap:8px;'>\n")
+          .append("        <button type='button' onclick=\"document.getElementById('createSchemaModal').style.display='none'\" class='btn-action btn-secondary'>Cancel</button>\n")
+          .append("        <button type='submit' class='btn-action btn-primary' style='background:#38bdf8;'><i class='fas fa-shield-alt'></i> Register Schema</button>\n")
+          .append("      </div>\n")
+          .append("    </form>\n")
+          .append("  </div>\n")
+          .append("</div>\n");
+
         // Dynamic JS Dispatcher & ID Strategy Controller
         sb.append("<script>\n")
+          .append("  function openAddIndexModal(db) {\n")
+          .append("    document.getElementById('createIndexDbInput').value = db;\n")
+          .append("    document.getElementById('createIndexDbDisplay').value = db;\n")
+          .append("    document.getElementById('createIndexModal').style.display = 'flex';\n")
+          .append("  }\n")
+          .append("  function openAddSchemaModal(db) {\n")
+          .append("    document.getElementById('createSchemaDbInput').value = db;\n")
+          .append("    document.getElementById('createSchemaDbDisplay').value = db;\n")
+          .append("    document.getElementById('createSchemaModal').style.display = 'flex';\n")
+          .append("  }\n")
           .append("  function openAddUnitModal(engine, label) {\n")
           .append("    document.getElementById('modalUnitEngineSelect').value = engine;\n")
           .append("    document.getElementById('modalUnitNameLabel').innerText = label + ' Name:';\n")
