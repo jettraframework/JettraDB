@@ -271,9 +271,6 @@ public class StoreEnginesPage extends StoreTemplatePage {
         // Hierarchical Tree View (JettraFlux Tree Component across all databases & engines)
         Widget hierarchyTreeCard = createHierarchyTreeCard(selectedEngine, targetDb, currentCollection);
 
-        // Capabilities & Architecture Matrix
-        Widget engineMatrix = createEngineMatrixTable();
-
         // Modals for Advanced Search, Document Edit, Version Recovery, Indexes and Schemas
         Widget modalsWidget = createEngineModals(selectedEngine, targetDb, currentCollection);
 
@@ -281,7 +278,6 @@ public class StoreEnginesPage extends StoreTemplatePage {
             titleBlock,
             alertWidget,
             hierarchyTreeCard,
-            engineMatrix,
             modalsWidget
         );
     }
@@ -2177,55 +2173,5 @@ public class StoreEnginesPage extends StoreTemplatePage {
           .append("</script>\n");
 
         return RawHtml.of(sb.toString());
-    }
-
-    private Widget createEngineMatrixTable() {
-        Widget header = Header.of(3,
-            Icon.of("fas fa-table").modifier(new Modifier().style("color:#38bdf8; margin-right:8px;")),
-            Text.of("All 9 Supported Multi-Model Engines")
-        ).modifier(new Modifier().style("margin: 0 0 16px 0; font-size: 18px; font-weight: 600;"));
-
-        List<Widget> headers = List.of(
-            Text.of("Engine Name"),
-            Text.of("Primary Use Case"),
-            Text.of("Storage Schema"),
-            Text.of("Replication"),
-            Text.of("REST API Route"),
-            Text.of("Status")
-        );
-
-        String[][] matrixData = {
-            {"fas fa-file-alt", "#3b82f6", "DOCUMENT", "Hierarchical JSON / NoSQL documents", "B-Tree / LSM Hybrid", "Raft Sync", "/api/document/{coll}/{id}", "ACTIVE"},
-            {"fas fa-key", "#10b981", "KEYVALUE", "Session Cache, Distributed Key-Value", "LSM MemTable + SSTable", "Raft Sync", "/api/model/keyvalue/*", "ACTIVE"},
-            {"fas fa-project-diagram", "#8b5cf6", "VECTOR", "AI Embeddings, Cosine Similarity, ANN", "Vector Index (float[])", "Raft Sync", "/api/model/vector/*", "ACTIVE"},
-            {"fas fa-share-alt", "#ec4899", "GRAPH", "Knowledge Graphs, Social Networks, Traversal", "Adjacency List + B-Tree", "Raft Sync", "/api/model/graph/*", "ACTIVE"},
-            {"fas fa-chart-line", "#06b6d4", "TIMESERIES", "IoT Telemetry, Metrics, Server Logs", "Append-only Chunked WAL", "Raft Sync", "/api/model/timeseries/*", "ACTIVE"},
-            {"fas fa-table", "#f97316", "COLUMN", "OLAP Big Data Aggregations", "Column Vectors & Run-Length", "Raft Sync", "/api/model/column/*", "ACTIVE"},
-            {"fas fa-globe-americas", "#14b8a6", "GEOSPATIAL", "Spatial Coordinates, Radius, GIS", "Geohash / QuadTree", "Raft Sync", "/api/model/geospatial/*", "ACTIVE"},
-            {"fas fa-archive", "#a855f7", "OBJECT", "Binary BLOBs, Serialized Stream Files", "Chunked Block Store", "Raft Sync", "/api/model/object/*", "ACTIVE"},
-            {"fas fa-id-card", "#f43f5e", "RECORDS", "Immutable Java 25 Records, Component Validation", "Compact Object Headers (rec:)", "Raft Sync", "/api/model/records/*", "ACTIVE"}
-        };
-
-        List<List<Widget>> rows = new ArrayList<>();
-        for (String[] rowData : matrixData) {
-            Widget nameCell = Div.of(
-                Icon.of(rowData[0]).modifier(new Modifier().style("color:" + rowData[1] + "; margin-right:6px;")),
-                Span.of(rowData[2]).modifier(new Modifier().style("font-weight:bold;"))
-            );
-            Widget useCaseCell = Text.of(rowData[3]);
-            Widget schemaCell = Text.of(rowData[4]);
-            Widget replCell = Text.of(rowData[5]);
-            Widget routeCell = RawHtml.of("<code>" + rowData[6] + "</code>");
-            Widget statusCell = Span.of(rowData[7]).modifier(new Modifier().cssClass("store-badge badge-active"));
-
-            rows.add(List.of(nameCell, useCaseCell, schemaCell, replCell, routeCell, statusCell));
-        }
-
-        Datatable datatable = Datatable.ofWidgets(headers, rows);
-        datatable.modifier(new Modifier().cssClass("jettra-table"));
-
-        Widget tableResponsive = Div.of(datatable).modifier(new Modifier().cssClass("table-responsive"));
-
-        return Div.of(header, tableResponsive).modifier(new Modifier().cssClass("store-card"));
     }
 }

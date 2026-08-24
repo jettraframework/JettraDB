@@ -83,8 +83,8 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
 
         WidgetLet storageMenu = WidgetLet.of("Database Core").icon("fas fa-database");
         storageMenu.add(WidgetLet.of("Databases & Components").icon("fas fa-server").url(JettraServer.resolvePath("/databases")));
-//        storageMenu.add(WidgetLet.of("All 9 Multi-Models").icon("fas fa-cubes").url(JettraServer.resolvePath("/engines")));
         storageMenu.add(WidgetLet.of("Engines").icon("fas fa-cubes").url(JettraServer.resolvePath("/engines")));
+        storageMenu.add(WidgetLet.of("Information").icon("fas fa-info-circle").url(JettraServer.resolvePath("/information")));
 
         WidgetLet securityMenu = WidgetLet.of("Security & Access").icon("fas fa-shield-alt");
         securityMenu.add(WidgetLet.of("Users & Per-DB Roles").icon("fas fa-users-cog").url(JettraServer.resolvePath("/users")));
@@ -116,6 +116,7 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
 
         Widget profileMenu = ((OverlayMenu) OverlayMenu.of(
             WidgetLet.of("Databases Console").icon("fas fa-server").url(JettraServer.resolvePath("/databases")),
+            WidgetLet.of("Engines Information").icon("fas fa-info-circle").url(JettraServer.resolvePath("/information")),
             WidgetLet.of("Security DB Console").icon("fas fa-user-lock").url(JettraServer.resolvePath("/securitydb/admin")),
             WidgetLet.of("API Documentation").icon("fas fa-book").url(JettraServer.resolvePath("/swagger-ui")),
             WidgetLet.of("Sign Out").icon("fas fa-sign-out-alt").url(JettraServer.resolvePath("/login?logout=true"))

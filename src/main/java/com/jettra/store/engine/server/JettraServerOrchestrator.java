@@ -8,6 +8,7 @@ import java.io.OutputStream;
 import java.io.IOException;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
+import com.jettra.store.engine.web.InformationPage;
 import com.jettra.store.engine.web.StoreComponentsPage;
 import com.jettra.store.engine.web.StoreDashboardPage;
 import com.jettra.store.engine.web.StoreDatabasesPage;
@@ -60,6 +61,7 @@ public class JettraServerOrchestrator {
         StoreDashboardPage dashboardPage = new StoreDashboardPage(engine);
         StoreDatabasesPage databasesPage = new StoreDatabasesPage(engine, authManager);
         StoreEnginesPage enginesPage = new StoreEnginesPage(engine);
+        InformationPage informationPage = new InformationPage(engine);
         StoreUsersPage usersPage = new StoreUsersPage(engine, authManager);
         StoreComponentsPage componentsPage = new StoreComponentsPage(engine);
         StoreLoginPage loginPage = new StoreLoginPage(authManager);
@@ -86,6 +88,7 @@ public class JettraServerOrchestrator {
         jettraServer.addHandler("/wui", dashboardPage);
         jettraServer.addHandler("/databases", databasesPage);
         jettraServer.addHandler("/engines", enginesPage);
+        jettraServer.addHandler("/information", informationPage);
         jettraServer.addHandler("/users", usersPage);
         jettraServer.addHandler("/components", componentsPage);
         jettraServer.addHandler("/login", loginPage);
@@ -105,6 +108,7 @@ public class JettraServerOrchestrator {
             jettraGuiServer.addHandler("/wui", dashboardPage);
             jettraGuiServer.addHandler("/databases", databasesPage);
             jettraGuiServer.addHandler("/engines", enginesPage);
+            jettraGuiServer.addHandler("/information", informationPage);
             jettraGuiServer.addHandler("/users", usersPage);
             jettraGuiServer.addHandler("/components", componentsPage);
             jettraGuiServer.addHandler("/login", loginPage);
@@ -118,15 +122,13 @@ public class JettraServerOrchestrator {
         String peers = props.getProperty("jettra.cluster.peers", "127.0.0.1:" + grpcPort);
         String restoreAuto = props.getProperty("store.restore.auto", "false");
         String backupEnabled = props.getProperty("store.backup.enabled", "false");
-        String backupInterval = props.getProperty("store.backup.interval.minutes", "1440");
+        String backupInterval = props.getProperty("store.backup.interval.minutes", "60");
 
-        System.out.println();
         System.out.println("==================================================================================");
-        System.out.println("                   JETTRA STORE ENGINE - WEB CONSOLE ACTIVE                       ");
+        System.out.println("                   JETTRA STORAGE ENGINE - DISTRIBUTED NODE                       ");
         System.out.println("==================================================================================");
-        System.out.println("  [Configured Properties (jettrastoreengine.properties)]:");
-        System.out.printf("  • Node ID (jettra.node.id):                 %s%n", nodeId);
-        System.out.printf("  • Data Directory (jettra.data.dir):         %s%n", dataDir);
+        System.out.printf("  • Node Identifier (jettra.node.id):         %s%n", nodeId);
+        System.out.printf("  • Storage Directory (jettra.data.dir):      %s%n", dataDir);
         System.out.printf("  • REST Database Port (jettra.node.port):    %d%n", restPort);
         System.out.printf("  • Web Management Port (jettra.gui.port):    %d%n", guiPort);
         System.out.printf("  • gRPC / Consensus Port (jettra.grpc.port): %d%n", grpcPort);
@@ -137,6 +139,7 @@ public class JettraServerOrchestrator {
         System.out.println("  [Web Management & Console URLs]:");
         System.out.printf("  • Web Management UI (GUI):                  http://localhost:%d/ (or /dashboard)%n", guiPort);
         System.out.printf("  • Multi-Model Database Engines:             http://localhost:%d/engines%n", guiPort);
+        System.out.printf("  • Engines Architecture Information:         http://localhost:%d/information%n", guiPort);
         System.out.printf("  • Users & Security (Per-Database RBAC):     http://localhost:%d/users%n", guiPort);
         System.out.printf("  • Cluster Topology & Internals:             http://localhost:%d/components%n", guiPort);
         System.out.printf("  • Swagger OpenAPI Explorer:                 http://localhost:%d/swagger-ui%n", guiPort);
