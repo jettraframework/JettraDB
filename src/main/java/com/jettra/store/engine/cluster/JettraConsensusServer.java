@@ -73,15 +73,22 @@ public class JettraConsensusServer {
             String commandStr = in.readLine();
             if (commandStr != null) {
                 String[] parts = commandStr.split(" ", 3);
-                if (parts.length >= 3 && "PUT".equals(parts[0])) {
+                if (parts.length >= 2 && ("DELETE".equalsIgnoreCase(parts[0]) || (parts.length >= 3 && "PUT".equalsIgnoreCase(parts[0]) && ("__TOMBSTONE__".equals(parts[2].trim()) || parts[2].trim().isEmpty())))) {
+                    String key = parts[1];
+                    long timestamp = System.currentTimeMillis();
+                    storageEngine.getStorageCore().delete(key, timestamp);
+                    out.println("OK");
+                } else if (parts.length >= 3 && "PUT".equalsIgnoreCase(parts[0])) {
                     String key = parts[1];
                     String payloadStr = parts[2];
-                    byte[] payload = payloadStr.getBytes(StandardCharsets.UTF_8);
-                    
-                    // Apply to local engine
-                    long timestamp = System.currentTimeMillis();
-                    storageEngine.getStorageCore().put(key, payload, timestamp);
-                    
+                    if ("__TOMBSTONE__".equals(payloadStr.trim()) || payloadStr.trim().isEmpty()) {
+                        long timestamp = System.currentTimeMillis();
+                        storageEngine.getStorageCore().delete(key, timestamp);
+                    } else {
+                        byte[] payload = payloadStr.getBytes(StandardCharsets.UTF_8);
+                        long timestamp = System.currentTimeMillis();
+                        storageEngine.getStorageCore().put(key, payload, timestamp);
+                    }
                     out.println("OK");
                 } else {
                     out.println("UNKNOWN_CMD");

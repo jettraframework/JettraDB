@@ -852,12 +852,19 @@ public class StoreEnginesPage extends StoreTemplatePage {
         return "{}";
     }
 
+    private String escapeJs(String s) {
+        if (s == null) return "";
+        return s.replace("\\", "\\\\").replace("'", "\\'").replace("\"", "\\\"").replace("\n", " ").replace("\r", "");
+    }
+
     private void executeTypeSpecificDelete(String engineName, String db, String id, String coll, Map<String, String> params) {
+        if (id == null || id.isBlank()) return;
         String prefix = getPrefixForEngine(engineName);
         String[] candidateKeys = {
             prefix + db + ":" + coll + ":" + id,
             prefix + db + ":" + id,
             prefix + coll + ":" + id,
+            prefix + id,
             db + ":" + coll + ":" + id,
             db + ":" + id,
             coll + ":" + id,
@@ -872,8 +879,16 @@ public class StoreEnginesPage extends StoreTemplatePage {
         for (String pfx : pfxs) {
             Map<String, byte[]> keys = engine.getStorageCore().scanPrefix(pfx + db + ":");
             for (String k : keys.keySet()) {
-                if (k.endsWith(":" + id) || k.equals(id) || k.endsWith(":" + coll + ":" + id)) {
+                if (k.endsWith(":" + id) || k.equals(id) || k.endsWith(":" + coll + ":" + id) || k.equals(pfx + db + ":" + id) || k.equals(pfx + db + ":" + coll + ":" + id)) {
                     engine.getStorageCore().delete(k, System.currentTimeMillis());
+                }
+            }
+            if (coll != null && !coll.isBlank() && !coll.equals("default")) {
+                Map<String, byte[]> collKeys = engine.getStorageCore().scanPrefix(pfx + coll + ":");
+                for (String k : collKeys.keySet()) {
+                    if (k.endsWith(":" + id) || k.equals(id)) {
+                        engine.getStorageCore().delete(k, System.currentTimeMillis());
+                    }
                 }
             }
         }
@@ -884,9 +899,8 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 if (de != null) {
                     if (coll != null && !coll.isBlank() && !coll.equals("default")) {
                         de.delete(db, coll, id);
-                    } else {
-                        de.delete(db, id);
                     }
+                    de.delete(db, id);
                 }
             }
             case "KEYVALUE" -> {
@@ -896,6 +910,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
                         ke.delete(db, coll + ":" + id);
                     }
                     ke.delete(db, id);
+                    ke.delete(coll, id);
                 }
             }
             case "VECTOR" -> {
@@ -907,7 +922,14 @@ public class StoreEnginesPage extends StoreTemplatePage {
             }
             case "GRAPH" -> {
                 GraphEngine ge = (GraphEngine) engine.getEngine("GRAPH");
-                if (ge != null) ge.deleteNode(db, id);
+                if (ge != null) {
+                    ge.deleteNode(db, id);
+                    ge.deleteEdge(db, id);
+                    if (coll != null && !coll.isBlank()) {
+                        ge.deleteNode(coll, id);
+                        ge.deleteEdge(coll, id);
+                    }
+                }
             }
             case "TIMESERIES" -> {
                 TimeSeriesEngine te = (TimeSeriesEngine) engine.getEngine("TIMESERIES");
@@ -1123,6 +1145,10 @@ public class StoreEnginesPage extends StoreTemplatePage {
         
         for (Map.Entry<String, byte[]> e : keys.entrySet()) {
             String k = e.getKey();
+            if (e.getValue() == null || e.getValue().length == 0) continue;
+            String valStr = new String(e.getValue(), StandardCharsets.UTF_8).trim();
+            if (valStr.isEmpty() || "__TOMBSTONE__".equals(valStr)) continue;
+
             if (!k.contains("@")) {
                 String rest = k.substring(prefix.length());
                 int idx = rest.indexOf(':');
@@ -1145,6 +1171,10 @@ public class StoreEnginesPage extends StoreTemplatePage {
             Map<String, byte[]> docKeys = engine.getStorageCore().scanPrefix(docPrefix);
             for (Map.Entry<String, byte[]> e : docKeys.entrySet()) {
                 String k = e.getKey();
+                if (e.getValue() == null || e.getValue().length == 0) continue;
+                String valStr = new String(e.getValue(), StandardCharsets.UTF_8).trim();
+                if (valStr.isEmpty() || "__TOMBSTONE__".equals(valStr)) continue;
+
                 if (!k.contains("@")) {
                     String rest = k.substring(docPrefix.length());
                     int idx = rest.indexOf(':');
@@ -1178,24 +1208,24 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
         Widget treeHeader = Row.of(
             Header.of(3,
-                Icon.of("fas fa-sitemap").modifier(new Modifier().style("color:#38bdf8; margin-right:6px; font-size:13px;")),
+                Icon.of("fas fa-sitemap").modifier(new Modifier().style("color:#38bdf8; margin-right:6px; font-size:12px;")),
                 Text.of("Multi-Model Storage Hierarchy Explorer")
-            ).modifier(new Modifier().style("margin:0; font-size:13px; font-weight:600;")),
+            ).modifier(new Modifier().style("margin:0; font-size:12px; font-weight:600;")),
             Row.of(
                 Button.of(Icon.of("fas fa-database"), Text.of(" + DB"))
-                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "document.getElementById('createDbModal').style.display='flex'").cssClass("btn-action btn-primary").style("padding:2px 6px; font-size:9.5px; margin-right:4px;")),
+                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "document.getElementById('createDbModal').style.display='flex'").cssClass("btn-action btn-primary").style("padding:2px 5px; font-size:8.5px; margin-right:3px;")),
                 Button.of(Icon.of("fas fa-folder-plus"), Text.of(" + Unit"))
-                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "document.getElementById('createUnitModal').style.display='flex'").cssClass("btn-action btn-secondary").style("padding:2px 6px; font-size:9.5px; margin-right:4px;")),
+                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "document.getElementById('createUnitModal').style.display='flex'").cssClass("btn-action btn-secondary").style("padding:2px 5px; font-size:8.5px; margin-right:3px;")),
                 Button.of(Icon.of("fas fa-download"), Text.of(" Backup"))
-                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openBackupDbModal('" + targetDb + "')").cssClass("btn-action btn-secondary").style("padding:2px 6px; font-size:9.5px; margin-right:4px; background:rgba(34,197,94,0.15); border-color:rgba(34,197,94,0.3); color:#4ade80;")),
+                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openBackupDbModal('" + escapeJs(targetDb) + "')").cssClass("btn-action btn-secondary").style("padding:2px 5px; font-size:8.5px; margin-right:3px; background:rgba(34,197,94,0.15); border-color:rgba(34,197,94,0.3); color:#4ade80;")),
                 Button.of(Icon.of("fas fa-upload"), Text.of(" Restore"))
-                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openRestoreDbModal('" + targetDb + "')").cssClass("btn-action btn-secondary").style("padding:2px 6px; font-size:9.5px; margin-right:4px; background:rgba(168,85,247,0.15); border-color:rgba(168,85,247,0.3); color:#c084fc;")),
+                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openRestoreDbModal('" + escapeJs(targetDb) + "')").cssClass("btn-action btn-secondary").style("padding:2px 5px; font-size:8.5px; margin-right:3px; background:rgba(168,85,247,0.15); border-color:rgba(168,85,247,0.3); color:#c084fc;")),
                 Button.of(Icon.of("fas fa-file-export"), Text.of(" Export"))
-                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openExportDataModal('" + selectedEngine + "', '" + targetDb + "', '" + currentColl + "')").cssClass("btn-action btn-secondary").style("padding:2px 6px; font-size:9.5px; margin-right:4px; background:rgba(234,179,8,0.15); border-color:rgba(234,179,8,0.3); color:#fde047;")),
+                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openExportDataModal('" + escapeJs(selectedEngine) + "', '" + escapeJs(targetDb) + "', '" + escapeJs(currentColl) + "')").cssClass("btn-action btn-secondary").style("padding:2px 5px; font-size:8.5px; margin-right:3px; background:rgba(234,179,8,0.15); border-color:rgba(234,179,8,0.3); color:#fde047;")),
                 Button.of(Icon.of("fas fa-search-plus"), Text.of(" Búsqueda Avanzada"))
-                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openAdvancedSearchModal('" + selectedEngine + "', '" + targetDb + "', '" + currentColl + "')").cssClass("btn-action btn-secondary").style("padding:2px 6px; font-size:9.5px; background:rgba(56,189,248,0.15); border-color:rgba(56,189,248,0.3); color:#38bdf8;"))
-            ).modifier(new Modifier().style("display:flex; align-items:center; flex-wrap:wrap; gap:3px;"))
-        ).modifier(new Modifier().style("justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:6px;"));
+                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openAdvancedSearchModal('" + escapeJs(selectedEngine) + "', '" + escapeJs(targetDb) + "', '" + escapeJs(currentColl) + "')").cssClass("btn-action btn-secondary").style("padding:2px 5px; font-size:8.5px; background:rgba(56,189,248,0.15); border-color:rgba(56,189,248,0.3); color:#38bdf8;"))
+            ).modifier(new Modifier().style("display:flex; align-items:center; flex-wrap:wrap; gap:2px;"))
+        ).modifier(new Modifier().style("justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:4px;"));
 
         String[][] allEngSpecs = {
             {"DOCUMENT", "#3b82f6", "fas fa-file-alt", "Collections", "Collection", "Document", "fas fa-file-code"},
@@ -1215,15 +1245,15 @@ public class StoreEnginesPage extends StoreTemplatePage {
             boolean isActiveDb = db.equalsIgnoreCase(targetDb);
 
             Widget dbLeft = Span.of(
-                Icon.of("fas fa-database").modifier(new Modifier().style("margin-right:4px; color:#38bdf8; font-size:10px;")),
-                Span.of(db).modifier(new Modifier().style("color:" + (isActiveDb ? "#38bdf8" : "#cbd5e1") + "; font-weight:700; font-size:10.5px;"))
+                Icon.of("fas fa-database").modifier(new Modifier().style("margin-right:3px; color:#38bdf8; font-size:9px;")),
+                Span.of(db).modifier(new Modifier().style("color:" + (isActiveDb ? "#38bdf8" : "#cbd5e1") + "; font-weight:700; font-size:9.5px;"))
             );
 
             List<Widget> dbRightWidgets = new ArrayList<>();
             if (isActiveDb) {
-                dbRightWidgets.add(Span.of("ACTIVE").modifier(new Modifier().cssClass("store-badge badge-active").style("font-size:7.5px; padding:1px 4px; margin-left:3px;")));
+                dbRightWidgets.add(Span.of("ACTIVE").modifier(new Modifier().cssClass("store-badge badge-active").style("font-size:6.5px; padding:1px 3px; margin-left:2px;")));
             } else {
-                dbRightWidgets.add(Link.of(actionUrl + selectedEngine + "&target_db=" + db, "[Explore DB]").modifier(new Modifier().style("color:#38bdf8; font-size:8.5px; margin-left:4px; text-decoration:none; font-weight:600;")));
+                dbRightWidgets.add(Link.of(actionUrl + selectedEngine + "&target_db=" + db, "[Explore DB]").modifier(new Modifier().style("color:#38bdf8; font-size:7.5px; margin-left:3px; text-decoration:none; font-weight:600;")));
             }
             Widget dbRight = Div.of(dbRightWidgets.toArray(new Widget[0]));
 
@@ -1250,14 +1280,14 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     int totalItems = unitsAndItems.values().stream().mapToInt(List::size).sum();
 
                     Widget engHeaderLink = Link.of(actionUrl + engName + "&target_db=" + db,
-                        Icon.of(engIcon).modifier(new Modifier().style("color:" + engColor + "; margin-right:3px; font-size:7.5px;")),
-                        Span.of(engName).modifier(new Modifier().style("font-weight:700; font-size:7.5px; text-transform:uppercase;")),
+                        Icon.of(engIcon).modifier(new Modifier().style("color:" + engColor + "; margin-right:2px; font-size:7px;")),
+                        Span.of(engName).modifier(new Modifier().style("font-weight:700; font-size:7px; text-transform:uppercase;")),
                         Text.of(" → "),
-                        Span.of(unitPlural + " (" + unitsAndItems.size() + " " + (unitsAndItems.size() == 1 ? unitSingle : unitPlural) + ", " + totalItems + " items)").modifier(new Modifier().style("color:#cbd5e1; font-size:7px;"))
-                    ).modifier(new Modifier().style("text-decoration:none; font-size:7.5px; color:" + (isEngActive ? "#38bdf8; font-weight:700;" : "#94a3b8;") + ";"));
+                        Span.of(unitPlural + " (" + unitsAndItems.size() + " " + (unitsAndItems.size() == 1 ? unitSingle : unitPlural) + ", " + totalItems + " items)").modifier(new Modifier().style("color:#cbd5e1; font-size:6.5px;"))
+                    ).modifier(new Modifier().style("text-decoration:none; font-size:7px; color:" + (isEngActive ? "#38bdf8; font-weight:700;" : "#94a3b8;") + ";"));
 
                     Widget engAddUnitBtn = Button.of("+ " + unitSingle)
-                        .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openAddUnitModal('" + engName + "', '" + unitSingle + "')").style("background:none; border:1px solid " + engColor + "55; color:" + engColor + "; font-size:6.5px; padding:0 3px; border-radius:2px; cursor:pointer;"));
+                        .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openAddUnitModal('" + escapeJs(engName) + "', '" + escapeJs(unitSingle) + "')").style("background:none; border:1px solid " + engColor + "55; color:" + engColor + "; font-size:6px; padding:0 2px; border-radius:2px; cursor:pointer;"));
 
                     Widget engHeaderRow = Div.of(engHeaderLink, engAddUnitBtn)
                         .modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center;"));
@@ -1271,13 +1301,13 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
                         Widget unitLeft = Span.of(
                             Text.of("📁 "),
-                            Link.of(actionUrl + engName + "&target_db=" + db + "&coll=" + unitName, unitName).modifier(new Modifier().style("color:inherit; text-decoration:none; font-size:7.5px; font-weight:600;")),
+                            Link.of(actionUrl + engName + "&target_db=" + db + "&coll=" + unitName, unitName).modifier(new Modifier().style("color:inherit; text-decoration:none; font-size:7px; font-weight:600;")),
                             Text.of(" "),
-                            Span.of("(" + items.size() + ")").modifier(new Modifier().style("font-size:6.5px; color:#64748b; font-weight:normal;"))
-                        ).modifier(new Modifier().style("color:" + (isCurrColl ? "#38bdf8" : "#cbd5e1") + "; font-size:7.5px; font-weight:600;"));
+                            Span.of("(" + items.size() + ")").modifier(new Modifier().style("font-size:5.5px; color:#64748b; font-weight:normal;"))
+                        ).modifier(new Modifier().style("color:" + (isCurrColl ? "#38bdf8" : "#cbd5e1") + "; font-size:7px; font-weight:600;"));
 
                         Widget unitAddObjBtn = Button.of("[+ " + itemLabel + "]")
-                            .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openAddObjectModal('" + engName + "', '" + unitName + "')").style("background:none; border:none; color:" + engColor + "; font-size:6.5px; cursor:pointer; padding:0;"));
+                            .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openAddObjectModal('" + escapeJs(engName) + "', '" + escapeJs(unitName) + "')").style("background:none; border:none; color:" + engColor + "; font-size:6px; cursor:pointer; padding:0;"));
 
                         Widget unitHeaderRow = Div.of(unitLeft, unitAddObjBtn)
                             .modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center;"));
@@ -1286,8 +1316,8 @@ public class StoreEnginesPage extends StoreTemplatePage {
                         if (items.isEmpty()) {
                             Widget emptyItem = Div.of(
                                 Span.of("└── "),
-                                Span.of("(Empty unit - click [+ " + itemLabel + "] to insert)").modifier(new Modifier().style("font-style:italic; font-size:6.5px;"))
-                            ).modifier(new Modifier().style("font-size:6.5px; color:#64748b; padding:0;"));
+                                Span.of("(Empty unit - click [+ " + itemLabel + "] to insert)").modifier(new Modifier().style("font-style:italic; font-size:6px;"))
+                            ).modifier(new Modifier().style("font-size:6px; color:#64748b; padding:0;"));
                             itemWidgets.add(emptyItem);
                         } else {
                             for (String itemId : items) {
@@ -1299,37 +1329,37 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
                                 Widget itemLeft = Span.of(
                                     Text.of("└── "),
-                                    Icon.of(itemIcon).modifier(new Modifier().style("color:" + engColor + "; margin-right:2px; font-size:6.5px;")),
-                                    Span.of(itemId).modifier(new Modifier().style("color:#f8fafc; font-weight:bold; font-size:7px; font-family:monospace;")),
+                                    Icon.of(itemIcon).modifier(new Modifier().style("color:" + engColor + "; margin-right:2px; font-size:6px;")),
+                                    Span.of(itemId).modifier(new Modifier().style("color:#f8fafc; font-weight:bold; font-size:6.5px; font-family:monospace;")),
                                     Text.of(" "),
-                                    Span.of("v" + vCount).modifier(new Modifier().cssClass("store-badge").style("background:rgba(56,189,248,0.15); color:#38bdf8; font-size:6px; padding:0 2px; line-height:1;"))
+                                    Span.of("v" + vCount).modifier(new Modifier().cssClass("store-badge").style("background:rgba(56,189,248,0.15); color:#38bdf8; font-size:5.5px; padding:0 2px; line-height:1;"))
                                 );
 
                                 List<Widget> itemBtnWidgets = new ArrayList<>();
                                 itemBtnWidgets.add(
-                                    Button.of(Icon.of("fas fa-edit"), Text.of(" Edit"))
-                                        .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openUniversalEditModal('" + engName + "', '" + db + "', '" + unitName + "', '" + itemId + "', '" + payloadB64 + "')").style("background:none; border:1px solid rgba(56,189,248,0.3); color:#38bdf8; font-size:6.5px; padding:0 2px; border-radius:2px; cursor:pointer;"))
+                                    Button.of(Icon.of("fas fa-edit"))
+                                        .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openUniversalEditModal('" + escapeJs(engName) + "', '" + escapeJs(db) + "', '" + escapeJs(unitName) + "', '" + escapeJs(itemId) + "', '" + payloadB64 + "')").attribute("title", "Edit record").style("background:none; border:1px solid rgba(56,189,248,0.3); color:#38bdf8; font-size:6px; padding:1px 3px; border-radius:2px; cursor:pointer;"))
                                 );
                                 itemBtnWidgets.add(
-                                    Button.of(Icon.of("fas fa-history"), Text.of(" v" + vCount))
-                                        .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openUniversalRestoreModal('" + engName + "', '" + db + "', '" + unitName + "', '" + itemId + "', '" + versionsB64 + "')").style("background:none; border:1px solid rgba(168,85,247,0.3); color:#a855f7; font-size:6.5px; padding:0 2px; border-radius:2px; cursor:pointer;"))
+                                    Button.of(Icon.of("fas fa-history"))
+                                        .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openUniversalRestoreModal('" + escapeJs(engName) + "', '" + escapeJs(db) + "', '" + escapeJs(unitName) + "', '" + escapeJs(itemId) + "', '" + versionsB64 + "')").attribute("title", "Version history v" + vCount).style("background:none; border:1px solid rgba(168,85,247,0.3); color:#a855f7; font-size:6px; padding:1px 3px; border-radius:2px; cursor:pointer;"))
                                 );
                                 itemBtnWidgets.add(
-                                    Button.of(Icon.of("fas fa-trash-alt"), Text.of(" Delete"))
-                                        .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openUniversalDeleteModal('" + engName + "', '" + db + "', '" + unitName + "', '" + itemId + "')").attribute("title", "Delete record").style("background:none; border:1px solid rgba(239,68,68,0.3); color:#ef4444; font-size:6.5px; padding:0 2px; border-radius:2px; cursor:pointer;"))
+                                    Button.of(Icon.of("fas fa-trash-alt"))
+                                        .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openUniversalDeleteModal('" + escapeJs(engName) + "', '" + escapeJs(db) + "', '" + escapeJs(unitName) + "', '" + escapeJs(itemId) + "')").attribute("title", "Delete record").style("background:none; border:1px solid rgba(239,68,68,0.3); color:#ef4444; font-size:6px; padding:1px 3px; border-radius:2px; cursor:pointer;"))
                                 );
 
                                 if ("DOCUMENT".equalsIgnoreCase(engName)) {
-                                    itemBtnWidgets.add(Link.of(actionUrl + engName + "&target_db=" + db + "&coll=" + unitName + "&target_id=" + itemId, "[Select]").modifier(new Modifier().style("color:#94a3b8; text-decoration:none; font-size:6.5px; margin-left:2px;")));
+                                    itemBtnWidgets.add(Link.of(actionUrl + engName + "&target_db=" + db + "&coll=" + unitName + "&target_id=" + itemId, Icon.of("fas fa-eye")).attribute("title", "Select record").modifier(new Modifier().style("color:#94a3b8; text-decoration:none; font-size:6px; margin-left:2px;")));
                                 } else {
-                                    itemBtnWidgets.add(Link.of(actionUrl + engName + "&target_db=" + db + "&target_id=" + itemId, "[Inspect]").modifier(new Modifier().style("color:#94a3b8; text-decoration:none; font-size:6.5px; margin-left:2px;")));
+                                    itemBtnWidgets.add(Link.of(actionUrl + engName + "&target_db=" + db + "&target_id=" + itemId, Icon.of("fas fa-eye")).attribute("title", "Inspect record").modifier(new Modifier().style("color:#94a3b8; text-decoration:none; font-size:6px; margin-left:2px;")));
                                 }
 
                                 Widget itemRight = Div.of(itemBtnWidgets.toArray(new Widget[0]))
                                     .modifier(new Modifier().style("display:flex; align-items:center; gap:2px;"));
 
                                 Widget itemRow = Div.of(itemLeft, itemRight)
-                                    .modifier(new Modifier().style("font-size:7px; color:#94a3b8; display:flex; justify-content:space-between; align-items:center; padding:0; line-height:1.2;"));
+                                    .modifier(new Modifier().style("font-size:6.5px; color:#94a3b8; display:flex; justify-content:space-between; align-items:center; padding:0; line-height:1.2;"));
 
                                 itemWidgets.add(itemRow);
                             }
@@ -1358,17 +1388,17 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 Map<String, JsonObject> dbSchemas = discoverSchemas(db);
 
                 Widget idxSchemasHeaderLeft = Span.of(
-                    Icon.of("fas fa-bolt").modifier(new Modifier().style("color:#eab308; margin-right:3px; font-size:7.5px;")),
-                    Span.of("INDEXES & SCHEMAS").modifier(new Modifier().style("font-weight:bold; font-size:7.5px;")),
+                    Icon.of("fas fa-bolt").modifier(new Modifier().style("color:#eab308; margin-right:2px; font-size:7px;")),
+                    Span.of("INDEXES & SCHEMAS").modifier(new Modifier().style("font-weight:bold; font-size:7px;")),
                     Text.of(" → "),
-                    Span.of("(" + dbIndexes.size() + " Indexes, " + dbSchemas.size() + " Schemas)").modifier(new Modifier().style("color:#cbd5e1; font-size:7px;"))
+                    Span.of("(" + dbIndexes.size() + " Indexes, " + dbSchemas.size() + " Schemas)").modifier(new Modifier().style("color:#cbd5e1; font-size:6.5px;"))
                 ).modifier(new Modifier().style("color:#eab308; font-weight:bold;"));
 
                 Widget idxSchemasHeaderRight = Div.of(
                     Button.of(Icon.of("fas fa-plus"), Text.of(" Index"))
-                        .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openAddIndexModal('" + db + "')").style("background:none; border:1px solid rgba(234,179,8,0.5); color:#eab308; font-size:6.5px; padding:0 3px; border-radius:2px; cursor:pointer; margin-right:2px;")),
+                        .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openAddIndexModal('" + escapeJs(db) + "')").style("background:none; border:1px solid rgba(234,179,8,0.5); color:#eab308; font-size:6px; padding:0 2px; border-radius:2px; cursor:pointer; margin-right:2px;")),
                     Button.of(Icon.of("fas fa-shield-alt"), Text.of(" Schema"))
-                        .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openAddSchemaModal('" + db + "')").style("background:none; border:1px solid rgba(56,189,248,0.5); color:#38bdf8; font-size:6.5px; padding:0 3px; border-radius:2px; cursor:pointer;"))
+                        .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openAddSchemaModal('" + escapeJs(db) + "')").style("background:none; border:1px solid rgba(56,189,248,0.5); color:#38bdf8; font-size:6px; padding:0 2px; border-radius:2px; cursor:pointer;"))
                 ).modifier(new Modifier().style("display:flex; gap:2px;"));
 
                 Widget idxSchemasHeaderRow = Div.of(idxSchemasHeaderLeft, idxSchemasHeaderRight)
@@ -1377,11 +1407,11 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 // Secondary & Composite Indexes Unit
                 Widget indexesUnitLeft = Span.of(
                     Text.of("📁 Secondary & Composite Indexes "),
-                    Span.of("(" + dbIndexes.size() + ")").modifier(new Modifier().style("font-size:6.5px; color:#64748b; font-weight:normal;"))
-                ).modifier(new Modifier().style("color:#fde047; font-size:7.5px; font-weight:600;"));
+                    Span.of("(" + dbIndexes.size() + ")").modifier(new Modifier().style("font-size:5.5px; color:#64748b; font-weight:normal;"))
+                ).modifier(new Modifier().style("color:#fde047; font-size:7px; font-weight:600;"));
 
                 Widget indexesUnitAddBtn = Button.of("[+ Index]")
-                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openAddIndexModal('" + db + "')").style("background:none; border:none; color:#eab308; font-size:6.5px; cursor:pointer; padding:0;"));
+                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openAddIndexModal('" + escapeJs(db) + "')").style("background:none; border:none; color:#eab308; font-size:6px; cursor:pointer; padding:0;"));
 
                 Widget indexesUnitHeaderRow = Div.of(indexesUnitLeft, indexesUnitAddBtn)
                     .modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center;"));
@@ -1391,8 +1421,8 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     indexItemWidgets.add(
                         Div.of(
                             Span.of("└── "),
-                            Span.of("(No secondary indexes)").modifier(new Modifier().style("font-style:italic; font-size:6.5px;"))
-                        ).modifier(new Modifier().style("font-size:6.5px; color:#64748b; padding:0;"))
+                            Span.of("(No secondary indexes)").modifier(new Modifier().style("font-style:italic; font-size:6px;"))
+                        ).modifier(new Modifier().style("font-size:6px; color:#64748b; padding:0;"))
                     );
                 } else {
                     for (Map.Entry<String, JsonObject> idxEntry : dbIndexes.entrySet()) {
@@ -1404,12 +1434,12 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
                         Widget idxItemLeft = Span.of(
                             Text.of("└── "),
-                            Icon.of("fas fa-bolt").modifier(new Modifier().style("color:#eab308; margin-right:2px; font-size:6.5px;")),
-                            Span.of(idxName).modifier(new Modifier().style("color:#f8fafc; font-weight:bold; font-size:7px; font-family:monospace;")),
+                            Icon.of("fas fa-bolt").modifier(new Modifier().style("color:#eab308; margin-right:2px; font-size:6px;")),
+                            Span.of(idxName).modifier(new Modifier().style("color:#f8fafc; font-weight:bold; font-size:6.5px; font-family:monospace;")),
                             Text.of(" "),
-                            Span.of(idxType).modifier(new Modifier().cssClass("store-badge").style("background:rgba(234,179,8,0.15); color:#fde047; font-size:6px; padding:0 2px;")),
+                            Span.of(idxType).modifier(new Modifier().cssClass("store-badge").style("background:rgba(234,179,8,0.15); color:#fde047; font-size:5.5px; padding:0 2px;")),
                             Text.of(" on '"),
-                            Span.of(idxField).modifier(new Modifier().style("color:#38bdf8; font-family:monospace; font-size:6.5px;")),
+                            Span.of(idxField).modifier(new Modifier().style("color:#38bdf8; font-family:monospace; font-size:6px;")),
                             Text.of("' (" + idxColl + ")")
                         );
 
@@ -1418,11 +1448,11 @@ public class StoreEnginesPage extends StoreTemplatePage {
                             InputHidden.of("target_db", db),
                             InputHidden.of("index_name", idxName),
                             Button.of(Icon.of("fas fa-trash"))
-                                .modifier(new Modifier().attribute("type", "submit").attribute("onclick", "return confirm('Delete index " + idxName + "?');").style("background:none; border:none; color:#ef4444; font-size:6.5px; cursor:pointer; padding:0;"))
+                                .modifier(new Modifier().attribute("type", "submit").attribute("onclick", "return confirm('Delete index " + escapeJs(idxName) + "?');").attribute("title", "Delete index").style("background:none; border:none; color:#ef4444; font-size:6px; cursor:pointer; padding:0;"))
                         ).action(actionUrl + selectedEngine).method("POST").modifier(new Modifier().style("display:inline; margin:0;"));
 
                         Widget idxItemRow = Div.of(idxItemLeft, deleteIdxForm)
-                            .modifier(new Modifier().style("font-size:7px; color:#94a3b8; display:flex; justify-content:space-between; align-items:center; padding:0; line-height:1.2;"));
+                            .modifier(new Modifier().style("font-size:6.5px; color:#94a3b8; display:flex; justify-content:space-between; align-items:center; padding:0; line-height:1.2;"));
 
                         indexItemWidgets.add(idxItemRow);
                     }
@@ -1437,11 +1467,11 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 // Validation Schemas Unit
                 Widget schemasUnitLeft = Span.of(
                     Text.of("📁 Validation Schemas "),
-                    Span.of("(" + dbSchemas.size() + ")").modifier(new Modifier().style("font-size:6.5px; color:#64748b; font-weight:normal;"))
-                ).modifier(new Modifier().style("color:#38bdf8; font-size:7.5px; font-weight:600;"));
+                    Span.of("(" + dbSchemas.size() + ")").modifier(new Modifier().style("font-size:5.5px; color:#64748b; font-weight:normal;"))
+                ).modifier(new Modifier().style("color:#38bdf8; font-size:7px; font-weight:600;"));
 
                 Widget schemasUnitAddBtn = Button.of("[+ Schema]")
-                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openAddSchemaModal('" + db + "')").style("background:none; border:none; color:#38bdf8; font-size:6.5px; cursor:pointer; padding:0;"));
+                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openAddSchemaModal('" + escapeJs(db) + "')").style("background:none; border:none; color:#38bdf8; font-size:6px; cursor:pointer; padding:0;"));
 
                 Widget schemasUnitHeaderRow = Div.of(schemasUnitLeft, schemasUnitAddBtn)
                     .modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center;"));
@@ -1451,8 +1481,8 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     schemaItemWidgets.add(
                         Div.of(
                             Span.of("└── "),
-                            Span.of("(No validation schemas)").modifier(new Modifier().style("font-style:italic; font-size:6.5px;"))
-                        ).modifier(new Modifier().style("font-size:6.5px; color:#64748b; padding:0;"))
+                            Span.of("(No validation schemas)").modifier(new Modifier().style("font-style:italic; font-size:6px;"))
+                        ).modifier(new Modifier().style("font-size:6px; color:#64748b; padding:0;"))
                     );
                 } else {
                     for (Map.Entry<String, JsonObject> scEntry : dbSchemas.entrySet()) {
@@ -1460,8 +1490,8 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
                         Widget scItemLeft = Span.of(
                             Text.of("└── "),
-                            Icon.of("fas fa-shield-alt").modifier(new Modifier().style("color:#38bdf8; margin-right:2px; font-size:6.5px;")),
-                            Span.of(scName).modifier(new Modifier().style("color:#f8fafc; font-weight:bold; font-size:7px; font-family:monospace;"))
+                            Icon.of("fas fa-shield-alt").modifier(new Modifier().style("color:#38bdf8; margin-right:2px; font-size:6px;")),
+                            Span.of(scName).modifier(new Modifier().style("color:#f8fafc; font-weight:bold; font-size:6.5px; font-family:monospace;"))
                         );
 
                         Widget deleteScForm = Form.of(
@@ -1469,11 +1499,11 @@ public class StoreEnginesPage extends StoreTemplatePage {
                             InputHidden.of("target_db", db),
                             InputHidden.of("schema_name", scName),
                             Button.of(Icon.of("fas fa-trash"))
-                                .modifier(new Modifier().attribute("type", "submit").attribute("onclick", "return confirm('Delete schema " + scName + "?');").style("background:none; border:none; color:#ef4444; font-size:6.5px; cursor:pointer; padding:0;"))
+                                .modifier(new Modifier().attribute("type", "submit").attribute("onclick", "return confirm('Delete schema " + escapeJs(scName) + "?');").attribute("title", "Delete schema").style("background:none; border:none; color:#ef4444; font-size:6px; cursor:pointer; padding:0;"))
                         ).action(actionUrl + selectedEngine).method("POST").modifier(new Modifier().style("display:inline; margin:0;"));
 
                         Widget scItemRow = Div.of(scItemLeft, deleteScForm)
-                            .modifier(new Modifier().style("font-size:7px; color:#94a3b8; display:flex; justify-content:space-between; align-items:center; padding:0; line-height:1.2;"));
+                            .modifier(new Modifier().style("font-size:6.5px; color:#94a3b8; display:flex; justify-content:space-between; align-items:center; padding:0; line-height:1.2;"));
 
                         schemaItemWidgets.add(scItemRow);
                     }
