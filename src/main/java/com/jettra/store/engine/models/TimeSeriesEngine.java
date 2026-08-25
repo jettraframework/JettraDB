@@ -69,6 +69,7 @@ public class TimeSeriesEngine implements EngineFamily {
 
     public void delete(String measurement, long timestamp) {
         String key = "ts:" + measurement + ":" + timestamp;
+        engine.getStorageCore().delete(key, System.currentTimeMillis());
         String command = "PUT " + key + " ";
         raftClient.sendCommand(command);
     }

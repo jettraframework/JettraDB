@@ -65,6 +65,7 @@ public class GeospatialEngine implements EngineFamily {
 
     public void deleteLocation(String collection, String locId) {
         String internalKey = "geo:" + collection + ":" + locId;
+        engine.getStorageCore().delete(internalKey, System.currentTimeMillis());
         String command = "PUT " + internalKey + " ";
         raftClient.sendCommand(command);
     }

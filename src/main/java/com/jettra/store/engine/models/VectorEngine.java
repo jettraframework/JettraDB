@@ -113,12 +113,12 @@ public class VectorEngine implements EngineFamily {
 
     public void deleteVector(String collection, String vectorId) {
         String key = "vec:" + collection + ":" + vectorId;
+        engine.getStorageCore().delete(key, System.currentTimeMillis());
+        vectorIndex.remove(key);
         String command = "PUT " + key + " ";
         boolean success = raftClient.sendCommand(command);
         if (!success) {
             System.err.println("Failed to replicate vector delete via Raft.");
-        } else {
-            vectorIndex.remove(key);
         }
     }
 

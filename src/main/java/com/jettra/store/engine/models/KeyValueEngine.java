@@ -52,6 +52,7 @@ public class KeyValueEngine implements EngineFamily {
 
     public void delete(String namespace, String key) {
         String internalKey = "kv:" + namespace + ":" + key;
+        engine.getStorageCore().delete(internalKey, System.currentTimeMillis());
         String command = "PUT " + internalKey + " ";
         boolean success = raftClient.sendCommand(command);
         if (!success) {

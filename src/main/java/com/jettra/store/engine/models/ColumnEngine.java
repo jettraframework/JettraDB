@@ -57,6 +57,7 @@ public class ColumnEngine implements EngineFamily {
 
     public void deleteRow(String columnFamily, String rowKey) {
         String internalKey = "col:" + columnFamily + ":" + rowKey;
+        engine.getStorageCore().delete(internalKey, System.currentTimeMillis());
         String command = "PUT " + internalKey + " ";
         raftClient.sendCommand(command);
     }

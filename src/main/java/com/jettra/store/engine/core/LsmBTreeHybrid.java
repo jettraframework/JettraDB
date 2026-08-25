@@ -59,8 +59,20 @@ public class LsmBTreeHybrid {
                 byte[] data = new byte[len];
                 if (len > 0) {
                     dis.readFully(data);
+                    memTable.put(key + "@" + ts, data);
+                } else {
+                    // Tombstone deletion: purge any prior entries for this key
+                    java.util.List<String> toRemove = new java.util.ArrayList<>();
+                    for (String k : memTable.keySet()) {
+                        if (k.equals(key) || k.startsWith(key + "@")) {
+                            toRemove.add(k);
+                        }
+                    }
+                    for (String k : toRemove) {
+                        memTable.remove(k);
+                    }
+                    memTable.put(key + "@" + ts, new byte[0]);
                 }
-                memTable.put(key + "@" + ts, data);
             }
             System.out.println("Restored " + memTable.size() + " versioned records from persistent storage at " + journalFile);
         } catch (java.io.EOFException eof) {
@@ -140,10 +152,23 @@ public class LsmBTreeHybrid {
     }
 
     /**
-     * Deletes a record by writing a tombstone.
+     * Deletes a record by writing a tombstone and removing prior versions.
      */
     public void delete(String key, long timestamp) {
-        put(key, new byte[0], timestamp);
+        if (key == null) return;
+        java.util.List<String> toRemove = new java.util.ArrayList<>();
+        for (String k : memTable.keySet()) {
+            if (k.equals(key) || k.startsWith(key + "@")) {
+                toRemove.add(k);
+            }
+        }
+        for (String k : toRemove) {
+            memTable.remove(k);
+        }
+        String versionedKey = key + "@" + timestamp;
+        memTable.put(versionedKey, new byte[0]);
+        appendWal(key, timestamp, new byte[0]);
+        diskIndex.remove(key);
     }
 
     /**

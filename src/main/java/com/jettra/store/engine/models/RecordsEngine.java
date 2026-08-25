@@ -136,6 +136,7 @@ public class RecordsEngine implements EngineFamily {
      */
     public void deleteRecord(String collection, String recordId) {
         String internalKey = "rec:" + collection + ":" + recordId;
+        engine.getStorageCore().delete(internalKey, System.currentTimeMillis());
         String command = "PUT " + internalKey + " ";
         raftClient.sendCommand(command);
     }

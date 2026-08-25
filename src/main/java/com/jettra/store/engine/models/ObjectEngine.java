@@ -60,6 +60,7 @@ public class ObjectEngine implements EngineFamily {
 
     public void deleteObject(String collection, String objId) {
         String internalKey = "obj:" + collection + ":" + objId;
+        engine.getStorageCore().delete(internalKey, System.currentTimeMillis());
         String command = "PUT " + internalKey + " ";
         raftClient.sendCommand(command);
     }

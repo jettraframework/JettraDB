@@ -69,12 +69,15 @@ public class GraphEngine implements EngineFamily {
 
     public void deleteNode(String graphId, String nodeId) {
         String key = "graph:" + graphId + ":node:" + nodeId;
+        engine.getStorageCore().delete(key, System.currentTimeMillis());
+        engine.getStorageCore().delete("graph:" + graphId + ":" + nodeId, System.currentTimeMillis());
         String command = "PUT " + key + " ";
         raftClient.sendCommand(command);
     }
 
     public void deleteEdge(String graphId, String fromNode, String toNode, String label) {
         String key = "graph:" + graphId + ":edge:" + fromNode + ":" + toNode + ":" + label;
+        engine.getStorageCore().delete(key, System.currentTimeMillis());
         String command = "PUT " + key + " ";
         raftClient.sendCommand(command);
     }
