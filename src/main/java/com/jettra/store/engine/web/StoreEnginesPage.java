@@ -227,8 +227,10 @@ public class StoreEnginesPage extends StoreTemplatePage {
                         alertType = "badge-raft";
                     }
                 } else if ("delete_object".equalsIgnoreCase(action)) {
-                    executeTypeSpecificDelete(selectedEngine, targetDb, targetId, params);
-                    alertMessage = "Object '" + targetId + "' successfully deleted from " + selectedEngine + " [" + targetDb + "]!";
+                    String engType = params.getOrDefault("engine_type", selectedEngine);
+                    String coll = params.getOrDefault("target_coll", params.getOrDefault("coll", "default"));
+                    executeTypeSpecificDelete(engType, targetDb, targetId, coll, params);
+                    alertMessage = "[" + engType + "] Object '" + targetId + "' successfully deleted from [" + targetDb + "]!";
                     alertType = "badge-raft";
                 }
             } catch (Exception e) {
@@ -706,19 +708,44 @@ public class StoreEnginesPage extends StoreTemplatePage {
         return "{}";
     }
 
-    private void executeTypeSpecificDelete(String engineName, String db, String id, Map<String, String> params) {
+    private void executeTypeSpecificDelete(String engineName, String db, String id, String coll, Map<String, String> params) {
+        String prefix = getPrefixForEngine(engineName);
+        String[] candidateKeys = {
+            prefix + db + ":" + coll + ":" + id,
+            prefix + db + ":" + id,
+            db + ":" + coll + ":" + id,
+            db + ":" + id
+        };
+        for (String k : candidateKeys) {
+            engine.getStorageCore().delete(k, System.currentTimeMillis());
+        }
+
         switch (engineName) {
             case "DOCUMENT" -> {
                 DocumentEngine de = (DocumentEngine) engine.getEngine("DOCUMENT");
-                if (de != null) de.delete(db, id);
+                if (de != null) {
+                    if (coll != null && !coll.isBlank() && !coll.equals("default")) {
+                        de.delete(db, coll, id);
+                    } else {
+                        de.delete(db, id);
+                    }
+                }
             }
             case "KEYVALUE" -> {
                 KeyValueEngine ke = (KeyValueEngine) engine.getEngine("KEYVALUE");
-                if (ke != null) ke.delete(db, id);
+                if (ke != null) {
+                    if (coll != null && !coll.isBlank() && !coll.equals("default")) {
+                        ke.delete(db, coll + ":" + id);
+                    }
+                    ke.delete(db, id);
+                }
             }
             case "VECTOR" -> {
                 VectorEngine ve = (VectorEngine) engine.getEngine("VECTOR");
-                if (ve != null) ve.deleteVector(db, id);
+                if (ve != null) {
+                    ve.deleteVector(coll != null ? coll : "default", id);
+                    ve.deleteVector(db, id);
+                }
             }
             case "GRAPH" -> {
                 GraphEngine ge = (GraphEngine) engine.getEngine("GRAPH");
@@ -727,24 +754,37 @@ public class StoreEnginesPage extends StoreTemplatePage {
             case "TIMESERIES" -> {
                 TimeSeriesEngine te = (TimeSeriesEngine) engine.getEngine("TIMESERIES");
                 if (te != null) {
+                    try { te.delete(coll != null ? coll : "telemetry", Long.parseLong(id)); } catch (Exception ignored) {}
                     try { te.delete(db, Long.parseLong(id)); } catch (Exception ignored) {}
                 }
             }
             case "COLUMN" -> {
                 ColumnEngine ce = (ColumnEngine) engine.getEngine("COLUMN");
-                if (ce != null) ce.deleteRow(db, id);
+                if (ce != null) {
+                    ce.deleteRow(coll != null ? coll : "analytics", id);
+                    ce.deleteRow(db, id);
+                }
             }
             case "GEOSPATIAL" -> {
                 GeospatialEngine ge = (GeospatialEngine) engine.getEngine("GEOSPATIAL");
-                if (ge != null) ge.deleteLocation(db, id);
+                if (ge != null) {
+                    ge.deleteLocation(coll != null ? coll : "stores_layer", id);
+                    ge.deleteLocation(db, id);
+                }
             }
             case "OBJECT" -> {
                 ObjectEngine oe = (ObjectEngine) engine.getEngine("OBJECT");
-                if (oe != null) oe.deleteObject(db, id);
+                if (oe != null) {
+                    oe.deleteObject(coll != null ? coll : "media_bucket", id);
+                    oe.deleteObject(db, id);
+                }
             }
             case "RECORDS" -> {
                 RecordsEngine re = (RecordsEngine) engine.getEngine("RECORDS");
-                if (re != null) re.deleteRecord(db, id);
+                if (re != null) {
+                    re.deleteRecord(coll != null ? coll : "default", id);
+                    re.deleteRecord(db, id);
+                }
             }
         }
     }
@@ -1032,10 +1072,11 @@ public class StoreEnginesPage extends StoreTemplatePage {
                                 sb.append(" <span class='store-badge' style='background:rgba(56,189,248,0.15); color:#38bdf8; font-size:9px; padding:1px 5px;'>v").append(vCount).append("</span>");
                                 sb.append("</span>\n");
 
-                                // Action Buttons for Level 3 item (Edit, Versions, Select)
+                                // Action Buttons for Level 3 item (Edit, Versions, Delete, Select)
                                 sb.append("                <div style='display:flex; align-items:center; gap:4px;'>\n");
                                 sb.append("                  <button type='button' onclick=\"openUniversalEditModal('").append(engName).append("', '").append(db).append("', '").append(unitName).append("', '").append(itemId).append("', '").append(payloadB64).append("')\" style='background:none; border:1px solid rgba(56,189,248,0.3); color:#38bdf8; font-size:10px; padding:1px 6px; border-radius:3px; cursor:pointer;'><i class='fas fa-edit'></i> Edit</button>\n");
                                 sb.append("                  <button type='button' onclick=\"openUniversalRestoreModal('").append(engName).append("', '").append(db).append("', '").append(unitName).append("', '").append(itemId).append("', '").append(versionsB64).append("')\" style='background:none; border:1px solid rgba(168,85,247,0.3); color:#a855f7; font-size:10px; padding:1px 6px; border-radius:3px; cursor:pointer;'><i class='fas fa-history'></i> v").append(vCount).append("</button>\n");
+                                sb.append("                  <button type='button' onclick=\"openUniversalDeleteModal('").append(engName).append("', '").append(db).append("', '").append(unitName).append("', '").append(itemId).append("')\" style='background:none; border:1px solid rgba(239,68,68,0.3); color:#ef4444; font-size:10px; padding:1px 6px; border-radius:3px; cursor:pointer;'><i class='fas fa-trash-alt'></i> Delete</button>\n");
                                 if ("DOCUMENT".equalsIgnoreCase(engName)) {
                                     sb.append("                  <a href='").append(actionUrl).append(engName).append("&target_db=").append(db).append("&coll=").append(unitName).append("&target_id=").append(itemId).append("' style='color:#94a3b8; text-decoration:none; font-size:10px; margin-left:2px;'>[Select]</a>\n");
                                 } else {
@@ -1852,7 +1893,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
           .append("  <div class='store-card' style='width:680px; max-width:94%; background:#1e293b; border:1px solid rgba(168,85,247,0.4); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:24px;'>\n")
           .append("    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;'>\n")
           .append("      <h3 style='margin:0; font-size:18px; font-weight:700; color:#f8fafc;'><i class='fas fa-history' style='color:#a855f7; margin-right:8px;'></i> Historical Versions: <span id='restoreEngineLabel' class='store-badge' style='background:rgba(168,85,247,0.2); color:#c084fc; font-size:11px;'></span> (<span id='restoreRecordIdLabel' style='color:#38bdf8;'></span>)</h3>\n")
-          .append("      <button onclick=\"document.getElementById('universalRestoreModal').style.display='none'\" style='background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;'><i class='fas fa-times'></i></button>\n")
+          .append("      <button type='button' onclick=\"document.getElementById('universalRestoreModal').style.display='none'\" style='background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;'><i class='fas fa-times'></i></button>\n")
           .append("    </div>\n")
           .append("    <p style='font-size:13px; color:#cbd5e1; margin-top:0;'>Select any previous snapshot version (ordered descending: newest to oldest) to rollback:</p>\n")
           .append("    <form method='POST' action='").append(actionUrl).append("'>\n")
@@ -1865,6 +1906,67 @@ public class StoreEnginesPage extends StoreTemplatePage {
           .append("      <div id='universalVersionsContainer' style='max-height:240px; overflow-y:auto; margin-bottom:16px; border:1px solid rgba(255,255,255,0.08); border-radius:8px; background:#0f172a;'></div>\n")
           .append("      <div style='display:flex; justify-content:flex-end; gap:8px;'>\n")
           .append("        <button type='button' onclick=\"document.getElementById('universalRestoreModal').style.display='none'\" class='btn-action btn-secondary'>Close</button>\n")
+          .append("      </div>\n")
+          .append("    </form>\n")
+          .append("  </div>\n")
+          .append("</div>\n");
+
+        // Confirmation Modal: Version Restore (JettraFlux Component Modal)
+        sb.append("<div id='confirmRestoreModal' style='display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); z-index:10000; align-items:center; justify-content:center;'>\n")
+          .append("  <div class='store-card' style='width:500px; max-width:92%; background:#1e293b; border:1px solid rgba(168,85,247,0.5); box-shadow:0 20px 50px rgba(0,0,0,0.7); padding:24px;'>\n")
+          .append("    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;'>\n")
+          .append("      <h3 style='margin:0; font-size:18px; font-weight:700; color:#f8fafc;'><i class='fas fa-undo' style='color:#a855f7; margin-right:8px;'></i> Confirm Version Rollback</h3>\n")
+          .append("      <button type='button' onclick=\"document.getElementById('confirmRestoreModal').style.display='none'\" style='background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;'><i class='fas fa-times'></i></button>\n")
+          .append("    </div>\n")
+          .append("    <form method='POST' action='").append(actionUrl).append("'>\n")
+          .append("      <input type='hidden' name='action' value='restore_version'/>\n")
+          .append("      <input type='hidden' name='engine_type' id='confirmRestoreEngineInput'/>\n")
+          .append("      <input type='hidden' name='target_db' id='confirmRestoreDbInput'/>\n")
+          .append("      <input type='hidden' name='target_coll' id='confirmRestoreCollInput'/>\n")
+          .append("      <input type='hidden' name='target_id' id='confirmRestoreIdInput'/>\n")
+          .append("      <input type='hidden' name='version_ts' id='confirmRestoreTsInput'/>\n")
+          .append("      <div style='background:rgba(168,85,247,0.1); border-left:3px solid #a855f7; padding:12px 14px; border-radius:6px; margin-bottom:16px; font-size:13px; color:#f8fafc;'>\n")
+          .append("        <p style='margin:0 0 8px 0;'>Are you sure you want to restore item version from timestamp <strong id='confirmRestoreTsDisplay' style='color:#c084fc;'></strong>?</p>\n")
+          .append("        <div style='font-size:11px; color:#cbd5e1;'>\n")
+          .append("          <span>Record ID: <strong id='confirmRestoreIdDisplay' style='color:#38bdf8;'></strong></span>\n")
+          .append("          <span style='margin-left:12px;'>Engine: <span id='confirmRestoreEngineDisplay' class='store-badge badge-active'></span></span>\n")
+          .append("          <span style='margin-left:12px;'>Date: <span id='confirmRestoreDateDisplay' style='color:#f8fafc;'></span></span>\n")
+          .append("        </div>\n")
+          .append("      </div>\n")
+          .append("      <p style='font-size:12px; color:#94a3b8; margin:0 0 16px 0;'>The historical snapshot version will be restored as the active record.</p>\n")
+          .append("      <div style='display:flex; justify-content:flex-end; gap:8px;'>\n")
+          .append("        <button type='button' onclick=\"document.getElementById('confirmRestoreModal').style.display='none'\" class='btn-action btn-secondary'>Cancel</button>\n")
+          .append("        <button type='submit' class='btn-action btn-primary' style='background:#a855f7;'><i class='fas fa-undo'></i> Restore Version</button>\n")
+          .append("      </div>\n")
+          .append("    </form>\n")
+          .append("  </div>\n")
+          .append("</div>\n");
+
+        // Confirmation Modal: Delete Record (JettraFlux Component Modal)
+        sb.append("<div id='confirmDeleteModal' style='display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); z-index:10000; align-items:center; justify-content:center;'>\n")
+          .append("  <div class='store-card' style='width:500px; max-width:92%; background:#1e293b; border:1px solid rgba(239,68,68,0.5); box-shadow:0 20px 50px rgba(0,0,0,0.7); padding:24px;'>\n")
+          .append("    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;'>\n")
+          .append("      <h3 style='margin:0; font-size:18px; font-weight:700; color:#f8fafc;'><i class='fas fa-trash-alt' style='color:#ef4444; margin-right:8px;'></i> Confirm Delete Record</h3>\n")
+          .append("      <button type='button' onclick=\"document.getElementById('confirmDeleteModal').style.display='none'\" style='background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;'><i class='fas fa-times'></i></button>\n")
+          .append("    </div>\n")
+          .append("    <form method='POST' action='").append(actionUrl).append("'>\n")
+          .append("      <input type='hidden' name='action' value='delete_object'/>\n")
+          .append("      <input type='hidden' name='engine_type' id='confirmDeleteEngineInput'/>\n")
+          .append("      <input type='hidden' name='target_db' id='confirmDeleteDbInput'/>\n")
+          .append("      <input type='hidden' name='target_coll' id='confirmDeleteCollInput'/>\n")
+          .append("      <input type='hidden' name='target_id' id='confirmDeleteIdInput'/>\n")
+          .append("      <div style='background:rgba(239,68,68,0.1); border-left:3px solid #ef4444; padding:12px 14px; border-radius:6px; margin-bottom:16px; font-size:13px; color:#f8fafc;'>\n")
+          .append("        <p style='margin:0 0 8px 0;'>Are you sure you want to permanently delete record <strong id='confirmDeleteIdDisplay' style='color:#ef4444;'></strong>?</p>\n")
+          .append("        <div style='font-size:11px; color:#cbd5e1;'>\n")
+          .append("          <span>Engine: <strong id='confirmDeleteEngineDisplay' style='color:#f8fafc;'></strong></span>\n")
+          .append("          <span style='margin-left:12px;'>Database: <strong id='confirmDeleteDbDisplay' style='color:#38bdf8;'></strong></span>\n")
+          .append("          <span style='margin-left:12px;'>Unit: <strong id='confirmDeleteCollDisplay' style='color:#cbd5e1;'></strong></span>\n")
+          .append("        </div>\n")
+          .append("      </div>\n")
+          .append("      <p style='font-size:12px; color:#94a3b8; margin:0 0 16px 0;'>This operation is immediate and removes the record from storage.</p>\n")
+          .append("      <div style='display:flex; justify-content:flex-end; gap:8px;'>\n")
+          .append("        <button type='button' onclick=\"document.getElementById('confirmDeleteModal').style.display='none'\" class='btn-action btn-secondary'>Cancel</button>\n")
+          .append("        <button type='submit' class='btn-action btn-primary' style='background:#ef4444;'><i class='fas fa-trash-alt'></i> Confirm Delete</button>\n")
           .append("      </div>\n")
           .append("    </form>\n")
           .append("  </div>\n")
@@ -2186,7 +2288,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
           .append("          html += '<td style=\"padding:8px 12px; color:#94a3b8; font-family:monospace;\">' + (v.preview || '{}') + '</td>';\n")
           .append("          html += '<td style=\"padding:8px 12px; text-align:right;\">';\n")
           .append("          if (!v.isCurrent) {\n")
-          .append("            html += '<button type=\"button\" onclick=\"submitUniversalRestore(' + v.timestamp + ')\" class=\"btn-action btn-primary\" style=\"background:#a855f7; padding:3px 10px; font-size:11px;\"><i class=\"fas fa-undo\"></i> Restore</button>';\n")
+          .append("            html += '<button type=\"button\" onclick=\"openConfirmRestoreModal(' + v.timestamp + ', \\'' + (v.formattedDate || v.timestamp) + '\\')\" class=\"btn-action btn-primary\" style=\"background:#a855f7; padding:3px 10px; font-size:11px;\"><i class=\"fas fa-undo\"></i> Restore</button>';\n")
           .append("          } else {\n")
           .append("            html += '<span style=\"color:#10b981; font-size:11px;\">Active</span>';\n")
           .append("          }\n")
@@ -2200,11 +2302,32 @@ public class StoreEnginesPage extends StoreTemplatePage {
           .append("    }\n")
           .append("    document.getElementById('universalRestoreModal').style.display = 'flex';\n")
           .append("  }\n")
-          .append("  function submitUniversalRestore(ts) {\n")
-          .append("    if (confirm('Are you sure you want to restore item version from timestamp ' + ts + '?')) {\n")
-          .append("      document.getElementById('restoreVersionTsInput').value = ts;\n")
-          .append("      document.getElementById('universalRestoreModal').querySelector('form').submit();\n")
-          .append("    }\n")
+          .append("  function openConfirmRestoreModal(ts, formattedDate) {\n")
+          .append("    var engine = document.getElementById('restoreEngineTypeInput').value;\n")
+          .append("    var db = document.getElementById('restoreRecordDbInput').value;\n")
+          .append("    var unit = document.getElementById('restoreRecordCollInput').value;\n")
+          .append("    var id = document.getElementById('restoreRecordIdInput').value;\n")
+          .append("    document.getElementById('confirmRestoreEngineInput').value = engine;\n")
+          .append("    document.getElementById('confirmRestoreEngineDisplay').innerText = engine;\n")
+          .append("    document.getElementById('confirmRestoreDbInput').value = db;\n")
+          .append("    document.getElementById('confirmRestoreCollInput').value = unit || 'default';\n")
+          .append("    document.getElementById('confirmRestoreIdInput').value = id;\n")
+          .append("    document.getElementById('confirmRestoreIdDisplay').innerText = id;\n")
+          .append("    document.getElementById('confirmRestoreTsInput').value = ts;\n")
+          .append("    document.getElementById('confirmRestoreTsDisplay').innerText = ts;\n")
+          .append("    document.getElementById('confirmRestoreDateDisplay').innerText = formattedDate || ts;\n")
+          .append("    document.getElementById('confirmRestoreModal').style.display = 'flex';\n")
+          .append("  }\n")
+          .append("  function openUniversalDeleteModal(engine, db, unit, id) {\n")
+          .append("    document.getElementById('confirmDeleteEngineInput').value = engine;\n")
+          .append("    document.getElementById('confirmDeleteEngineDisplay').innerText = engine;\n")
+          .append("    document.getElementById('confirmDeleteDbInput').value = db;\n")
+          .append("    document.getElementById('confirmDeleteDbDisplay').innerText = db;\n")
+          .append("    document.getElementById('confirmDeleteCollInput').value = unit || 'default';\n")
+          .append("    document.getElementById('confirmDeleteCollDisplay').innerText = unit || 'default';\n")
+          .append("    document.getElementById('confirmDeleteIdInput').value = id;\n")
+          .append("    document.getElementById('confirmDeleteIdDisplay').innerText = id;\n")
+          .append("    document.getElementById('confirmDeleteModal').style.display = 'flex';\n")
           .append("  }\n")
           .append("</script>\n");
 
