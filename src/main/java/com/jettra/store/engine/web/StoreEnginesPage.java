@@ -18,6 +18,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -228,9 +229,11 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     }
                 } else if ("delete_object".equalsIgnoreCase(action)) {
                     String engType = params.getOrDefault("engine_type", selectedEngine);
+                    String delDb = params.getOrDefault("target_db", targetDb);
+                    String delId = params.getOrDefault("target_id", targetId);
                     String coll = params.getOrDefault("target_coll", params.getOrDefault("coll", "default"));
-                    executeTypeSpecificDelete(engType, targetDb, targetId, coll, params);
-                    alertMessage = "[" + engType + "] Object '" + targetId + "' successfully deleted from [" + targetDb + "]!";
+                    executeTypeSpecificDelete(engType, delDb, delId, coll, params);
+                    alertMessage = "[" + engType + "] Object '" + delId + "' successfully deleted from [" + delDb + "]!";
                     alertType = "badge-raft";
                 }
             } catch (Exception e) {
@@ -1039,15 +1042,15 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     int totalItems = unitsAndItems.values().stream().mapToInt(List::size).sum();
 
                     Widget engHeaderLink = Link.of(actionUrl + engName + "&target_db=" + db,
-                        Icon.of(engIcon).modifier(new Modifier().style("color:" + engColor + "; margin-right:6px;")),
-                        Span.of(" " + engName + " SUBTREE").modifier(new Modifier().style("font-weight:bold;")),
+                        Icon.of(engIcon).modifier(new Modifier().style("color:" + engColor + "; margin-right:5px; font-size:11px;")),
+                        Span.of(" " + engName + " SUBTREE").modifier(new Modifier().style("font-weight:bold; font-size:11px;")),
                         Text.of(" → "),
-                        Span.of(unitPlural + " (" + unitsAndItems.size() + " " + (unitsAndItems.size() == 1 ? unitSingle : unitPlural) + ", " + totalItems + " items)").modifier(new Modifier().style("color:#cbd5e1;"))
-                    ).modifier(new Modifier().style("text-decoration:none; color:" + (isEngActive ? "#38bdf8; font-weight:bold;" : "#94a3b8;") + ";"));
+                        Span.of(unitPlural + " (" + unitsAndItems.size() + " " + (unitsAndItems.size() == 1 ? unitSingle : unitPlural) + ", " + totalItems + " items)").modifier(new Modifier().style("color:#cbd5e1; font-size:10px;"))
+                    ).modifier(new Modifier().style("text-decoration:none; font-size:11px; color:" + (isEngActive ? "#38bdf8; font-weight:bold;" : "#94a3b8;") + ";"));
 
                     Widget engAddUnitBtn = Button.of("+ " + unitSingle)
                         .attribute("onclick", "openAddUnitModal('" + engName + "', '" + unitSingle + "')")
-                        .modifier(new Modifier().style("background:none; border:1px solid " + engColor + "55; color:" + engColor + "; font-size:10px; padding:2px 8px; border-radius:4px; cursor:pointer;"));
+                        .modifier(new Modifier().style("background:none; border:1px solid " + engColor + "55; color:" + engColor + "; font-size:9px; padding:1px 6px; border-radius:3px; cursor:pointer;"));
 
                     Widget engHeaderRow = Div.of(engHeaderLink, engAddUnitBtn)
                         .modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center;"));
@@ -1061,14 +1064,14 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
                         Widget unitLeft = Span.of(
                             Text.of("📁 [Level 2: Unit / " + unitSingle + "] "),
-                            Link.of(actionUrl + engName + "&target_db=" + db + "&coll=" + unitName, unitName).modifier(new Modifier().style("color:inherit; text-decoration:none;")),
+                            Link.of(actionUrl + engName + "&target_db=" + db + "&coll=" + unitName, unitName).modifier(new Modifier().style("color:inherit; text-decoration:none; font-size:11px;")),
                             Text.of(" "),
-                            Span.of("(" + items.size() + " items)").modifier(new Modifier().style("font-size:10px; color:#64748b; font-weight:normal;"))
-                        ).modifier(new Modifier().style("color:" + (isCurrColl ? "#38bdf8" : "#cbd5e1") + "; font-size:12px; font-weight:600;"));
+                            Span.of("(" + items.size() + " items)").modifier(new Modifier().style("font-size:9px; color:#64748b; font-weight:normal;"))
+                        ).modifier(new Modifier().style("color:" + (isCurrColl ? "#38bdf8" : "#cbd5e1") + "; font-size:11px; font-weight:600;"));
 
                         Widget unitAddObjBtn = Button.of("[+ Add " + itemLabel + "]")
                             .attribute("onclick", "openAddObjectModal('" + engName + "', '" + unitName + "')")
-                            .modifier(new Modifier().style("background:none; border:none; color:" + engColor + "; font-size:10px; cursor:pointer;"));
+                            .modifier(new Modifier().style("background:none; border:none; color:" + engColor + "; font-size:9px; cursor:pointer;"));
 
                         Widget unitHeaderRow = Div.of(unitLeft, unitAddObjBtn)
                             .modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center;"));
@@ -1077,8 +1080,8 @@ public class StoreEnginesPage extends StoreTemplatePage {
                         if (items.isEmpty()) {
                             Widget emptyItem = Div.of(
                                 Span.of("└── "),
-                                Span.of("(Empty unit - click [+ Add " + itemLabel + "] to insert)").modifier(new Modifier().style("font-style:italic;"))
-                            ).modifier(new Modifier().style("font-size:11px; color:#64748b; padding:2px 0;"));
+                                Span.of("(Empty unit - click [+ Add " + itemLabel + "] to insert)").modifier(new Modifier().style("font-style:italic; font-size:10px;"))
+                            ).modifier(new Modifier().style("font-size:10px; color:#64748b; padding:1px 0;"));
                             itemWidgets.add(emptyItem);
                         } else {
                             for (String itemId : items) {
@@ -1090,11 +1093,11 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
                                 Widget itemLeft = Span.of(
                                     Text.of("└── "),
-                                    Icon.of(itemIcon).modifier(new Modifier().style("color:" + engColor + "; margin-right:4px;")),
+                                    Icon.of(itemIcon).modifier(new Modifier().style("color:" + engColor + "; margin-right:3px; font-size:10px;")),
                                     Text.of("[Level 3: " + itemLabel + "] "),
-                                    Span.of(itemId).modifier(new Modifier().style("color:#f8fafc; font-weight:bold;")),
+                                    Span.of(itemId).modifier(new Modifier().style("color:#f8fafc; font-weight:bold; font-size:10px;")),
                                     Text.of(" "),
-                                    Span.of("v" + vCount).modifier(new Modifier().cssClass("store-badge").style("background:rgba(56,189,248,0.15); color:#38bdf8; font-size:9px; padding:1px 5px;"))
+                                    Span.of("v" + vCount).modifier(new Modifier().cssClass("store-badge").style("background:rgba(56,189,248,0.15); color:#38bdf8; font-size:8px; padding:0 4px;"))
                                 );
 
                                 List<Widget> itemBtnWidgets = new ArrayList<>();
@@ -1102,52 +1105,52 @@ public class StoreEnginesPage extends StoreTemplatePage {
                                     Button.of(Icon.of("fas fa-edit"), Text.of(" Edit"))
                                         .attribute("type", "button")
                                         .attribute("onclick", "openUniversalEditModal('" + engName + "', '" + db + "', '" + unitName + "', '" + itemId + "', '" + payloadB64 + "')")
-                                        .modifier(new Modifier().style("background:none; border:1px solid rgba(56,189,248,0.3); color:#38bdf8; font-size:10px; padding:1px 6px; border-radius:3px; cursor:pointer;"))
+                                        .modifier(new Modifier().style("background:none; border:1px solid rgba(56,189,248,0.3); color:#38bdf8; font-size:9px; padding:1px 5px; border-radius:3px; cursor:pointer;"))
                                 );
                                 itemBtnWidgets.add(
                                     Button.of(Icon.of("fas fa-history"), Text.of(" v" + vCount))
                                         .attribute("type", "button")
                                         .attribute("onclick", "openUniversalRestoreModal('" + engName + "', '" + db + "', '" + unitName + "', '" + itemId + "', '" + versionsB64 + "')")
-                                        .modifier(new Modifier().style("background:none; border:1px solid rgba(168,85,247,0.3); color:#a855f7; font-size:10px; padding:1px 6px; border-radius:3px; cursor:pointer;"))
+                                        .modifier(new Modifier().style("background:none; border:1px solid rgba(168,85,247,0.3); color:#a855f7; font-size:9px; padding:1px 5px; border-radius:3px; cursor:pointer;"))
                                 );
                                 itemBtnWidgets.add(
                                     Button.of(Icon.of("fas fa-trash-alt"), Text.of(" Delete"))
                                         .attribute("type", "button")
                                         .attribute("onclick", "openUniversalDeleteModal('" + engName + "', '" + db + "', '" + unitName + "', '" + itemId + "')")
                                         .attribute("title", "Delete record")
-                                        .modifier(new Modifier().style("background:none; border:1px solid rgba(239,68,68,0.3); color:#ef4444; font-size:10px; padding:1px 6px; border-radius:3px; cursor:pointer;"))
+                                        .modifier(new Modifier().style("background:none; border:1px solid rgba(239,68,68,0.3); color:#ef4444; font-size:9px; padding:1px 5px; border-radius:3px; cursor:pointer;"))
                                 );
 
                                 if ("DOCUMENT".equalsIgnoreCase(engName)) {
-                                    itemBtnWidgets.add(Link.of(actionUrl + engName + "&target_db=" + db + "&coll=" + unitName + "&target_id=" + itemId, "[Select]").modifier(new Modifier().style("color:#94a3b8; text-decoration:none; font-size:10px; margin-left:2px;")));
+                                    itemBtnWidgets.add(Link.of(actionUrl + engName + "&target_db=" + db + "&coll=" + unitName + "&target_id=" + itemId, "[Select]").modifier(new Modifier().style("color:#94a3b8; text-decoration:none; font-size:9px; margin-left:2px;")));
                                 } else {
-                                    itemBtnWidgets.add(Link.of(actionUrl + engName + "&target_db=" + db + "&target_id=" + itemId, "[Inspect]").modifier(new Modifier().style("color:#94a3b8; text-decoration:none; font-size:10px; margin-left:2px;")));
+                                    itemBtnWidgets.add(Link.of(actionUrl + engName + "&target_db=" + db + "&target_id=" + itemId, "[Inspect]").modifier(new Modifier().style("color:#94a3b8; text-decoration:none; font-size:9px; margin-left:2px;")));
                                 }
 
                                 Widget itemRight = Div.of(itemBtnWidgets.toArray(new Widget[0]))
-                                    .modifier(new Modifier().style("display:flex; align-items:center; gap:4px;"));
+                                    .modifier(new Modifier().style("display:flex; align-items:center; gap:3px;"));
 
                                 Widget itemRow = Div.of(itemLeft, itemRight)
-                                    .modifier(new Modifier().style("font-size:11px; color:#94a3b8; display:flex; justify-content:space-between; align-items:center; padding:2px 0;"));
+                                    .modifier(new Modifier().style("font-size:10px; color:#94a3b8; display:flex; justify-content:space-between; align-items:center; padding:1px 0;"));
 
                                 itemWidgets.add(itemRow);
                             }
                         }
 
                         Widget itemsContainer = Div.of(itemWidgets.toArray(new Widget[0]))
-                            .modifier(new Modifier().style("margin-left:16px; border-left: 1px dashed rgba(255,255,255,0.08); padding-left:10px; margin-top:3px;"));
+                            .modifier(new Modifier().style("margin-left:14px; border-left: 1px dashed rgba(255,255,255,0.08); padding-left:8px; margin-top:2px;"));
 
                         Widget unitBlock = Div.of(unitHeaderRow, itemsContainer)
-                            .modifier(new Modifier().style("margin-bottom:8px; margin-top:4px;"));
+                            .modifier(new Modifier().style("margin-bottom:6px; margin-top:3px;"));
 
                         unitListWidgets.add(unitBlock);
                     }
 
                     Widget unitSubtreeContainer = Div.of(unitListWidgets.toArray(new Widget[0]))
-                        .modifier(new Modifier().style("margin-left:18px; border-left: 2px dotted rgba(255,255,255,0.12); padding-left:12px; margin-top:6px;"));
+                        .modifier(new Modifier().style("margin-left:14px; border-left: 2px dotted rgba(255,255,255,0.12); padding-left:10px; margin-top:4px;"));
 
                     Widget engineBlock = Div.of(engHeaderRow, unitSubtreeContainer)
-                        .modifier(new Modifier().style("margin-bottom:12px; background:" + (isEngActive ? "rgba(30,41,59,0.7)" : "rgba(15,23,42,0.3)") + "; padding:8px 10px; border-radius:6px; border:1px solid rgba(255,255,255,0.04);"));
+                        .modifier(new Modifier().style("margin-bottom:8px; background:" + (isEngActive ? "rgba(30,41,59,0.7)" : "rgba(15,23,42,0.3)") + "; padding:6px 8px; border-radius:6px; border:1px solid rgba(255,255,255,0.04);"));
 
                     engineSubtreeWidgets.add(engineBlock);
                 }
@@ -1360,6 +1363,45 @@ public class StoreEnginesPage extends StoreTemplatePage {
         return Div.of(modals.toArray(new Widget[0]));
     }
 
+    private Widget createLabel(String text) {
+        return Label.of(text).modifier(new Modifier().style("display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;"));
+    }
+
+    private Widget createLabel(String text, String id) {
+        return Label.of(text).id(id).modifier(new Modifier().style("display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;"));
+    }
+
+    private TextField createTextInput(String name, String placeholder, String value, String color) {
+        TextField tf = TextField.of(name, placeholder != null ? placeholder : "");
+        if (value != null && !value.isEmpty()) tf.value(value);
+        String textColor = (color != null && !color.isEmpty()) ? color : "#f8fafc";
+        tf.modifier(new Modifier().style("width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:" + textColor + "; font-size:13px; box-sizing:border-box;"));
+        return tf;
+    }
+
+    private TextArea createTextArea(String name, int rows, String placeholder, String value) {
+        TextArea ta = TextArea.create().name(name).rows(rows);
+        if (placeholder != null && !placeholder.isEmpty()) ta.placeholder(placeholder);
+        if (value != null && !value.isEmpty()) ta.value(value);
+        ta.modifier(new Modifier().style("width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:12px; font-family:monospace; box-sizing:border-box;"));
+        return ta;
+    }
+
+    private Widget createSelectOne(String name, String id, String color, String onChange, Map<String, String> options, String selectedValue) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("<select name='").append(name).append("' ");
+        if (id != null && !id.isEmpty()) sb.append("id='").append(id).append("' ");
+        if (onChange != null && !onChange.isEmpty()) sb.append("onchange='").append(onChange).append("' ");
+        String textColor = (color != null && !color.isEmpty()) ? color : "#f8fafc";
+        sb.append("style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:").append(textColor).append("; font-size:13px; box-sizing:border-box;'>\n");
+        for (Map.Entry<String, String> opt : options.entrySet()) {
+            String sel = opt.getKey().equalsIgnoreCase(selectedValue) ? " selected" : "";
+            sb.append("  <option value='").append(opt.getKey()).append("'").append(sel).append(">").append(opt.getValue()).append("</option>\n");
+        }
+        sb.append("</select>");
+        return SelectOne.of(RawHtml.of(sb.toString()));
+    }
+
     private Widget createModalOverlay(String modalId, String width, String borderColor, Widget header, Widget content) {
         return Div.of(
             Div.of(header, content).modifier(new Modifier().cssClass("store-card")
@@ -1402,18 +1444,19 @@ public class StoreEnginesPage extends StoreTemplatePage {
     }
 
     private Widget createIdStrategySection(String engColor, String targetIdLabel, String targetIdPlaceholder) {
-        return Div.of(
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>ID Generation Strategy:</label>"),
-                RawHtml.of("<select name='id_gen_mode' onchange='handleIdModeChange(this)' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:" + engColor + "; font-size:13px; box-sizing:border-box;'>\n" +
-                    "  <option value='UUID' selected>1. UUID (Composite: CPU + Time + DB + UUID Entropy)</option>\n" +
-                    "  <option value='AUTOINCREMENT'>2. Autoincrementable (Sequential Counter: 1, 2, 3...)</option>\n" +
-                    "  <option value='MANUAL'>3. Manual Mode (Custom User Specified ID)</option>\n" +
-                    "</select>")
+        Map<String, String> idModes = new LinkedHashMap<>();
+        idModes.put("UUID", "1. UUID (Composite: CPU + Time + DB + UUID Entropy)");
+        idModes.put("AUTOINCREMENT", "2. Autoincrementable (Sequential Counter: 1, 2, 3...)");
+        idModes.put("MANUAL", "3. Manual Mode (Custom User Specified ID)");
+
+        return Inputs.of(
+            Inputs.of(
+                createLabel("ID Generation Strategy:"),
+                createSelectOne("id_gen_mode", "", engColor, "handleIdModeChange(this)", idModes, "UUID")
             ).modifier(new Modifier().style("margin-bottom:12px;")),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>" + targetIdLabel + "</label>"),
-                RawHtml.of("<input type='text' name='target_id' placeholder='" + targetIdPlaceholder + "' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>")
+            Inputs.of(
+                createLabel(targetIdLabel),
+                createTextInput("target_id", targetIdPlaceholder, "", "#f8fafc")
             ).modifier(new Modifier().cssClass("manual-id-group").style("margin-bottom:12px; display:none;")),
             Div.of(
                 Icon.of("fas fa-fingerprint").modifier(new Modifier().style("color:" + engColor + "; margin-right:4px;")),
@@ -1425,11 +1468,11 @@ public class StoreEnginesPage extends StoreTemplatePage {
     private Widget createEditInfoBox(String dbSpanId, String badgeClass, String badgeText) {
         return Div.of(
             Div.of(
-                RawHtml.of("<strong>Database:</strong> "),
+                Span.of("Database: ").modifier(new Modifier().style("font-weight:bold;")),
                 Span.of("").id(dbSpanId).modifier(new Modifier().style("color:#f8fafc;"))
             ),
             Div.of(
-                RawHtml.of("<strong>Engine:</strong> "),
+                Span.of("Engine: ").modifier(new Modifier().style("font-weight:bold;")),
                 Span.of(badgeText).modifier(new Modifier().cssClass("store-badge " + badgeClass))
             )
         ).modifier(new Modifier().style("display:flex; gap:12px; margin-bottom:12px; font-size:12px; color:#94a3b8; background:rgba(255,255,255,0.03); padding:8px 12px; border-radius:6px;"));
@@ -1450,39 +1493,30 @@ public class StoreEnginesPage extends StoreTemplatePage {
     private Widget buildCreateDbModal(String engineKey, String actionUrl) {
         Widget header = createModalHeader("Create Multi-Model Database", "fas fa-database", "#38bdf8", "createDbModal");
 
-        String docSel = "DOCUMENT".equalsIgnoreCase(engineKey) ? "selected" : "";
-        String kvSel = "KEYVALUE".equalsIgnoreCase(engineKey) ? "selected" : "";
-        String vecSel = "VECTOR".equalsIgnoreCase(engineKey) ? "selected" : "";
-        String graphSel = "GRAPH".equalsIgnoreCase(engineKey) ? "selected" : "";
-        String tsSel = "TIMESERIES".equalsIgnoreCase(engineKey) ? "selected" : "";
-        String colSel = "COLUMN".equalsIgnoreCase(engineKey) ? "selected" : "";
-        String geoSel = "GEOSPATIAL".equalsIgnoreCase(engineKey) ? "selected" : "";
-        String objSel = "OBJECT".equalsIgnoreCase(engineKey) ? "selected" : "";
-        String recSel = "RECORDS".equalsIgnoreCase(engineKey) ? "selected" : "";
+        Map<String, String> enginesMap = new LinkedHashMap<>();
+        enginesMap.put("DOCUMENT", "DOCUMENT (NoSQL Collections)");
+        enginesMap.put("KEYVALUE", "KEYVALUE (Cache & Buckets)");
+        enginesMap.put("VECTOR", "VECTOR (AI Embeddings)");
+        enginesMap.put("GRAPH", "GRAPH (Node & Edge Labels)");
+        enginesMap.put("TIMESERIES", "TIMESERIES (IoT Metrics)");
+        enginesMap.put("COLUMN", "COLUMN (Column Families)");
+        enginesMap.put("GEOSPATIAL", "GEOSPATIAL (Spatial Layers)");
+        enginesMap.put("OBJECT", "OBJECT (BLOB Buckets)");
+        enginesMap.put("RECORDS", "RECORDS (Java 25 Record Tables)");
 
         Widget form = Form.of(
             InputHidden.of("action", "create_db"),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Database Name (StorageContainer):</label>"),
-                RawHtml.of("<input type='text' name='new_db_name' required placeholder='e.g. ecommerce_db, inventory_db' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>")
+            Inputs.of(
+                createLabel("Database Name (StorageContainer):"),
+                createTextInput("new_db_name", "e.g. ecommerce_db, inventory_db", "", "#f8fafc").attribute("required", "true")
             ).modifier(new Modifier().style("margin-bottom:12px;")),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Primary Multi-Model Engine Subtree:</label>"),
-                RawHtml.of("<select name='initial_engine' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#38bdf8; font-size:13px; box-sizing:border-box;'>\n" +
-                    "  <option value='DOCUMENT' " + docSel + ">DOCUMENT (NoSQL Collections)</option>\n" +
-                    "  <option value='KEYVALUE' " + kvSel + ">KEYVALUE (Cache & Buckets)</option>\n" +
-                    "  <option value='VECTOR' " + vecSel + ">VECTOR (AI Embeddings)</option>\n" +
-                    "  <option value='GRAPH' " + graphSel + ">GRAPH (Node & Edge Labels)</option>\n" +
-                    "  <option value='TIMESERIES' " + tsSel + ">TIMESERIES (IoT Metrics)</option>\n" +
-                    "  <option value='COLUMN' " + colSel + ">COLUMN (Column Families)</option>\n" +
-                    "  <option value='GEOSPATIAL' " + geoSel + ">GEOSPATIAL (Spatial Layers)</option>\n" +
-                    "  <option value='OBJECT' " + objSel + ">OBJECT (BLOB Buckets)</option>\n" +
-                    "  <option value='RECORDS' " + recSel + ">RECORDS (Java 25 Record Tables)</option>\n" +
-                    "</select>")
+            Inputs.of(
+                createLabel("Primary Multi-Model Engine Subtree:"),
+                createSelectOne("initial_engine", "", "#38bdf8", "", enginesMap, engineKey)
             ).modifier(new Modifier().style("margin-bottom:12px;")),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Initial Subtree Unit (Collection / Bucket / Table):</label>"),
-                RawHtml.of("<input type='text' name='initial_unit' value='default' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>")
+            Inputs.of(
+                createLabel("Initial Subtree Unit (Collection / Bucket / Table):"),
+                createTextInput("initial_unit", "", "default", "#f8fafc")
             ).modifier(new Modifier().style("margin-bottom:16px;")),
             createModalFormActions("createDbModal", "Initialize Database", "fas fa-plus", "")
         ).method("POST").action(actionUrl);
@@ -1493,30 +1527,31 @@ public class StoreEnginesPage extends StoreTemplatePage {
     private Widget buildCreateUnitModal(String targetDb, String actionUrl) {
         Widget header = createModalHeader("Add Subtree Unit (Level 2)", "fas fa-folder-plus", "#a855f7", "createUnitModal");
 
+        Map<String, String> unitTypes = new LinkedHashMap<>();
+        unitTypes.put("DOCUMENT", "DOCUMENT (Colección / Collection)");
+        unitTypes.put("KEYVALUE", "KEYVALUE (Namespace / Bucket)");
+        unitTypes.put("VECTOR", "VECTOR (Vector Index / Collection)");
+        unitTypes.put("GRAPH", "GRAPH (Node & Edge Label)");
+        unitTypes.put("TIMESERIES", "TIMESERIES (Metric / Series Feed)");
+        unitTypes.put("COLUMN", "COLUMN (Column Family / Table)");
+        unitTypes.put("GEOSPATIAL", "GEOSPATIAL (Spatial Layer)");
+        unitTypes.put("OBJECT", "OBJECT (Storage Bucket / Container)");
+        unitTypes.put("RECORDS", "RECORDS (Record Table / Schema)");
+
         Widget form = Form.of(
             InputHidden.of("action", "create_unit"),
             InputHidden.of("target_db", targetDb),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Target Database:</label>"),
-                RawHtml.of("<input type='text' disabled value='" + targetDb + "' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.1); border-radius:6px; color:#38bdf8; font-size:13px; box-sizing:border-box;'/>")
+            Inputs.of(
+                createLabel("Target Database:"),
+                createTextInput("target_db_display", "", targetDb, "#38bdf8").attribute("disabled", "true")
             ).modifier(new Modifier().style("margin-bottom:12px;")),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Engine Subtree Type:</label>"),
-                RawHtml.of("<select name='engine_type' id='modalUnitEngineSelect' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'>\n" +
-                    "  <option value='DOCUMENT'>DOCUMENT (Colección / Collection)</option>\n" +
-                    "  <option value='KEYVALUE'>KEYVALUE (Namespace / Bucket)</option>\n" +
-                    "  <option value='VECTOR'>VECTOR (Vector Index / Collection)</option>\n" +
-                    "  <option value='GRAPH'>GRAPH (Node & Edge Label)</option>\n" +
-                    "  <option value='TIMESERIES'>TIMESERIES (Metric / Series Feed)</option>\n" +
-                    "  <option value='COLUMN'>COLUMN (Column Family / Table)</option>\n" +
-                    "  <option value='GEOSPATIAL'>GEOSPATIAL (Spatial Layer)</option>\n" +
-                    "  <option value='OBJECT'>OBJECT (Storage Bucket / Container)</option>\n" +
-                    "  <option value='RECORDS'>RECORDS (Record Table / Schema)</option>\n" +
-                    "</select>")
+            Inputs.of(
+                createLabel("Engine Subtree Type:"),
+                createSelectOne("engine_type", "modalUnitEngineSelect", "#f8fafc", "", unitTypes, "DOCUMENT")
             ).modifier(new Modifier().style("margin-bottom:12px;")),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;' id='modalUnitNameLabel'>Unit Name:</label>"),
-                RawHtml.of("<input type='text' name='unit_name' required placeholder='e.g. products, cache_layer, telemetry' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>")
+            Inputs.of(
+                createLabel("Unit Name:", "modalUnitNameLabel"),
+                createTextInput("unit_name", "e.g. products, cache_layer, telemetry", "", "#f8fafc").attribute("required", "true")
             ).modifier(new Modifier().style("margin-bottom:16px;")),
             createModalFormActions("createUnitModal", "Add Unit", "fas fa-plus", "#a855f7")
         ).method("POST").action(actionUrl);
@@ -1530,18 +1565,18 @@ public class StoreEnginesPage extends StoreTemplatePage {
         Widget form = Form.of(
             InputHidden.of("action", "insert_object"),
             InputHidden.of("target_db", targetDb),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Target Collection:</label>"),
-                RawHtml.of("<input type='text' name='target_coll' value='" + currentColl + "' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#38bdf8; font-size:13px; box-sizing:border-box;'/>")
+            Inputs.of(
+                createLabel("Target Collection:"),
+                createTextInput("target_coll", "", currentColl, "#38bdf8")
             ).modifier(new Modifier().style("margin-bottom:12px;")),
             createIdStrategySection("#38bdf8", "Custom Document ID:", "e.g. prod_1001, doc_special"),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Class / Schema (Optional):</label>"),
-                RawHtml.of("<input type='text' name='doc_class' placeholder='com.jettra.model.Customer' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>")
+            Inputs.of(
+                createLabel("Class / Schema (Optional):"),
+                createTextInput("doc_class", "com.jettra.model.Customer", "", "#f8fafc")
             ).modifier(new Modifier().style("margin-bottom:12px;")),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>JSON Payload:</label>"),
-                RawHtml.of("<textarea name='doc_payload' rows='5' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:12px; font-family:monospace; box-sizing:border-box;'>{\n  \"name\": \"Sample Document\",\n  \"status\": \"ACTIVE\",\n  \"rating\": 4.9\n}</textarea>")
+            Inputs.of(
+                createLabel("JSON Payload:"),
+                createTextArea("doc_payload", 5, "", "{\n  \"name\": \"Sample Document\",\n  \"status\": \"ACTIVE\",\n  \"rating\": 4.9\n}")
             ).modifier(new Modifier().style("margin-bottom:16px;")),
             createModalFormActions("addDocumentModal", "Save Document", "fas fa-plus", "")
         ).method("POST").action(JettraServer.resolvePath("/engines?engine=DOCUMENT"));
@@ -1555,19 +1590,19 @@ public class StoreEnginesPage extends StoreTemplatePage {
         Widget form = Form.of(
             InputHidden.of("action", "insert_object"),
             InputHidden.of("target_db", targetDb),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Bucket / Namespace:</label>"),
-                RawHtml.of("<input type='text' name='target_coll' value='default' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#10b981; font-size:13px; box-sizing:border-box;'/>")
+            Inputs.of(
+                createLabel("Bucket / Namespace:"),
+                createTextInput("target_coll", "", "default", "#10b981")
             ).modifier(new Modifier().style("margin-bottom:12px;")),
             createIdStrategySection("#10b981", "Custom Key Name:", "e.g. sess_token_99, config_app"),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>String or JSON Value:</label>"),
-                RawHtml.of("<textarea name='kv_value' rows='4' placeholder='Enter value to cache/store...' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:12px; font-family:monospace; box-sizing:border-box;'></textarea>")
+            Inputs.of(
+                createLabel("String or JSON Value:"),
+                createTextArea("kv_value", 4, "Enter value to cache/store...", "")
             ).modifier(new Modifier().style("margin-bottom:16px;")),
             createModalFormActions("addKeyValueModal", "Store Key-Value", "fas fa-save", "#10b981")
         ).method("POST").action(JettraServer.resolvePath("/engines?engine=KEYVALUE"));
 
-        return createModalOverlay("addKeyValueModal", "520px", "rgba(16,185,129,0.4)", header, form);
+        return createModalOverlay("addKeyValueModal", "520px", "rgba(160,185,129,0.4)", header, form);
     }
 
     private Widget buildAddVectorModal(String targetDb) {
@@ -1576,18 +1611,18 @@ public class StoreEnginesPage extends StoreTemplatePage {
         Widget form = Form.of(
             InputHidden.of("action", "insert_object"),
             InputHidden.of("target_db", targetDb),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Vector Index:</label>"),
-                RawHtml.of("<input type='text' name='target_coll' value='default' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#8b5cf6; font-size:13px; box-sizing:border-box;'/>")
+            Inputs.of(
+                createLabel("Vector Index:"),
+                createTextInput("target_coll", "", "default", "#8b5cf6")
             ).modifier(new Modifier().style("margin-bottom:12px;")),
             createIdStrategySection("#8b5cf6", "Custom Vector ID:", "e.g. vec_emb_001"),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Vector Coordinates (float array):</label>"),
-                RawHtml.of("<input type='text' name='vector_coords' value='0.12, 0.45, 0.88, 0.31, 0.65' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>")
+            Inputs.of(
+                createLabel("Vector Coordinates (float array):"),
+                createTextInput("vector_coords", "", "0.12, 0.45, 0.88, 0.31, 0.65", "#f8fafc")
             ).modifier(new Modifier().style("margin-bottom:12px;")),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Metadata / Payload JSON:</label>"),
-                RawHtml.of("<textarea name='vector_meta' rows='3' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:12px; font-family:monospace; box-sizing:border-box;'>{\"category\": \"AI Model\", \"source\": \"embeddings_v3\"}</textarea>")
+            Inputs.of(
+                createLabel("Metadata / Payload JSON:"),
+                createTextArea("vector_meta", 3, "", "{\"category\": \"AI Model\", \"source\": \"embeddings_v3\"}")
             ).modifier(new Modifier().style("margin-bottom:16px;")),
             createModalFormActions("addVectorModal", "Insert Vector", "fas fa-project-diagram", "#8b5cf6")
         ).method("POST").action(JettraServer.resolvePath("/engines?engine=VECTOR"));
@@ -1598,23 +1633,27 @@ public class StoreEnginesPage extends StoreTemplatePage {
     private Widget buildAddGraphModal(String targetDb) {
         Widget header = createModalHeader("[+ Add Vertex / Edge]", "fas fa-share-alt", "#ec4899", "addGraphModal");
 
+        Map<String, String> graphModes = new LinkedHashMap<>();
+        graphModes.put("node", "Vertex (Node)");
+        graphModes.put("edge", "Edge (Relationship)");
+
         Widget form = Form.of(
             InputHidden.of("action", "insert_object"),
             InputHidden.of("target_db", targetDb),
             Div.of(
-                Div.of(
-                    RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Element Type:</label>"),
-                    RawHtml.of("<select name='graph_mode' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#ec4899; font-size:13px; box-sizing:border-box;'><option value='node'>Vertex (Node)</option><option value='edge'>Edge (Relationship)</option></select>")
+                Inputs.of(
+                    createLabel("Element Type:"),
+                    createSelectOne("graph_mode", "", "#ec4899", "", graphModes, "node")
                 ),
-                Div.of(
-                    RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Node Label / Group:</label>"),
-                    RawHtml.of("<input type='text' name='target_coll' value='User' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>")
+                Inputs.of(
+                    createLabel("Node Label / Group:"),
+                    createTextInput("target_coll", "", "User", "#f8fafc")
                 )
             ).modifier(new Modifier().style("display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px;")),
             createIdStrategySection("#ec4899", "Custom Vertex ID:", "e.g. user_node_101"),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Graph Properties JSON:</label>"),
-                RawHtml.of("<textarea name='node_props' rows='3' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:12px; font-family:monospace; box-sizing:border-box;'>{\"name\": \"Alice\", \"role\": \"Admin\"}</textarea>")
+            Inputs.of(
+                createLabel("Graph Properties JSON:"),
+                createTextArea("node_props", 3, "", "{\"name\": \"Alice\", \"role\": \"Admin\"}")
             ).modifier(new Modifier().style("margin-bottom:16px;")),
             createModalFormActions("addGraphModal", "Save Graph Item", "fas fa-share-alt", "#ec4899")
         ).method("POST").action(JettraServer.resolvePath("/engines?engine=GRAPH"));
@@ -1628,28 +1667,28 @@ public class StoreEnginesPage extends StoreTemplatePage {
         Widget form = Form.of(
             InputHidden.of("action", "insert_object"),
             InputHidden.of("target_db", targetDb),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Metric Name:</label>"),
-                RawHtml.of("<input type='text' name='target_coll' value='telemetry' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#06b6d4; font-size:13px; box-sizing:border-box;'/>")
+            Inputs.of(
+                createLabel("Metric Name:"),
+                createTextInput("target_coll", "", "telemetry", "#06b6d4")
             ).modifier(new Modifier().style("margin-bottom:12px;")),
             createIdStrategySection("#06b6d4", "Custom Point ID:", "e.g. ts_pt_1001"),
             Div.of(
-                Div.of(
-                    RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Value (Double):</label>"),
-                    RawHtml.of("<input type='number' step='any' name='ts_value' value='98.6' required style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>")
+                Inputs.of(
+                    createLabel("Value (Double):"),
+                    createTextInput("ts_value", "", "98.6", "#f8fafc").attribute("type", "number").attribute("step", "any").attribute("required", "true")
                 ),
-                Div.of(
-                    RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Unit / Scale:</label>"),
-                    RawHtml.of("<input type='text' name='ts_unit' placeholder='celsius, ms, %' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>")
+                Inputs.of(
+                    createLabel("Unit / Scale:"),
+                    createTextInput("ts_unit", "celsius, ms, %", "", "#f8fafc")
                 )
             ).modifier(new Modifier().style("display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px;")),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Timestamp (ms):</label>"),
-                RawHtml.of("<input type='text' name='ts_timestamp' value='" + System.currentTimeMillis() + "' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>")
+            Inputs.of(
+                createLabel("Timestamp (ms):"),
+                createTextInput("ts_timestamp", "", String.valueOf(System.currentTimeMillis()), "#f8fafc")
             ).modifier(new Modifier().style("margin-bottom:12px;")),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Tags JSON:</label>"),
-                RawHtml.of("<textarea name='ts_tags' rows='2' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:12px; font-family:monospace; box-sizing:border-box;'>{\"sensor_id\": \"SN-01\", \"zone\": \"rack_A\"}</textarea>")
+            Inputs.of(
+                createLabel("Tags JSON:"),
+                createTextArea("ts_tags", 2, "", "{\"sensor_id\": \"SN-01\", \"zone\": \"rack_A\"}")
             ).modifier(new Modifier().style("margin-bottom:16px;")),
             createModalFormActions("addTimeSeriesModal", "Add Point", "fas fa-stopwatch", "#06b6d4")
         ).method("POST").action(JettraServer.resolvePath("/engines?engine=TIMESERIES"));
@@ -1663,14 +1702,14 @@ public class StoreEnginesPage extends StoreTemplatePage {
         Widget form = Form.of(
             InputHidden.of("action", "insert_object"),
             InputHidden.of("target_db", targetDb),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Column Family:</label>"),
-                RawHtml.of("<input type='text' name='target_coll' value='analytics' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f97316; font-size:13px; box-sizing:border-box;'/>")
+            Inputs.of(
+                createLabel("Column Family:"),
+                createTextInput("target_coll", "", "analytics", "#f97316")
             ).modifier(new Modifier().style("margin-bottom:12px;")),
             createIdStrategySection("#f97316", "Custom Row Key:", "e.g. row_2026_01"),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Column Data (JSON or col:val):</label>"),
-                RawHtml.of("<textarea name='col_data' rows='4' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:12px; font-family:monospace; box-sizing:border-box;'>{\"views\": 1520, \"status\": \"PROCESSED\", \"latency_p99\": 14.2}</textarea>")
+            Inputs.of(
+                createLabel("Column Data (JSON or col:val):"),
+                createTextArea("col_data", 4, "", "{\"views\": 1520, \"status\": \"PROCESSED\", \"latency_p99\": 14.2}")
             ).modifier(new Modifier().style("margin-bottom:16px;")),
             createModalFormActions("addColumnModal", "Insert Row", "fas fa-bars-staggered", "#f97316")
         ).method("POST").action(JettraServer.resolvePath("/engines?engine=COLUMN"));
@@ -1684,24 +1723,24 @@ public class StoreEnginesPage extends StoreTemplatePage {
         Widget form = Form.of(
             InputHidden.of("action", "insert_object"),
             InputHidden.of("target_db", targetDb),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Spatial Layer:</label>"),
-                RawHtml.of("<input type='text' name='target_coll' value='stores_layer' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#14b8a6; font-size:13px; box-sizing:border-box;'/>")
+            Inputs.of(
+                createLabel("Spatial Layer:"),
+                createTextInput("target_coll", "", "stores_layer", "#14b8a6")
             ).modifier(new Modifier().style("margin-bottom:12px;")),
             createIdStrategySection("#14b8a6", "Custom Feature ID:", "e.g. poi_station_01"),
             Div.of(
-                Div.of(
-                    RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Latitude (-90..90):</label>"),
-                    RawHtml.of("<input type='number' step='any' name='geo_lat' value='8.9833' required style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>")
+                Inputs.of(
+                    createLabel("Latitude (-90..90):"),
+                    createTextInput("geo_lat", "", "8.9833", "#f8fafc").attribute("type", "number").attribute("step", "any").attribute("required", "true")
                 ),
-                Div.of(
-                    RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Longitude (-180..180):</label>"),
-                    RawHtml.of("<input type='number' step='any' name='geo_lon' value='-79.5167' required style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>")
+                Inputs.of(
+                    createLabel("Longitude (-180..180):"),
+                    createTextInput("geo_lon", "", "-79.5167", "#f8fafc").attribute("type", "number").attribute("step", "any").attribute("required", "true")
                 )
             ).modifier(new Modifier().style("display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px;")),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Place Name / Metadata:</label>"),
-                RawHtml.of("<input type='text' name='geo_name' value='Metropolitan Hub' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>")
+            Inputs.of(
+                createLabel("Place Name / Metadata:"),
+                createTextInput("geo_name", "", "Metropolitan Hub", "#f8fafc")
             ).modifier(new Modifier().style("margin-bottom:16px;")),
             createModalFormActions("addGeoModal", "Save GIS Feature", "fas fa-location-dot", "#14b8a6")
         ).method("POST").action(JettraServer.resolvePath("/engines?engine=GEOSPATIAL"));
@@ -1715,18 +1754,18 @@ public class StoreEnginesPage extends StoreTemplatePage {
         Widget form = Form.of(
             InputHidden.of("action", "insert_object"),
             InputHidden.of("target_db", targetDb),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Storage Bucket:</label>"),
-                RawHtml.of("<input type='text' name='target_coll' value='media_bucket' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#a855f7; font-size:13px; box-sizing:border-box;'/>")
+            Inputs.of(
+                createLabel("Storage Bucket:"),
+                createTextInput("target_coll", "", "media_bucket", "#a855f7")
             ).modifier(new Modifier().style("margin-bottom:12px;")),
             createIdStrategySection("#a855f7", "Custom Object ID:", "e.g. media_video_100"),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>MIME Content-Type:</label>"),
-                RawHtml.of("<input type='text' name='obj_mime' value='application/json' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>")
+            Inputs.of(
+                createLabel("MIME Content-Type:"),
+                createTextInput("obj_mime", "", "application/json", "#f8fafc")
             ).modifier(new Modifier().style("margin-bottom:12px;")),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Payload / Raw Content:</label>"),
-                RawHtml.of("<textarea name='obj_payload' rows='4' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:12px; font-family:monospace; box-sizing:border-box;'>Binary BLOB chunk stream content</textarea>")
+            Inputs.of(
+                createLabel("Payload / Raw Content:"),
+                createTextArea("obj_payload", 4, "", "Binary BLOB chunk stream content")
             ).modifier(new Modifier().style("margin-bottom:16px;")),
             createModalFormActions("addObjectModal", "Save Object", "fas fa-box-archive", "#a855f7")
         ).method("POST").action(JettraServer.resolvePath("/engines?engine=OBJECT"));
@@ -1740,18 +1779,18 @@ public class StoreEnginesPage extends StoreTemplatePage {
         Widget form = Form.of(
             InputHidden.of("action", "insert_object"),
             InputHidden.of("target_db", targetDb),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Record Table:</label>"),
-                RawHtml.of("<input type='text' name='target_coll' value='employee_records' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f43f5e; font-size:13px; box-sizing:border-box;'/>")
+            Inputs.of(
+                createLabel("Record Table:"),
+                createTextInput("target_coll", "", "employee_records", "#f43f5e")
             ).modifier(new Modifier().style("margin-bottom:12px;")),
             createIdStrategySection("#f43f5e", "Custom Record ID:", "e.g. emp_101, rec_person_01"),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Java 25 Record Class:</label>"),
-                RawHtml.of("<input type='text' name='rec_class' value='com.jettra.model.PersonRecord' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>")
+            Inputs.of(
+                createLabel("Java 25 Record Class:"),
+                createTextInput("rec_class", "", "com.jettra.model.PersonRecord", "#f8fafc")
             ).modifier(new Modifier().style("margin-bottom:12px;")),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Record Components JSON:</label>"),
-                RawHtml.of("<textarea name='rec_payload' rows='4' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:12px; font-family:monospace; box-sizing:border-box;'>{\"name\": \"Carlos Ruiz\", \"role\": \"Lead Architect\", \"department\": \"Engineering\"}</textarea>")
+            Inputs.of(
+                createLabel("Record Components JSON:"),
+                createTextArea("rec_payload", 4, "", "{\"name\": \"Carlos Ruiz\", \"role\": \"Lead Architect\", \"department\": \"Engineering\"}")
             ).modifier(new Modifier().style("margin-bottom:16px;")),
             createModalFormActions("addRecordsModal", "Save Record", "fas fa-address-card", "#f43f5e")
         ).method("POST").action(JettraServer.resolvePath("/engines?engine=RECORDS"));
@@ -1765,20 +1804,20 @@ public class StoreEnginesPage extends StoreTemplatePage {
         Widget form = Form.of(
             InputHidden.of("action", "edit_object"),
             InputHidden.of("engine_type", "DOCUMENT"),
-            Div.of(RawHtml.of("<input type='hidden' name='target_db' id='editDocDbInput'/>")),
-            Div.of(RawHtml.of("<input type='hidden' name='target_id' id='editDocIdInput'/>")),
+            InputHidden.of("target_db", "").id("editDocDbInput"),
+            InputHidden.of("target_id", "").id("editDocIdInput"),
             createEditInfoBox("editDocDbDisplay", "badge-active", "DOCUMENT"),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Collection:</label>"),
-                RawHtml.of("<input type='text' name='target_coll' id='editDocCollInput' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#38bdf8; font-size:13px; box-sizing:border-box;'/>")
+            Inputs.of(
+                createLabel("Collection:"),
+                createTextInput("target_coll", "", "", "#38bdf8").id("editDocCollInput")
             ).modifier(new Modifier().style("margin-bottom:12px;")),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Class / Schema (Optional):</label>"),
-                RawHtml.of("<input type='text' name='doc_class' id='editDocClassInput' placeholder='com.jettra.model.Customer' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>")
+            Inputs.of(
+                createLabel("Class / Schema (Optional):"),
+                createTextInput("doc_class", "com.jettra.model.Customer", "", "#f8fafc").id("editDocClassInput")
             ).modifier(new Modifier().style("margin-bottom:12px;")),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>JSON Document Payload:</label>"),
-                RawHtml.of("<textarea name='doc_payload' id='editDocPayloadInput' rows='6' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:12px; font-family:monospace; box-sizing:border-box;'></textarea>")
+            Inputs.of(
+                createLabel("JSON Document Payload:"),
+                createTextArea("doc_payload", 6, "", "").id("editDocPayloadInput")
             ).modifier(new Modifier().style("margin-bottom:16px;")),
             createModalFormActions("editDocumentModal", "Save Changes (New Version)", "fas fa-save", "")
         ).method("POST").action(actionUrl);
@@ -1792,16 +1831,16 @@ public class StoreEnginesPage extends StoreTemplatePage {
         Widget form = Form.of(
             InputHidden.of("action", "edit_object"),
             InputHidden.of("engine_type", "KEYVALUE"),
-            Div.of(RawHtml.of("<input type='hidden' name='target_db' id='editKvDbInput'/>")),
-            Div.of(RawHtml.of("<input type='hidden' name='target_id' id='editKvIdInput'/>")),
+            InputHidden.of("target_db", "").id("editKvDbInput"),
+            InputHidden.of("target_id", "").id("editKvIdInput"),
             createEditInfoBox("editKvDbDisplay", "badge-kv", "KEYVALUE"),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Bucket / Namespace:</label>"),
-                RawHtml.of("<input type='text' name='target_coll' id='editKvCollInput' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#10b981; font-size:13px; box-sizing:border-box;'/>")
+            Inputs.of(
+                createLabel("Bucket / Namespace:"),
+                createTextInput("target_coll", "", "", "#10b981").id("editKvCollInput")
             ).modifier(new Modifier().style("margin-bottom:12px;")),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Stored Value / Payload:</label>"),
-                RawHtml.of("<textarea name='kv_value' id='editKvValueInput' rows='6' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:12px; font-family:monospace; box-sizing:border-box;'></textarea>")
+            Inputs.of(
+                createLabel("Stored Value / Payload:"),
+                createTextArea("kv_value", 6, "", "").id("editKvValueInput")
             ).modifier(new Modifier().style("margin-bottom:16px;")),
             createModalFormActions("editKeyValueModal", "Save Value (New Version)", "fas fa-save", "#10b981")
         ).method("POST").action(actionUrl);
@@ -1815,20 +1854,20 @@ public class StoreEnginesPage extends StoreTemplatePage {
         Widget form = Form.of(
             InputHidden.of("action", "edit_object"),
             InputHidden.of("engine_type", "VECTOR"),
-            Div.of(RawHtml.of("<input type='hidden' name='target_db' id='editVecDbInput'/>")),
-            Div.of(RawHtml.of("<input type='hidden' name='target_id' id='editVecIdInput'/>")),
+            InputHidden.of("target_db", "").id("editVecDbInput"),
+            InputHidden.of("target_id", "").id("editVecIdInput"),
             createEditInfoBox("editVecDbDisplay", "badge-vector", "VECTOR"),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Vector Index / Collection:</label>"),
-                RawHtml.of("<input type='text' name='target_coll' id='editVecCollInput' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#c084fc; font-size:13px; box-sizing:border-box;'/>")
+            Inputs.of(
+                createLabel("Vector Index / Collection:"),
+                createTextInput("target_coll", "", "", "#c084fc").id("editVecCollInput")
             ).modifier(new Modifier().style("margin-bottom:12px;")),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Vector Coordinates (float array):</label>"),
-                RawHtml.of("<input type='text' name='vector_coords' id='editVecCoordsInput' placeholder='0.12, 0.45, 0.88, 0.31' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>")
+            Inputs.of(
+                createLabel("Vector Coordinates (float array):"),
+                createTextInput("vector_coords", "0.12, 0.45, 0.88, 0.31", "", "#f8fafc").id("editVecCoordsInput")
             ).modifier(new Modifier().style("margin-bottom:12px;")),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Metadata JSON:</label>"),
-                RawHtml.of("<textarea name='vector_meta' id='editVecMetaInput' rows='4' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:12px; font-family:monospace; box-sizing:border-box;'></textarea>")
+            Inputs.of(
+                createLabel("Metadata JSON:"),
+                createTextArea("vector_meta", 4, "", "").id("editVecMetaInput")
             ).modifier(new Modifier().style("margin-bottom:16px;")),
             createModalFormActions("editVectorModal", "Save Vector (New Version)", "fas fa-save", "#a855f7")
         ).method("POST").action(actionUrl);
@@ -1842,16 +1881,16 @@ public class StoreEnginesPage extends StoreTemplatePage {
         Widget form = Form.of(
             InputHidden.of("action", "edit_object"),
             InputHidden.of("engine_type", "GRAPH"),
-            Div.of(RawHtml.of("<input type='hidden' name='target_db' id='editGraphDbInput'/>")),
-            Div.of(RawHtml.of("<input type='hidden' name='target_id' id='editGraphIdInput'/>")),
+            InputHidden.of("target_db", "").id("editGraphDbInput"),
+            InputHidden.of("target_id", "").id("editGraphIdInput"),
             createEditInfoBox("editGraphDbDisplay", "badge-graph", "GRAPH"),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Node Label / Group:</label>"),
-                RawHtml.of("<input type='text' name='target_coll' id='editGraphCollInput' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#ec4899; font-size:13px; box-sizing:border-box;'/>")
+            Inputs.of(
+                createLabel("Node Label / Group:"),
+                createTextInput("target_coll", "", "", "#ec4899").id("editGraphCollInput")
             ).modifier(new Modifier().style("margin-bottom:12px;")),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Graph Properties JSON:</label>"),
-                RawHtml.of("<textarea name='node_props' id='editGraphPropsInput' rows='5' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:12px; font-family:monospace; box-sizing:border-box;'></textarea>")
+            Inputs.of(
+                createLabel("Graph Properties JSON:"),
+                createTextArea("node_props", 5, "", "").id("editGraphPropsInput")
             ).modifier(new Modifier().style("margin-bottom:16px;")),
             createModalFormActions("editGraphModal", "Save Vertex (New Version)", "fas fa-save", "#ec4899")
         ).method("POST").action(actionUrl);
@@ -1865,30 +1904,30 @@ public class StoreEnginesPage extends StoreTemplatePage {
         Widget form = Form.of(
             InputHidden.of("action", "edit_object"),
             InputHidden.of("engine_type", "TIMESERIES"),
-            Div.of(RawHtml.of("<input type='hidden' name='target_db' id='editTsDbInput'/>")),
-            Div.of(RawHtml.of("<input type='hidden' name='target_id' id='editTsIdInput'/>")),
+            InputHidden.of("target_db", "").id("editTsDbInput"),
+            InputHidden.of("target_id", "").id("editTsIdInput"),
             createEditInfoBox("editTsDbDisplay", "badge-ts", "TIMESERIES"),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Metric Name / Series:</label>"),
-                RawHtml.of("<input type='text' name='target_coll' id='editTsCollInput' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#06b6d4; font-size:13px; box-sizing:border-box;'/>")
+            Inputs.of(
+                createLabel("Metric Name / Series:"),
+                createTextInput("target_coll", "", "", "#06b6d4").id("editTsCollInput")
             ).modifier(new Modifier().style("margin-bottom:12px;")),
             Div.of(
-                Div.of(
-                    RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Value (Double):</label>"),
-                    RawHtml.of("<input type='number' step='any' name='ts_value' id='editTsValueInput' required style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>")
+                Inputs.of(
+                    createLabel("Value (Double):"),
+                    createTextInput("ts_value", "", "", "#f8fafc").id("editTsValueInput").attribute("type", "number").attribute("step", "any").attribute("required", "true")
                 ),
-                Div.of(
-                    RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Unit / Scale:</label>"),
-                    RawHtml.of("<input type='text' name='ts_unit' id='editTsUnitInput' placeholder='celsius, ms, %' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>")
+                Inputs.of(
+                    createLabel("Unit / Scale:"),
+                    createTextInput("ts_unit", "celsius, ms, %", "", "#f8fafc").id("editTsUnitInput")
                 )
             ).modifier(new Modifier().style("display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px;")),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Timestamp (ms):</label>"),
-                RawHtml.of("<input type='text' name='ts_timestamp' id='editTsTimestampInput' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>")
+            Inputs.of(
+                createLabel("Timestamp (ms):"),
+                createTextInput("ts_timestamp", "", "", "#f8fafc").id("editTsTimestampInput")
             ).modifier(new Modifier().style("margin-bottom:12px;")),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Tags JSON:</label>"),
-                RawHtml.of("<textarea name='ts_tags' id='editTsTagsInput' rows='3' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:12px; font-family:monospace; box-sizing:border-box;'></textarea>")
+            Inputs.of(
+                createLabel("Tags JSON:"),
+                createTextArea("ts_tags", 3, "", "").id("editTsTagsInput")
             ).modifier(new Modifier().style("margin-bottom:16px;")),
             createModalFormActions("editTimeSeriesModal", "Save Point (New Version)", "fas fa-save", "#06b6d4")
         ).method("POST").action(actionUrl);
@@ -1902,16 +1941,16 @@ public class StoreEnginesPage extends StoreTemplatePage {
         Widget form = Form.of(
             InputHidden.of("action", "edit_object"),
             InputHidden.of("engine_type", "COLUMN"),
-            Div.of(RawHtml.of("<input type='hidden' name='target_db' id='editColDbInput'/>")),
-            Div.of(RawHtml.of("<input type='hidden' name='target_id' id='editColIdInput'/>")),
+            InputHidden.of("target_db", "").id("editColDbInput"),
+            InputHidden.of("target_id", "").id("editColIdInput"),
             createEditInfoBox("editColDbDisplay", "badge-column", "COLUMN"),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Column Family:</label>"),
-                RawHtml.of("<input type='text' name='target_coll' id='editColCollInput' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f97316; font-size:13px; box-sizing:border-box;'/>")
+            Inputs.of(
+                createLabel("Column Family:"),
+                createTextInput("target_coll", "", "", "#f97316").id("editColCollInput")
             ).modifier(new Modifier().style("margin-bottom:12px;")),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Column Data (JSON):</label>"),
-                RawHtml.of("<textarea name='col_data' id='editColDataInput' rows='5' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:12px; font-family:monospace; box-sizing:border-box;'></textarea>")
+            Inputs.of(
+                createLabel("Column Data (JSON):"),
+                createTextArea("col_data", 5, "", "").id("editColDataInput")
             ).modifier(new Modifier().style("margin-bottom:16px;")),
             createModalFormActions("editColumnModal", "Save Row (New Version)", "fas fa-save", "#f97316")
         ).method("POST").action(actionUrl);
@@ -1925,26 +1964,26 @@ public class StoreEnginesPage extends StoreTemplatePage {
         Widget form = Form.of(
             InputHidden.of("action", "edit_object"),
             InputHidden.of("engine_type", "GEOSPATIAL"),
-            Div.of(RawHtml.of("<input type='hidden' name='target_db' id='editGeoDbInput'/>")),
-            Div.of(RawHtml.of("<input type='hidden' name='target_id' id='editGeoIdInput'/>")),
+            InputHidden.of("target_db", "").id("editGeoDbInput"),
+            InputHidden.of("target_id", "").id("editGeoIdInput"),
             createEditInfoBox("editGeoDbDisplay", "badge-geo", "GEOSPATIAL"),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Spatial Layer:</label>"),
-                RawHtml.of("<input type='text' name='target_coll' id='editGeoCollInput' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#14b8a6; font-size:13px; box-sizing:border-box;'/>")
+            Inputs.of(
+                createLabel("Spatial Layer:"),
+                createTextInput("target_coll", "", "", "#14b8a6").id("editGeoCollInput")
             ).modifier(new Modifier().style("margin-bottom:12px;")),
             Div.of(
-                Div.of(
-                    RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Latitude (-90..90):</label>"),
-                    RawHtml.of("<input type='number' step='any' name='geo_lat' id='editGeoLatInput' required style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>")
+                Inputs.of(
+                    createLabel("Latitude (-90..90):"),
+                    createTextInput("geo_lat", "", "", "#f8fafc").id("editGeoLatInput").attribute("type", "number").attribute("step", "any").attribute("required", "true")
                 ),
-                Div.of(
-                    RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Longitude (-180..180):</label>"),
-                    RawHtml.of("<input type='number' step='any' name='geo_lon' id='editGeoLonInput' required style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>")
+                Inputs.of(
+                    createLabel("Longitude (-180..180):"),
+                    createTextInput("geo_lon", "", "", "#f8fafc").id("editGeoLonInput").attribute("type", "number").attribute("step", "any").attribute("required", "true")
                 )
             ).modifier(new Modifier().style("display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px;")),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Place Name / Metadata:</label>"),
-                RawHtml.of("<input type='text' name='geo_name' id='editGeoNameInput' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>")
+            Inputs.of(
+                createLabel("Place Name / Metadata:"),
+                createTextInput("geo_name", "", "", "#f8fafc").id("editGeoNameInput")
             ).modifier(new Modifier().style("margin-bottom:16px;")),
             createModalFormActions("editGeoModal", "Save GIS Feature (New Version)", "fas fa-save", "#14b8a6")
         ).method("POST").action(actionUrl);
@@ -1958,20 +1997,20 @@ public class StoreEnginesPage extends StoreTemplatePage {
         Widget form = Form.of(
             InputHidden.of("action", "edit_object"),
             InputHidden.of("engine_type", "OBJECT"),
-            Div.of(RawHtml.of("<input type='hidden' name='target_db' id='editObjDbInput'/>")),
-            Div.of(RawHtml.of("<input type='hidden' name='target_id' id='editObjIdInput'/>")),
+            InputHidden.of("target_db", "").id("editObjDbInput"),
+            InputHidden.of("target_id", "").id("editObjIdInput"),
             createEditInfoBox("editObjDbDisplay", "badge-object", "OBJECT"),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Storage Bucket:</label>"),
-                RawHtml.of("<input type='text' name='target_coll' id='editObjCollInput' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#a855f7; font-size:13px; box-sizing:border-box;'/>")
+            Inputs.of(
+                createLabel("Storage Bucket:"),
+                createTextInput("target_coll", "", "", "#a855f7").id("editObjCollInput")
             ).modifier(new Modifier().style("margin-bottom:12px;")),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>MIME Content-Type:</label>"),
-                RawHtml.of("<input type='text' name='obj_mime' id='editObjMimeInput' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>")
+            Inputs.of(
+                createLabel("MIME Content-Type:"),
+                createTextInput("obj_mime", "", "", "#f8fafc").id("editObjMimeInput")
             ).modifier(new Modifier().style("margin-bottom:12px;")),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Payload / Raw Content:</label>"),
-                RawHtml.of("<textarea name='obj_payload' id='editObjPayloadInput' rows='5' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:12px; font-family:monospace; box-sizing:border-box;'></textarea>")
+            Inputs.of(
+                createLabel("Payload / Raw Content:"),
+                createTextArea("obj_payload", 5, "", "").id("editObjPayloadInput")
             ).modifier(new Modifier().style("margin-bottom:16px;")),
             createModalFormActions("editObjectModal", "Save Object (New Version)", "fas fa-save", "#a855f7")
         ).method("POST").action(actionUrl);
@@ -1985,20 +2024,20 @@ public class StoreEnginesPage extends StoreTemplatePage {
         Widget form = Form.of(
             InputHidden.of("action", "edit_object"),
             InputHidden.of("engine_type", "RECORDS"),
-            Div.of(RawHtml.of("<input type='hidden' name='target_db' id='editRecDbInput'/>")),
-            Div.of(RawHtml.of("<input type='hidden' name='target_id' id='editRecIdInput'/>")),
+            InputHidden.of("target_db", "").id("editRecDbInput"),
+            InputHidden.of("target_id", "").id("editRecIdInput"),
             createEditInfoBox("editRecDbDisplay", "badge-records", "RECORDS"),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Record Table:</label>"),
-                RawHtml.of("<input type='text' name='target_coll' id='editRecCollInput' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f43f5e; font-size:13px; box-sizing:border-box;'/>")
+            Inputs.of(
+                createLabel("Record Table:"),
+                createTextInput("target_coll", "", "", "#f43f5e").id("editRecCollInput")
             ).modifier(new Modifier().style("margin-bottom:12px;")),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Java 25 Record Class:</label>"),
-                RawHtml.of("<input type='text' name='rec_class' id='editRecClassInput' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>")
+            Inputs.of(
+                createLabel("Java 25 Record Class:"),
+                createTextInput("rec_class", "", "", "#f8fafc").id("editRecClassInput")
             ).modifier(new Modifier().style("margin-bottom:12px;")),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Record Components JSON:</label>"),
-                RawHtml.of("<textarea name='rec_payload' id='editRecPayloadInput' rows='5' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:12px; font-family:monospace; box-sizing:border-box;'></textarea>")
+            Inputs.of(
+                createLabel("Record Components JSON:"),
+                createTextArea("rec_payload", 5, "", "").id("editRecPayloadInput")
             ).modifier(new Modifier().style("margin-bottom:16px;")),
             createModalFormActions("editRecordsModal", "Save Record (New Version)", "fas fa-save", "#f43f5e")
         ).method("POST").action(actionUrl);
@@ -2024,11 +2063,11 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
         Widget form = Form.of(
             InputHidden.of("action", "restore_version"),
-            Div.of(RawHtml.of("<input type='hidden' name='engine_type' id='restoreEngineTypeInput'/>")),
-            Div.of(RawHtml.of("<input type='hidden' name='target_db' id='restoreRecordDbInput'/>")),
-            Div.of(RawHtml.of("<input type='hidden' name='target_coll' id='restoreRecordCollInput'/>")),
-            Div.of(RawHtml.of("<input type='hidden' name='target_id' id='restoreRecordIdInput'/>")),
-            Div.of(RawHtml.of("<input type='hidden' name='version_ts' id='restoreVersionTsInput'/>")),
+            InputHidden.of("engine_type", "").id("restoreEngineTypeInput"),
+            InputHidden.of("target_db", "").id("restoreRecordDbInput"),
+            InputHidden.of("target_coll", "").id("restoreRecordCollInput"),
+            InputHidden.of("target_id", "").id("restoreRecordIdInput"),
+            InputHidden.of("version_ts", "").id("restoreVersionTsInput"),
             Paragraph.of("Select any previous snapshot version (ordered descending: newest to oldest) to rollback:").modifier(new Modifier().style("font-size:13px; color:#cbd5e1; margin-top:0;")),
             Div.of().id("universalVersionsContainer").modifier(new Modifier().style("max-height:240px; overflow-y:auto; margin-bottom:16px; border:1px solid rgba(255,255,255,0.08); border-radius:8px; background:#0f172a;")),
             Div.of(
@@ -2047,17 +2086,17 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
         Widget form = Form.of(
             InputHidden.of("action", "restore_version"),
-            Div.of(RawHtml.of("<input type='hidden' name='engine_type' id='confirmRestoreEngineInput'/>")),
-            Div.of(RawHtml.of("<input type='hidden' name='target_db' id='confirmRestoreDbInput'/>")),
-            Div.of(RawHtml.of("<input type='hidden' name='target_coll' id='confirmRestoreCollInput'/>")),
-            Div.of(RawHtml.of("<input type='hidden' name='target_id' id='confirmRestoreIdInput'/>")),
-            Div.of(RawHtml.of("<input type='hidden' name='version_ts' id='confirmRestoreTsInput'/>")),
+            InputHidden.of("engine_type", "").id("confirmRestoreEngineInput"),
+            InputHidden.of("target_db", "").id("confirmRestoreDbInput"),
+            InputHidden.of("target_coll", "").id("confirmRestoreCollInput"),
+            InputHidden.of("target_id", "").id("confirmRestoreIdInput"),
+            InputHidden.of("version_ts", "").id("confirmRestoreTsInput"),
             Div.of(
-                RawHtml.of("<p style='margin:0 0 8px 0;'>Are you sure you want to restore item version from timestamp <strong id='confirmRestoreTsDisplay' style='color:#c084fc;'></strong>?</p>"),
+                Paragraph.of(Text.of("Are you sure you want to restore item version from timestamp "), Span.of("").id("confirmRestoreTsDisplay").modifier(new Modifier().style("color:#c084fc; font-weight:bold;")), Text.of("?")).modifier(new Modifier().style("margin:0 0 8px 0;")),
                 Div.of(
-                    RawHtml.of("<span>Record ID: <strong id='confirmRestoreIdDisplay' style='color:#38bdf8;'></strong></span>"),
-                    RawHtml.of("<span style='margin-left:12px;'>Engine: <span id='confirmRestoreEngineDisplay' class='store-badge badge-active'></span></span>"),
-                    RawHtml.of("<span style='margin-left:12px;'>Date: <span id='confirmRestoreDateDisplay' style='color:#f8fafc;'></span></span>")
+                    Span.of(Text.of("Record ID: "), Span.of("").id("confirmRestoreIdDisplay").modifier(new Modifier().style("color:#38bdf8; font-weight:bold;"))),
+                    Span.of(Text.of("Engine: "), Span.of("").id("confirmRestoreEngineDisplay").modifier(new Modifier().cssClass("store-badge badge-active"))).modifier(new Modifier().style("margin-left:12px;")),
+                    Span.of(Text.of("Date: "), Span.of("").id("confirmRestoreDateDisplay").modifier(new Modifier().style("color:#f8fafc;"))).modifier(new Modifier().style("margin-left:12px;"))
                 ).modifier(new Modifier().style("font-size:11px; color:#cbd5e1;"))
             ).modifier(new Modifier().style("background:rgba(168,85,247,0.1); border-left:3px solid #a855f7; padding:12px 14px; border-radius:6px; margin-bottom:16px; font-size:13px; color:#f8fafc;")),
             Paragraph.of("The historical snapshot version will be restored as the active record.").modifier(new Modifier().style("font-size:12px; color:#94a3b8; margin:0 0 16px 0;")),
@@ -2072,16 +2111,16 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
         Widget form = Form.of(
             InputHidden.of("action", "delete_object"),
-            Div.of(RawHtml.of("<input type='hidden' name='engine_type' id='confirmDeleteEngineInput'/>")),
-            Div.of(RawHtml.of("<input type='hidden' name='target_db' id='confirmDeleteDbInput'/>")),
-            Div.of(RawHtml.of("<input type='hidden' name='target_coll' id='confirmDeleteCollInput'/>")),
-            Div.of(RawHtml.of("<input type='hidden' name='target_id' id='confirmDeleteIdInput'/>")),
+            InputHidden.of("engine_type", "").id("confirmDeleteEngineInput"),
+            InputHidden.of("target_db", "").id("confirmDeleteDbInput"),
+            InputHidden.of("target_coll", "").id("confirmDeleteCollInput"),
+            InputHidden.of("target_id", "").id("confirmDeleteIdInput"),
             Div.of(
-                RawHtml.of("<p style='margin:0 0 8px 0;'>Are you sure you want to permanently delete record <strong id='confirmDeleteIdDisplay' style='color:#ef4444;'></strong>?</p>"),
+                Paragraph.of(Text.of("Are you sure you want to permanently delete record "), Span.of("").id("confirmDeleteIdDisplay").modifier(new Modifier().style("color:#ef4444; font-weight:bold;")), Text.of("?")).modifier(new Modifier().style("margin:0 0 8px 0;")),
                 Div.of(
-                    RawHtml.of("<span>Engine: <strong id='confirmDeleteEngineDisplay' style='color:#f8fafc;'></strong></span>"),
-                    RawHtml.of("<span style='margin-left:12px;'>Database: <strong id='confirmDeleteDbDisplay' style='color:#38bdf8;'></strong></span>"),
-                    RawHtml.of("<span style='margin-left:12px;'>Unit: <strong id='confirmDeleteCollDisplay' style='color:#cbd5e1;'></strong></span>")
+                    Span.of(Text.of("Engine: "), Span.of("").id("confirmDeleteEngineDisplay").modifier(new Modifier().style("color:#f8fafc; font-weight:bold;"))),
+                    Span.of(Text.of("Database: "), Span.of("").id("confirmDeleteDbDisplay").modifier(new Modifier().style("color:#38bdf8; font-weight:bold;"))).modifier(new Modifier().style("margin-left:12px;")),
+                    Span.of(Text.of("Unit: "), Span.of("").id("confirmDeleteCollDisplay").modifier(new Modifier().style("color:#cbd5e1; font-weight:bold;"))).modifier(new Modifier().style("margin-left:12px;"))
                 ).modifier(new Modifier().style("font-size:11px; color:#cbd5e1;"))
             ).modifier(new Modifier().style("background:rgba(239,68,68,0.1); border-left:3px solid #ef4444; padding:12px 14px; border-radius:6px; margin-bottom:16px; font-size:13px; color:#f8fafc;")),
             Paragraph.of("This operation is immediate and removes the record from storage.").modifier(new Modifier().style("font-size:12px; color:#94a3b8; margin:0 0 16px 0;")),
@@ -2098,13 +2137,13 @@ public class StoreEnginesPage extends StoreTemplatePage {
             InputHidden.of("action", "query_object"),
             InputHidden.of("target_db", targetDb),
             InputHidden.of("target_coll", currentColl),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Lookup ID / Key Filter:</label>"),
-                RawHtml.of("<input type='text' name='target_id' placeholder='e.g. doc_101 or prefix*' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>")
+            Inputs.of(
+                createLabel("Lookup ID / Key Filter:"),
+                createTextInput("target_id", "e.g. doc_101 or prefix*", "", "#f8fafc")
             ).modifier(new Modifier().style("margin-bottom:12px;")),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>JSON Property Query (Key : Value):</label>"),
-                RawHtml.of("<input type='text' name='prop_filter' placeholder='tier: Platinum' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>")
+            Inputs.of(
+                createLabel("JSON Property Query (Key : Value):"),
+                createTextInput("prop_filter", "tier: Platinum", "", "#f8fafc")
             ).modifier(new Modifier().style("margin-bottom:16px;")),
             createModalFormActions("advancedSearchModal", "Execute Query", "fas fa-search", "")
         ).method("POST").action(actionUrl);
@@ -2115,30 +2154,31 @@ public class StoreEnginesPage extends StoreTemplatePage {
     private Widget buildCreateIndexModal(String actionUrl) {
         Widget header = createModalHeader("Create Secondary / Composite Index", "fas fa-bolt", "#eab308", "createIndexModal");
 
+        Map<String, String> indexTypes = new LinkedHashMap<>();
+        indexTypes.put("BTREE", "B-Tree (Balanced Index for equality & range queries)");
+        indexTypes.put("HASH", "Hash (O(1) exact equality lookup index)");
+        indexTypes.put("FULLTEXT", "Full-Text (Inverted index for token/keyword search)");
+        indexTypes.put("VECTOR_HNSW", "Vector HNSW (Hierarchical Navigable Small World for ANN)");
+        indexTypes.put("SPATIAL_2D", "Spatial 2D (QuadTree/Geohash spatial index)");
+
         Widget form = Form.of(
             InputHidden.of("action", "create_index"),
-            Div.of(RawHtml.of("<input type='hidden' name='target_db' id='createIndexDbInput'/>")),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Target Database:</label>"),
-                RawHtml.of("<input type='text' id='createIndexDbDisplay' disabled style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.1); border-radius:6px; color:#eab308; font-size:13px; box-sizing:border-box;'/>")
+            InputHidden.of("target_db", "").id("createIndexDbInput"),
+            Inputs.of(
+                createLabel("Target Database:"),
+                createTextInput("target_db_display", "", "", "#eab308").id("createIndexDbDisplay").attribute("disabled", "true")
             ).modifier(new Modifier().style("margin-bottom:12px;")),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Index Name:</label>"),
-                RawHtml.of("<input type='text' name='index_name' required placeholder='e.g. idx_email, idx_price, idx_coords' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>")
+            Inputs.of(
+                createLabel("Index Name:"),
+                createTextInput("index_name", "e.g. idx_email, idx_price, idx_coords", "", "#f8fafc").attribute("required", "true")
             ).modifier(new Modifier().style("margin-bottom:12px;")),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Indexed Field / Property:</label>"),
-                RawHtml.of("<input type='text' name='index_field' required placeholder='e.g. email, status, coordinates' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>")
+            Inputs.of(
+                createLabel("Indexed Field / Property:"),
+                createTextInput("index_field", "e.g. email, status, coordinates", "", "#f8fafc").attribute("required", "true")
             ).modifier(new Modifier().style("margin-bottom:12px;")),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Index Algorithm / Structure:</label>"),
-                RawHtml.of("<select name='index_type' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#fde047; font-size:13px; box-sizing:border-box;'>\n" +
-                    "  <option value='BTREE' selected>B-Tree (Balanced Index for equality & range queries)</option>\n" +
-                    "  <option value='HASH'>Hash (O(1) exact equality lookup index)</option>\n" +
-                    "  <option value='FULLTEXT'>Full-Text (Inverted index for token/keyword search)</option>\n" +
-                    "  <option value='VECTOR_HNSW'>Vector HNSW (Hierarchical Navigable Small World for ANN)</option>\n" +
-                    "  <option value='SPATIAL_2D'>Spatial 2D (QuadTree/Geohash spatial index)</option>\n" +
-                    "</select>")
+            Inputs.of(
+                createLabel("Index Algorithm / Structure:"),
+                createSelectOne("index_type", "", "#fde047", "", indexTypes, "BTREE")
             ).modifier(new Modifier().style("margin-bottom:16px;")),
             createModalFormActions("createIndexModal", "Build Index", "fas fa-bolt", "#eab308; color:#0f172a")
         ).method("POST").action(actionUrl);
@@ -2151,18 +2191,18 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
         Widget form = Form.of(
             InputHidden.of("action", "save_schema"),
-            Div.of(RawHtml.of("<input type='hidden' name='target_db' id='createSchemaDbInput'/>")),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Target Database:</label>"),
-                RawHtml.of("<input type='text' id='createSchemaDbDisplay' disabled style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.1); border-radius:6px; color:#38bdf8; font-size:13px; box-sizing:border-box;'/>")
+            InputHidden.of("target_db", "").id("createSchemaDbInput"),
+            Inputs.of(
+                createLabel("Target Database:"),
+                createTextInput("target_db_display", "", "", "#38bdf8").id("createSchemaDbDisplay").attribute("disabled", "true")
             ).modifier(new Modifier().style("margin-bottom:12px;")),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>Schema Class / Name:</label>"),
-                RawHtml.of("<input type='text' name='schema_name' required placeholder='e.g. com.enterprise.model.CustomerSchema' style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;'/>")
+            Inputs.of(
+                createLabel("Schema Class / Name:"),
+                createTextInput("schema_name", "e.g. com.enterprise.model.CustomerSchema", "", "#f8fafc").attribute("required", "true")
             ).modifier(new Modifier().style("margin-bottom:12px;")),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;'>JSON Schema Definition:</label>"),
-                RawHtml.of("<textarea name='schema_json' rows='5' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:12px; font-family:monospace; box-sizing:border-box;'>{\n  \"type\": \"object\",\n  \"required\": [\"name\", \"active\"],\n  \"properties\": {\n    \"name\": {\"type\": \"string\"},\n    \"active\": {\"type\": \"boolean\"}\n  }\n}</textarea>")
+            Inputs.of(
+                createLabel("JSON Schema Definition:"),
+                createTextArea("schema_json", 5, "", "{\n  \"type\": \"object\",\n  \"required\": [\"name\", \"active\"],\n  \"properties\": {\n    \"name\": {\"type\": \"string\"},\n    \"active\": {\"type\": \"boolean\"}\n  }\n}")
             ).modifier(new Modifier().style("margin-bottom:16px;")),
             createModalFormActions("createSchemaModal", "Register Schema", "fas fa-shield-alt", "#38bdf8")
         ).method("POST").action(actionUrl);
@@ -2172,41 +2212,60 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
     private Widget buildModalsScript() {
         String js = """
+  function setElementValues(map) {
+    for (var id in map) {
+      var el = document.getElementById(id);
+      if (el) {
+        if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') {
+          el.value = map[id];
+        } else {
+          el.innerText = map[id];
+        }
+      }
+    }
+  }
+
+  function decodeUtf8Base64(b64) {
+    if (!b64) return '';
+    try {
+      var bin = atob(b64);
+      var bytes = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      return new TextDecoder('utf-8').decode(bytes);
+    } catch (e) {
+      try { return atob(b64); } catch (e2) { return b64; }
+    }
+  }
+
   function openAddIndexModal(db) {
-    document.getElementById('createIndexDbInput').value = db;
-    document.getElementById('createIndexDbDisplay').value = db;
+    setElementValues({ createIndexDbInput: db, createIndexDbDisplay: db });
     document.getElementById('createIndexModal').style.display = 'flex';
   }
+
   function openAddSchemaModal(db) {
-    document.getElementById('createSchemaDbInput').value = db;
-    document.getElementById('createSchemaDbDisplay').value = db;
+    setElementValues({ createSchemaDbInput: db, createSchemaDbDisplay: db });
     document.getElementById('createSchemaModal').style.display = 'flex';
   }
+
   function openAddUnitModal(engine, label) {
-    document.getElementById('modalUnitEngineSelect').value = engine;
-    document.getElementById('modalUnitNameLabel').innerText = label + ' Name:';
+    setElementValues({ modalUnitEngineSelect: engine, modalUnitNameLabel: label + ' Name:' });
     document.getElementById('createUnitModal').style.display = 'flex';
   }
+
   function openAddObjectModal(engine, unit) {
     var modalMap = {
-      'DOCUMENT': 'addDocumentModal',
-      'KEYVALUE': 'addKeyValueModal',
-      'VECTOR': 'addVectorModal',
-      'GRAPH': 'addGraphModal',
-      'TIMESERIES': 'addTimeSeriesModal',
-      'COLUMN': 'addColumnModal',
-      'GEOSPATIAL': 'addGeoModal',
-      'OBJECT': 'addObjectModal',
-      'RECORDS': 'addRecordsModal'
+      DOCUMENT: 'addDocumentModal', KEYVALUE: 'addKeyValueModal', VECTOR: 'addVectorModal',
+      GRAPH: 'addGraphModal', TIMESERIES: 'addTimeSeriesModal', COLUMN: 'addColumnModal',
+      GEOSPATIAL: 'addGeoModal', OBJECT: 'addObjectModal', RECORDS: 'addRecordsModal'
     };
-    var modalId = modalMap[engine] || 'addDocumentModal';
-    var modal = document.getElementById(modalId);
+    var modal = document.getElementById(modalMap[engine] || 'addDocumentModal');
     if (modal) {
-      var unitInput = modal.querySelector('input[name="target_coll"]') || modal.querySelector('input[name="node_label"]');
+      var unitInput = modal.querySelector('input[name="target_coll"], input[name="node_label"]');
       if (unitInput && unit) unitInput.value = unit;
       modal.style.display = 'flex';
     }
   }
+
   function handleIdModeChange(selectElem) {
     var form = selectElem.closest('form');
     if (!form) return;
@@ -2232,145 +2291,42 @@ public class StoreEnginesPage extends StoreTemplatePage {
       if (icon) icon.className = 'fas fa-fingerprint';
     }
   }
-  function decodeUtf8Base64(b64) {
-    if (!b64) return '';
-    try {
-      var bin = atob(b64);
-      var bytes = new Uint8Array(bin.length);
-      for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-      return new TextDecoder('utf-8').decode(bytes);
-    } catch (e) {
-      try {
-        return atob(b64);
-      } catch (e2) {
-        return b64;
-      }
-    }
-  }
+
   function openUniversalEditModal(engine, db, unit, id, payloadB64) {
     var payload = decodeUtf8Base64(payloadB64);
     var parsed = null;
-    try {
-      if (typeof payload === 'string' && (payload.trim().startsWith('{') || payload.trim().startsWith('['))) {
-        parsed = JSON.parse(payload);
-      }
-    } catch (e) {}
+    try { if (typeof payload === 'string' && (payload.trim().startsWith('{') || payload.trim().startsWith('['))) parsed = JSON.parse(payload); } catch (e) {}
+    var pretty = parsed ? JSON.stringify(parsed, null, 2) : payload;
+    var p = parsed || {};
 
-    var prettyPayload = parsed ? JSON.stringify(parsed, null, 2) : payload;
+    var cfg = {
+      DOCUMENT:   { id: 'editDocumentModal',   vals: { editDocDbInput: db, editDocDbDisplay: db, editDocCollInput: unit || 'default', editDocIdInput: id, editDocIdDisplay: id, editDocClassInput: p._class || '', editDocPayloadInput: pretty } },
+      KEYVALUE:   { id: 'editKeyValueModal',   vals: { editKvDbInput: db, editKvDbDisplay: db, editKvCollInput: unit || 'default', editKvIdInput: id, editKvIdDisplay: id, editKvValueInput: payload } },
+      VECTOR:     { id: 'editVectorModal',     vals: { editVecDbInput: db, editVecDbDisplay: db, editVecCollInput: unit || 'default', editVecIdInput: id, editVecIdDisplay: id, editVecCoordsInput: (p.coordinates || p.embedding || p.vector || [0.12, 0.45, 0.88, 0.31]).join(', '), editVecMetaInput: pretty } },
+      GRAPH:      { id: 'editGraphModal',      vals: { editGraphDbInput: db, editGraphDbDisplay: db, editGraphCollInput: p.label || unit || 'Vertex', editGraphIdInput: id, editGraphIdDisplay: id, editGraphPropsInput: pretty } },
+      TIMESERIES: { id: 'editTimeSeriesModal', vals: { editTsDbInput: db, editTsDbDisplay: db, editTsCollInput: p.metric || unit || 'telemetry', editTsIdInput: id, editTsIdDisplay: id, editTsTimestampInput: p.timestamp || id, editTsValueInput: p.value !== undefined ? p.value : '25.4', editTsUnitInput: p.unit || 'celsius', editTsTagsInput: pretty } },
+      COLUMN:     { id: 'editColumnModal',     vals: { editColDbInput: db, editColDbDisplay: db, editColCollInput: p._family || unit || 'analytics', editColIdInput: id, editColIdDisplay: id, editColDataInput: pretty } },
+      GEOSPATIAL: { id: 'editGeoModal',        vals: { editGeoDbInput: db, editGeoDbDisplay: db, editGeoCollInput: p._layer || unit || 'stores_layer', editGeoIdInput: id, editGeoIdDisplay: id, editGeoLatInput: p.lat !== undefined ? p.lat : (p.latitude !== undefined ? p.latitude : '8.9824'), editGeoLonInput: p.lon !== undefined ? p.lon : (p.longitude !== undefined ? p.longitude : '-79.5199'), editGeoNameInput: p.name || id } },
+      OBJECT:     { id: 'editObjectModal',     vals: { editObjDbInput: db, editObjDbDisplay: db, editObjCollInput: p.bucket || unit || 'media_bucket', editObjIdInput: id, editObjIdDisplay: id, editObjMimeInput: p.mimeType || 'application/json', editObjPayloadInput: p.content || payload } },
+      RECORDS:    { id: 'editRecordsModal',    vals: { editRecDbInput: db, editRecDbDisplay: db, editRecCollInput: p._table || unit || 'default', editRecIdInput: id, editRecIdDisplay: id, editRecClassInput: p._class || 'com.jettra.model.PersonRecord', editRecPayloadInput: pretty } }
+    }[engine];
 
-    if (engine === 'DOCUMENT') {
-      document.getElementById('editDocDbInput').value = db;
-      document.getElementById('editDocDbDisplay').innerText = db;
-      document.getElementById('editDocCollInput').value = unit || 'default';
-      document.getElementById('editDocIdInput').value = id;
-      document.getElementById('editDocIdDisplay').innerText = id;
-      if (parsed && parsed._class) document.getElementById('editDocClassInput').value = parsed._class;
-      else document.getElementById('editDocClassInput').value = '';
-      document.getElementById('editDocPayloadInput').value = prettyPayload;
-      document.getElementById('editDocumentModal').style.display = 'flex';
-    } else if (engine === 'KEYVALUE') {
-      document.getElementById('editKvDbInput').value = db;
-      document.getElementById('editKvDbDisplay').innerText = db;
-      document.getElementById('editKvCollInput').value = unit || 'default';
-      document.getElementById('editKvIdInput').value = id;
-      document.getElementById('editKvIdDisplay').innerText = id;
-      document.getElementById('editKvValueInput').value = payload;
-      document.getElementById('editKeyValueModal').style.display = 'flex';
-    } else if (engine === 'VECTOR') {
-      document.getElementById('editVecDbInput').value = db;
-      document.getElementById('editVecDbDisplay').innerText = db;
-      document.getElementById('editVecCollInput').value = unit || 'default';
-      document.getElementById('editVecIdInput').value = id;
-      document.getElementById('editVecIdDisplay').innerText = id;
-      if (parsed && Array.isArray(parsed.coordinates)) {
-        document.getElementById('editVecCoordsInput').value = parsed.coordinates.join(', ');
-      } else if (parsed && Array.isArray(parsed.embedding)) {
-        document.getElementById('editVecCoordsInput').value = parsed.embedding.join(', ');
-      } else if (parsed && Array.isArray(parsed.vector)) {
-        document.getElementById('editVecCoordsInput').value = parsed.vector.join(', ');
-      } else {
-        document.getElementById('editVecCoordsInput').value = '0.12, 0.45, 0.88, 0.31';
-      }
-      document.getElementById('editVecMetaInput').value = prettyPayload;
-      document.getElementById('editVectorModal').style.display = 'flex';
-    } else if (engine === 'GRAPH') {
-      document.getElementById('editGraphDbInput').value = db;
-      document.getElementById('editGraphDbDisplay').innerText = db;
-      document.getElementById('editGraphCollInput').value = (parsed && parsed.label) ? parsed.label : (unit || 'Vertex');
-      document.getElementById('editGraphIdInput').value = id;
-      document.getElementById('editGraphIdDisplay').innerText = id;
-      document.getElementById('editGraphPropsInput').value = prettyPayload;
-      document.getElementById('editGraphModal').style.display = 'flex';
-    } else if (engine === 'TIMESERIES') {
-      document.getElementById('editTsDbInput').value = db;
-      document.getElementById('editTsDbDisplay').innerText = db;
-      document.getElementById('editTsCollInput').value = (parsed && parsed.metric) ? parsed.metric : (unit || 'telemetry');
-      document.getElementById('editTsIdInput').value = id;
-      document.getElementById('editTsIdDisplay').innerText = id;
-      document.getElementById('editTsTimestampInput').value = (parsed && parsed.timestamp) ? parsed.timestamp : id;
-      if (parsed && parsed.value !== undefined) document.getElementById('editTsValueInput').value = parsed.value;
-      else document.getElementById('editTsValueInput').value = '25.4';
-      if (parsed && parsed.unit) document.getElementById('editTsUnitInput').value = parsed.unit;
-      else document.getElementById('editTsUnitInput').value = 'celsius';
-      document.getElementById('editTsTagsInput').value = prettyPayload;
-      document.getElementById('editTimeSeriesModal').style.display = 'flex';
-    } else if (engine === 'COLUMN') {
-      document.getElementById('editColDbInput').value = db;
-      document.getElementById('editColDbDisplay').innerText = db;
-      document.getElementById('editColCollInput').value = (parsed && parsed._family) ? parsed._family : (unit || 'analytics');
-      document.getElementById('editColIdInput').value = id;
-      document.getElementById('editColIdDisplay').innerText = id;
-      document.getElementById('editColDataInput').value = prettyPayload;
-      document.getElementById('editColumnModal').style.display = 'flex';
-    } else if (engine === 'GEOSPATIAL') {
-      document.getElementById('editGeoDbInput').value = db;
-      document.getElementById('editGeoDbDisplay').innerText = db;
-      document.getElementById('editGeoCollInput').value = (parsed && parsed._layer) ? parsed._layer : (unit || 'stores_layer');
-      document.getElementById('editGeoIdInput').value = id;
-      document.getElementById('editGeoIdDisplay').innerText = id;
-      if (parsed && (parsed.lat !== undefined || parsed.latitude !== undefined)) {
-        document.getElementById('editGeoLatInput').value = parsed.lat !== undefined ? parsed.lat : parsed.latitude;
-      } else {
-        document.getElementById('editGeoLatInput').value = '8.9824';
-      }
-      if (parsed && (parsed.lon !== undefined || parsed.longitude !== undefined)) {
-        document.getElementById('editGeoLonInput').value = parsed.lon !== undefined ? parsed.lon : parsed.longitude;
-      } else {
-        document.getElementById('editGeoLonInput').value = '-79.5199';
-      }
-      if (parsed && parsed.name) document.getElementById('editGeoNameInput').value = parsed.name;
-      else document.getElementById('editGeoNameInput').value = id;
-      document.getElementById('editGeoModal').style.display = 'flex';
-    } else if (engine === 'OBJECT') {
-      document.getElementById('editObjDbInput').value = db;
-      document.getElementById('editObjDbDisplay').innerText = db;
-      document.getElementById('editObjCollInput').value = (parsed && parsed.bucket) ? parsed.bucket : (unit || 'media_bucket');
-      document.getElementById('editObjIdInput').value = id;
-      document.getElementById('editObjIdDisplay').innerText = id;
-      if (parsed && parsed.mimeType) document.getElementById('editObjMimeInput').value = parsed.mimeType;
-      else document.getElementById('editObjMimeInput').value = 'application/json';
-      document.getElementById('editObjPayloadInput').value = (parsed && parsed.content) ? parsed.content : payload;
-      document.getElementById('editObjectModal').style.display = 'flex';
-    } else if (engine === 'RECORDS') {
-      document.getElementById('editRecDbInput').value = db;
-      document.getElementById('editRecDbDisplay').innerText = db;
-      document.getElementById('editRecCollInput').value = (parsed && parsed._table) ? parsed._table : (unit || 'default');
-      document.getElementById('editRecIdInput').value = id;
-      document.getElementById('editRecIdDisplay').innerText = id;
-      if (parsed && parsed._class) document.getElementById('editRecClassInput').value = parsed._class;
-      else document.getElementById('editRecClassInput').value = 'com.jettra.model.PersonRecord';
-      document.getElementById('editRecPayloadInput').value = prettyPayload;
-      document.getElementById('editRecordsModal').style.display = 'flex';
+    if (cfg) {
+      setElementValues(cfg.vals);
+      document.getElementById(cfg.id).style.display = 'flex';
     }
   }
+
   function openUniversalRestoreModal(engine, db, unit, id, versionsJsonB64) {
     var versionsJsonStr = decodeUtf8Base64(versionsJsonB64);
-    document.getElementById('restoreEngineLabel').innerText = engine;
-    document.getElementById('restoreEngineTypeInput').value = engine;
-    document.getElementById('restoreRecordDbInput').value = db;
-    document.getElementById('restoreRecordCollInput').value = unit || 'default';
-    document.getElementById('restoreRecordIdInput').value = id;
-    document.getElementById('restoreRecordIdLabel').innerText = id;
+    setElementValues({
+      restoreEngineLabel: engine,
+      restoreEngineTypeInput: engine,
+      restoreRecordDbInput: db,
+      restoreRecordCollInput: unit || 'default',
+      restoreRecordIdInput: id,
+      restoreRecordIdLabel: id
+    });
     var container = document.getElementById('universalVersionsContainer');
     container.innerHTML = '';
     try {
@@ -2403,31 +2359,34 @@ public class StoreEnginesPage extends StoreTemplatePage {
     }
     document.getElementById('universalRestoreModal').style.display = 'flex';
   }
+
   function openConfirmRestoreModal(ts, formattedDate) {
-    var engine = document.getElementById('restoreEngineTypeInput').value;
-    var db = document.getElementById('restoreRecordDbInput').value;
-    var unit = document.getElementById('restoreRecordCollInput').value;
-    var id = document.getElementById('restoreRecordIdInput').value;
-    document.getElementById('confirmRestoreEngineInput').value = engine;
-    document.getElementById('confirmRestoreEngineDisplay').innerText = engine;
-    document.getElementById('confirmRestoreDbInput').value = db;
-    document.getElementById('confirmRestoreCollInput').value = unit || 'default';
-    document.getElementById('confirmRestoreIdInput').value = id;
-    document.getElementById('confirmRestoreIdDisplay').innerText = id;
-    document.getElementById('confirmRestoreTsInput').value = ts;
-    document.getElementById('confirmRestoreTsDisplay').innerText = ts;
-    document.getElementById('confirmRestoreDateDisplay').innerText = formattedDate || ts;
+    var get = function(id) { var el = document.getElementById(id); return el ? el.value : ''; };
+    setElementValues({
+      confirmRestoreEngineInput: get('restoreEngineTypeInput'),
+      confirmRestoreEngineDisplay: get('restoreEngineTypeInput'),
+      confirmRestoreDbInput: get('restoreRecordDbInput'),
+      confirmRestoreCollInput: get('restoreRecordCollInput') || 'default',
+      confirmRestoreIdInput: get('restoreRecordIdInput'),
+      confirmRestoreIdDisplay: get('restoreRecordIdInput'),
+      confirmRestoreTsInput: ts,
+      confirmRestoreTsDisplay: ts,
+      confirmRestoreDateDisplay: formattedDate || ts
+    });
     document.getElementById('confirmRestoreModal').style.display = 'flex';
   }
+
   function openUniversalDeleteModal(engine, db, unit, id) {
-    document.getElementById('confirmDeleteEngineInput').value = engine;
-    document.getElementById('confirmDeleteEngineDisplay').innerText = engine;
-    document.getElementById('confirmDeleteDbInput').value = db;
-    document.getElementById('confirmDeleteDbDisplay').innerText = db;
-    document.getElementById('confirmDeleteCollInput').value = unit || 'default';
-    document.getElementById('confirmDeleteCollDisplay').innerText = unit || 'default';
-    document.getElementById('confirmDeleteIdInput').value = id;
-    document.getElementById('confirmDeleteIdDisplay').innerText = id;
+    setElementValues({
+      confirmDeleteEngineInput: engine,
+      confirmDeleteEngineDisplay: engine,
+      confirmDeleteDbInput: db,
+      confirmDeleteDbDisplay: db,
+      confirmDeleteCollInput: unit || 'default',
+      confirmDeleteCollDisplay: unit || 'default',
+      confirmDeleteIdInput: id,
+      confirmDeleteIdDisplay: id
+    });
     document.getElementById('confirmDeleteModal').style.display = 'flex';
   }
 """;

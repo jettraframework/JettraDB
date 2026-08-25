@@ -88,51 +88,56 @@ public class App {
         }
         
         // ---------------------------------------------------------
-        // BOOTSTRAP & SEED DEMO MULTI-MODEL DATABASES
+        // BOOTSTRAP & SEED DEMO MULTI-MODEL DATABASES (IF EMPTY)
         // ---------------------------------------------------------
         try {
-            System.out.println("[Bootstrap] Initializing demo databases & components...");
-            
-            // 1. Records Engine Demo Database
-            RecordsEngine recordsEngine = (RecordsEngine) storageEngine.getEngine("RECORDS");
-            if (recordsEngine != null) {
-                io.jettra.json.JsonObject empRecord = new io.jettra.json.JsonObject();
-                empRecord.addProperty("id", "emp_101");
-                empRecord.addProperty("fullName", "Carlos Mendez");
-                empRecord.addProperty("department", "Core Engineering");
-                empRecord.addProperty("salary", 95000.0);
-                empRecord.addProperty("active", true);
-                recordsEngine.saveRecord("records_db", "emp_101", "com.enterprise.model.EmployeeRecord", empRecord);
+            System.out.println("[Bootstrap] Checking storage persistence status...");
+            if (storageEngine.getStorageCore().scanPrefix("").isEmpty()) {
+                System.out.println("[Bootstrap] Initializing demo databases & sample suite for all 9 storage engines...");
+                com.jettra.store.engine.samples.SampleDatasetManager sampleManager = new com.jettra.store.engine.samples.SampleDatasetManager(storageEngine);
+                sampleManager.loadAllDatasets();
 
-                io.jettra.json.JsonObject custRecord = new io.jettra.json.JsonObject();
-                custRecord.addProperty("id", "cust_201");
-                custRecord.addProperty("companyName", "Panama Global Logistics");
-                custRecord.addProperty("tier", "ENTERPRISE");
-                custRecord.addProperty("creditLimit", 500000.0);
-                recordsEngine.saveRecord("records_db", "cust_201", "com.enterprise.model.CustomerRecord", custRecord);
-                System.out.println("[Bootstrap] Seeded RECORDS engine: records_db [emp_101, cust_201]");
-            }
+                // 1. Records Engine Demo Database
+                RecordsEngine recordsEngine = (RecordsEngine) storageEngine.getEngine("RECORDS");
+                if (recordsEngine != null) {
+                    io.jettra.json.JsonObject empRecord = new io.jettra.json.JsonObject();
+                    empRecord.addProperty("id", "emp_101");
+                    empRecord.addProperty("fullName", "Carlos Mendez");
+                    empRecord.addProperty("department", "Core Engineering");
+                    empRecord.addProperty("salary", 95000.0);
+                    empRecord.addProperty("active", true);
+                    recordsEngine.saveRecord("records_db", "emp_101", "com.enterprise.model.EmployeeRecord", empRecord);
 
-            // 2. Document Engine Demo Database
-            DocumentEngine docEngine = (DocumentEngine) storageEngine.getEngine("DOCUMENT");
-            if (docEngine != null) {
-                io.jettra.json.JsonObject prodDoc = new io.jettra.json.JsonObject();
-                prodDoc.addProperty("sku", "SKU-9901");
-                prodDoc.addProperty("title", "High-Performance Cloud Server");
-                prodDoc.addProperty("price", 1299.99);
-                prodDoc.addProperty("inStock", true);
-                docEngine.insert("ecommerce_db", "default", "prod_9901", prodDoc);
-                System.out.println("[Bootstrap] Seeded DOCUMENT engine: ecommerce_db [prod_9901]");
-            }
+                    io.jettra.json.JsonObject custRecord = new io.jettra.json.JsonObject();
+                    custRecord.addProperty("id", "cust_201");
+                    custRecord.addProperty("companyName", "Panama Global Logistics");
+                    custRecord.addProperty("tier", "ENTERPRISE");
+                    custRecord.addProperty("creditLimit", 500000.0);
+                    recordsEngine.saveRecord("records_db", "cust_201", "com.enterprise.model.CustomerRecord", custRecord);
+                }
 
-            // 3. Vector Engine Demo Database
-            VectorEngine vecEngine = (VectorEngine) storageEngine.getEngine("VECTOR");
-            if (vecEngine != null) {
-                io.jettra.json.JsonObject vecMeta = new io.jettra.json.JsonObject();
-                vecMeta.addProperty("label", "Semantic Query Embedding");
-                vecMeta.addProperty("model", "text-embedding-3-small");
-                vecEngine.insertVector("ai_search_db", "vec_embedding_01", new float[]{0.15f, 0.88f, 0.42f, 0.91f}, vecMeta);
-                System.out.println("[Bootstrap] Seeded VECTOR engine: ai_search_db [vec_embedding_01]");
+                // 2. Document Engine Demo Database
+                DocumentEngine docEngine = (DocumentEngine) storageEngine.getEngine("DOCUMENT");
+                if (docEngine != null) {
+                    io.jettra.json.JsonObject prodDoc = new io.jettra.json.JsonObject();
+                    prodDoc.addProperty("sku", "SKU-9901");
+                    prodDoc.addProperty("title", "High-Performance Cloud Server");
+                    prodDoc.addProperty("price", 1299.99);
+                    prodDoc.addProperty("inStock", true);
+                    docEngine.insert("ecommerce_db", "default", "prod_9901", prodDoc);
+                }
+
+                // 3. Vector Engine Demo Database
+                VectorEngine vecEngine = (VectorEngine) storageEngine.getEngine("VECTOR");
+                if (vecEngine != null) {
+                    io.jettra.json.JsonObject vecMeta = new io.jettra.json.JsonObject();
+                    vecMeta.addProperty("label", "Semantic Query Embedding");
+                    vecMeta.addProperty("model", "text-embedding-3-small");
+                    vecEngine.insertVector("ai_search_db", "vec_embedding_01", new float[]{0.15f, 0.88f, 0.42f, 0.91f}, vecMeta);
+                }
+                System.out.println("[Bootstrap] Persistent databases initialized.");
+            } else {
+                System.out.println("[Bootstrap] Loaded active databases and records from persistent storage.");
             }
         } catch (Exception e) {
             System.err.println("[Bootstrap] Non-fatal seed note: " + e.getMessage());

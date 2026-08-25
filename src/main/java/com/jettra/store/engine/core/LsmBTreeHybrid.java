@@ -20,6 +20,7 @@ import java.util.concurrent.ConcurrentSkipListMap;
 public class LsmBTreeHybrid {
     
     private final Path storageDirectory;
+    private final Path journalFile;
     // In-memory MemTable for fast writes
     private final ConcurrentSkipListMap<String, byte[]> memTable;
     // In-memory index of on-disk records (Key -> Offset)
@@ -29,13 +30,63 @@ public class LsmBTreeHybrid {
     
     public LsmBTreeHybrid(Path storageDirectory) {
         this.storageDirectory = storageDirectory;
+        this.journalFile = storageDirectory.resolve("jettra_storage_wal.jettra");
         this.memTable = new ConcurrentSkipListMap<>();
         this.diskIndex = new ConcurrentHashMap<>();
         
         try {
+            if (!java.nio.file.Files.exists(storageDirectory)) {
+                java.nio.file.Files.createDirectories(storageDirectory);
+            }
             this.fileManager = new JettraFileManager(storageDirectory.resolve("data_0.jettra"));
         } catch (IOException e) {
             e.printStackTrace();
+        }
+
+        loadFromWal();
+    }
+
+    private void loadFromWal() {
+        if (!java.nio.file.Files.exists(journalFile)) {
+            return;
+        }
+        try (java.io.DataInputStream dis = new java.io.DataInputStream(
+                new java.io.BufferedInputStream(java.nio.file.Files.newInputStream(journalFile)))) {
+            while (dis.available() > 0) {
+                String key = dis.readUTF();
+                long ts = dis.readLong();
+                int len = dis.readInt();
+                byte[] data = new byte[len];
+                if (len > 0) {
+                    dis.readFully(data);
+                }
+                memTable.put(key + "@" + ts, data);
+            }
+            System.out.println("Restored " + memTable.size() + " versioned records from persistent storage at " + journalFile);
+        } catch (java.io.EOFException eof) {
+            // End of file reached
+        } catch (IOException e) {
+            System.err.println("Warning while loading persistent storage WAL: " + e.getMessage());
+        }
+    }
+
+    private synchronized void appendWal(String key, long ts, byte[] data) {
+        try {
+            if (!java.nio.file.Files.exists(storageDirectory)) {
+                java.nio.file.Files.createDirectories(storageDirectory);
+            }
+            try (java.io.DataOutputStream dos = new java.io.DataOutputStream(
+                    new java.io.BufferedOutputStream(new java.io.FileOutputStream(journalFile.toFile(), true)))) {
+                dos.writeUTF(key);
+                dos.writeLong(ts);
+                dos.writeInt(data != null ? data.length : 0);
+                if (data != null && data.length > 0) {
+                    dos.write(data);
+                }
+                dos.flush();
+            }
+        } catch (IOException e) {
+            System.err.println("Error writing to persistent storage WAL: " + e.getMessage());
         }
     }
 
@@ -56,6 +107,7 @@ public class LsmBTreeHybrid {
         // Construct a versioned key: "key@timestamp"
         String versionedKey = key + "@" + timestamp;
         memTable.put(versionedKey, data);
+        appendWal(key, timestamp, data);
         
         // If exceeds threshold, flush to Disk as a B-Tree SSTable.
         if (memTable.size() >= FLUSH_THRESHOLD) {
