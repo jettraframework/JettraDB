@@ -25,6 +25,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -367,14 +368,15 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     alertType = res.success() ? "badge-active" : "badge-raft";
                     targetDb = restoreDb;
                 } else if ("advanced_search".equalsIgnoreCase(action)) {
+                    String searchMode = params.getOrDefault("search_mode", "UNIVERSAL");
                     String searchEng = params.getOrDefault("search_engine", selectedEngine);
                     String searchDb = params.getOrDefault("target_db", targetDb);
                     String searchColl = params.getOrDefault("target_coll", "");
                     String searchKey = params.getOrDefault("search_key", params.getOrDefault("target_id", ""));
                     String searchKeyword = params.getOrDefault("search_keyword", "");
-                    queryResultDisplay = executeAdvancedSearch(searchEng, searchDb, searchColl, searchKey, searchKeyword);
+                    queryResultDisplay = executeAdvancedSearch(searchMode, searchEng, searchDb, searchColl, searchKey, searchKeyword, params);
                     targetDb = searchDb;
-                    alertMessage = "Advanced search executed on database [" + searchDb + "] (" + searchEng + ")!";
+                    alertMessage = "Búsqueda avanzada [" + searchMode + "] ejecutada en base de datos [" + searchDb + "]!";
                     alertType = "badge-engine";
                 }
             } catch (Exception e) {
@@ -393,18 +395,11 @@ public class StoreEnginesPage extends StoreTemplatePage {
             Text.of("Administer databases and manage native typed objects across all 9 multi-model engines with specialized controls.")
         ).modifier(new Modifier().style("margin: 4px 0 0 0; color: #94a3b8; font-size: 14px;"));
 
-        Widget backLink = Link.of(JettraServer.resolvePath("/dashboard"),
-            Icon.of("fas fa-arrow-left"),
-            Text.of(" Dashboard")
-        ).modifier(new Modifier().cssClass("btn-action btn-secondary"));
+        Widget titleBlock = Div.of(titleHeading, titleDesc)
+            .modifier(new Modifier().style("margin-bottom: 20px;"));
 
-        Widget titleBlock = Row.of(
-            Column.of(titleHeading, titleDesc),
-            Row.of(backLink).modifier(new Modifier().style("align-items: center;"))
-        ).modifier(new Modifier().style("justify-content: space-between; align-items: center; margin-bottom: 24px;"));
-
-        // Alert Banner (if any)
-        Widget alertWidget = alertMessage.isEmpty() ? Div.of() : Div.of(
+        // Status Alert / Flash message
+        Widget alertWidget = Row.of(
             Div.of(
                 Icon.of("fas fa-info-circle").modifier(new Modifier().style("color:#38bdf8; font-size:18px;")),
                 Span.of(alertMessage).modifier(new Modifier().style("font-size:14px; color:#f8fafc; font-weight:500;"))
@@ -415,8 +410,8 @@ public class StoreEnginesPage extends StoreTemplatePage {
         // Document Collections Management Section (if DOCUMENT engine selected)
         String currentCollection = params != null && params.containsKey("coll") ? params.get("coll") : "default";
 
-        // Hierarchical Tree View (JettraFlux Tree Component across all databases & engines)
-        Widget hierarchyTreeCard = createHierarchyTreeCard(selectedEngine, targetDb, currentCollection);
+        // Hierarchical Multi-Model Explorer (Tree or Table View Mode)
+        Widget hierarchyTreeCard = createHierarchyTreeCard(selectedEngine, targetDb, currentCollection, params);
 
         // Modals for Advanced Search, Document Edit, Version Recovery, Indexes and Schemas
         Widget modalsWidget = createEngineModals(selectedEngine, targetDb, currentCollection);
@@ -969,52 +964,352 @@ public class StoreEnginesPage extends StoreTemplatePage {
         }
     }
 
-    private String executeAdvancedSearch(String engineName, String db, String coll, String keyPattern, String keyword) {
+    private String executeAdvancedSearch(String searchMode, String engineName, String db, String coll, String keyPattern, String keyword, Map<String, String> params) {
         JsonObject result = new JsonObject();
         JsonArray matches = new JsonArray();
-        String prefix = ("ALL".equalsIgnoreCase(engineName) || engineName.isBlank()) ? "" : getPrefixForEngine(engineName);
-        String scanPrefix = prefix.isEmpty() ? (db + ":") : (prefix + db + ":");
-        
-        Map<String, byte[]> scanned = new LinkedHashMap<>(engine.getStorageCore().scanPrefix(scanPrefix));
-        if (prefix.isEmpty()) {
-            String[] prefixes = {"rec:", "doc:", "vec:", "graph:", "ts:", "col:", "kv:", "geo:", "obj:"};
-            for (String p : prefixes) {
-                scanned.putAll(engine.getStorageCore().scanPrefix(p + db + ":"));
+        long startTime = System.currentTimeMillis();
+
+        if (searchMode == null || searchMode.isBlank()) searchMode = "UNIVERSAL";
+        searchMode = searchMode.toUpperCase();
+
+        switch (searchMode) {
+            case "QUERY" -> {
+                String field = params != null ? params.getOrDefault("query_field", "").trim() : "";
+                String op = params != null ? params.getOrDefault("query_op", "EQUALS").trim().toUpperCase() : "EQUALS";
+                String val = params != null ? params.getOrDefault("query_val", "").trim() : "";
+
+                String scanPrefix = (coll != null && !coll.isBlank() && !coll.equals("default"))
+                    ? (db + ":" + coll + ":")
+                    : (db + ":");
+                Map<String, byte[]> scanned = new LinkedHashMap<>(engine.getStorageCore().scanPrefix(scanPrefix));
+                String[] pfxs = {"doc:", "rec:", "col:", "kv:", "obj:"};
+                for (String pfx : pfxs) {
+                    scanned.putAll(engine.getStorageCore().scanPrefix(pfx + scanPrefix));
+                }
+
+                for (Map.Entry<String, byte[]> entry : scanned.entrySet()) {
+                    String k = entry.getKey();
+                    if (k.contains("@") || entry.getValue() == null || entry.getValue().length == 0) continue;
+                    String payloadStr = new String(entry.getValue(), StandardCharsets.UTF_8).trim();
+                    if (payloadStr.isEmpty() || "__TOMBSTONE__".equals(payloadStr)) continue;
+
+                    boolean isMatch = false;
+                    String extractedVal = "";
+                    try {
+                        JsonObject obj = parseJsonOrWrap(payloadStr);
+                        if (!field.isEmpty()) {
+                            if (obj.has(field)) {
+                                Object elem = obj.get(field);
+                                extractedVal = elem != null ? elem.toString().replace("\"", "") : "";
+                                isMatch = evaluateQueryCondition(extractedVal, op, val);
+                            }
+                        } else {
+                            for (String propName : obj.keySet()) {
+                                Object elem = obj.get(propName);
+                                String propVal = elem != null ? elem.toString().replace("\"", "") : "";
+                                if (evaluateQueryCondition(propVal, op, val)) {
+                                    isMatch = true;
+                                    field = propName;
+                                    extractedVal = propVal;
+                                    break;
+                                }
+                            }
+                        }
+                    } catch (Exception e) {
+                        isMatch = payloadStr.contains(val);
+                    }
+
+                    if (isMatch) {
+                        JsonObject item = new JsonObject();
+                        item.addProperty("key", k);
+                        item.addProperty("matchedField", field);
+                        item.addProperty("fieldValue", extractedVal);
+                        item.addProperty("condition", field + " " + op + " " + val);
+                        item.addProperty("preview", payloadStr.length() > 160 ? payloadStr.substring(0, 160) + "..." : payloadStr);
+                        matches.add(item);
+                    }
+                }
+            }
+            case "VECTOR" -> {
+                String rawVector = params != null ? params.getOrDefault("vector_raw", "[0.12, 0.45, 0.88, 0.31]") : "[0.12, 0.45, 0.88, 0.31]";
+                String metric = params != null ? params.getOrDefault("vector_metric", "COSINE").toUpperCase() : "COSINE";
+                int topK = 10;
+                try { if (params != null) topK = Integer.parseInt(params.getOrDefault("vector_topk", "10")); } catch (Exception ignored) {}
+                float[] queryVec = parseFloats(rawVector);
+
+                Map<String, byte[]> vecKeys = engine.getStorageCore().scanPrefix("vec:" + db + ":");
+                vecKeys.putAll(engine.getStorageCore().scanPrefix("vec:"));
+
+                List<JsonObject> vectorResults = new ArrayList<>();
+                for (Map.Entry<String, byte[]> entry : vecKeys.entrySet()) {
+                    String k = entry.getKey();
+                    if (k.contains("@") || entry.getValue() == null || entry.getValue().length == 0) continue;
+                    String payload = new String(entry.getValue(), StandardCharsets.UTF_8);
+                    if (payload.isEmpty() || "__TOMBSTONE__".equals(payload)) continue;
+
+                    try {
+                        JsonObject obj = parseJsonOrWrap(payload);
+                        float[] itemVec = null;
+                        if (obj.has("coordinates")) {
+                            itemVec = parseFloats(obj.get("coordinates").toString());
+                        } else if (obj.has("embedding")) {
+                            itemVec = parseFloats(obj.get("embedding").toString());
+                        } else if (obj.has("vector")) {
+                            itemVec = parseFloats(obj.get("vector").toString());
+                        }
+
+                        if (itemVec != null && itemVec.length > 0) {
+                            double dist = metric.equals("COSINE") ? computeCosineDistance(queryVec, itemVec) : computeEuclideanDistance(queryVec, itemVec);
+                            JsonObject item = new JsonObject();
+                            item.addProperty("key", k);
+                            item.addProperty("metric", metric);
+                            item.addProperty("distance", Math.round(dist * 10000.0) / 10000.0);
+                            item.addProperty("similarityScore", Math.round((1.0 / (1.0 + dist)) * 10000.0) / 10000.0);
+                            item.addProperty("preview", payload.length() > 140 ? payload.substring(0, 140) + "..." : payload);
+                            vectorResults.add(item);
+                        }
+                    } catch (Exception ignored) {}
+                }
+
+                vectorResults.sort((a, b) -> {
+                    double d1 = a.has("distance") ? Double.parseDouble(a.get("distance").toString()) : 0.0;
+                    double d2 = b.has("distance") ? Double.parseDouble(b.get("distance").toString()) : 0.0;
+                    return Double.compare(d1, d2);
+                });
+                for (int i = 0; i < Math.min(topK, vectorResults.size()); i++) {
+                    matches.add(vectorResults.get(i));
+                }
+            }
+            case "GEOSPATIAL" -> {
+                double targetLat = 8.9824;
+                double targetLon = -79.5199;
+                double maxRadiusKm = 50.0;
+                try { if (params != null) targetLat = Double.parseDouble(params.getOrDefault("geo_lat", "8.9824")); } catch (Exception ignored) {}
+                try { if (params != null) targetLon = Double.parseDouble(params.getOrDefault("geo_lon", "-79.5199")); } catch (Exception ignored) {}
+                try { if (params != null) maxRadiusKm = Double.parseDouble(params.getOrDefault("geo_radius", "50.0")); } catch (Exception ignored) {}
+
+                Map<String, byte[]> geoKeys = engine.getStorageCore().scanPrefix("geo:" + db + ":");
+                geoKeys.putAll(engine.getStorageCore().scanPrefix("geo:"));
+
+                List<JsonObject> geoResults = new ArrayList<>();
+                for (Map.Entry<String, byte[]> entry : geoKeys.entrySet()) {
+                    String k = entry.getKey();
+                    if (k.contains("@") || entry.getValue() == null || entry.getValue().length == 0) continue;
+                    String payload = new String(entry.getValue(), StandardCharsets.UTF_8);
+                    if (payload.isEmpty() || "__TOMBSTONE__".equals(payload)) continue;
+
+                    try {
+                        JsonObject obj = parseJsonOrWrap(payload);
+                        double lat = 0.0;
+                        if (obj.has("lat")) {
+                            lat = Double.parseDouble(obj.get("lat").toString().replace("\"", ""));
+                        } else if (obj.has("latitude")) {
+                            lat = Double.parseDouble(obj.get("latitude").toString().replace("\"", ""));
+                        }
+                        double lon = 0.0;
+                        if (obj.has("lon")) {
+                            lon = Double.parseDouble(obj.get("lon").toString().replace("\"", ""));
+                        } else if (obj.has("longitude")) {
+                            lon = Double.parseDouble(obj.get("longitude").toString().replace("\"", ""));
+                        }
+                        double distKm = computeHaversineDistance(targetLat, targetLon, lat, lon);
+
+                        if (distKm <= maxRadiusKm) {
+                            JsonObject item = new JsonObject();
+                            item.addProperty("key", k);
+                            item.addProperty("location", lat + ", " + lon);
+                            item.addProperty("distanceKm", Math.round(distKm * 1000.0) / 1000.0);
+                            item.addProperty("name", obj.has("name") ? obj.get("name").toString().replace("\"", "") : k);
+                            item.addProperty("preview", payload.length() > 140 ? payload.substring(0, 140) + "..." : payload);
+                            geoResults.add(item);
+                        }
+                    } catch (Exception ignored) {}
+                }
+
+                geoResults.sort((a, b) -> {
+                    double d1 = a.has("distanceKm") ? Double.parseDouble(a.get("distanceKm").toString()) : 0.0;
+                    double d2 = b.has("distanceKm") ? Double.parseDouble(b.get("distanceKm").toString()) : 0.0;
+                    return Double.compare(d1, d2);
+                });
+                for (JsonObject jo : geoResults) {
+                    matches.add(jo);
+                }
+            }
+            case "TIMESERIES" -> {
+                long fromTs = 0;
+                long toTs = Long.MAX_VALUE;
+                try {
+                    String fromStr = params != null ? params.getOrDefault("ts_from", "") : "";
+                    if (!fromStr.isBlank()) fromTs = Long.parseLong(fromStr);
+                } catch (Exception ignored) {}
+                try {
+                    String toStr = params != null ? params.getOrDefault("ts_to", "") : "";
+                    if (!toStr.isBlank()) toTs = Long.parseLong(toStr);
+                } catch (Exception ignored) {}
+
+                Map<String, byte[]> tsKeys = engine.getStorageCore().scanPrefix("ts:" + db + ":");
+                tsKeys.putAll(engine.getStorageCore().scanPrefix("ts:"));
+
+                for (Map.Entry<String, byte[]> entry : tsKeys.entrySet()) {
+                    String k = entry.getKey();
+                    if (k.contains("@") || entry.getValue() == null || entry.getValue().length == 0) continue;
+                    String payload = new String(entry.getValue(), StandardCharsets.UTF_8);
+                    if (payload.isEmpty() || "__TOMBSTONE__".equals(payload)) continue;
+
+                    try {
+                        JsonObject obj = parseJsonOrWrap(payload);
+                        long ts = 0;
+                        if (obj.has("timestamp")) {
+                            ts = Long.parseLong(obj.get("timestamp").toString().replace("\"", ""));
+                        }
+                        if (ts >= fromTs && ts <= toTs) {
+                            JsonObject item = new JsonObject();
+                            item.addProperty("key", k);
+                            item.addProperty("timestamp", ts);
+                            item.addProperty("value", obj.has("value") ? obj.get("value").toString().replace("\"", "") : "");
+                            item.addProperty("unit", obj.has("unit") ? obj.get("unit").toString().replace("\"", "") : "");
+                            item.addProperty("preview", payload);
+                            matches.add(item);
+                        }
+                    } catch (Exception ignored) {}
+                }
+            }
+            case "GRAPH" -> {
+                String fromNode = params != null ? params.getOrDefault("graph_from_node", "").trim() : "";
+                String edgeLabel = params != null ? params.getOrDefault("graph_edge_label", "").trim() : "";
+
+                Map<String, byte[]> graphKeys = engine.getStorageCore().scanPrefix("graph:" + db + ":");
+                graphKeys.putAll(engine.getStorageCore().scanPrefix("graph:"));
+
+                for (Map.Entry<String, byte[]> entry : graphKeys.entrySet()) {
+                    String k = entry.getKey();
+                    if (k.contains("@") || entry.getValue() == null || entry.getValue().length == 0) continue;
+                    String payload = new String(entry.getValue(), StandardCharsets.UTF_8);
+                    if (payload.isEmpty() || "__TOMBSTONE__".equals(payload)) continue;
+
+                    if (!fromNode.isEmpty() && !k.contains(fromNode)) continue;
+                    if (!edgeLabel.isEmpty() && !k.contains(edgeLabel)) continue;
+
+                    JsonObject item = new JsonObject();
+                    item.addProperty("key", k);
+                    item.addProperty("type", k.contains(":edge:") ? "EDGE" : "NODE");
+                    item.addProperty("preview", payload.length() > 140 ? payload.substring(0, 140) + "..." : payload);
+                    matches.add(item);
+                }
+            }
+            default -> { // UNIVERSAL
+                String prefix = ("ALL".equalsIgnoreCase(engineName) || engineName.isBlank()) ? "" : getPrefixForEngine(engineName);
+                String scanPrefix = prefix.isEmpty() ? (db + ":") : (prefix + db + ":");
+                
+                Map<String, byte[]> scanned = new LinkedHashMap<>(engine.getStorageCore().scanPrefix(scanPrefix));
+                if (prefix.isEmpty()) {
+                    String[] prefixes = {"rec:", "doc:", "vec:", "graph:", "ts:", "col:", "kv:", "geo:", "obj:"};
+                    for (String p : prefixes) {
+                        scanned.putAll(engine.getStorageCore().scanPrefix(p + db + ":"));
+                    }
+                }
+                
+                String keyLower = (keyPattern != null) ? keyPattern.trim().toLowerCase().replace("*", "") : "";
+                String kwLower = (keyword != null) ? keyword.trim().toLowerCase() : "";
+                
+                for (Map.Entry<String, byte[]> entry : scanned.entrySet()) {
+                    String k = entry.getKey();
+                    if (k.contains("@") || entry.getValue() == null || entry.getValue().length == 0) continue;
+                    String payloadStr = new String(entry.getValue(), StandardCharsets.UTF_8);
+                    if (payloadStr.isEmpty() || "__TOMBSTONE__".equals(payloadStr)) continue;
+                    
+                    if (coll != null && !coll.isBlank() && !coll.equals("default") && !k.contains(":" + coll + ":") && !k.contains(":" + coll)) {
+                        continue;
+                    }
+                    
+                    if (!keyLower.isBlank() && !k.toLowerCase().contains(keyLower)) {
+                        continue;
+                    }
+                    
+                    if (!kwLower.isBlank() && !payloadStr.toLowerCase().contains(kwLower)) {
+                        continue;
+                    }
+                    
+                    JsonObject item = new JsonObject();
+                    item.addProperty("key", k);
+                    item.addProperty("length", entry.getValue().length);
+                    item.addProperty("preview", payloadStr.length() > 140 ? payloadStr.substring(0, 140) + "..." : payloadStr);
+                    matches.add(item);
+                }
             }
         }
-        
-        String keyLower = (keyPattern != null) ? keyPattern.trim().toLowerCase().replace("*", "") : "";
-        String kwLower = (keyword != null) ? keyword.trim().toLowerCase() : "";
-        
-        for (Map.Entry<String, byte[]> entry : scanned.entrySet()) {
-            String k = entry.getKey();
-            if (k.contains("@")) continue;
-            
-            if (coll != null && !coll.isBlank() && !k.contains(":" + coll + ":") && !k.contains(":" + coll)) {
-                continue;
-            }
-            
-            if (!keyLower.isBlank() && !k.toLowerCase().contains(keyLower)) {
-                continue;
-            }
-            
-            String payloadStr = new String(entry.getValue(), StandardCharsets.UTF_8);
-            if (!kwLower.isBlank() && !payloadStr.toLowerCase().contains(kwLower)) {
-                continue;
-            }
-            
-            JsonObject item = new JsonObject();
-            item.addProperty("key", k);
-            item.addProperty("length", entry.getValue().length);
-            item.addProperty("preview", payloadStr.length() > 140 ? payloadStr.substring(0, 140) + "..." : payloadStr);
-            matches.add(item);
-        }
-        
+
+        long elapsedMs = System.currentTimeMillis() - startTime;
+        result.addProperty("searchMode", searchMode);
         result.addProperty("database", db);
         result.addProperty("engine", engineName);
+        result.addProperty("executionTimeMs", elapsedMs);
         result.addProperty("matchCount", matches.size());
         result.add("matches", matches);
         return jsonParser.toJson(result);
+    }
+
+    private boolean evaluateQueryCondition(String actualVal, String op, String targetVal) {
+        if (actualVal == null) return false;
+        actualVal = actualVal.trim();
+        targetVal = targetVal.trim();
+
+        try {
+            double actualNum = Double.parseDouble(actualVal);
+            double targetNum = Double.parseDouble(targetVal);
+            return switch (op) {
+                case "GT", ">" -> actualNum > targetNum;
+                case "LT", "<" -> actualNum < targetNum;
+                case "GTE", ">=" -> actualNum >= targetNum;
+                case "LTE", "<=" -> actualNum <= targetNum;
+                case "NOT_EQUALS", "NE", "!=" -> actualNum != targetNum;
+                default -> actualNum == targetNum;
+            };
+        } catch (Exception e) {
+            return switch (op) {
+                case "CONTAINS" -> actualVal.toLowerCase().contains(targetVal.toLowerCase());
+                case "NOT_EQUALS", "NE", "!=" -> !actualVal.equalsIgnoreCase(targetVal);
+                case "STARTS_WITH" -> actualVal.toLowerCase().startsWith(targetVal.toLowerCase());
+                case "ENDS_WITH" -> actualVal.toLowerCase().endsWith(targetVal.toLowerCase());
+                default -> actualVal.equalsIgnoreCase(targetVal);
+            };
+        }
+    }
+
+    private double computeCosineDistance(float[] v1, float[] v2) {
+        if (v1 == null || v2 == null || v1.length == 0 || v2.length == 0) return 1.0;
+        int len = Math.min(v1.length, v2.length);
+        double dot = 0.0, normA = 0.0, normB = 0.0;
+        for (int i = 0; i < len; i++) {
+            dot += v1[i] * v2[i];
+            normA += v1[i] * v1[i];
+            normB += v2[i] * v2[i];
+        }
+        if (normA == 0.0 || normB == 0.0) return 1.0;
+        double sim = dot / (Math.sqrt(normA) * Math.sqrt(normB));
+        return Math.max(0.0, 1.0 - sim);
+    }
+
+    private double computeEuclideanDistance(float[] v1, float[] v2) {
+        if (v1 == null || v2 == null || v1.length == 0 || v2.length == 0) return 0.0;
+        int len = Math.min(v1.length, v2.length);
+        double sum = 0.0;
+        for (int i = 0; i < len; i++) {
+            double diff = v1[i] - v2[i];
+            sum += diff * diff;
+        }
+        return Math.sqrt(sum);
+    }
+
+    private double computeHaversineDistance(double lat1, double lon1, double lat2, double lon2) {
+        final double R = 6371.0;
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLon = Math.toRadians(lon2 - lon1);
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+            + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+            * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c;
     }
 
     private float[] parseFloats(String raw) {
@@ -1199,33 +1494,15 @@ public class StoreEnginesPage extends StoreTemplatePage {
         return unitMap;
     }
 
-    private Widget createHierarchyTreeCard(String selectedEngine, String targetDb, String currentColl) {
+    private Widget createHierarchyTreeCard(String selectedEngine, String targetDb, String currentColl, Map<String, String> params) {
         String actionUrl = JettraServer.resolvePath("/engines?engine=");
         Set<String> allDbs = discoverAllDatabases();
         if (!allDbs.contains(targetDb)) {
             allDbs.add(targetDb);
         }
 
-        Widget treeHeader = Row.of(
-            Header.of(3,
-                Icon.of("fas fa-sitemap").modifier(new Modifier().style("color:#38bdf8; margin-right:6px; font-size:12px;")),
-                Text.of("Multi-Model Storage Hierarchy Explorer")
-            ).modifier(new Modifier().style("margin:0; font-size:12px; font-weight:600;")),
-            Row.of(
-                Button.of(Icon.of("fas fa-database"), Text.of(" + DB"))
-                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "document.getElementById('createDbModal').style.display='flex'").cssClass("btn-action btn-primary").style("padding:2px 5px; font-size:8.5px; margin-right:3px;")),
-                Button.of(Icon.of("fas fa-folder-plus"), Text.of(" + Unit"))
-                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "document.getElementById('createUnitModal').style.display='flex'").cssClass("btn-action btn-secondary").style("padding:2px 5px; font-size:8.5px; margin-right:3px;")),
-                Button.of(Icon.of("fas fa-download"), Text.of(" Backup"))
-                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openBackupDbModal('" + escapeJs(targetDb) + "')").cssClass("btn-action btn-secondary").style("padding:2px 5px; font-size:8.5px; margin-right:3px; background:rgba(34,197,94,0.15); border-color:rgba(34,197,94,0.3); color:#4ade80;")),
-                Button.of(Icon.of("fas fa-upload"), Text.of(" Restore"))
-                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openRestoreDbModal('" + escapeJs(targetDb) + "')").cssClass("btn-action btn-secondary").style("padding:2px 5px; font-size:8.5px; margin-right:3px; background:rgba(168,85,247,0.15); border-color:rgba(168,85,247,0.3); color:#c084fc;")),
-                Button.of(Icon.of("fas fa-file-export"), Text.of(" Export"))
-                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openExportDataModal('" + escapeJs(selectedEngine) + "', '" + escapeJs(targetDb) + "', '" + escapeJs(currentColl) + "')").cssClass("btn-action btn-secondary").style("padding:2px 5px; font-size:8.5px; margin-right:3px; background:rgba(234,179,8,0.15); border-color:rgba(234,179,8,0.3); color:#fde047;")),
-                Button.of(Icon.of("fas fa-search-plus"), Text.of(" Búsqueda Avanzada"))
-                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openAdvancedSearchModal('" + escapeJs(selectedEngine) + "', '" + escapeJs(targetDb) + "', '" + escapeJs(currentColl) + "')").cssClass("btn-action btn-secondary").style("padding:2px 5px; font-size:8.5px; background:rgba(56,189,248,0.15); border-color:rgba(56,189,248,0.3); color:#38bdf8;"))
-            ).modifier(new Modifier().style("display:flex; align-items:center; flex-wrap:wrap; gap:2px;"))
-        ).modifier(new Modifier().style("justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:4px;"));
+        String viewMode = params != null ? params.getOrDefault("view_mode", "tree").toLowerCase() : "tree";
+        boolean isTableView = "table".equals(viewMode);
 
         String[][] allEngSpecs = {
             {"DOCUMENT", "#3b82f6", "fas fa-file-alt", "Collections", "Collection", "Document", "fas fa-file-code"},
@@ -1238,6 +1515,206 @@ public class StoreEnginesPage extends StoreTemplatePage {
             {"OBJECT", "#a855f7", "fas fa-archive", "Buckets", "Bucket", "BLOB Object", "fas fa-box-archive"},
             {"RECORDS", "#f43f5e", "fas fa-id-card", "Record Tables", "Record Table", "Record", "fas fa-address-card"}
         };
+
+        // Header toolbar with View Mode Switcher
+        Widget treeHeader = Row.of(
+            Row.of(
+                Header.of(3,
+                    Icon.of(isTableView ? "fas fa-table" : "fas fa-sitemap").modifier(new Modifier().style("color:#38bdf8; margin-right:6px; font-size:13px;")),
+                    Text.of("Multi-Model Storage Hierarchy Explorer")
+                ).modifier(new Modifier().style("margin:0; font-size:13px; font-weight:600;")),
+                Row.of(
+                    Button.of(Icon.of("fas fa-sitemap"), Text.of(" Tree View"))
+                        .modifier(new Modifier().attribute("type", "button").attribute("onclick", "location.href='" + actionUrl + selectedEngine + "&target_db=" + escapeJs(targetDb) + "&coll=" + escapeJs(currentColl) + "&view_mode=tree'").cssClass(!isTableView ? "btn-action btn-primary" : "btn-action btn-secondary").style("padding:3px 8px; font-size:9.5px; margin-left:12px; margin-right:4px;")),
+                    Button.of(Icon.of("fas fa-table"), Text.of(" Table View"))
+                        .modifier(new Modifier().attribute("type", "button").attribute("onclick", "location.href='" + actionUrl + selectedEngine + "&target_db=" + escapeJs(targetDb) + "&coll=" + escapeJs(currentColl) + "&view_mode=table'").cssClass(isTableView ? "btn-action btn-primary" : "btn-action btn-secondary").style("padding:3px 8px; font-size:9.5px; margin-right:4px;"))
+                ).modifier(new Modifier().style("display:flex; align-items:center;"))
+            ).modifier(new Modifier().style("display:flex; align-items:center; flex-wrap:wrap; gap:4px;")),
+            Row.of(
+                Button.of(Icon.of("fas fa-database"), Text.of(" + DB"))
+                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "document.getElementById('createDbModal').style.display='flex'").cssClass("btn-action btn-primary").style("padding:3px 6px; font-size:9px; margin-right:3px;")),
+                Button.of(Icon.of("fas fa-folder-plus"), Text.of(" + Unit"))
+                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "document.getElementById('createUnitModal').style.display='flex'").cssClass("btn-action btn-secondary").style("padding:3px 6px; font-size:9px; margin-right:3px;")),
+                Button.of(Icon.of("fas fa-download"), Text.of(" Backup"))
+                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openBackupDbModal('" + escapeJs(targetDb) + "')").cssClass("btn-action btn-secondary").style("padding:3px 6px; font-size:9px; margin-right:3px; background:rgba(34,197,94,0.15); border-color:rgba(34,197,94,0.3); color:#4ade80;")),
+                Button.of(Icon.of("fas fa-upload"), Text.of(" Restore"))
+                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openRestoreDbModal('" + escapeJs(targetDb) + "')").cssClass("btn-action btn-secondary").style("padding:3px 6px; font-size:9px; margin-right:3px; background:rgba(168,85,247,0.15); border-color:rgba(168,85,247,0.3); color:#c084fc;")),
+                Button.of(Icon.of("fas fa-file-export"), Text.of(" Export"))
+                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openExportDataModal('" + escapeJs(selectedEngine) + "', '" + escapeJs(targetDb) + "', '" + escapeJs(currentColl) + "')").cssClass("btn-action btn-secondary").style("padding:3px 6px; font-size:9px; margin-right:3px; background:rgba(234,179,8,0.15); border-color:rgba(234,179,8,0.3); color:#fde047;")),
+                Button.of(Icon.of("fas fa-search-plus"), Text.of(" Búsqueda Avanzada"))
+                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openAdvancedSearchModal('" + escapeJs(selectedEngine) + "', '" + escapeJs(targetDb) + "', '" + escapeJs(currentColl) + "')").cssClass("btn-action btn-secondary").style("padding:3px 6px; font-size:9px; background:rgba(56,189,248,0.15); border-color:rgba(56,189,248,0.3); color:#38bdf8;"))
+            ).modifier(new Modifier().style("display:flex; align-items:center; flex-wrap:wrap; gap:3px;"))
+        ).modifier(new Modifier().style("justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:6px;"));
+
+        if (isTableView) {
+            record FlatRecordItem(String engine, String color, String icon, String db, String unit, String id, int vCount, String payload, String payloadB64, String versionsB64) {}
+            List<FlatRecordItem> flatItems = new ArrayList<>();
+
+            for (String[] spec : allEngSpecs) {
+                String engName = spec[0];
+                String engColor = spec[1];
+                String engIcon = spec[2];
+                Map<String, List<String>> unitsAndItems = discoverUnitsAndItems(engName, targetDb);
+                for (Map.Entry<String, List<String>> entry : unitsAndItems.entrySet()) {
+                    String uName = entry.getKey();
+                    for (String itemId : entry.getValue()) {
+                        int vCount = getItemVersionCount(engName, targetDb, uName, itemId);
+                        String itemPayload = getItemPayload(engName, targetDb, uName, itemId);
+                        String itemVersions = getVersionsJson(engName, targetDb, uName, itemId);
+                        String payloadB64 = Base64.getEncoder().encodeToString(itemPayload.getBytes(StandardCharsets.UTF_8));
+                        String versionsB64 = Base64.getEncoder().encodeToString(itemVersions.getBytes(StandardCharsets.UTF_8));
+                        flatItems.add(new FlatRecordItem(engName, engColor, engIcon, targetDb, uName, itemId, vCount, itemPayload, payloadB64, versionsB64));
+                    }
+                }
+            }
+
+            int pageSize = 15;
+            try {
+                if (params != null && params.containsKey("table_size")) {
+                    pageSize = Math.max(5, Integer.parseInt(params.get("table_size")));
+                }
+            } catch (Exception ignored) {}
+
+            int currentPage = 1;
+            try {
+                if (params != null && params.containsKey("table_page")) {
+                    currentPage = Math.max(1, Integer.parseInt(params.get("table_page")));
+                }
+            } catch (Exception ignored) {}
+
+            int totalItems = flatItems.size();
+            int totalPages = Math.max(1, (int) Math.ceil((double) totalItems / pageSize));
+            if (currentPage > totalPages) currentPage = totalPages;
+
+            int startIndex = (currentPage - 1) * pageSize;
+            int endIndex = Math.min(startIndex + pageSize, totalItems);
+            List<FlatRecordItem> pageItems = totalItems > 0 ? flatItems.subList(startIndex, endIndex) : Collections.emptyList();
+
+            // Table Filter Bar
+            Widget quickFilterInput = TextField.of("table_quick_filter", "Quick filter by Record ID, unit, engine, or payload content...")
+                .id("tableExplorerQuickFilter")
+                .modifier(new Modifier()
+                    .attribute("onkeyup", "filterExplorerTable()")
+                    .style("flex:1; min-width:240px; padding:6px 12px; background:#0f172a; border:1px solid rgba(56,189,248,0.3); border-radius:6px; color:#f8fafc; font-size:12px;"));
+
+            Widget activeDbBadge = Span.of(
+                Icon.of("fas fa-database").modifier(new Modifier().style("margin-right:4px; color:#38bdf8;")),
+                Text.of("DB: " + targetDb)
+            ).modifier(new Modifier().style("color:#38bdf8; font-weight:bold; font-size:12px; background:rgba(56,189,248,0.1); border:1px solid rgba(56,189,248,0.25); padding:5px 10px; border-radius:6px;"));
+
+            Widget totalCountBadge = Span.of(totalItems + " Total Records").id("tableFilterVisibleCount")
+                .modifier(new Modifier().cssClass("store-badge badge-active").style("font-size:11px; padding:4px 8px;"));
+
+            Widget tableFilterBar = Div.of(
+                activeDbBadge,
+                quickFilterInput,
+                totalCountBadge
+            ).modifier(new Modifier().style("display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px; background:rgba(15,23,42,0.6); padding:8px 12px; border-radius:6px; border:1px solid rgba(255,255,255,0.05);"));
+
+            // Table Headers & Rows
+            List<Widget> tableRows = new ArrayList<>();
+
+            // Header Row
+            Widget tableHeaderRow = Div.of(
+                Span.of("ENGINE").modifier(new Modifier().style("width:120px; font-weight:700; color:#94a3b8; font-size:11px;")),
+                Span.of("DATABASE").modifier(new Modifier().style("width:110px; font-weight:700; color:#94a3b8; font-size:11px;")),
+                Span.of("UNIT / COLLECTION").modifier(new Modifier().style("width:140px; font-weight:700; color:#94a3b8; font-size:11px;")),
+                Span.of("RECORD ID").modifier(new Modifier().style("width:150px; font-weight:700; color:#94a3b8; font-size:11px;")),
+                Span.of("VERSION").modifier(new Modifier().style("width:70px; font-weight:700; color:#94a3b8; font-size:11px;")),
+                Span.of("PAYLOAD PREVIEW").modifier(new Modifier().style("flex:1; min-width:180px; font-weight:700; color:#94a3b8; font-size:11px;")),
+                Span.of("ACTIONS").modifier(new Modifier().style("width:130px; text-align:right; font-weight:700; color:#94a3b8; font-size:11px;"))
+            ).modifier(new Modifier().style("display:flex; align-items:center; padding:8px 12px; background:rgba(30,41,59,0.8); border-bottom:2px solid rgba(255,255,255,0.1); border-radius:6px 6px 0 0; gap:8px;"));
+
+            tableRows.add(tableHeaderRow);
+
+            if (pageItems.isEmpty()) {
+                tableRows.add(
+                    Div.of(
+                        Span.of("No records found in database [" + targetDb + "]. Click [+ DB], [+ Unit], or insert objects to begin.")
+                            .modifier(new Modifier().style("font-style:italic; color:#94a3b8; font-size:12px;"))
+                    ).modifier(new Modifier().style("padding:24px; text-align:center; background:#0f172a; border-bottom:1px solid rgba(255,255,255,0.05);"))
+                );
+            } else {
+                for (FlatRecordItem item : pageItems) {
+                    Widget engCell = Span.of(
+                        Icon.of(item.icon()).modifier(new Modifier().style("color:" + item.color() + "; margin-right:4px; font-size:11px;")),
+                        Span.of(item.engine()).modifier(new Modifier().style("font-weight:700; font-size:10.5px; color:" + item.color() + ";"))
+                    ).modifier(new Modifier().style("width:120px; display:flex; align-items:center;"));
+
+                    Widget dbCell = Span.of(item.db())
+                        .modifier(new Modifier().style("width:110px; color:#38bdf8; font-size:11px; font-weight:600;"));
+
+                    Widget unitCell = Span.of(
+                        Text.of("📁 "),
+                        Span.of(item.unit()).modifier(new Modifier().style("color:#cbd5e1; font-size:11px; font-weight:500;"))
+                    ).modifier(new Modifier().style("width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"));
+
+                    Widget idCell = Span.of(item.id())
+                        .modifier(new Modifier().style("width:150px; color:#f8fafc; font-family:monospace; font-weight:700; font-size:11.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"));
+
+                    Widget versionCell = Span.of("v" + item.vCount())
+                        .modifier(new Modifier().cssClass("store-badge").style("width:70px; background:rgba(56,189,248,0.15); color:#38bdf8; font-size:10px; padding:2px 6px; text-align:center;"));
+
+                    String preview = item.payload().length() > 65 ? item.payload().substring(0, 65) + "..." : item.payload();
+                    Widget previewCell = Span.of(preview)
+                        .modifier(new Modifier().style("flex:1; min-width:180px; color:#94a3b8; font-family:monospace; font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"));
+
+                    List<Widget> actionBtns = new ArrayList<>();
+                    actionBtns.add(
+                        Button.of(Icon.of("fas fa-eye"))
+                            .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openInspectRecordModal('" + escapeJs(item.engine()) + "', '" + escapeJs(item.db()) + "', '" + escapeJs(item.unit()) + "', '" + escapeJs(item.id()) + "', '" + item.payloadB64() + "', " + item.vCount() + ")").attribute("title", "Inspect record details").style("background:none; border:1px solid rgba(56,189,248,0.4); color:#38bdf8; font-size:10px; padding:3px 6px; border-radius:3px; cursor:pointer;"))
+                    );
+                    actionBtns.add(
+                        Button.of(Icon.of("fas fa-edit"))
+                            .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openUniversalEditModal('" + escapeJs(item.engine()) + "', '" + escapeJs(item.db()) + "', '" + escapeJs(item.unit()) + "', '" + escapeJs(item.id()) + "', '" + item.payloadB64() + "')").attribute("title", "Edit record").style("background:none; border:1px solid rgba(56,189,248,0.4); color:#38bdf8; font-size:10px; padding:3px 6px; border-radius:3px; cursor:pointer;"))
+                    );
+                    actionBtns.add(
+                        Button.of(Icon.of("fas fa-history"))
+                            .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openUniversalRestoreModal('" + escapeJs(item.engine()) + "', '" + escapeJs(item.db()) + "', '" + escapeJs(item.unit()) + "', '" + escapeJs(item.id()) + "', '" + item.versionsB64() + "')").attribute("title", "Version history v" + item.vCount()).style("background:none; border:1px solid rgba(168,85,247,0.4); color:#a855f7; font-size:10px; padding:3px 6px; border-radius:3px; cursor:pointer;"))
+                    );
+                    actionBtns.add(
+                        Button.of(Icon.of("fas fa-trash-alt"))
+                            .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openUniversalDeleteModal('" + escapeJs(item.engine()) + "', '" + escapeJs(item.db()) + "', '" + escapeJs(item.unit()) + "', '" + escapeJs(item.id()) + "')").attribute("title", "Delete record").style("background:none; border:1px solid rgba(239,68,68,0.4); color:#ef4444; font-size:10px; padding:3px 6px; border-radius:3px; cursor:pointer;"))
+                    );
+
+                    Widget actionsCell = Div.of(actionBtns.toArray(new Widget[0]))
+                        .modifier(new Modifier().style("width:130px; display:flex; justify-content:flex-end; align-items:center; gap:3px;"));
+
+                    Widget row = Div.of(engCell, dbCell, unitCell, idCell, versionCell, previewCell, actionsCell)
+                        .modifier(new Modifier().cssClass("explorer-table-row").style("display:flex; align-items:center; padding:8px 12px; border-bottom:1px solid rgba(255,255,255,0.05); background:#0f172a; gap:8px;"));
+
+                    tableRows.add(row);
+                }
+            }
+
+            Widget tableContainer = Div.of(tableRows.toArray(new Widget[0]))
+                .modifier(new Modifier().style("border:1px solid rgba(255,255,255,0.1); border-radius:6px; overflow-x:auto; margin-bottom:12px;"));
+
+            // Pagination Controls
+            String baseTableUrl = actionUrl + selectedEngine + "&target_db=" + targetDb + "&coll=" + currentColl + "&view_mode=table&table_size=" + pageSize;
+
+            List<Widget> pageButtons = new ArrayList<>();
+            if (currentPage > 1) {
+                pageButtons.add(Link.of(baseTableUrl + "&table_page=1", "« First").modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:3px 8px; font-size:11px; margin-right:3px;")));
+                pageButtons.add(Link.of(baseTableUrl + "&table_page=" + (currentPage - 1), "‹ Prev").modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:3px 8px; font-size:11px; margin-right:3px;")));
+            }
+            pageButtons.add(
+                Span.of("Page " + currentPage + " / " + totalPages).modifier(new Modifier().style("color:#38bdf8; font-weight:bold; font-size:11.5px; padding:3px 8px;"))
+            );
+            if (currentPage < totalPages) {
+                pageButtons.add(Link.of(baseTableUrl + "&table_page=" + (currentPage + 1), "Next ›").modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:3px 8px; font-size:11px; margin-left:3px;")));
+                pageButtons.add(Link.of(baseTableUrl + "&table_page=" + totalPages, "Last »").modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:3px 8px; font-size:11px; margin-left:3px;")));
+            }
+
+            Widget paginationFooter = Div.of(
+                Span.of("Showing " + (totalItems == 0 ? 0 : startIndex + 1) + " - " + endIndex + " of " + totalItems + " records (Page " + currentPage + " of " + totalPages + ")")
+                    .modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:500;")),
+                Div.of(pageButtons.toArray(new Widget[0])).modifier(new Modifier().style("display:flex; align-items:center; gap:2px;"))
+            ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; padding:6px 4px;"));
+
+            return Div.of(treeHeader, tableFilterBar, tableContainer, paginationFooter)
+                .modifier(new Modifier().cssClass("store-card").style("margin-bottom:20px; border: 1px solid rgba(56,189,248,0.3); background:rgba(18,24,38,0.9); padding:16px;"));
+        }
 
         List<Widget> dbCardWidgets = new ArrayList<>();
 
@@ -1337,26 +1814,24 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
                                 List<Widget> itemBtnWidgets = new ArrayList<>();
                                 itemBtnWidgets.add(
+                                    Button.of(Icon.of("fas fa-eye"))
+                                        .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openInspectRecordModal('" + escapeJs(engName) + "', '" + escapeJs(db) + "', '" + escapeJs(unitName) + "', '" + escapeJs(itemId) + "', '" + payloadB64 + "', " + vCount + ")").attribute("title", "Inspect record details").style("background:none; border:1px solid rgba(56,189,248,0.4); color:#38bdf8; font-size:10px; padding:3px 6px; border-radius:3px; cursor:pointer;"))
+                                );
+                                itemBtnWidgets.add(
                                     Button.of(Icon.of("fas fa-edit"))
-                                        .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openUniversalEditModal('" + escapeJs(engName) + "', '" + escapeJs(db) + "', '" + escapeJs(unitName) + "', '" + escapeJs(itemId) + "', '" + payloadB64 + "')").attribute("title", "Edit record").style("background:none; border:1px solid rgba(56,189,248,0.3); color:#38bdf8; font-size:6px; padding:1px 3px; border-radius:2px; cursor:pointer;"))
+                                        .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openUniversalEditModal('" + escapeJs(engName) + "', '" + escapeJs(db) + "', '" + escapeJs(unitName) + "', '" + escapeJs(itemId) + "', '" + payloadB64 + "')").attribute("title", "Edit record").style("background:none; border:1px solid rgba(56,189,248,0.4); color:#38bdf8; font-size:10px; padding:3px 6px; border-radius:3px; cursor:pointer;"))
                                 );
                                 itemBtnWidgets.add(
                                     Button.of(Icon.of("fas fa-history"))
-                                        .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openUniversalRestoreModal('" + escapeJs(engName) + "', '" + escapeJs(db) + "', '" + escapeJs(unitName) + "', '" + escapeJs(itemId) + "', '" + versionsB64 + "')").attribute("title", "Version history v" + vCount).style("background:none; border:1px solid rgba(168,85,247,0.3); color:#a855f7; font-size:6px; padding:1px 3px; border-radius:2px; cursor:pointer;"))
+                                        .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openUniversalRestoreModal('" + escapeJs(engName) + "', '" + escapeJs(db) + "', '" + escapeJs(unitName) + "', '" + escapeJs(itemId) + "', '" + versionsB64 + "')").attribute("title", "Version history v" + vCount).style("background:none; border:1px solid rgba(168,85,247,0.4); color:#a855f7; font-size:10px; padding:3px 6px; border-radius:3px; cursor:pointer;"))
                                 );
                                 itemBtnWidgets.add(
                                     Button.of(Icon.of("fas fa-trash-alt"))
-                                        .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openUniversalDeleteModal('" + escapeJs(engName) + "', '" + escapeJs(db) + "', '" + escapeJs(unitName) + "', '" + escapeJs(itemId) + "')").attribute("title", "Delete record").style("background:none; border:1px solid rgba(239,68,68,0.3); color:#ef4444; font-size:6px; padding:1px 3px; border-radius:2px; cursor:pointer;"))
+                                        .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openUniversalDeleteModal('" + escapeJs(engName) + "', '" + escapeJs(db) + "', '" + escapeJs(unitName) + "', '" + escapeJs(itemId) + "')").attribute("title", "Delete record").style("background:none; border:1px solid rgba(239,68,68,0.4); color:#ef4444; font-size:10px; padding:3px 6px; border-radius:3px; cursor:pointer;"))
                                 );
 
-                                if ("DOCUMENT".equalsIgnoreCase(engName)) {
-                                    itemBtnWidgets.add(Link.of(actionUrl + engName + "&target_db=" + db + "&coll=" + unitName + "&target_id=" + itemId, Icon.of("fas fa-eye")).attribute("title", "Select record").modifier(new Modifier().style("color:#94a3b8; text-decoration:none; font-size:6px; margin-left:2px;")));
-                                } else {
-                                    itemBtnWidgets.add(Link.of(actionUrl + engName + "&target_db=" + db + "&target_id=" + itemId, Icon.of("fas fa-eye")).attribute("title", "Inspect record").modifier(new Modifier().style("color:#94a3b8; text-decoration:none; font-size:6px; margin-left:2px;")));
-                                }
-
                                 Widget itemRight = Div.of(itemBtnWidgets.toArray(new Widget[0]))
-                                    .modifier(new Modifier().style("display:flex; align-items:center; gap:2px;"));
+                                    .modifier(new Modifier().style("display:flex; align-items:center; gap:3px;"));
 
                                 Widget itemRow = Div.of(itemLeft, itemRight)
                                     .modifier(new Modifier().style("font-size:6.5px; color:#94a3b8; display:flex; justify-content:space-between; align-items:center; padding:0; line-height:1.2;"));
@@ -1539,7 +2014,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
             .modifier(new Modifier().style("max-height:600px; overflow-y:auto; padding-right:4px;"));
 
         return Div.of(treeHeader, treeBody)
-            .modifier(new Modifier().cssClass("store-card").style("margin-bottom:20px; border: 1px solid rgba(56,189,248,0.3); background:rgba(18,24,38,0.9);"));
+            .modifier(new Modifier().cssClass("store-card").style("margin-bottom:20px; border: 1px solid rgba(56,189,248,0.3); background:rgba(18,24,38,0.9); padding:16px;"));
     }
 
     private Widget createEngineModals(String engineKey, String targetDb, String currentColl) {
@@ -1552,6 +2027,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
         modals.add(buildRestoreDbModal(actionUrl, targetDb));
         modals.add(buildConfirmDbRestoreModal(actionUrl));
         modals.add(buildExportDataModal(actionUrl, targetDb, currentColl, engineKey));
+        modals.add(buildInspectRecordModal(actionUrl));
         modals.add(buildAddDocumentModal(targetDb, currentColl));
         modals.add(buildAddKeyValueModal(targetDb));
         modals.add(buildAddVectorModal(targetDb));
@@ -2519,6 +2995,55 @@ public class StoreEnginesPage extends StoreTemplatePage {
         return createModalOverlay("exportDataModal", "560px", "rgba(245,158,11,0.4)", header, form);
     }
 
+    private Widget buildInspectRecordModal(String actionUrl) {
+        Widget header = createModalHeader("Inspect Record Details", "fas fa-eye", "#38bdf8", "inspectRecordModal");
+
+        Widget infoGrid = Div.of(
+            Div.of(
+                Span.of("Engine: ").modifier(new Modifier().style("color:#94a3b8; font-size:11px;")),
+                Span.of("").id("inspectRecordEngineDisplay").modifier(new Modifier().cssClass("store-badge badge-active").style("font-size:10px;"))
+            ).modifier(new Modifier().style("flex:1; min-width:110px;")),
+            Div.of(
+                Span.of("Database: ").modifier(new Modifier().style("color:#94a3b8; font-size:11px;")),
+                Span.of("").id("inspectRecordDbDisplay").modifier(new Modifier().style("color:#38bdf8; font-weight:bold; font-size:12px;"))
+            ).modifier(new Modifier().style("flex:1; min-width:110px;")),
+            Div.of(
+                Span.of("Unit/Coll: ").modifier(new Modifier().style("color:#94a3b8; font-size:11px;")),
+                Span.of("").id("inspectRecordCollDisplay").modifier(new Modifier().style("color:#cbd5e1; font-weight:bold; font-size:12px;"))
+            ).modifier(new Modifier().style("flex:1; min-width:110px;")),
+            Div.of(
+                Span.of("Record ID: ").modifier(new Modifier().style("color:#94a3b8; font-size:11px;")),
+                Span.of("").id("inspectRecordIdDisplay").modifier(new Modifier().style("color:#f8fafc; font-family:monospace; font-weight:bold; font-size:12px;"))
+            ).modifier(new Modifier().style("flex:1.5; min-width:140px;")),
+            Div.of(
+                Span.of("Version: ").modifier(new Modifier().style("color:#94a3b8; font-size:11px;")),
+                Span.of("").id("inspectRecordVersionDisplay").modifier(new Modifier().cssClass("store-badge badge-records").style("font-size:10px;"))
+            ).modifier(new Modifier().style("flex:0.8; min-width:80px;"))
+        ).modifier(new Modifier().style("display:flex; flex-wrap:wrap; gap:10px; background:rgba(15,23,42,0.8); border:1px solid rgba(56,189,248,0.2); padding:10px 14px; border-radius:6px; margin-bottom:14px; align-items:center;"));
+
+        Widget payloadLabel = createLabel("JSON Record Payload & Properties:");
+        Widget payloadArea = createTextArea("inspect_payload", 12, "", "{}")
+            .id("inspectRecordPayloadDisplay")
+            .modifier(new Modifier()
+                .attribute("readonly", "readonly")
+                .style("width:100%; height:260px; background:#0b1120; border:1px solid rgba(56,189,248,0.3); border-radius:6px; color:#38bdf8; font-family:monospace; font-size:12px; padding:12px; box-sizing:border-box; resize:vertical; line-height:1.4;"));
+
+        Widget actionButtons = Div.of(
+            Button.of(Icon.of("fas fa-copy"), Text.of(" Copy JSON"))
+                .id("btnCopyInspect")
+                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "copyInspectRecordPayload()").cssClass("btn-action btn-secondary").style("font-size:12px; padding:6px 14px; background:rgba(56,189,248,0.15); border-color:rgba(56,189,248,0.4); color:#38bdf8; margin-right:8px;")),
+            Button.of(Icon.of("fas fa-edit"), Text.of(" Edit Record"))
+                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "editFromInspectModal()").cssClass("btn-action btn-primary").style("font-size:12px; padding:6px 14px; margin-right:8px;")),
+            Button.of(Icon.of("fas fa-history"), Text.of(" Versions"))
+                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "historyFromInspectModal()").cssClass("btn-action btn-secondary").style("font-size:12px; padding:6px 14px; background:rgba(168,85,247,0.15); border-color:rgba(168,85,247,0.4); color:#c084fc; margin-right:8px;")),
+            Button.of(Text.of("Close"))
+                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "document.getElementById('inspectRecordModal').style.display='none'").cssClass("btn-action btn-secondary").style("font-size:12px; padding:6px 14px;"))
+        ).modifier(new Modifier().style("display:flex; justify-content:flex-end; align-items:center; margin-top:14px; flex-wrap:wrap; gap:6px;"));
+
+        Widget content = Div.of(infoGrid, payloadLabel, payloadArea, actionButtons);
+        return createModalOverlay("inspectRecordModal", "720px", "rgba(56,189,248,0.4)", header, content);
+    }
+
     private Widget buildAdvancedSearchModal(String actionUrl, String targetDb, String currentColl) {
         Widget header = createModalHeader("Búsqueda Avanzada Multi-Model Explorer", "fas fa-search-plus", "#38bdf8", "advancedSearchModal");
         Set<String> dbs = discoverAllDatabases();
@@ -2527,6 +3052,14 @@ public class StoreEnginesPage extends StoreTemplatePage {
             dbMap.put(d, d);
         }
         if (!dbMap.containsKey(targetDb)) dbMap.put(targetDb, targetDb);
+
+        Map<String, String> searchModes = new LinkedHashMap<>();
+        searchModes.put("UNIVERSAL", "Universal Multi-Model Key & Keyword Scan");
+        searchModes.put("QUERY", "Jettra Query Engine (JSON Field & Condition Filter)");
+        searchModes.put("VECTOR", "Vector Similarity Search (Cosine / Euclidean ANN)");
+        searchModes.put("GEOSPATIAL", "Geospatial Proximity Search (GPS Radius)");
+        searchModes.put("TIMESERIES", "TimeSeries Metrics Search (Timestamp & Range)");
+        searchModes.put("GRAPH", "Graph Traversal Search (Node & Edge Relations)");
 
         Map<String, String> enginesMap = new LinkedHashMap<>();
         enginesMap.put("ALL", "All Engines (Universal Scan)");
@@ -2540,6 +3073,106 @@ public class StoreEnginesPage extends StoreTemplatePage {
         enginesMap.put("OBJECT", "OBJECT (Buckets)");
         enginesMap.put("RECORDS", "RECORDS (Record Tables)");
 
+        Map<String, String> queryOps = new LinkedHashMap<>();
+        queryOps.put("EQUALS", "= Equals (Exact match)");
+        queryOps.put("CONTAINS", "Contains substring");
+        queryOps.put("GT", "> Greater than numeric");
+        queryOps.put("LT", "< Less than numeric");
+        queryOps.put("GTE", ">= Greater than or equal");
+        queryOps.put("LTE", "<= Less than or equal");
+        queryOps.put("NOT_EQUALS", "!= Not equals");
+        queryOps.put("STARTS_WITH", "Starts with prefix");
+
+        Map<String, String> vectorMetrics = new LinkedHashMap<>();
+        vectorMetrics.put("COSINE", "Cosine Similarity");
+        vectorMetrics.put("EUCLIDEAN", "Euclidean (L2) Distance");
+
+        Widget universalSection = Div.of(
+            Inputs.of(
+                createLabel("Storage Engine:"),
+                createSelectOne("search_engine", "", "#a855f7", "advSearchEngineSelect", enginesMap, "ALL")
+            ).modifier(new Modifier().style("margin-bottom:10px;")),
+            Inputs.of(
+                createLabel("Unit / Collection (optional):"),
+                createTextInput("target_coll", "e.g. users, default, sensor_temp", "", "#f8fafc").id("advSearchCollInput")
+            ).modifier(new Modifier().style("margin-bottom:10px;")),
+            Inputs.of(
+                createLabel("Record ID / Key Wildcard (e.g. doc_* or user_101):"),
+                createTextInput("search_key", "Key pattern or wildcard *", "", "#f8fafc").id("advSearchKeyInput")
+            ).modifier(new Modifier().style("margin-bottom:10px;")),
+            Inputs.of(
+                createLabel("Content Keyword Search (JSON payload match):"),
+                createTextInput("search_keyword", "e.g. VIP, active, John, 25.4", "", "#f8fafc").id("advSearchKeywordInput")
+            ).modifier(new Modifier().style("margin-bottom:10px;"))
+        ).id("advSectionUniversal").modifier(new Modifier().style("display:block;"));
+
+        Widget querySection = Div.of(
+            Inputs.of(
+                createLabel("Field Name to Query (leave blank to search all properties):"),
+                createTextInput("query_field", "e.g. role, status, amount, age, category", "", "#38bdf8")
+            ).modifier(new Modifier().style("margin-bottom:10px;")),
+            Inputs.of(
+                createLabel("Comparison Operator:"),
+                createSelectOne("query_op", "", "#38bdf8", "advSearchQueryOp", queryOps, "EQUALS")
+            ).modifier(new Modifier().style("margin-bottom:10px;")),
+            Inputs.of(
+                createLabel("Target Comparison Value:"),
+                createTextInput("query_val", "e.g. Maintainer, COMPLETED, 100", "", "#f8fafc")
+            ).modifier(new Modifier().style("margin-bottom:10px;"))
+        ).id("advSectionQuery").modifier(new Modifier().style("display:none;"));
+
+        Widget vectorSection = Div.of(
+            Inputs.of(
+                createLabel("Query Vector Coordinates (JSON array or comma-separated floats):"),
+                createTextInput("vector_raw", "[0.12, 0.45, 0.88, 0.31]", "[0.12, 0.45, 0.88, 0.31]", "#a855f7")
+            ).modifier(new Modifier().style("margin-bottom:10px;")),
+            Inputs.of(
+                createLabel("Similarity Metric:"),
+                createSelectOne("vector_metric", "", "#a855f7", "advSearchVecMetric", vectorMetrics, "COSINE")
+            ).modifier(new Modifier().style("margin-bottom:10px;")),
+            Inputs.of(
+                createLabel("Top-K Nearest Neighbors Limit:"),
+                createTextInput("vector_topk", "10", "10", "#f8fafc")
+            ).modifier(new Modifier().style("margin-bottom:10px;"))
+        ).id("advSectionVector").modifier(new Modifier().style("display:none;"));
+
+        Widget geoSection = Div.of(
+            Inputs.of(
+                createLabel("Center Latitude:"),
+                createTextInput("geo_lat", "8.9824", "8.9824", "#14b8a6")
+            ).modifier(new Modifier().style("margin-bottom:10px;")),
+            Inputs.of(
+                createLabel("Center Longitude:"),
+                createTextInput("geo_lon", "-79.5199", "-79.5199", "#14b8a6")
+            ).modifier(new Modifier().style("margin-bottom:10px;")),
+            Inputs.of(
+                createLabel("Search Radius (Kilometers):"),
+                createTextInput("geo_radius", "50.0", "50.0", "#f8fafc")
+            ).modifier(new Modifier().style("margin-bottom:10px;"))
+        ).id("advSectionGeo").modifier(new Modifier().style("display:none;"));
+
+        Widget tsSection = Div.of(
+            Inputs.of(
+                createLabel("From Timestamp (epoch ms or 0 for beginning):"),
+                createTextInput("ts_from", "0", "0", "#06b6d4")
+            ).modifier(new Modifier().style("margin-bottom:10px;")),
+            Inputs.of(
+                createLabel("To Timestamp (epoch ms, leave blank for current):"),
+                createTextInput("ts_to", "", "", "#06b6d4")
+            ).modifier(new Modifier().style("margin-bottom:10px;"))
+        ).id("advSectionTimeseries").modifier(new Modifier().style("display:none;"));
+
+        Widget graphSection = Div.of(
+            Inputs.of(
+                createLabel("Start Node ID (Filter by originating vertex):"),
+                createTextInput("graph_from_node", "e.g. user_1, node_A", "", "#ec4899")
+            ).modifier(new Modifier().style("margin-bottom:10px;")),
+            Inputs.of(
+                createLabel("Edge Relationship Label (optional):"),
+                createTextInput("graph_edge_label", "e.g. FOLLOWS, PURCHASED, CONNECTS", "", "#ec4899")
+            ).modifier(new Modifier().style("margin-bottom:10px;"))
+        ).id("advSectionGraph").modifier(new Modifier().style("display:none;"));
+
         Widget form = Form.of(
             InputHidden.of("action", "advanced_search"),
             Inputs.of(
@@ -2547,25 +3180,20 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 createSelectOne("target_db", "", "#38bdf8", "advSearchDbSelect", dbMap, targetDb)
             ).modifier(new Modifier().style("margin-bottom:12px;")),
             Inputs.of(
-                createLabel("Storage Engine:"),
-                createSelectOne("search_engine", "", "#a855f7", "advSearchEngineSelect", enginesMap, "ALL")
+                createLabel("Search Engine / Strategy:"),
+                createSelectOne("search_mode", "", "#38bdf8", "advSearchModeSelect", searchModes, "UNIVERSAL")
+                    .modifier(new Modifier().attribute("onchange", "onSearchModeChange(this.value)"))
             ).modifier(new Modifier().style("margin-bottom:12px;")),
-            Inputs.of(
-                createLabel("Unit / Collection (optional):"),
-                createTextInput("target_coll", "e.g. users, default, sensor_temp", "", "#f8fafc").id("advSearchCollInput")
-            ).modifier(new Modifier().style("margin-bottom:12px;")),
-            Inputs.of(
-                createLabel("Record ID / Key Pattern (e.g. doc_* or user_101):"),
-                createTextInput("search_key", "Key pattern or wildcard *", "", "#f8fafc").id("advSearchKeyInput")
-            ).modifier(new Modifier().style("margin-bottom:12px;")),
-            Inputs.of(
-                createLabel("Content Keyword Search (JSON payload value match):"),
-                createTextInput("search_keyword", "e.g. VIP, active, John, 25.4", "", "#f8fafc").id("advSearchKeywordInput")
-            ).modifier(new Modifier().style("margin-bottom:16px;")),
+            universalSection,
+            querySection,
+            vectorSection,
+            geoSection,
+            tsSection,
+            graphSection,
             createModalFormActions("advancedSearchModal", "Ejecutar Búsqueda", "fas fa-search-plus", "#38bdf8")
         ).method("POST").action(actionUrl);
 
-        return createModalOverlay("advancedSearchModal", "580px", "rgba(59,130,246,0.4)", header, form);
+        return createModalOverlay("advancedSearchModal", "620px", "rgba(59,130,246,0.4)", header, form);
     }
 
     private Widget buildCreateIndexModal(String actionUrl) {
@@ -2879,6 +3507,91 @@ public class StoreEnginesPage extends StoreTemplatePage {
       confirmDeleteIdDisplay: id
     });
     document.getElementById('confirmDeleteModal').style.display = 'flex';
+  }
+
+  var currentInspectRecord = null;
+  function openInspectRecordModal(engine, db, unit, id, payloadB64, vCount) {
+    var payload = decodeUtf8Base64(payloadB64);
+    var parsed = null;
+    try { parsed = JSON.parse(payload); } catch(e) {}
+    var pretty = parsed ? JSON.stringify(parsed, null, 2) : payload;
+    currentInspectRecord = { engine: engine, db: db, unit: unit || 'default', id: id, payloadB64: payloadB64, vCount: vCount || 1 };
+    
+    setElementValues({
+      inspectRecordEngineDisplay: engine,
+      inspectRecordDbDisplay: db,
+      inspectRecordCollDisplay: unit || 'default',
+      inspectRecordIdDisplay: id,
+      inspectRecordVersionDisplay: 'v' + (vCount || 1),
+      inspectRecordPayloadDisplay: pretty
+    });
+    var modal = document.getElementById('inspectRecordModal');
+    if (modal) modal.style.display = 'flex';
+  }
+
+  function copyInspectRecordPayload() {
+    var el = document.getElementById('inspectRecordPayloadDisplay');
+    if (el) {
+      navigator.clipboard.writeText(el.value);
+      var btn = document.getElementById('btnCopyInspect');
+      if (btn) {
+        var orig = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+        setTimeout(function() { btn.innerHTML = orig; }, 1800);
+      }
+    }
+  }
+
+  function editFromInspectModal() {
+    if (currentInspectRecord) {
+      document.getElementById('inspectRecordModal').style.display = 'none';
+      openUniversalEditModal(currentInspectRecord.engine, currentInspectRecord.db, currentInspectRecord.unit, currentInspectRecord.id, currentInspectRecord.payloadB64);
+    }
+  }
+
+  function historyFromInspectModal() {
+    if (currentInspectRecord) {
+      document.getElementById('inspectRecordModal').style.display = 'none';
+      var versionsJson = JSON.stringify([{ versionNumber: currentInspectRecord.vCount, isCurrent: true, preview: currentInspectRecord.id, timestamp: Date.now() }]);
+      openUniversalRestoreModal(currentInspectRecord.engine, currentInspectRecord.db, currentInspectRecord.unit, currentInspectRecord.id, btoa(versionsJson));
+    }
+  }
+
+  function filterExplorerTable() {
+    var input = document.getElementById('tableExplorerQuickFilter');
+    var filter = input ? input.value.toLowerCase().trim() : '';
+    var rows = document.querySelectorAll('.explorer-table-row');
+    var visibleCount = 0;
+    for (var i = 0; i < rows.length; i++) {
+      var text = rows[i].innerText.toLowerCase();
+      if (!filter || text.indexOf(filter) > -1) {
+        rows[i].style.display = 'flex';
+        visibleCount++;
+      } else {
+        rows[i].style.display = 'none';
+      }
+    }
+    var counter = document.getElementById('tableFilterVisibleCount');
+    if (counter) counter.innerText = visibleCount + ' Records Visible';
+  }
+
+  function onSearchModeChange(mode) {
+    var sections = ['advSectionUniversal', 'advSectionQuery', 'advSectionVector', 'advSectionGeo', 'advSectionTimeseries', 'advSectionGraph'];
+    for (var i = 0; i < sections.length; i++) {
+      var el = document.getElementById(sections[i]);
+      if (el) el.style.display = 'none';
+    }
+    var modeMap = {
+      'UNIVERSAL': 'advSectionUniversal',
+      'QUERY': 'advSectionQuery',
+      'VECTOR': 'advSectionVector',
+      'GEOSPATIAL': 'advSectionGeo',
+      'TIMESERIES': 'advSectionTimeseries',
+      'GRAPH': 'advSectionGraph'
+    };
+    var targetId = modeMap[mode] || 'advSectionUniversal';
+    var targetEl = document.getElementById(targetId);
+    if (targetEl) targetEl.style.display = 'block';
   }
 """;
         return RawScript.of(js);
