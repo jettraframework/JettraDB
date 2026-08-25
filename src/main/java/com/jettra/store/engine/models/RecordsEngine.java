@@ -112,7 +112,10 @@ public class RecordsEngine implements EngineFamily {
         
         wrapper.add("components", components != null ? components : new JsonObject());
 
-        String command = "PUT " + internalKey + " " + gson.toJson(wrapper);
+        String jsonString = gson.toJson(wrapper);
+        engine.getStorageCore().put(internalKey, jsonString.getBytes(StandardCharsets.UTF_8), System.currentTimeMillis());
+
+        String command = "PUT " + internalKey + " " + jsonString;
         boolean success = raftClient.sendCommand(command);
         if (!success) {
             System.err.println("Failed to replicate record data via Raft for key: " + internalKey);

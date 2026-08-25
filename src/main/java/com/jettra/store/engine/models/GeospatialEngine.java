@@ -47,7 +47,10 @@ public class GeospatialEngine implements EngineFamily {
             doc.add("metadata", metadata);
         }
         
-        String command = "PUT " + internalKey + " " + gson.toJson(doc);
+        String jsonString = gson.toJson(doc);
+        engine.getStorageCore().put(internalKey, jsonString.getBytes(StandardCharsets.UTF_8), System.currentTimeMillis());
+
+        String command = "PUT " + internalKey + " " + jsonString;
         boolean success = raftClient.sendCommand(command);
         if (!success) {
             System.err.println("Failed to replicate geo data via Raft.");

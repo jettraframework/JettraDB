@@ -45,6 +45,7 @@ public class TimeSeriesEngine implements EngineFamily {
         // Add timestamp inside payload too
         dataPoint.addProperty("timestamp", timestamp);
         String jsonString = gson.toJson(dataPoint);
+        engine.getStorageCore().put(key, jsonString.getBytes(StandardCharsets.UTF_8), System.currentTimeMillis());
         
         // Send to Raft Consensus
         String command = "PUT " + key + " " + jsonString;

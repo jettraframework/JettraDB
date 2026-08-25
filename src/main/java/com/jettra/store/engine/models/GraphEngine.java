@@ -39,6 +39,7 @@ public class GraphEngine implements EngineFamily {
     public void addNode(String graphId, String nodeId, JsonObject data) {
         String key = "graph:" + graphId + ":node:" + nodeId;
         String jsonString = gson.toJson(data);
+        engine.getStorageCore().put(key, jsonString.getBytes(StandardCharsets.UTF_8), System.currentTimeMillis());
         
         String command = "PUT " + key + " " + jsonString;
         boolean success = raftClient.sendCommand(command);
@@ -59,6 +60,7 @@ public class GraphEngine implements EngineFamily {
     public void addEdge(String graphId, String fromNode, String toNode, String label, JsonObject properties) {
         String key = "graph:" + graphId + ":edge:" + fromNode + ":" + toNode + ":" + label;
         String jsonString = properties != null ? gson.toJson(properties) : "{}";
+        engine.getStorageCore().put(key, jsonString.getBytes(StandardCharsets.UTF_8), System.currentTimeMillis());
         
         String command = "PUT " + key + " " + jsonString;
         boolean success = raftClient.sendCommand(command);

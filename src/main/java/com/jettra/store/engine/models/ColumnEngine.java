@@ -39,6 +39,7 @@ public class ColumnEngine implements EngineFamily {
     public void insertRow(String columnFamily, String rowKey, JsonObject columns) {
         String internalKey = "col:" + columnFamily + ":" + rowKey;
         String jsonString = gson.toJson(columns);
+        engine.getStorageCore().put(internalKey, jsonString.getBytes(StandardCharsets.UTF_8), System.currentTimeMillis());
         String command = "PUT " + internalKey + " " + jsonString;
         boolean success = raftClient.sendCommand(command);
         if (!success) {

@@ -61,14 +61,13 @@ public class VectorEngine implements EngineFamily {
         }
         
         String jsonString = gson.toJson(document);
+        engine.getStorageCore().put(key, jsonString.getBytes(StandardCharsets.UTF_8), System.currentTimeMillis());
+        vectorIndex.put(key, vectorData);
+
         String command = "PUT " + key + " " + jsonString;
-        
         boolean success = raftClient.sendCommand(command);
         if (!success) {
             System.err.println("Failed to replicate vector data via Raft.");
-        } else {
-            // Add to in-memory index if successful
-            vectorIndex.put(key, vectorData);
         }
     }
     

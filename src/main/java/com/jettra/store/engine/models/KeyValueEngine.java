@@ -34,6 +34,7 @@ public class KeyValueEngine implements EngineFamily {
 
     public void put(String namespace, String key, String value) {
         String internalKey = "kv:" + namespace + ":" + key;
+        engine.getStorageCore().put(internalKey, (value != null ? value : "").getBytes(StandardCharsets.UTF_8), System.currentTimeMillis());
         String command = "PUT " + internalKey + " " + value;
         boolean success = raftClient.sendCommand(command);
         if (!success) {
