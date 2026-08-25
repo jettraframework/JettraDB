@@ -985,9 +985,6 @@ public class StoreEnginesPage extends StoreTemplatePage {
             ).modifier(new Modifier().style("display:flex; align-items:center;"))
         ).modifier(new Modifier().style("justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;"));
 
-        StringBuilder sb = new StringBuilder();
-        sb.append("<div class='espresso-tree' style='font-family:monospace; font-size:13px; color:#f8fafc; background:rgba(15,23,42,0.6); padding:16px 20px; border-radius:10px; border:1px solid rgba(255,255,255,0.06); max-height:550px; overflow-y:auto;'>\n");
-
         String[][] allEngSpecs = {
             {"DOCUMENT", "#3b82f6", "fas fa-file-alt", "Collections", "Collection", "Document", "fas fa-file-code"},
             {"KEYVALUE", "#10b981", "fas fa-key", "Namespaces / Buckets", "Bucket", "Key-Value Pair", "fas fa-cube"},
@@ -1000,22 +997,33 @@ public class StoreEnginesPage extends StoreTemplatePage {
             {"RECORDS", "#f43f5e", "fas fa-id-card", "Record Tables", "Record Table", "Immutable Record", "fas fa-address-card"}
         };
 
+        List<Widget> dbCardWidgets = new ArrayList<>();
+
         for (String db : allDbs) {
             boolean isActiveDb = db.equalsIgnoreCase(targetDb);
-            String dbBadge = isActiveDb ? "<span class='store-badge badge-active' style='font-size:10px; margin-left:6px;'>ACTIVE (CURRENT)</span>" : "<span class='store-badge' style='font-size:10px; margin-left:6px; background:rgba(255,255,255,0.08);'>DATABASE</span>";
 
-            sb.append("  <div style='margin-bottom:14px; padding:8px 12px; border-radius:8px; background:").append(isActiveDb ? "rgba(56,189,248,0.06)" : "transparent").append("; border:").append(isActiveDb ? "1px solid rgba(56,189,248,0.2)" : "1px solid transparent").append(";'>\n");
-            sb.append("    <div style='display:flex; justify-content:space-between; align-items:center;'>\n");
-            sb.append("      <span style='color:").append(isActiveDb ? "#38bdf8" : "#cbd5e1").append("; font-weight:700; font-size:14px;'><i class='fas fa-database' style='margin-right:6px; color:#38bdf8;'></i> [Level 1: Database Container] ").append(db).append("</span>\n");
-            sb.append("      <div>").append(dbBadge);
-            if (!isActiveDb) {
-                sb.append("        <a href='").append(actionUrl).append(selectedEngine).append("&target_db=").append(db).append("' style='color:#38bdf8; font-size:11px; margin-left:8px; text-decoration:none; font-weight:600;'>[Explore DB]</a>\n");
+            Widget dbLeft = Span.of(
+                Icon.of("fas fa-database").modifier(new Modifier().style("margin-right:6px; color:#38bdf8;")),
+                Text.of("[Level 1: Database Container] " + db)
+            ).modifier(new Modifier().style("color:" + (isActiveDb ? "#38bdf8" : "#cbd5e1") + "; font-weight:700; font-size:14px;"));
+
+            List<Widget> dbRightWidgets = new ArrayList<>();
+            if (isActiveDb) {
+                dbRightWidgets.add(Span.of("ACTIVE (CURRENT)").modifier(new Modifier().cssClass("store-badge badge-active").style("font-size:10px; margin-left:6px;")));
+            } else {
+                dbRightWidgets.add(Span.of("DATABASE").modifier(new Modifier().cssClass("store-badge").style("font-size:10px; margin-left:6px; background:rgba(255,255,255,0.08);")));
+                dbRightWidgets.add(Link.of(actionUrl + selectedEngine + "&target_db=" + db, "[Explore DB]").modifier(new Modifier().style("color:#38bdf8; font-size:11px; margin-left:8px; text-decoration:none; font-weight:600;")));
             }
-            sb.append("      </div>\n");
-            sb.append("    </div>\n");
+            Widget dbRight = Div.of(dbRightWidgets.toArray(new Widget[0]));
+
+            Widget dbHeaderRow = Div.of(dbLeft, dbRight)
+                .modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center;"));
+
+            List<Widget> dbContentWidgets = new ArrayList<>();
+            dbContentWidgets.add(dbHeaderRow);
 
             if (isActiveDb) {
-                sb.append("    <div style='margin-left:22px; border-left: 2px dashed rgba(56,189,248,0.3); padding-left:16px; margin-top:10px;'>\n");
+                List<Widget> engineSubtreeWidgets = new ArrayList<>();
 
                 for (String[] spec : allEngSpecs) {
                     String engName = spec[0];
@@ -1030,96 +1038,167 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     Map<String, List<String>> unitsAndItems = discoverUnitsAndItems(engName, db);
                     int totalItems = unitsAndItems.values().stream().mapToInt(List::size).sum();
 
-                    sb.append("      <div style='margin-bottom:12px; background:").append(isEngActive ? "rgba(30,41,59,0.7)" : "rgba(15,23,42,0.3)").append("; padding:8px 10px; border-radius:6px; border:1px solid rgba(255,255,255,0.04);'>\n");
-                    sb.append("        <div style='display:flex; justify-content:space-between; align-items:center;'>\n");
-                    sb.append("          <a href='").append(actionUrl).append(engName).append("&target_db=").append(db).append("' style='text-decoration:none; color:").append(isEngActive ? "#38bdf8; font-weight:bold;" : "#94a3b8;").append(";'>\n");
-                    sb.append("            <i class='").append(engIcon).append("' style='color:").append(engColor).append("; margin-right:6px;'></i> <strong>").append(engName).append(" SUBTREE</strong> → <span style='color:#cbd5e1;'>").append(unitPlural).append(" (").append(unitsAndItems.size()).append(" ").append(unitsAndItems.size() == 1 ? unitSingle : unitPlural).append(", ").append(totalItems).append(" items)</span>\n");
-                    sb.append("          </a>\n");
-                    sb.append("          <button onclick=\"openAddUnitModal('").append(engName).append("', '").append(unitSingle).append("')\" style='background:none; border:1px solid ").append(engColor).append("55; color:").append(engColor).append("; font-size:10px; padding:2px 8px; border-radius:4px; cursor:pointer;'>+ ").append(unitSingle).append("</button>\n");
-                    sb.append("        </div>\n");
+                    Widget engHeaderLink = Link.of(actionUrl + engName + "&target_db=" + db,
+                        Icon.of(engIcon).modifier(new Modifier().style("color:" + engColor + "; margin-right:6px;")),
+                        Span.of(" " + engName + " SUBTREE").modifier(new Modifier().style("font-weight:bold;")),
+                        Text.of(" → "),
+                        Span.of(unitPlural + " (" + unitsAndItems.size() + " " + (unitsAndItems.size() == 1 ? unitSingle : unitPlural) + ", " + totalItems + " items)").modifier(new Modifier().style("color:#cbd5e1;"))
+                    ).modifier(new Modifier().style("text-decoration:none; color:" + (isEngActive ? "#38bdf8; font-weight:bold;" : "#94a3b8;") + ";"));
 
-                    // Render Level 2 Subtree of Units & Level 3 Subtree of Items
-                    sb.append("        <div style='margin-left:18px; border-left: 2px dotted rgba(255,255,255,0.12); padding-left:12px; margin-top:6px;'>\n");
+                    Widget engAddUnitBtn = Button.of("+ " + unitSingle)
+                        .attribute("onclick", "openAddUnitModal('" + engName + "', '" + unitSingle + "')")
+                        .modifier(new Modifier().style("background:none; border:1px solid " + engColor + "55; color:" + engColor + "; font-size:10px; padding:2px 8px; border-radius:4px; cursor:pointer;"));
+
+                    Widget engHeaderRow = Div.of(engHeaderLink, engAddUnitBtn)
+                        .modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center;"));
+
+                    List<Widget> unitListWidgets = new ArrayList<>();
 
                     for (Map.Entry<String, List<String>> unitEntry : unitsAndItems.entrySet()) {
                         String unitName = unitEntry.getKey();
                         List<String> items = unitEntry.getValue();
                         boolean isCurrColl = isEngActive && unitName.equalsIgnoreCase(currentColl);
 
-                        sb.append("          <div style='margin-bottom:8px; margin-top:4px;'>\n");
-                        sb.append("            <div style='display:flex; justify-content:space-between; align-items:center;'>\n");
-                        sb.append("              <span style='color:").append(isCurrColl ? "#38bdf8" : "#cbd5e1").append("; font-size:12px; font-weight:600;'>\n");
-                        sb.append("                📁 [Level 2: Unit / ").append(unitSingle).append("] <a href='").append(actionUrl).append(engName).append("&target_db=").append(db).append("&coll=").append(unitName).append("' style='color:inherit; text-decoration:none;'>").append(unitName).append("</a> <span style='font-size:10px; color:#64748b; font-weight:normal;'>(").append(items.size()).append(" items)</span>\n");
-                        sb.append("              </span>\n");
-                        sb.append("              <button onclick=\"openAddObjectModal('").append(engName).append("', '").append(unitName).append("')\" style='background:none; border:none; color:").append(engColor).append("; font-size:10px; cursor:pointer;'>[+ Add ").append(itemLabel).append("]</button>\n");
-                        sb.append("            </div>\n");
+                        Widget unitLeft = Span.of(
+                            Text.of("📁 [Level 2: Unit / " + unitSingle + "] "),
+                            Link.of(actionUrl + engName + "&target_db=" + db + "&coll=" + unitName, unitName).modifier(new Modifier().style("color:inherit; text-decoration:none;")),
+                            Text.of(" "),
+                            Span.of("(" + items.size() + " items)").modifier(new Modifier().style("font-size:10px; color:#64748b; font-weight:normal;"))
+                        ).modifier(new Modifier().style("color:" + (isCurrColl ? "#38bdf8" : "#cbd5e1") + "; font-size:12px; font-weight:600;"));
 
-                        // Level 3 Subtree: Stored Items / Records
-                        sb.append("            <div style='margin-left:16px; border-left: 1px dashed rgba(255,255,255,0.08); padding-left:10px; margin-top:3px;'>\n");
+                        Widget unitAddObjBtn = Button.of("[+ Add " + itemLabel + "]")
+                            .attribute("onclick", "openAddObjectModal('" + engName + "', '" + unitName + "')")
+                            .modifier(new Modifier().style("background:none; border:none; color:" + engColor + "; font-size:10px; cursor:pointer;"));
+
+                        Widget unitHeaderRow = Div.of(unitLeft, unitAddObjBtn)
+                            .modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center;"));
+
+                        List<Widget> itemWidgets = new ArrayList<>();
                         if (items.isEmpty()) {
-                            sb.append("              <div style='font-size:11px; color:#64748b; padding:2px 0;'>└── <em>(Empty unit - click [+ Add ").append(itemLabel).append("] to insert)</em></div>\n");
+                            Widget emptyItem = Div.of(
+                                Span.of("└── "),
+                                Span.of("(Empty unit - click [+ Add " + itemLabel + "] to insert)").modifier(new Modifier().style("font-style:italic;"))
+                            ).modifier(new Modifier().style("font-size:11px; color:#64748b; padding:2px 0;"));
+                            itemWidgets.add(emptyItem);
                         } else {
                             for (String itemId : items) {
-                                sb.append("              <div style='font-size:11px; color:#94a3b8; display:flex; justify-content:space-between; align-items:center; padding:2px 0;'>\n");
-                                sb.append("                <span>└── <i class='").append(itemIcon).append("' style='color:").append(engColor).append("; margin-right:4px;'></i> [Level 3: ").append(itemLabel).append("] <strong style='color:#f8fafc;'>").append(itemId).append("</strong>");
-
                                 int vCount = getItemVersionCount(engName, db, unitName, itemId);
                                 String itemPayload = getItemPayload(engName, db, unitName, itemId);
                                 String itemVersions = getVersionsJson(engName, db, unitName, itemId);
                                 String payloadB64 = Base64.getEncoder().encodeToString(itemPayload.getBytes(StandardCharsets.UTF_8));
                                 String versionsB64 = Base64.getEncoder().encodeToString(itemVersions.getBytes(StandardCharsets.UTF_8));
 
-                                sb.append(" <span class='store-badge' style='background:rgba(56,189,248,0.15); color:#38bdf8; font-size:9px; padding:1px 5px;'>v").append(vCount).append("</span>");
-                                sb.append("</span>\n");
+                                Widget itemLeft = Span.of(
+                                    Text.of("└── "),
+                                    Icon.of(itemIcon).modifier(new Modifier().style("color:" + engColor + "; margin-right:4px;")),
+                                    Text.of("[Level 3: " + itemLabel + "] "),
+                                    Span.of(itemId).modifier(new Modifier().style("color:#f8fafc; font-weight:bold;")),
+                                    Text.of(" "),
+                                    Span.of("v" + vCount).modifier(new Modifier().cssClass("store-badge").style("background:rgba(56,189,248,0.15); color:#38bdf8; font-size:9px; padding:1px 5px;"))
+                                );
 
-                                // Action Buttons for Level 3 item (Edit, Versions, Delete, Select)
-                                sb.append("                <div style='display:flex; align-items:center; gap:4px;'>\n");
-                                sb.append("                  <button type='button' onclick=\"openUniversalEditModal('").append(engName).append("', '").append(db).append("', '").append(unitName).append("', '").append(itemId).append("', '").append(payloadB64).append("')\" style='background:none; border:1px solid rgba(56,189,248,0.3); color:#38bdf8; font-size:10px; padding:1px 6px; border-radius:3px; cursor:pointer;'><i class='fas fa-edit'></i> Edit</button>\n");
-                                sb.append("                  <button type='button' onclick=\"openUniversalRestoreModal('").append(engName).append("', '").append(db).append("', '").append(unitName).append("', '").append(itemId).append("', '").append(versionsB64).append("')\" style='background:none; border:1px solid rgba(168,85,247,0.3); color:#a855f7; font-size:10px; padding:1px 6px; border-radius:3px; cursor:pointer;'><i class='fas fa-history'></i> v").append(vCount).append("</button>\n");
-                                sb.append("                  <button type='button' onclick=\"openUniversalDeleteModal('").append(engName).append("', '").append(db).append("', '").append(unitName).append("', '").append(itemId).append("')\" style='background:none; border:1px solid rgba(239,68,68,0.3); color:#ef4444; font-size:10px; padding:1px 6px; border-radius:3px; cursor:pointer;'><i class='fas fa-trash-alt'></i> Delete</button>\n");
+                                List<Widget> itemBtnWidgets = new ArrayList<>();
+                                itemBtnWidgets.add(
+                                    Button.of(Icon.of("fas fa-edit"), Text.of(" Edit"))
+                                        .attribute("type", "button")
+                                        .attribute("onclick", "openUniversalEditModal('" + engName + "', '" + db + "', '" + unitName + "', '" + itemId + "', '" + payloadB64 + "')")
+                                        .modifier(new Modifier().style("background:none; border:1px solid rgba(56,189,248,0.3); color:#38bdf8; font-size:10px; padding:1px 6px; border-radius:3px; cursor:pointer;"))
+                                );
+                                itemBtnWidgets.add(
+                                    Button.of(Icon.of("fas fa-history"), Text.of(" v" + vCount))
+                                        .attribute("type", "button")
+                                        .attribute("onclick", "openUniversalRestoreModal('" + engName + "', '" + db + "', '" + unitName + "', '" + itemId + "', '" + versionsB64 + "')")
+                                        .modifier(new Modifier().style("background:none; border:1px solid rgba(168,85,247,0.3); color:#a855f7; font-size:10px; padding:1px 6px; border-radius:3px; cursor:pointer;"))
+                                );
+                                itemBtnWidgets.add(
+                                    Button.of(Icon.of("fas fa-trash-alt"), Text.of(" Delete"))
+                                        .attribute("type", "button")
+                                        .attribute("onclick", "openUniversalDeleteModal('" + engName + "', '" + db + "', '" + unitName + "', '" + itemId + "')")
+                                        .attribute("title", "Delete record")
+                                        .modifier(new Modifier().style("background:none; border:1px solid rgba(239,68,68,0.3); color:#ef4444; font-size:10px; padding:1px 6px; border-radius:3px; cursor:pointer;"))
+                                );
+
                                 if ("DOCUMENT".equalsIgnoreCase(engName)) {
-                                    sb.append("                  <a href='").append(actionUrl).append(engName).append("&target_db=").append(db).append("&coll=").append(unitName).append("&target_id=").append(itemId).append("' style='color:#94a3b8; text-decoration:none; font-size:10px; margin-left:2px;'>[Select]</a>\n");
+                                    itemBtnWidgets.add(Link.of(actionUrl + engName + "&target_db=" + db + "&coll=" + unitName + "&target_id=" + itemId, "[Select]").modifier(new Modifier().style("color:#94a3b8; text-decoration:none; font-size:10px; margin-left:2px;")));
                                 } else {
-                                    sb.append("                  <a href='").append(actionUrl).append(engName).append("&target_db=").append(db).append("&target_id=").append(itemId).append("' style='color:#94a3b8; text-decoration:none; font-size:10px; margin-left:2px;'>[Inspect]</a>\n");
+                                    itemBtnWidgets.add(Link.of(actionUrl + engName + "&target_db=" + db + "&target_id=" + itemId, "[Inspect]").modifier(new Modifier().style("color:#94a3b8; text-decoration:none; font-size:10px; margin-left:2px;")));
                                 }
-                                sb.append("                </div>\n");
-                                sb.append("              </div>\n");
+
+                                Widget itemRight = Div.of(itemBtnWidgets.toArray(new Widget[0]))
+                                    .modifier(new Modifier().style("display:flex; align-items:center; gap:4px;"));
+
+                                Widget itemRow = Div.of(itemLeft, itemRight)
+                                    .modifier(new Modifier().style("font-size:11px; color:#94a3b8; display:flex; justify-content:space-between; align-items:center; padding:2px 0;"));
+
+                                itemWidgets.add(itemRow);
                             }
                         }
-                        sb.append("            </div>\n");
-                        sb.append("          </div>\n");
+
+                        Widget itemsContainer = Div.of(itemWidgets.toArray(new Widget[0]))
+                            .modifier(new Modifier().style("margin-left:16px; border-left: 1px dashed rgba(255,255,255,0.08); padding-left:10px; margin-top:3px;"));
+
+                        Widget unitBlock = Div.of(unitHeaderRow, itemsContainer)
+                            .modifier(new Modifier().style("margin-bottom:8px; margin-top:4px;"));
+
+                        unitListWidgets.add(unitBlock);
                     }
 
-                    sb.append("        </div>\n");
-                    sb.append("      </div>\n");
+                    Widget unitSubtreeContainer = Div.of(unitListWidgets.toArray(new Widget[0]))
+                        .modifier(new Modifier().style("margin-left:18px; border-left: 2px dotted rgba(255,255,255,0.12); padding-left:12px; margin-top:6px;"));
+
+                    Widget engineBlock = Div.of(engHeaderRow, unitSubtreeContainer)
+                        .modifier(new Modifier().style("margin-bottom:12px; background:" + (isEngActive ? "rgba(30,41,59,0.7)" : "rgba(15,23,42,0.3)") + "; padding:8px 10px; border-radius:6px; border:1px solid rgba(255,255,255,0.04);"));
+
+                    engineSubtreeWidgets.add(engineBlock);
                 }
 
                 // Render Indexes & Schemas Subtree for this Database
                 Map<String, JsonObject> dbIndexes = discoverIndexes(db);
                 Map<String, JsonObject> dbSchemas = discoverSchemas(db);
 
-                sb.append("      <div style='margin-bottom:12px; background:rgba(30,41,59,0.7); padding:8px 10px; border-radius:6px; border:1px solid rgba(234,179,8,0.25);'>\n");
-                sb.append("        <div style='display:flex; justify-content:space-between; align-items:center;'>\n");
-                sb.append("          <span style='color:#eab308; font-weight:bold;'>\n");
-                sb.append("            <i class='fas fa-bolt' style='color:#eab308; margin-right:6px;'></i> <strong>INDEXES & SCHEMAS SUBTREE</strong> → <span style='color:#cbd5e1;'>Index Registry & Validation Schemas (").append(dbIndexes.size()).append(" Indexes, ").append(dbSchemas.size()).append(" Schemas)</span>\n");
-                sb.append("          </span>\n");
-                sb.append("          <div style='display:flex; gap:4px;'>\n");
-                sb.append("            <button type='button' onclick=\"openAddIndexModal('").append(db).append("')\" style='background:none; border:1px solid rgba(234,179,8,0.5); color:#eab308; font-size:10px; padding:2px 8px; border-radius:4px; cursor:pointer;'><i class='fas fa-plus'></i> Add Index</button>\n");
-                sb.append("            <button type='button' onclick=\"openAddSchemaModal('").append(db).append("')\" style='background:none; border:1px solid rgba(56,189,248,0.5); color:#38bdf8; font-size:10px; padding:2px 8px; border-radius:4px; cursor:pointer;'><i class='fas fa-shield-alt'></i> Add Schema</button>\n");
-                sb.append("          </div>\n");
-                sb.append("        </div>\n");
+                Widget idxSchemasHeaderLeft = Span.of(
+                    Icon.of("fas fa-bolt").modifier(new Modifier().style("color:#eab308; margin-right:6px;")),
+                    Span.of("INDEXES & SCHEMAS SUBTREE").modifier(new Modifier().style("font-weight:bold;")),
+                    Text.of(" → "),
+                    Span.of("Index Registry & Validation Schemas (" + dbIndexes.size() + " Indexes, " + dbSchemas.size() + " Schemas)").modifier(new Modifier().style("color:#cbd5e1;"))
+                ).modifier(new Modifier().style("color:#eab308; font-weight:bold;"));
 
-                sb.append("        <div style='margin-left:18px; border-left: 2px dotted rgba(234,179,8,0.3); padding-left:12px; margin-top:6px;'>\n");
+                Widget idxSchemasHeaderRight = Div.of(
+                    Button.of(Icon.of("fas fa-plus"), Text.of(" Add Index"))
+                        .attribute("type", "button")
+                        .attribute("onclick", "openAddIndexModal('" + db + "')")
+                        .modifier(new Modifier().style("background:none; border:1px solid rgba(234,179,8,0.5); color:#eab308; font-size:10px; padding:2px 8px; border-radius:4px; cursor:pointer; margin-right:4px;")),
+                    Button.of(Icon.of("fas fa-shield-alt"), Text.of(" Add Schema"))
+                        .attribute("type", "button")
+                        .attribute("onclick", "openAddSchemaModal('" + db + "')")
+                        .modifier(new Modifier().style("background:none; border:1px solid rgba(56,189,248,0.5); color:#38bdf8; font-size:10px; padding:2px 8px; border-radius:4px; cursor:pointer;"))
+                ).modifier(new Modifier().style("display:flex; gap:4px;"));
+
+                Widget idxSchemasHeaderRow = Div.of(idxSchemasHeaderLeft, idxSchemasHeaderRight)
+                    .modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center;"));
 
                 // Level 2: Secondary & Composite Indexes Unit
-                sb.append("          <div style='margin-bottom:8px; margin-top:4px;'>\n");
-                sb.append("            <div style='display:flex; justify-content:space-between; align-items:center;'>\n");
-                sb.append("              <span style='color:#fde047; font-size:12px; font-weight:600;'>📁 [Level 2: Unit / Index Family] Secondary & Composite Indexes <span style='font-size:10px; color:#64748b; font-weight:normal;'>(").append(dbIndexes.size()).append(" items)</span></span>\n");
-                sb.append("              <button type='button' onclick=\"openAddIndexModal('").append(db).append("')\" style='background:none; border:none; color:#eab308; font-size:10px; cursor:pointer;'>[+ Add Index]</button>\n");
-                sb.append("            </div>\n");
-                sb.append("            <div style='margin-left:16px; border-left: 1px dashed rgba(255,255,255,0.08); padding-left:10px; margin-top:3px;'>\n");
+                Widget indexesUnitLeft = Span.of(
+                    Text.of("📁 [Level 2: Unit / Index Family] Secondary & Composite Indexes "),
+                    Span.of("(" + dbIndexes.size() + " items)").modifier(new Modifier().style("font-size:10px; color:#64748b; font-weight:normal;"))
+                ).modifier(new Modifier().style("color:#fde047; font-size:12px; font-weight:600;"));
+
+                Widget indexesUnitAddBtn = Button.of("[+ Add Index]")
+                    .attribute("type", "button")
+                    .attribute("onclick", "openAddIndexModal('" + db + "')")
+                    .modifier(new Modifier().style("background:none; border:none; color:#eab308; font-size:10px; cursor:pointer;"));
+
+                Widget indexesUnitHeaderRow = Div.of(indexesUnitLeft, indexesUnitAddBtn)
+                    .modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center;"));
+
+                List<Widget> indexItemWidgets = new ArrayList<>();
                 if (dbIndexes.isEmpty()) {
-                    sb.append("              <div style='font-size:11px; color:#64748b; padding:2px 0;'>└── <em>(No secondary indexes - click [+ Add Index] to create)</em></div>\n");
+                    indexItemWidgets.add(
+                        Div.of(
+                            Span.of("└── "),
+                            Span.of("(No secondary indexes - click [+ Add Index] to create)").modifier(new Modifier().style("font-style:italic;"))
+                        ).modifier(new Modifier().style("font-size:11px; color:#64748b; padding:2px 0;"))
+                    );
                 } else {
                     for (Map.Entry<String, JsonObject> idxEntry : dbIndexes.entrySet()) {
                         String idxName = idxEntry.getKey();
@@ -1128,56 +1207,121 @@ public class StoreEnginesPage extends StoreTemplatePage {
                         String idxField = idxObj.has("field") && idxObj.get("field") != null ? idxObj.get("field").toString().replace("\"", "") : "id";
                         String idxColl = idxObj.has("collection") && idxObj.get("collection") != null ? idxObj.get("collection").toString().replace("\"", "") : "default";
 
-                        sb.append("              <div style='font-size:11px; color:#94a3b8; display:flex; justify-content:space-between; align-items:center; padding:2px 0;'>\n");
-                        sb.append("                <span>└── <i class='fas fa-bolt' style='color:#eab308; margin-right:4px;'></i> [Level 3: Index] <strong style='color:#f8fafc;'>").append(idxName).append("</strong> <span class='store-badge' style='background:rgba(234,179,8,0.15); color:#fde047; font-size:9px; padding:1px 5px;'>").append(idxType).append("</span> on field '<code style='color:#38bdf8;'>").append(idxField).append("</code>' (unit: ").append(idxColl).append(")</span>\n");
-                        sb.append("                <form method='POST' action='").append(actionUrl).append(selectedEngine).append("' style='display:inline; margin:0;'>\n");
-                        sb.append("                  <input type='hidden' name='action' value='delete_index'/>\n");
-                        sb.append("                  <input type='hidden' name='target_db' value='").append(db).append("'/>\n");
-                        sb.append("                  <input type='hidden' name='index_name' value='").append(idxName).append("'/>\n");
-                        sb.append("                  <button type='submit' onclick=\"return confirm('Delete index ").append(idxName).append("?');\" style='background:none; border:none; color:#ef4444; font-size:10px; cursor:pointer;'><i class='fas fa-trash'></i></button>\n");
-                        sb.append("                </form>\n");
-                        sb.append("              </div>\n");
+                        Widget idxItemLeft = Span.of(
+                            Text.of("└── "),
+                            Icon.of("fas fa-bolt").modifier(new Modifier().style("color:#eab308; margin-right:4px;")),
+                            Text.of("[Level 3: Index] "),
+                            Span.of(idxName).modifier(new Modifier().style("color:#f8fafc; font-weight:bold;")),
+                            Text.of(" "),
+                            Span.of(idxType).modifier(new Modifier().cssClass("store-badge").style("background:rgba(234,179,8,0.15); color:#fde047; font-size:9px; padding:1px 5px;")),
+                            Text.of(" on field '"),
+                            Span.of(idxField).modifier(new Modifier().style("color:#38bdf8; font-family:monospace;")),
+                            Text.of("' (unit: " + idxColl + ")")
+                        );
+
+                        Widget deleteIdxForm = Form.of(
+                            InputHidden.of("action", "delete_index"),
+                            InputHidden.of("target_db", db),
+                            InputHidden.of("index_name", idxName),
+                            Button.of(Icon.of("fas fa-trash"))
+                                .attribute("type", "submit")
+                                .attribute("onclick", "return confirm('Delete index " + idxName + "?');")
+                                .modifier(new Modifier().style("background:none; border:none; color:#ef4444; font-size:10px; cursor:pointer;"))
+                        ).action(actionUrl + selectedEngine).method("POST").modifier(new Modifier().style("display:inline; margin:0;"));
+
+                        Widget idxItemRow = Div.of(idxItemLeft, deleteIdxForm)
+                            .modifier(new Modifier().style("font-size:11px; color:#94a3b8; display:flex; justify-content:space-between; align-items:center; padding:2px 0;"));
+
+                        indexItemWidgets.add(idxItemRow);
                     }
                 }
-                sb.append("            </div>\n");
-                sb.append("          </div>\n");
+
+                Widget indexItemsContainer = Div.of(indexItemWidgets.toArray(new Widget[0]))
+                    .modifier(new Modifier().style("margin-left:16px; border-left: 1px dashed rgba(255,255,255,0.08); padding-left:10px; margin-top:3px;"));
+
+                Widget indexesUnitBlock = Div.of(indexesUnitHeaderRow, indexItemsContainer)
+                    .modifier(new Modifier().style("margin-bottom:8px; margin-top:4px;"));
 
                 // Level 2: Validation Schemas Unit
-                sb.append("          <div style='margin-bottom:8px; margin-top:4px;'>\n");
-                sb.append("            <div style='display:flex; justify-content:space-between; align-items:center;'>\n");
-                sb.append("              <span style='color:#38bdf8; font-size:12px; font-weight:600;'>📁 [Level 2: Unit / Schema Registry] Validation Schemas <span style='font-size:10px; color:#64748b; font-weight:normal;'>(").append(dbSchemas.size()).append(" items)</span></span>\n");
-                sb.append("              <button type='button' onclick=\"openAddSchemaModal('").append(db).append("')\" style='background:none; border:none; color:#38bdf8; font-size:10px; cursor:pointer;'>[+ Add Schema]</button>\n");
-                sb.append("            </div>\n");
-                sb.append("            <div style='margin-left:16px; border-left: 1px dashed rgba(255,255,255,0.08); padding-left:10px; margin-top:3px;'>\n");
+                Widget schemasUnitLeft = Span.of(
+                    Text.of("📁 [Level 2: Unit / Schema Registry] Validation Schemas "),
+                    Span.of("(" + dbSchemas.size() + " items)").modifier(new Modifier().style("font-size:10px; color:#64748b; font-weight:normal;"))
+                ).modifier(new Modifier().style("color:#38bdf8; font-size:12px; font-weight:600;"));
+
+                Widget schemasUnitAddBtn = Button.of("[+ Add Schema]")
+                    .attribute("type", "button")
+                    .attribute("onclick", "openAddSchemaModal('" + db + "')")
+                    .modifier(new Modifier().style("background:none; border:none; color:#38bdf8; font-size:10px; cursor:pointer;"));
+
+                Widget schemasUnitHeaderRow = Div.of(schemasUnitLeft, schemasUnitAddBtn)
+                    .modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center;"));
+
+                List<Widget> schemaItemWidgets = new ArrayList<>();
                 if (dbSchemas.isEmpty()) {
-                    sb.append("              <div style='font-size:11px; color:#64748b; padding:2px 0;'>└── <em>(No validation schema registered - click [+ Add Schema] to register)</em></div>\n");
+                    schemaItemWidgets.add(
+                        Div.of(
+                            Span.of("└── "),
+                            Span.of("(No validation schema registered - click [+ Add Schema] to register)").modifier(new Modifier().style("font-style:italic;"))
+                        ).modifier(new Modifier().style("font-size:11px; color:#64748b; padding:2px 0;"))
+                    );
                 } else {
                     for (Map.Entry<String, JsonObject> scEntry : dbSchemas.entrySet()) {
                         String scName = scEntry.getKey();
-                        sb.append("              <div style='font-size:11px; color:#94a3b8; display:flex; justify-content:space-between; align-items:center; padding:2px 0;'>\n");
-                        sb.append("                <span>└── <i class='fas fa-shield-alt' style='color:#38bdf8; margin-right:4px;'></i> [Level 3: Schema] <strong style='color:#f8fafc;'>").append(scName).append("</strong></span>\n");
-                        sb.append("                <form method='POST' action='").append(actionUrl).append(selectedEngine).append("' style='display:inline; margin:0;'>\n");
-                        sb.append("                  <input type='hidden' name='action' value='delete_schema'/>\n");
-                        sb.append("                  <input type='hidden' name='target_db' value='").append(db).append("'/>\n");
-                        sb.append("                  <input type='hidden' name='schema_name' value='").append(scName).append("'/>\n");
-                        sb.append("                  <button type='submit' onclick=\"return confirm('Delete schema ").append(scName).append("?');\" style='background:none; border:none; color:#ef4444; font-size:10px; cursor:pointer;'><i class='fas fa-trash'></i></button>\n");
-                        sb.append("                </form>\n");
-                        sb.append("              </div>\n");
+
+                        Widget scItemLeft = Span.of(
+                            Text.of("└── "),
+                            Icon.of("fas fa-shield-alt").modifier(new Modifier().style("color:#38bdf8; margin-right:4px;")),
+                            Text.of("[Level 3: Schema] "),
+                            Span.of(scName).modifier(new Modifier().style("color:#f8fafc; font-weight:bold;"))
+                        );
+
+                        Widget deleteScForm = Form.of(
+                            InputHidden.of("action", "delete_schema"),
+                            InputHidden.of("target_db", db),
+                            InputHidden.of("schema_name", scName),
+                            Button.of(Icon.of("fas fa-trash"))
+                                .attribute("type", "submit")
+                                .attribute("onclick", "return confirm('Delete schema " + scName + "?');")
+                                .modifier(new Modifier().style("background:none; border:none; color:#ef4444; font-size:10px; cursor:pointer;"))
+                        ).action(actionUrl + selectedEngine).method("POST").modifier(new Modifier().style("display:inline; margin:0;"));
+
+                        Widget scItemRow = Div.of(scItemLeft, deleteScForm)
+                            .modifier(new Modifier().style("font-size:11px; color:#94a3b8; display:flex; justify-content:space-between; align-items:center; padding:2px 0;"));
+
+                        schemaItemWidgets.add(scItemRow);
                     }
                 }
-                sb.append("            </div>\n");
-                sb.append("          </div>\n");
 
-                sb.append("        </div>\n");
-                sb.append("      </div>\n");
+                Widget schemaItemsContainer = Div.of(schemaItemWidgets.toArray(new Widget[0]))
+                    .modifier(new Modifier().style("margin-left:16px; border-left: 1px dashed rgba(255,255,255,0.08); padding-left:10px; margin-top:3px;"));
 
-                sb.append("    </div>\n");
+                Widget schemasUnitBlock = Div.of(schemasUnitHeaderRow, schemaItemsContainer)
+                    .modifier(new Modifier().style("margin-bottom:8px; margin-top:4px;"));
+
+                Widget idxSchemasSubtreeContainer = Div.of(indexesUnitBlock, schemasUnitBlock)
+                    .modifier(new Modifier().style("margin-left:18px; border-left: 2px dotted rgba(234,179,8,0.3); padding-left:12px; margin-top:6px;"));
+
+                Widget idxSchemasBlock = Div.of(idxSchemasHeaderRow, idxSchemasSubtreeContainer)
+                    .modifier(new Modifier().style("margin-bottom:12px; background:rgba(30,41,59,0.7); padding:8px 10px; border-radius:6px; border:1px solid rgba(234,179,8,0.25);"));
+
+                engineSubtreeWidgets.add(idxSchemasBlock);
+
+                Widget dbSubtreeContainer = Div.of(engineSubtreeWidgets.toArray(new Widget[0]))
+                    .modifier(new Modifier().style("margin-left:22px; border-left: 2px dashed rgba(56,189,248,0.3); padding-left:16px; margin-top:10px;"));
+
+                dbContentWidgets.add(dbSubtreeContainer);
             }
-            sb.append("  </div>\n");
-        }
-        sb.append("</div>\n");
 
-        return Div.of(treeHeader, RawHtml.of(sb.toString()))
+            Widget dbCard = Div.of(dbContentWidgets.toArray(new Widget[0]))
+                .modifier(new Modifier().style("margin-bottom:14px; padding:8px 12px; border-radius:8px; background:" + (isActiveDb ? "rgba(56,189,248,0.06)" : "transparent") + "; border:" + (isActiveDb ? "1px solid rgba(56,189,248,0.2)" : "1px solid transparent") + ";"));
+
+            dbCardWidgets.add(dbCard);
+        }
+
+        Widget treeContainer = Div.of(dbCardWidgets.toArray(new Widget[0]))
+            .modifier(new Modifier().cssClass("espresso-tree").style("font-family:monospace; font-size:13px; color:#f8fafc; background:rgba(15,23,42,0.6); padding:16px 20px; border-radius:10px; border:1px solid rgba(255,255,255,0.06); max-height:550px; overflow-y:auto;"));
+
+        return Div.of(treeHeader, treeContainer)
             .modifier(new Modifier().cssClass("store-card").style("margin-bottom:20px; padding:16px 20px;"));
     }
 
