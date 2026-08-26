@@ -36,6 +36,14 @@ public class SampleDatasetManager {
             "fas fa-layer-group"
         ),
         new DatasetInfo(
+            "ALL",
+            "ExampleDBReferences",
+            "Cross-Engine & Multi-Cluster References Suite",
+            "Demonstrates direct O(1) object references (jref://) with primary storage addresses, multi-cluster node pointers, and dynamic reference resolution across Document, Records, Geo, Vector, Object, KeyValue, and TimeSeries engines.",
+            120,
+            "fas fa-link"
+        ),
+        new DatasetInfo(
             "DOCUMENT",
             "scrum_board_db",
             "Agile Scrum Project Management",
@@ -121,6 +129,7 @@ public class SampleDatasetManager {
         String key = (datasetKey != null) ? datasetKey.trim().toUpperCase() : "ALL";
         return switch (key) {
             case "ALL", "ALL_SAMPLE_DATABASES" -> loadAllDatasets();
+            case "EXAMPLEDBREFERENCES", "REFERENCES" -> loadExampleDBReferencesDataset();
             case "DOCUMENT", "SCRUM_BOARD_DB" -> loadScrumBoardDataset();
             case "TIMESERIES", "METEOROLOGY_IOT_DB" -> loadMeteorologyDataset();
             case "RECORDS", "HR_ENTERPRISE_DB" -> loadHrEnterpriseDataset();
@@ -130,12 +139,13 @@ public class SampleDatasetManager {
             case "COLUMN", "ECOMMERCE_OLAP_DB" -> loadEcommerceOlapDataset();
             case "KEYVALUE", "DISTRIBUTED_CACHE_DB" -> loadDistributedCacheDataset();
             case "OBJECT", "DIGITAL_ASSETS_DB" -> loadDigitalAssetsDataset();
-            default -> loadScrumBoardDataset();
+            default -> loadExampleDBReferencesDataset();
         };
     }
 
     public int loadAllDatasets() {
         int total = 0;
+        total += loadExampleDBReferencesDataset();
         total += loadSmartCityGisDataset();
         total += loadHrEnterpriseDataset();
         total += loadScrumBoardDataset();
@@ -146,6 +156,148 @@ public class SampleDatasetManager {
         total += loadDistributedCacheDataset();
         total += loadDigitalAssetsDataset();
         return total;
+    }
+
+    // 0. EXAMPLEDBREFERENCES: Cross-Engine & Multi-Cluster References Demo Suite
+    public int loadExampleDBReferencesDataset() {
+        String db = "ExampleDBReferences";
+        long now = System.currentTimeMillis();
+        int count = 0;
+
+        // 1. Referenced Target: DOCUMENT Customers
+        String[] custNames = {"Panama Pacifico Logistics Corp", "Global Transatlantic Freight Ltd", "Canal Transit Maritime Services", "Andean Energy Solutions Inc"};
+        for (int i = 1; i <= 4; i++) {
+            String custId = "cust_" + (100 + i);
+            String docKey = "doc:" + db + ":" + custId;
+            String payload = String.format(
+                "{\"id\":\"%s\",\"companyName\":\"%s\",\"taxId\":\"PA-%d-2026\",\"tier\":\"ENTERPRISE\",\"email\":\"billing@%s.com\",\"phone\":\"+507 833-%04d\",\"status\":\"ACTIVE\",\"primaryStorageAddress\":\"%s\"}",
+                custId, custNames[i - 1], 8000 + i, custNames[i - 1].toLowerCase().replace(" ", ""), i * 111, docKey
+            );
+            engine.getStorageCore().put(docKey, payload.getBytes(StandardCharsets.UTF_8), now);
+            engine.getStorageCore().put(db + ":" + custId, payload.getBytes(StandardCharsets.UTF_8), now);
+            count += 2;
+        }
+
+        // 2. Referenced Target: RECORDS Employees (Java 25 Records)
+        String[] empNames = {"Carlos Mendez", "Sofia Alarcon", "Elena Rostova", "David Chen"};
+        String[] empRoles = {"Principal Distributed Architect", "Lead AI Engineer", "Senior Infrastructure Specialist", "Logistics Operations Lead"};
+        for (int i = 1; i <= 4; i++) {
+            String empId = "emp_" + (200 + i);
+            String recKey = "rec:" + db + ":" + empId;
+            String payload = String.format(
+                "{\"_recordClass\":\"com.enterprise.model.EmployeeProfileRecord\",\"id\":\"%s\",\"fullName\":\"%s\",\"role\":\"%s\",\"department\":\"Core Architecture\",\"salary\":%.2f,\"active\":true,\"primaryStorageAddress\":\"%s\"}",
+                empId, empNames[i - 1], empRoles[i - 1], 95000.0 + (i * 8000.0), recKey
+            );
+            engine.getStorageCore().put(recKey, payload.getBytes(StandardCharsets.UTF_8), now);
+            count++;
+        }
+
+        // 3. Referenced Target: GEOSPATIAL Distribution Hubs
+        double[][] coords = {{8.9824, -79.5199}, {9.3598, -79.9001}, {8.4273, -82.4309}, {8.0987, -80.9821}};
+        String[] hubNames = {"Hub Logistico Central Panama", "Hub Terminal Portuaria Colon", "Hub Occidente David Chiriqui", "Hub Provincias Centrales Santiago"};
+        for (int i = 1; i <= 4; i++) {
+            String hubId = "hub_" + (i == 1 ? "panama" : (i == 2 ? "colon" : (i == 3 ? "david" : "santiago")));
+            String geoKey = "geo:" + db + ":" + hubId;
+            String payload = String.format(
+                "{\"id\":\"%s\",\"name\":\"%s\",\"lat\":%.4f,\"lon\":%.4f,\"type\":\"REGIONAL_DISTRIBUTION_CENTER\",\"capacityTons\":%d,\"primaryStorageAddress\":\"%s\"}",
+                hubId, hubNames[i - 1], coords[i - 1][0], coords[i - 1][1], 25000 * i, geoKey
+            );
+            engine.getStorageCore().put(geoKey, payload.getBytes(StandardCharsets.UTF_8), now);
+            count++;
+        }
+
+        // 4. Referenced Target: VECTOR AI Embeddings
+        float[][] vectors = {{0.18f, 0.72f, 0.45f, 0.89f}, {0.85f, 0.12f, 0.63f, 0.41f}, {0.33f, 0.91f, 0.15f, 0.76f}};
+        String[] vecLabels = {"VectorFaceAuth_Carlos", "VectorProductSemantic_CloudServer", "VectorSignatureAudit_Contract"};
+        for (int i = 1; i <= 3; i++) {
+            String vecId = "vec_" + (i == 1 ? "face_carlos" : (i == 2 ? "prod_embed_01" : "signature_contract"));
+            String vecKey = "vec:" + db + ":" + vecId;
+            String payload = String.format(
+                "{\"id\":\"%s\",\"label\":\"%s\",\"coordinates\":[%s],\"dimensions\":4,\"metric\":\"COSINE\",\"primaryStorageAddress\":\"%s\"}",
+                vecId, vecLabels[i - 1], String.format(Locale.US, "%.2f, %.2f, %.2f, %.2f", vectors[i - 1][0], vectors[i - 1][1], vectors[i - 1][2], vectors[i - 1][3]), vecKey
+            );
+            engine.getStorageCore().put(vecKey, payload.getBytes(StandardCharsets.UTF_8), now);
+            count++;
+        }
+
+        // 5. Referenced Target: OBJECT Digital BLOBs & Invoices
+        String[] objFiles = {"contract_enterprise_2026.pdf", "invoice_ORD-7001.pdf", "audit_compliance_report.pdf"};
+        for (int i = 1; i <= 3; i++) {
+            String objKey = "obj:" + db + ":" + objFiles[i - 1];
+            String payload = String.format(
+                "{\"bucket\":\"contracts\",\"fileName\":\"%s\",\"mimeType\":\"application/pdf\",\"sizeBytes\":%d,\"sha256\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852%04d\",\"primaryStorageAddress\":\"%s\"}",
+                objFiles[i - 1], 102400 * i, i * 77, objKey
+            );
+            engine.getStorageCore().put(objKey, payload.getBytes(StandardCharsets.UTF_8), now);
+            count++;
+        }
+
+        // 6. Referenced Target: KEYVALUE Dynamic Session & Config
+        String kvKey1 = "kv:" + db + ":session_token_carlos";
+        String kvPayload1 = "{\"token\":\"JWT_SECURE_TOKEN_2026_CARLOS\",\"userId\":\"emp_201\",\"active\":true,\"expiresIn\":86400,\"primaryStorageAddress\":\"kv:ExampleDBReferences:session_token_carlos\"}";
+        engine.getStorageCore().put(kvKey1, kvPayload1.getBytes(StandardCharsets.UTF_8), now);
+        count++;
+
+        // 7. Referenced Target: TIMESERIES IoT Power Reading
+        String tsKey1 = "ts:" + db + ":iot_hub_power_01";
+        String tsPayload1 = String.format("{\"metric\":\"power_consumption_kwh\",\"stationRef\":\"jref://GEOSPATIAL:ExampleDBReferences/hub_panama\",\"value\":48.6,\"unit\":\"kWh\",\"status\":\"OPTIMAL\",\"timestamp\":%d,\"primaryStorageAddress\":\"ts:ExampleDBReferences:iot_hub_power_01\"}", now);
+        engine.getStorageCore().put(tsKey1, tsPayload1.getBytes(StandardCharsets.UTF_8), now);
+        count++;
+
+        // 8. MASTER ENTITY 1 (DOCUMENT): Order Master with Local & Multi-Cluster References
+        String orderDocKey = "doc:" + db + ":order_master_7001";
+        String orderPayload = String.format(
+            "{\"orderId\":\"ORD-2026-7001\",\"description\":\"Enterprise Cloud Server & Logistics Contract Deployment\"," +
+            "\"totalAmount\":24500.00,\"currency\":\"USD\",\"status\":\"CONFIRMED\",\"primaryStorageAddress\":\"%s\"," +
+            "\"customerRef\":\"jref://DOCUMENT:ExampleDBReferences/cust_101\"," +
+            "\"leadArchitectRef\":\"jref://RECORDS:ExampleDBReferences/emp_201\"," +
+            "\"fulfillmentHubRef\":\"jref://GEOSPATIAL:ExampleDBReferences/hub_panama\"," +
+            "\"contractDocRef\":\"jref://OBJECT:ExampleDBReferences/contract_enterprise_2026.pdf\"," +
+            "\"biometricsAuditRef\":\"jref://VECTOR:ExampleDBReferences/vec_face_carlos\"," +
+            "\"activeSessionRef\":\"jref://KEYVALUE:ExampleDBReferences/session_token_carlos\"," +
+            "\"powerMonitoringRef\":\"jref://TIMESERIES:ExampleDBReferences/iot_hub_power_01\"," +
+            "\"multiClusterBackupRef\":\"jref://cluster-east-01@DOCUMENT:ExampleDBReferences/cust_101\"," +
+            "\"remoteAiNeuralNodeRef\":\"jref://node-cloud-west@VECTOR:ExampleDBReferences/vec_prod_embed_01\"," +
+            "\"createdAt\":%d}",
+            orderDocKey, now
+        );
+        engine.getStorageCore().put(orderDocKey, orderPayload.getBytes(StandardCharsets.UTF_8), now);
+        engine.getStorageCore().put(db + ":order_master_7001", orderPayload.getBytes(StandardCharsets.UTF_8), now);
+        count += 2;
+
+        // 9. MASTER ENTITY 2 (DOCUMENT): Order Master 7002
+        String order2DocKey = "doc:" + db + ":order_master_7002";
+        String order2Payload = String.format(
+            "{\"orderId\":\"ORD-2026-7002\",\"description\":\"Port Operations Freight & Telemetry Monitoring\"," +
+            "\"totalAmount\":18900.00,\"currency\":\"USD\",\"status\":\"IN_TRANSIT\",\"primaryStorageAddress\":\"%s\"," +
+            "\"customerRef\":\"jref://DOCUMENT:ExampleDBReferences/cust_102\"," +
+            "\"leadArchitectRef\":\"jref://RECORDS:ExampleDBReferences/emp_202\"," +
+            "\"fulfillmentHubRef\":\"jref://GEOSPATIAL:ExampleDBReferences/hub_colon\"," +
+            "\"contractDocRef\":\"jref://OBJECT:ExampleDBReferences/invoice_ORD-7001.pdf\"," +
+            "\"remoteSecondaryClusterRef\":\"jref://cluster-secondary-02@RECORDS:ExampleDBReferences/emp_202\"," +
+            "\"createdAt\":%d}",
+            order2DocKey, now
+        );
+        engine.getStorageCore().put(order2DocKey, order2Payload.getBytes(StandardCharsets.UTF_8), now);
+        engine.getStorageCore().put(db + ":order_master_7002", order2Payload.getBytes(StandardCharsets.UTF_8), now);
+        count += 2;
+
+        // 10. MASTER ENTITY 3 (RECORDS): Invoice Transaction Record
+        String invRecKey = "rec:" + db + ":rec_invoice_9001";
+        String invPayload = String.format(
+            "{\"_recordClass\":\"com.enterprise.model.InvoiceTransactionRecord\",\"invoiceId\":\"INV-2026-9001\",\"billingDate\":\"2026-08-25\"," +
+            "\"subtotal\":22897.20,\"tax\":1602.80,\"total\":24500.00,\"primaryStorageAddress\":\"%s\"," +
+            "\"billedCustomer\":\"jref://DOCUMENT:ExampleDBReferences/cust_101\"," +
+            "\"salesExecutive\":\"jref://RECORDS:ExampleDBReferences/emp_201\"," +
+            "\"dispatchHub\":\"jref://GEOSPATIAL:ExampleDBReferences/hub_panama\"," +
+            "\"associatedOrderDoc\":\"jref://DOCUMENT:ExampleDBReferences/order_master_7001\"," +
+            "\"remoteAuditStore\":\"jref://cluster-europe-03@KEYVALUE:ExampleDBReferences/session_token_carlos\"}",
+            invRecKey
+        );
+        engine.getStorageCore().put(invRecKey, invPayload.getBytes(StandardCharsets.UTF_8), now);
+        count++;
+
+        return count;
     }
 
     // 1. DOCUMENT: Scrum Board Project Management

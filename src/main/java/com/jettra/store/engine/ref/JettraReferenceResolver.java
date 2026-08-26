@@ -22,6 +22,8 @@ public class JettraReferenceResolver {
         JettraReference reference,
         boolean exists,
         int version,
+        String primaryStorageAddress,
+        String clusterNode,
         String rawPayload,
         JsonObject jsonPayload,
         long resolvedAt
@@ -38,33 +40,103 @@ public class JettraReferenceResolver {
     }
 
     /**
-     * Resolves a JettraReference directly with O(1) storage access.
+     * Resolves a JettraReference directly with O(1) storage access and candidate key fallback.
      */
     public ResolvedEntity resolve(JettraReference ref) {
         if (ref == null) {
-            return new ResolvedEntity(null, false, 0, null, null, System.currentTimeMillis());
+            return new ResolvedEntity(null, false, 0, null, localNodeId, null, null, System.currentTimeMillis());
         }
 
-        // 1. Direct O(1) fetch from Storage Core using precalculated key
-        String storageKey = ref.directStorageKey();
-        byte[] rawBytes = storageEngine.getStorageCore().get(storageKey);
+        String pfx = switch (ref.engine() != null ? ref.engine().toUpperCase() : "DOCUMENT") {
+            case "RECORDS" -> "rec:";
+            case "KEYVALUE" -> "kv:";
+            case "VECTOR" -> "vec:";
+            case "GRAPH" -> "graph:";
+            case "TIMESERIES" -> "ts:";
+            case "COLUMN" -> "col:";
+            case "GEOSPATIAL" -> "geo:";
+            case "OBJECT" -> "obj:";
+            default -> "doc:";
+        };
+
+        String[] candidateKeys = {
+            pfx + ref.database() + ":" + ref.entityId(),
+            ref.directStorageKey(),
+            pfx + ref.database() + ":default:" + ref.entityId(),
+            ref.database() + ":" + ref.entityId(),
+            ref.database() + ":default:" + ref.entityId()
+        };
+
+        byte[] rawBytes = null;
+        String foundKey = ref.directStorageKey();
+        for (String k : candidateKeys) {
+            rawBytes = storageEngine.getStorageCore().get(k);
+            if (rawBytes != null && rawBytes.length > 0) {
+                foundKey = k;
+                break;
+            }
+        }
 
         if (rawBytes == null || rawBytes.length == 0) {
-            return new ResolvedEntity(ref, false, 0, null, null, System.currentTimeMillis());
+            Map<String, byte[]> scanned = storageEngine.getStorageCore().scanPrefix(pfx + ref.database() + ":");
+            for (Map.Entry<String, byte[]> e : scanned.entrySet()) {
+                String k = e.getKey();
+                if (k.endsWith(":" + ref.entityId()) || k.equals(pfx + ref.database() + ":" + ref.entityId()) || k.contains(":" + ref.entityId() + ":") || k.contains(":" + ref.entityId() + "_")) {
+                    rawBytes = e.getValue();
+                    foundKey = k;
+                    break;
+                }
+            }
+        }
+
+        if (rawBytes == null || rawBytes.length == 0) {
+            Map<String, byte[]> scanned = storageEngine.getStorageCore().scanPrefix(ref.database() + ":");
+            for (Map.Entry<String, byte[]> e : scanned.entrySet()) {
+                String k = e.getKey();
+                if (k.endsWith(":" + ref.entityId()) || k.equals(ref.database() + ":" + ref.entityId()) || k.contains(":" + ref.entityId() + ":") || k.contains(":" + ref.entityId() + "_")) {
+                    rawBytes = e.getValue();
+                    foundKey = k;
+                    break;
+                }
+            }
+        }
+
+        if (rawBytes == null || rawBytes.length == 0) {
+            String[] allPrefixes = {"rec:", "doc:", "vec:", "geo:", "obj:", "kv:", "ts:", "graph:", "col:"};
+            for (String ap : allPrefixes) {
+                byte[] b = storageEngine.getStorageCore().get(ap + ref.database() + ":" + ref.entityId());
+                if (b != null && b.length > 0) {
+                    rawBytes = b;
+                    foundKey = ap + ref.database() + ":" + ref.entityId();
+                    break;
+                }
+                b = storageEngine.getStorageCore().get(ap + ref.database() + ":default:" + ref.entityId());
+                if (b != null && b.length > 0) {
+                    rawBytes = b;
+                    foundKey = ap + ref.database() + ":default:" + ref.entityId();
+                    break;
+                }
+            }
+        }
+
+        String cluster = ref.node() != null ? ref.node() : localNodeId;
+
+        if (rawBytes == null || rawBytes.length == 0) {
+            return new ResolvedEntity(ref, false, 0, foundKey, cluster, null, null, System.currentTimeMillis());
         }
 
         String rawStr = new String(rawBytes, StandardCharsets.UTF_8);
         if (rawStr.isBlank() || "__TOMBSTONE__".equals(rawStr)) {
-            return new ResolvedEntity(ref, false, 0, null, null, System.currentTimeMillis());
+            return new ResolvedEntity(ref, false, 0, foundKey, cluster, null, null, System.currentTimeMillis());
         }
 
-        int version = Math.max(1, storageEngine.getStorageCore().getVersionCount(storageKey));
+        int version = Math.max(1, storageEngine.getStorageCore().getVersionCount(foundKey));
         JsonObject json = null;
         try {
             json = jsonParser.fromJson(rawStr, JsonObject.class);
         } catch (Exception ignored) {}
 
-        return new ResolvedEntity(ref, true, version, rawStr, json, System.currentTimeMillis());
+        return new ResolvedEntity(ref, true, version, foundKey, cluster, rawStr, json, System.currentTimeMillis());
     }
 
     /**
@@ -76,7 +148,7 @@ public class JettraReferenceResolver {
 
     /**
      * Recursively traverses a JsonObject and dereferences all JettraReference fields up to maxDepth.
-     * E.g. <Persona> --> <Pais> expands persona.pais into the full resolved Pais document.
+     * E.g. <Persona> --> <Pais> expands persona.pais into the full resolved Pais document with primary storage address.
      */
     public JsonObject expandReferences(JsonObject root, int maxDepth) {
         if (root == null || maxDepth <= 0) return root;
@@ -93,11 +165,18 @@ public class JettraReferenceResolver {
                 if (childObj.has("$jref")) {
                     String jrefUri = childObj.getAsString("$jref");
                     ResolvedEntity resolved = resolve(jrefUri);
-                    if (resolved.exists() && resolved.jsonPayload() != null) {
-                        JsonObject deepResolved = expandReferences(resolved.jsonPayload(), maxDepth - 1);
+                    if (resolved.exists()) {
+                        JsonObject deepResolved = resolved.jsonPayload() != null ? expandReferences(resolved.jsonPayload(), maxDepth - 1) : new JsonObject();
+                        if (deepResolved.keySet().isEmpty() && resolved.rawPayload() != null) {
+                            deepResolved.addProperty("raw", resolved.rawPayload());
+                        }
                         JsonObject enriched = new JsonObject();
                         enriched.addProperty("$jref", jrefUri);
                         enriched.addProperty("_engine", resolved.reference().engine());
+                        enriched.addProperty("_database", resolved.reference().database());
+                        enriched.addProperty("_entityId", resolved.reference().entityId());
+                        enriched.addProperty("_primaryAddress", resolved.primaryStorageAddress());
+                        enriched.addProperty("_clusterNode", resolved.clusterNode());
                         enriched.addProperty("_version", resolved.version());
                         enriched.add("_resolved", deepResolved);
                         expanded.add(key, enriched);
@@ -108,11 +187,18 @@ public class JettraReferenceResolver {
             } else if (val instanceof String strVal) {
                 if (JettraReference.isReference(strVal)) {
                     ResolvedEntity resolved = resolve(strVal);
-                    if (resolved.exists() && resolved.jsonPayload() != null) {
-                        JsonObject deepResolved = expandReferences(resolved.jsonPayload(), maxDepth - 1);
+                    if (resolved.exists()) {
+                        JsonObject deepResolved = resolved.jsonPayload() != null ? expandReferences(resolved.jsonPayload(), maxDepth - 1) : new JsonObject();
+                        if (deepResolved.keySet().isEmpty() && resolved.rawPayload() != null) {
+                            deepResolved.addProperty("raw", resolved.rawPayload());
+                        }
                         JsonObject enriched = new JsonObject();
                         enriched.addProperty("$jref", strVal);
                         enriched.addProperty("_engine", resolved.reference().engine());
+                        enriched.addProperty("_database", resolved.reference().database());
+                        enriched.addProperty("_entityId", resolved.reference().entityId());
+                        enriched.addProperty("_primaryAddress", resolved.primaryStorageAddress());
+                        enriched.addProperty("_clusterNode", resolved.clusterNode());
                         enriched.addProperty("_version", resolved.version());
                         enriched.add("_resolved", deepResolved);
                         expanded.add(key, enriched);

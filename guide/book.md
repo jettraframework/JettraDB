@@ -1319,6 +1319,27 @@ Generated Reference URI: jref://RECORDS:hr_db/emp_101
 Direct Storage Key:      rec:hr_db:emp_101
 ```
 
+### 13.7 Primary Storage Addresses, Multi-Cluster Routing & `ExampleDBReferences`
+
+Every object referenced in JettraStoreEngine can be located locally or across one or multiple remote cluster nodes, but it **always maintains a deterministic Primary Storage Address** (e.g. `doc:ExampleDBReferences:cust_101`, `rec:ExampleDBReferences:emp_201`, `geo:ExampleDBReferences:hub_panama`).
+
+#### Multi-Cluster Reference Pointers
+When an entity references a node in another cluster, the cluster identifier is prefixed (`node@`):
+- Local Primary Node: `jref://DOCUMENT:ExampleDBReferences/cust_101` $\rightarrow$ Direct Address: `doc:ExampleDBReferences:cust_101`
+- Remote Secondary Cluster: `jref://cluster-east-01@DOCUMENT:ExampleDBReferences/cust_101` $\rightarrow$ Primary fallback address resolved automatically.
+- AI Cloud Node: `jref://node-cloud-west@VECTOR:ExampleDBReferences/vec_prod_embed_01` $\rightarrow$ Direct Address: `vec:ExampleDBReferences:vec_prod_embed_01`.
+
+#### `ExampleDBReferences` Reference Suite
+JettraStoreEngine includes a dedicated demonstration database, **`ExampleDBReferences`**, pre-seeded with interconnected multi-model entities:
+- **`DOCUMENT` (`order_master_7001`, `order_master_7002`)**: Master orders that reference Customers (`DOCUMENT`), Lead Architects (`RECORDS`), Fulfillment Hubs (`GEOSPATIAL`), Contracts (`OBJECT`), Biometrics (`VECTOR`), Active Sessions (`KEYVALUE`), and Power Monitoring (`TIMESERIES`).
+- **`RECORDS` (`rec_invoice_9001`)**: Java 25 enterprise immutable invoice records with cross-engine references to customer accounts and dispatch centers.
+
+#### GUI Hierarchy Explorer & Auto-Resolve Checkbox
+In the **Multi-Model Storage Hierarchy Explorer** (`StoreEnginesPage`):
+- **Checkbox `[x] Cargar Objetos Referenciados (Auto-Resolve Jref)`**: Enabled by default, it automatically resolves all referenced objects and shows the full resolved JSON payload along with the **Primary Storage Address**, **Cluster Node**, and **Target Version**.
+- **Desmarcar Casilla (Uncheck)**: Disabling the checkbox instantly displays only the lightweight raw URI pointers (`"jref://..."`), omitting remote payload expansion for maximum raw inspection speed.
+- **Interactive Referenced Objects Panel**: When inspecting a record, an interactive panel displays cards for all detected references with an instant `[ Ver Objeto ]` button to navigate directly to any referenced entity.
+
 ---
 
 # Chapter 14: Search Engines & Advanced Multi-Model Querying Architecture

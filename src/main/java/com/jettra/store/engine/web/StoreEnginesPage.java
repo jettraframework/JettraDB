@@ -6,6 +6,9 @@ import com.jettra.store.engine.core.IdGenerator;
 import com.jettra.store.engine.core.JettraStorageEngine;
 import com.jettra.store.engine.core.LsmBTreeHybrid;
 import com.jettra.store.engine.models.*;
+import com.jettra.store.engine.ref.JettraReference;
+import com.jettra.store.engine.ref.JettraReferenceResolver;
+import com.jettra.store.engine.samples.SampleDatasetManager;
 import com.sun.net.httpserver.HttpExchange;
 import io.jettra.flux.core.Modifier;
 import io.jettra.flux.core.Widget;
@@ -44,9 +47,14 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
     private final JettraStorageEngine engine;
     private final JettraJson jsonParser = new JettraJson();
+    private final JettraReferenceResolver refResolver;
 
     public StoreEnginesPage(JettraStorageEngine engine) {
         this.engine = engine;
+        this.refResolver = new JettraReferenceResolver(engine);
+        if (engine != null && engine.getStorageCore() != null && engine.getStorageCore().scanPrefix("doc:ExampleDBReferences:").isEmpty()) {
+            new SampleDatasetManager(engine).loadExampleDBReferencesDataset();
+        }
     }
 
     @Override
@@ -60,7 +68,45 @@ public class StoreEnginesPage extends StoreTemplatePage {
             handleExportData(exchange, params);
             return true;
         }
+        if (params != null && "resolve_ref".equalsIgnoreCase(params.get("action"))) {
+            handleResolveReference(exchange, params);
+            return true;
+        }
         return false;
+    }
+
+    private void handleResolveReference(HttpExchange exchange, Map<String, String> params) throws IOException {
+        String uri = params.get("uri");
+        JsonObject res = new JsonObject();
+        if (uri == null || uri.isBlank()) {
+            res.addProperty("error", "Missing uri parameter");
+        } else {
+            try {
+                JettraReferenceResolver.ResolvedEntity resolved = refResolver.resolve(uri);
+                res.addProperty("exists", resolved.exists());
+                res.addProperty("uri", uri);
+                res.addProperty("engine", resolved.reference() != null ? resolved.reference().engine() : "DOCUMENT");
+                res.addProperty("database", resolved.reference() != null ? resolved.reference().database() : "");
+                res.addProperty("entityId", resolved.reference() != null ? resolved.reference().entityId() : "");
+                res.addProperty("primaryStorageAddress", resolved.primaryStorageAddress());
+                res.addProperty("clusterNode", resolved.clusterNode());
+                res.addProperty("version", resolved.version());
+                if (resolved.jsonPayload() != null) {
+                    res.add("jsonPayload", resolved.jsonPayload());
+                } else if (resolved.rawPayload() != null) {
+                    res.addProperty("rawPayload", resolved.rawPayload());
+                }
+            } catch (Exception e) {
+                res.addProperty("error", e.getMessage());
+            }
+        }
+        byte[] b = jsonParser.toJson(res).getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
+        exchange.sendResponseHeaders(200, b.length);
+        try (OutputStream os = exchange.getResponseBody()) {
+            os.write(b);
+            os.flush();
+        }
     }
 
     private void handleExportData(HttpExchange exchange, Map<String, String> params) throws IOException {
@@ -161,7 +207,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
     }
 
     @Override
-    protected Widget buildContent(HttpExchange exchange, Map<String, String> params, String currentTheme) {
+    public Widget buildContent(HttpExchange exchange, Map<String, String> params, String currentTheme) {
         String selectedEngine = params != null && params.containsKey("engine") ? params.get("engine").toUpperCase() : "DOCUMENT";
         String alertMessage = "";
         String alertType = "badge-active";
@@ -169,7 +215,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
         String targetDb = params != null && params.containsKey("target_db") ? params.get("target_db") : getDefaultDbForEngine(selectedEngine);
 
         // Handle POST Operations
-        if ("POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+        if (exchange != null && "POST".equalsIgnoreCase(exchange.getRequestMethod())) {
             try {
                 String action = params != null ? params.get("action") : null;
                 String targetId = params != null ? params.get("target_id") : "";
@@ -1532,9 +1578,9 @@ public class StoreEnginesPage extends StoreTemplatePage {
             ).modifier(new Modifier().style("display:flex; align-items:center; flex-wrap:wrap; gap:4px;")),
             Row.of(
                 Button.of(Icon.of("fas fa-database"), Text.of(" + DB"))
-                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "document.getElementById('createDbModal').style.display='flex'").cssClass("btn-action btn-primary").style("padding:3px 6px; font-size:9px; margin-right:3px;")),
+                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "showModal('createDbModal')").cssClass("btn-action btn-primary").style("padding:3px 6px; font-size:9px; margin-right:3px;")),
                 Button.of(Icon.of("fas fa-folder-plus"), Text.of(" + Unit"))
-                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "document.getElementById('createUnitModal').style.display='flex'").cssClass("btn-action btn-secondary").style("padding:3px 6px; font-size:9px; margin-right:3px;")),
+                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "showModal('createUnitModal')").cssClass("btn-action btn-secondary").style("padding:3px 6px; font-size:9px; margin-right:3px;")),
                 Button.of(Icon.of("fas fa-download"), Text.of(" Backup"))
                     .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openBackupDbModal('" + escapeJs(targetDb) + "')").cssClass("btn-action btn-secondary").style("padding:3px 6px; font-size:9px; margin-right:3px; background:rgba(34,197,94,0.15); border-color:rgba(34,197,94,0.3); color:#4ade80;")),
                 Button.of(Icon.of("fas fa-upload"), Text.of(" Restore"))
@@ -1595,18 +1641,25 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 .id("tableExplorerQuickFilter")
                 .modifier(new Modifier()
                     .attribute("onkeyup", "filterExplorerTable()")
-                    .style("flex:1; min-width:240px; padding:6px 12px; background:#0f172a; border:1px solid rgba(56,189,248,0.3); border-radius:6px; color:#f8fafc; font-size:12px;"));
+                    .style("flex:1; min-width:220px; padding:6px 12px; background:#0f172a; border:1px solid rgba(56,189,248,0.3); border-radius:6px; color:#f8fafc; font-size:12px;"));
 
             Widget activeDbBadge = Span.of(
                 Icon.of("fas fa-database").modifier(new Modifier().style("margin-right:4px; color:#38bdf8;")),
                 Text.of("DB: " + targetDb)
             ).modifier(new Modifier().style("color:#38bdf8; font-weight:bold; font-size:12px; background:rgba(56,189,248,0.1); border:1px solid rgba(56,189,248,0.25); padding:5px 10px; border-radius:6px;"));
 
+            Widget resolveRefCheckbox = Label.of(
+                RawHtml.of("<input type=\"checkbox\" id=\"chkAutoResolveRefsGlobal\" checked onchange=\"toggleGlobalReferenceResolution(this.checked)\" style=\"accent-color:#38bdf8; width:14px; height:14px; cursor:pointer; margin-right:4px;\" />"),
+                Icon.of("fas fa-link").modifier(new Modifier().style("color:#38bdf8; margin-right:4px; font-size:11px;")),
+                Span.of("Cargar Objetos Referenciados (Auto-Resolve Jref)").modifier(new Modifier().style("color:#cbd5e1; font-size:11px; font-weight:600;"))
+            ).modifier(new Modifier().style("display:inline-flex; align-items:center; cursor:pointer; background:rgba(56,189,248,0.1); border:1px solid rgba(56,189,248,0.25); padding:4px 8px; border-radius:6px;"));
+
             Widget totalCountBadge = Span.of(totalItems + " Total Records").id("tableFilterVisibleCount")
                 .modifier(new Modifier().cssClass("store-badge badge-active").style("font-size:11px; padding:4px 8px;"));
 
             Widget tableFilterBar = Div.of(
                 activeDbBadge,
+                resolveRefCheckbox,
                 quickFilterInput,
                 totalCountBadge
             ).modifier(new Modifier().style("display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px; background:rgba(15,23,42,0.6); padding:8px 12px; border-radius:6px; border:1px solid rgba(255,255,255,0.05);"));
@@ -1760,7 +1813,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     ).modifier(new Modifier().style("text-decoration:none; font-size:7px; color:" + (isEngActive ? "#38bdf8; font-weight:700;" : "#94a3b8;") + ";"));
 
                     Widget engAddUnitBtn = Button.of("+ " + unitSingle)
-                        .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openAddUnitModal('" + escapeJs(engName) + "', '" + escapeJs(unitSingle) + "')").style("background:none; border:1px solid " + engColor + "55; color:" + engColor + "; font-size:6px; padding:0 2px; border-radius:2px; cursor:pointer;"));
+                        .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openAddUnitModal('" + escapeJs(engName) + "', '" + escapeJs(unitSingle) + "', '" + escapeJs(db) + "')").style("background:none; border:1px solid " + engColor + "55; color:" + engColor + "; font-size:6px; padding:0 2px; border-radius:2px; cursor:pointer;"));
 
                     Widget engHeaderRow = Div.of(engHeaderLink, engAddUnitBtn)
                         .modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center;"));
@@ -1780,7 +1833,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
                         ).modifier(new Modifier().style("color:" + (isCurrColl ? "#38bdf8" : "#cbd5e1") + "; font-size:7px; font-weight:600;"));
 
                         Widget unitAddObjBtn = Button.of("[+ " + itemLabel + "]")
-                            .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openAddObjectModal('" + escapeJs(engName) + "', '" + escapeJs(unitName) + "')").style("background:none; border:none; color:" + engColor + "; font-size:6px; cursor:pointer; padding:0;"));
+                            .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openAddObjectModal('" + escapeJs(engName) + "', '" + escapeJs(unitName) + "', '" + escapeJs(db) + "')").style("background:none; border:none; color:" + engColor + "; font-size:6px; cursor:pointer; padding:0;"));
 
                         Widget unitHeaderRow = Div.of(unitLeft, unitAddObjBtn)
                             .modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center;"));
@@ -2047,6 +2100,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
         modals.add(buildConfirmDeleteModal(actionUrl));
         modals.add(buildAdvancedSearchModal(actionUrl, targetDb, currentColl));
         modals.add(buildAdvancedSearchHelpModal());
+        modals.add(buildReferenceWarningModal());
         modals.add(buildCreateIndexModal(actionUrl));
         modals.add(buildCreateSchemaModal(actionUrl));
         modals.add(buildModalsScript());
@@ -2096,15 +2150,15 @@ public class StoreEnginesPage extends StoreTemplatePage {
     private Widget createModalOverlay(String modalId, String width, String borderColor, Widget header, Widget content) {
         return Div.of(
             Div.of(header, content).modifier(new Modifier().cssClass("store-card")
-                .style("width:" + width + "; max-width:92%; background:#1e293b; border:1px solid " + borderColor + "; box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:24px;"))
-        ).id(modalId).modifier(new Modifier().style("display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); z-index:9999; align-items:center; justify-content:center;"));
+                .style("width:" + width + "; max-width:94%; max-height:90vh; overflow-y:auto; background:#1e293b; border:1px solid " + borderColor + "; box-shadow:0 20px 50px rgba(0,0,0,0.85); padding:24px; border-radius:12px; position:relative; z-index:100000;"))
+        ).id(modalId).modifier(new Modifier().style("display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.8); backdrop-filter:blur(6px); z-index:99999; align-items:center; justify-content:center;"));
     }
 
     private Widget createConfirmationModalOverlay(String modalId, String width, String borderColor, Widget header, Widget content) {
         return Div.of(
             Div.of(header, content).modifier(new Modifier().cssClass("store-card")
-                .style("width:" + width + "; max-width:92%; background:#1e293b; border:1px solid " + borderColor + "; box-shadow:0 20px 50px rgba(0,0,0,0.7); padding:24px;"))
-        ).id(modalId).modifier(new Modifier().style("display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); z-index:10000; align-items:center; justify-content:center;"));
+                .style("width:" + width + "; max-width:94%; max-height:90vh; overflow-y:auto; background:#1e293b; border:1px solid " + borderColor + "; box-shadow:0 20px 50px rgba(0,0,0,0.85); padding:24px; border-radius:12px; position:relative; z-index:100001;"))
+        ).id(modalId).modifier(new Modifier().style("display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.8); backdrop-filter:blur(6px); z-index:100000; align-items:center; justify-content:center;"));
     }
 
     private Widget createModalHeader(String title, String iconClass, String iconColor, String modalId) {
@@ -2115,7 +2169,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
             ).modifier(new Modifier().style("margin:0; font-size:18px; font-weight:700; color:#f8fafc;")),
             Button.of(Icon.of("fas fa-times"))
                 .attribute("type", "button")
-                .attribute("onclick", "document.getElementById('" + modalId + "').style.display='none'")
+                .attribute("onclick", "hideModal('" + modalId + "')")
                 .modifier(new Modifier().style("background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;"))
         ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;"));
     }
@@ -2129,7 +2183,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
             ).modifier(new Modifier().style("margin:0; font-size:18px; font-weight:700; color:#f8fafc;")),
             Button.of(Icon.of("fas fa-times"))
                 .attribute("type", "button")
-                .attribute("onclick", "document.getElementById('" + modalId + "').style.display='none'")
+                .attribute("onclick", "hideModal('" + modalId + "')")
                 .modifier(new Modifier().style("background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;"))
         ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;"));
     }
@@ -2172,7 +2226,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
     private Widget createModalFormActions(String modalId, String submitText, String submitIcon, String submitColor) {
         return Div.of(
             Button.of(Text.of("Cancel"))
-                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "document.getElementById('" + modalId + "').style.display='none'").cssClass("btn-action btn-secondary")),
+                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "hideModal('" + modalId + "')").cssClass("btn-action btn-secondary")),
             Button.of(Icon.of(submitIcon), Text.of(" " + submitText))
                 .modifier(new Modifier().attribute("type", "submit").cssClass("btn-action btn-primary").style(submitColor.isEmpty() ? "" : "background:" + submitColor + ";"))
         ).modifier(new Modifier().style("display:flex; justify-content:flex-end; gap:8px;"));
@@ -2228,10 +2282,10 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
         Widget form = Form.of(
             InputHidden.of("action", "create_unit"),
-            InputHidden.of("target_db", targetDb),
+            InputHidden.of("target_db", targetDb).id("modalUnitDbInput"),
             Inputs.of(
                 createLabel("Target Database:"),
-                createTextInput("target_db_display", "", targetDb, "#38bdf8").attribute("disabled", "true")
+                createTextInput("target_db_display", "", targetDb, "#38bdf8").id("modalUnitDbDisplay").attribute("disabled", "true")
             ).modifier(new Modifier().style("margin-bottom:12px;")),
             Inputs.of(
                 createLabel("Engine Subtree Type:"),
@@ -2993,7 +3047,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
     }
 
     private Widget buildInspectRecordModal(String actionUrl) {
-        Widget header = createModalHeader("Inspect Record Details", "fas fa-eye", "#38bdf8", "inspectRecordModal");
+        Widget header = createModalHeader("Inspect Record & Reference Details", "fas fa-eye", "#38bdf8", "inspectRecordModal");
 
         Widget infoGrid = Div.of(
             Div.of(
@@ -3016,14 +3070,36 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 Span.of("Version: ").modifier(new Modifier().style("color:#94a3b8; font-size:11px;")),
                 Span.of("").id("inspectRecordVersionDisplay").modifier(new Modifier().cssClass("store-badge badge-records").style("font-size:10px;"))
             ).modifier(new Modifier().style("flex:0.8; min-width:80px;"))
-        ).modifier(new Modifier().style("display:flex; flex-wrap:wrap; gap:10px; background:rgba(15,23,42,0.8); border:1px solid rgba(56,189,248,0.2); padding:10px 14px; border-radius:6px; margin-bottom:14px; align-items:center;"));
+        ).modifier(new Modifier().style("display:flex; flex-wrap:wrap; gap:10px; background:rgba(15,23,42,0.8); border:1px solid rgba(56,189,248,0.2); padding:10px 14px; border-radius:6px; margin-bottom:12px; align-items:center;"));
+
+        Widget resolveRefToggle = Div.of(
+            Label.of(
+                RawHtml.of("<input type=\"checkbox\" id=\"chkInspectResolveRefs\" checked onchange=\"toggleInspectReferenceResolution(this.checked)\" style=\"accent-color:#38bdf8; width:15px; height:15px; cursor:pointer; margin-right:6px;\" />"),
+                Icon.of("fas fa-link").modifier(new Modifier().style("color:#38bdf8; margin-right:6px; font-size:12px;")),
+                Span.of("Cargar Objetos Referenciados (Auto-Resolve Jref & Dirección Primaria)").modifier(new Modifier().style("color:#38bdf8; font-weight:600; font-size:11.5px;"))
+            ).modifier(new Modifier().style("display:inline-flex; align-items:center; cursor:pointer;")),
+            Span.of("").id("inspectReferencesCountBadge").modifier(new Modifier().cssClass("store-badge badge-active").style("font-size:10.5px; display:none;"))
+        ).modifier(new Modifier().style("display:flex; align-items:center; justify-content:space-between; background:rgba(56,189,248,0.12); border:1px solid rgba(56,189,248,0.3); padding:7px 12px; border-radius:6px; margin-bottom:12px;"));
 
         Widget payloadLabel = createLabel("JSON Record Payload & Properties:");
         Widget payloadArea = createTextArea("inspect_payload", 12, "", "{}")
             .id("inspectRecordPayloadDisplay")
             .modifier(new Modifier()
                 .attribute("readonly", "readonly")
-                .style("width:100%; height:260px; background:#0b1120; border:1px solid rgba(56,189,248,0.3); border-radius:6px; color:#38bdf8; font-family:monospace; font-size:12px; padding:12px; box-sizing:border-box; resize:vertical; line-height:1.4;"));
+                .style("width:100%; height:250px; background:#0b1120; border:1px solid rgba(56,189,248,0.3); border-radius:6px; color:#38bdf8; font-family:monospace; font-size:12px; padding:12px; box-sizing:border-box; resize:vertical; line-height:1.4;"));
+
+        Widget refObjectsTitle = Div.of(
+            Icon.of("fas fa-project-diagram").modifier(new Modifier().style("color:#38bdf8; margin-right:6px; font-size:12px;")),
+            Span.of("Objetos Referenciados Detectados (Direct Storage Address & Cluster Nodes):").modifier(new Modifier().style("color:#cbd5e1; font-size:11.5px; font-weight:700;"))
+        ).modifier(new Modifier().style("display:flex; align-items:center; margin-bottom:8px;"));
+
+        Widget refObjectsList = Div.of()
+            .id("inspectRecordReferencesList")
+            .modifier(new Modifier().style("display:flex; flex-direction:column; gap:6px;"));
+
+        Widget refObjectsContainer = Div.of(refObjectsTitle, refObjectsList)
+            .id("inspectRecordReferencesContainer")
+            .modifier(new Modifier().style("display:none; margin-top:12px; background:rgba(15,23,42,0.9); border:1px solid rgba(56,189,248,0.3); border-radius:8px; padding:12px; max-height:220px; overflow-y:auto;"));
 
         Widget actionButtons = Div.of(
             Button.of(Icon.of("fas fa-copy"), Text.of(" Copy JSON"))
@@ -3037,8 +3113,52 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 .modifier(new Modifier().attribute("type", "button").attribute("onclick", "document.getElementById('inspectRecordModal').style.display='none'").cssClass("btn-action btn-secondary").style("font-size:12px; padding:6px 14px;"))
         ).modifier(new Modifier().style("display:flex; justify-content:flex-end; align-items:center; margin-top:14px; flex-wrap:wrap; gap:6px;"));
 
-        Widget content = Div.of(infoGrid, payloadLabel, payloadArea, actionButtons);
-        return createModalOverlay("inspectRecordModal", "720px", "rgba(56,189,248,0.4)", header, content);
+        Widget content = Div.of(infoGrid, resolveRefToggle, payloadLabel, payloadArea, refObjectsContainer, actionButtons);
+        return createModalOverlay("inspectRecordModal", "750px", "rgba(56,189,248,0.4)", header, content);
+    }
+
+    private Widget buildReferenceWarningModal() {
+        Widget header = createModalHeader("Advertencia de Referencia", "fas fa-exclamation-triangle", "#f59e0b", "referenceWarningModal");
+
+        Widget banner = Div.of(
+            Icon.of("fas fa-exclamation-circle").modifier(new Modifier().style("color:#f59e0b; font-size:24px; margin-right:12px;")),
+            Div.of(
+                Header.of(4, Text.of("No se pudo cargar el objeto referenciado"))
+                    .modifier(new Modifier().style("margin:0; font-size:14px; font-weight:700; color:#f8fafc;")),
+                Span.of("El puntero de referencia no se pudo resolver en el almacenamiento o el nodo de cluster especificado no está accesible.")
+                    .modifier(new Modifier().style("color:#94a3b8; font-size:11.5px;"))
+            ).modifier(new Modifier().style("flex:1;"))
+        ).modifier(new Modifier().style("display:flex; align-items:center; background:rgba(245,158,11,0.12); border:1px solid rgba(245,158,11,0.3); padding:12px 14px; border-radius:8px; margin-bottom:14px;"));
+
+        Widget detailsBox = Div.of(
+            Div.of(
+                Span.of("URI Referenciada: ").modifier(new Modifier().style("color:#94a3b8; font-size:11px; font-weight:600; width:140px; min-width:140px;")),
+                Span.of("").id("refWarnUriDisplay").modifier(new Modifier().style("color:#38bdf8; font-family:monospace; font-weight:700; font-size:12px; word-break:break-all;"))
+            ).modifier(new Modifier().style("display:flex; margin-bottom:8px;")),
+            Div.of(
+                Span.of("Motor / Base de Datos: ").modifier(new Modifier().style("color:#94a3b8; font-size:11px; font-weight:600; width:140px; min-width:140px;")),
+                Span.of("").id("refWarnEngineDbDisplay").modifier(new Modifier().style("color:#f8fafc; font-size:11.5px; font-weight:600;"))
+            ).modifier(new Modifier().style("display:flex; margin-bottom:8px;")),
+            Div.of(
+                Span.of("Dirección Primaria: ").modifier(new Modifier().style("color:#94a3b8; font-size:11px; font-weight:600; width:140px; min-width:140px;")),
+                Span.of("").id("refWarnAddressDisplay").modifier(new Modifier().style("color:#4ade80; font-family:monospace; font-weight:700; font-size:11.5px;"))
+            ).modifier(new Modifier().style("display:flex; margin-bottom:8px;")),
+            Div.of(
+                Span.of("Nodo / Cluster: ").modifier(new Modifier().style("color:#94a3b8; font-size:11px; font-weight:600; width:140px; min-width:140px;")),
+                Span.of("").id("refWarnClusterDisplay").modifier(new Modifier().style("color:#c084fc; font-weight:600; font-size:11.5px;"))
+            ).modifier(new Modifier().style("display:flex;"))
+        ).modifier(new Modifier().style("background:#0b1120; border:1px solid rgba(255,255,255,0.08); padding:12px 14px; border-radius:6px; margin-bottom:14px;"));
+
+        Widget advice = Span.of("Sugerencia: Verifique que la base de datos esté creada, que el dataset esté precargado desde el menú o Explorer, o que el registro exista en el motor correspondiente.")
+            .modifier(new Modifier().style("display:block; color:#64748b; font-size:11px; font-style:italic; margin-bottom:14px;"));
+
+        Widget actionButtons = Div.of(
+            Button.of(Text.of("Entendido / Cerrar"))
+                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "document.getElementById('referenceWarningModal').style.display='none'").cssClass("btn-action btn-secondary").style("font-size:12px; padding:6px 16px; background:rgba(245,158,11,0.15); border-color:rgba(245,158,11,0.4); color:#fde047;"))
+        ).modifier(new Modifier().style("display:flex; justify-content:flex-end;"));
+
+        Widget content = Div.of(banner, detailsBox, advice, actionButtons);
+        return createModalOverlay("referenceWarningModal", "560px", "rgba(245,158,11,0.4)", header, content);
     }
 
     private Widget createAdvancedSearchModalHeader() {
@@ -3577,6 +3697,27 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
     private Widget buildModalsScript() {
         String js = """
+  function showModal(id) {
+    if (!id) return;
+    var el = document.getElementById(id);
+    if (el) {
+      if (el.parentElement !== document.body) {
+        document.body.appendChild(el);
+      }
+      el.style.display = 'flex';
+      el.style.visibility = 'visible';
+      el.style.opacity = '1';
+    }
+  }
+
+  function hideModal(id) {
+    if (!id) return;
+    var el = document.getElementById(id);
+    if (el) {
+      el.style.display = 'none';
+    }
+  }
+
   function setElementValues(map) {
     for (var id in map) {
       var el = document.getElementById(id);
@@ -3604,31 +3745,39 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
   function openAddIndexModal(db) {
     setElementValues({ createIndexDbInput: db, createIndexDbDisplay: db });
-    document.getElementById('createIndexModal').style.display = 'flex';
+    showModal('createIndexModal');
   }
 
   function openAddSchemaModal(db) {
     setElementValues({ createSchemaDbInput: db, createSchemaDbDisplay: db });
-    document.getElementById('createSchemaModal').style.display = 'flex';
+    showModal('createSchemaModal');
   }
 
-  function openAddUnitModal(engine, label) {
-    setElementValues({ modalUnitEngineSelect: engine, modalUnitNameLabel: label + ' Name:' });
-    document.getElementById('createUnitModal').style.display = 'flex';
+  function openAddUnitModal(engine, label, db) {
+    var vals = { modalUnitEngineSelect: engine, modalUnitNameLabel: label + ' Name:' };
+    if (db) {
+      vals.modalUnitDbInput = db;
+      vals.modalUnitDbDisplay = db;
+    }
+    setElementValues(vals);
+    showModal('createUnitModal');
   }
 
-  function openAddObjectModal(engine, unit) {
+  function openAddObjectModal(engine, unit, db) {
     var modalMap = {
       DOCUMENT: 'addDocumentModal', KEYVALUE: 'addKeyValueModal', VECTOR: 'addVectorModal',
       GRAPH: 'addGraphModal', TIMESERIES: 'addTimeSeriesModal', COLUMN: 'addColumnModal',
       GEOSPATIAL: 'addGeoModal', OBJECT: 'addObjectModal', RECORDS: 'addRecordsModal'
     };
-    var modal = document.getElementById(modalMap[engine] || 'addDocumentModal');
+    var modalId = modalMap[(engine || 'DOCUMENT').toUpperCase()] || 'addDocumentModal';
+    var modal = document.getElementById(modalId);
     if (modal) {
       var unitInput = modal.querySelector('input[name="target_coll"], input[name="node_label"]');
       if (unitInput && unit) unitInput.value = unit;
-      modal.style.display = 'flex';
+      var dbInput = modal.querySelector('input[name="target_db"]');
+      if (dbInput && db) dbInput.value = db;
     }
+    showModal(modalId);
   }
 
   function openBackupDbModal(db) {
@@ -3637,7 +3786,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
       sel.value = db;
       onBackupDbChange(sel);
     }
-    document.getElementById('backupDbModal').style.display = 'flex';
+    showModal('backupDbModal');
   }
 
   function onBackupDbChange(selectElem) {
@@ -3658,7 +3807,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
       sel.value = db;
       onRestoreDbChange(sel);
     }
-    document.getElementById('restoreDbModal').style.display = 'flex';
+    showModal('restoreDbModal');
   }
 
   function onRestoreDbChange(selectElem) {
@@ -3682,7 +3831,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
       confirmRestoreDbDisplay: db,
       confirmRestoreFileDisplay: path
     });
-    document.getElementById('confirmDbRestoreModal').style.display = 'flex';
+    showModal('confirmDbRestoreModal');
   }
 
   function openExportDataModal(engine, db, coll) {
@@ -3692,7 +3841,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
     if (engSel && engine) engSel.value = engine;
     if (dbSel && db) dbSel.value = db;
     if (collInput) collInput.value = (coll && coll !== 'default') ? coll : '';
-    document.getElementById('exportDataModal').style.display = 'flex';
+    showModal('exportDataModal');
   }
 
   function openAdvancedSearchModal(engine, db, coll) {
@@ -3702,7 +3851,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
     if (engSel && engine) engSel.value = engine;
     if (dbSel && db) dbSel.value = db;
     if (collInput) collInput.value = (coll && coll !== 'default') ? coll : '';
-    document.getElementById('advancedSearchModal').style.display = 'flex';
+    showModal('advancedSearchModal');
   }
 
   function handleIdModeChange(selectElem) {
@@ -3738,21 +3887,27 @@ public class StoreEnginesPage extends StoreTemplatePage {
     var pretty = parsed ? JSON.stringify(parsed, null, 2) : payload;
     var p = parsed || {};
 
+    var vecCoords = '0.12, 0.45, 0.88, 0.31';
+    if (Array.isArray(p.coordinates)) vecCoords = p.coordinates.join(', ');
+    else if (Array.isArray(p.embedding)) vecCoords = p.embedding.join(', ');
+    else if (Array.isArray(p.vector)) vecCoords = p.vector.join(', ');
+    else if (p.coordinates || p.embedding || p.vector) vecCoords = String(p.coordinates || p.embedding || p.vector);
+
     var cfg = {
       DOCUMENT:   { id: 'editDocumentModal',   vals: { editDocDbInput: db, editDocDbDisplay: db, editDocCollInput: unit || 'default', editDocIdInput: id, editDocIdDisplay: id, editDocClassInput: p._class || '', editDocPayloadInput: pretty } },
       KEYVALUE:   { id: 'editKeyValueModal',   vals: { editKvDbInput: db, editKvDbDisplay: db, editKvCollInput: unit || 'default', editKvIdInput: id, editKvIdDisplay: id, editKvValueInput: payload } },
-      VECTOR:     { id: 'editVectorModal',     vals: { editVecDbInput: db, editVecDbDisplay: db, editVecCollInput: unit || 'default', editVecIdInput: id, editVecIdDisplay: id, editVecCoordsInput: (p.coordinates || p.embedding || p.vector || [0.12, 0.45, 0.88, 0.31]).join(', '), editVecMetaInput: pretty } },
+      VECTOR:     { id: 'editVectorModal',     vals: { editVecDbInput: db, editVecDbDisplay: db, editVecCollInput: unit || 'default', editVecIdInput: id, editVecIdDisplay: id, editVecCoordsInput: vecCoords, editVecMetaInput: pretty } },
       GRAPH:      { id: 'editGraphModal',      vals: { editGraphDbInput: db, editGraphDbDisplay: db, editGraphCollInput: p.label || unit || 'Vertex', editGraphIdInput: id, editGraphIdDisplay: id, editGraphPropsInput: pretty } },
       TIMESERIES: { id: 'editTimeSeriesModal', vals: { editTsDbInput: db, editTsDbDisplay: db, editTsCollInput: p.metric || unit || 'telemetry', editTsIdInput: id, editTsIdDisplay: id, editTsTimestampInput: p.timestamp || id, editTsValueInput: p.value !== undefined ? p.value : '25.4', editTsUnitInput: p.unit || 'celsius', editTsTagsInput: pretty } },
       COLUMN:     { id: 'editColumnModal',     vals: { editColDbInput: db, editColDbDisplay: db, editColCollInput: p._family || unit || 'analytics', editColIdInput: id, editColIdDisplay: id, editColDataInput: pretty } },
       GEOSPATIAL: { id: 'editGeoModal',        vals: { editGeoDbInput: db, editGeoDbDisplay: db, editGeoCollInput: p._layer || unit || 'stores_layer', editGeoIdInput: id, editGeoIdDisplay: id, editGeoLatInput: p.lat !== undefined ? p.lat : (p.latitude !== undefined ? p.latitude : '8.9824'), editGeoLonInput: p.lon !== undefined ? p.lon : (p.longitude !== undefined ? p.longitude : '-79.5199'), editGeoNameInput: p.name || id } },
       OBJECT:     { id: 'editObjectModal',     vals: { editObjDbInput: db, editObjDbDisplay: db, editObjCollInput: p.bucket || unit || 'media_bucket', editObjIdInput: id, editObjIdDisplay: id, editObjMimeInput: p.mimeType || 'application/json', editObjPayloadInput: p.content || payload } },
       RECORDS:    { id: 'editRecordsModal',    vals: { editRecDbInput: db, editRecDbDisplay: db, editRecCollInput: p._table || unit || 'default', editRecIdInput: id, editRecIdDisplay: id, editRecClassInput: p._class || 'com.jettra.model.PersonRecord', editRecPayloadInput: pretty } }
-    }[engine];
+    }[(engine || 'DOCUMENT').toUpperCase()];
 
     if (cfg) {
       setElementValues(cfg.vals);
-      document.getElementById(cfg.id).style.display = 'flex';
+      showModal(cfg.id);
     }
   }
 
@@ -3767,36 +3922,45 @@ public class StoreEnginesPage extends StoreTemplatePage {
       restoreRecordIdLabel: id
     });
     var container = document.getElementById('universalVersionsContainer');
-    container.innerHTML = '';
-    try {
-      var versions = JSON.parse(versionsJsonStr);
-      if (!versions || versions.length === 0) {
-        container.innerHTML = '<div style="padding:16px; color:#94a3b8; text-align:center;">No historical snapshot versions recorded for this item yet. Edit the item to create new versions.</div>';
-      } else {
-        var html = '<table style="width:100%; border-collapse:collapse; font-size:12px;">';
-        html += '<tr style="background:rgba(255,255,255,0.04); color:#94a3b8; text-align:left;"><th style="padding:8px 12px;">Version</th><th style="padding:8px 12px;">Timestamp / Date</th><th style="padding:8px 12px;">Snapshot Preview</th><th style="padding:8px 12px; text-align:right;">Action</th></tr>';
-        for (var i = 0; i < versions.length; i++) {
-          var v = versions[i];
-          var badge = v.isCurrent ? '<span class="store-badge badge-active" style="font-size:10px;">' + v.versionNumber + ' (CURRENT)</span>' : '<span class="store-badge badge-records" style="font-size:10px;">' + v.versionNumber + '</span>';
-          html += '<tr style="border-bottom:1px solid rgba(255,255,255,0.05);">';
-          html += '<td style="padding:8px 12px; font-weight:bold;">' + badge + '</td>';
-          html += '<td style="padding:8px 12px; color:#cbd5e1;">' + (v.formattedDate || v.timestamp) + '</td>';
-          html += '<td style="padding:8px 12px; color:#94a3b8; font-family:monospace;">' + (v.preview || '{}') + '</td>';
-          html += '<td style="padding:8px 12px; text-align:right;">';
-          if (!v.isCurrent) {
-            html += '<button type="button" onclick="openConfirmRestoreModal(' + v.timestamp + ', \\'' + (v.formattedDate || v.timestamp) + '\\')" class="btn-action btn-primary" style="background:#a855f7; padding:3px 10px; font-size:11px;"><i class="fas fa-undo"></i> Restore</button>';
-          } else {
-            html += '<span style="color:#10b981; font-size:11px;">Active</span>';
+    if (container) {
+      container.innerHTML = '';
+      try {
+        var versions = JSON.parse(versionsJsonStr);
+        if (!versions || versions.length === 0) {
+          container.innerHTML = '<div style="padding:16px; color:#94a3b8; text-align:center;">No historical snapshot versions recorded for this item yet. Edit the item to create new versions.</div>';
+        } else {
+          var html = '<table style="width:100%; border-collapse:collapse; font-size:12px;">';
+          html += '<tr style="background:rgba(255,255,255,0.04); color:#94a3b8; text-align:left;"><th style="padding:8px 12px;">Version</th><th style="padding:8px 12px;">Timestamp / Date</th><th style="padding:8px 12px;">Snapshot Preview</th><th style="padding:8px 12px; text-align:right;">Action</th></tr>';
+          for (var i = 0; i < versions.length; i++) {
+            var v = versions[i];
+            var badge = v.isCurrent ? '<span class="store-badge badge-active" style="font-size:10px;">' + v.versionNumber + ' (CURRENT)</span>' : '<span class="store-badge badge-records" style="font-size:10px;">' + v.versionNumber + '</span>';
+            var safeDate = (v.formattedDate || v.timestamp || '').toString().replace(/['"\\\\]/g, ' ');
+            html += '<tr style="border-bottom:1px solid rgba(255,255,255,0.05);">';
+            html += '<td style="padding:8px 12px; font-weight:bold;">' + badge + '</td>';
+            html += '<td style="padding:8px 12px; color:#cbd5e1;">' + safeDate + '</td>';
+            html += '<td style="padding:8px 12px; color:#94a3b8; font-family:monospace;">' + (v.preview || '{}') + '</td>';
+            html += '<td style="padding:8px 12px; text-align:right;">';
+            if (!v.isCurrent) {
+              html += '<button type="button" class="btn-action btn-primary btn-restore-version" data-ts="' + v.timestamp + '" data-date="' + safeDate + '" style="background:#a855f7; padding:3px 10px; font-size:11px;"><i class="fas fa-undo"></i> Restore</button>';
+            } else {
+              html += '<span style="color:#10b981; font-size:11px;">Active</span>';
+            }
+            html += '</td></tr>';
           }
-          html += '</td></tr>';
+          html += '</table>';
+          container.innerHTML = html;
+          container.onclick = function(e) {
+            var btn = e.target.closest('.btn-restore-version');
+            if (btn) {
+              openConfirmRestoreModal(btn.getAttribute('data-ts'), btn.getAttribute('data-date'));
+            }
+          };
         }
-        html += '</table>';
-        container.innerHTML = html;
+      } catch(e) {
+        container.innerHTML = '<div style="padding:16px; color:#ef4444;">Error parsing version list: ' + e.message + '</div>';
       }
-    } catch(e) {
-      container.innerHTML = '<div style="padding:16px; color:#ef4444;">Error parsing version list: ' + e.message + '</div>';
     }
-    document.getElementById('universalRestoreModal').style.display = 'flex';
+    showModal('universalRestoreModal');
   }
 
   function openConfirmRestoreModal(ts, formattedDate) {
@@ -3812,7 +3976,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
       confirmRestoreTsDisplay: ts,
       confirmRestoreDateDisplay: formattedDate || ts
     });
-    document.getElementById('confirmRestoreModal').style.display = 'flex';
+    showModal('confirmRestoreModal');
   }
 
   function openUniversalDeleteModal(engine, db, unit, id) {
@@ -3826,27 +3990,437 @@ public class StoreEnginesPage extends StoreTemplatePage {
       confirmDeleteIdInput: id,
       confirmDeleteIdDisplay: id
     });
-    document.getElementById('confirmDeleteModal').style.display = 'flex';
+    showModal('confirmDeleteModal');
   }
 
   var currentInspectRecord = null;
+  var resolvedCache = {};
+
+  function showReferenceWarningModal(uri, engine, db, id, address, cluster) {
+    setElementValues({
+      refWarnUriDisplay: uri || 'N/A',
+      refWarnEngineDbDisplay: (engine || 'DOCUMENT') + ' / ' + (db || 'default') + (id ? ' (ID: ' + id + ')' : ''),
+      refWarnAddressDisplay: address || 'N/A',
+      refWarnClusterDisplay: cluster || 'Local Cluster (Primary)'
+    });
+    showModal('referenceWarningModal');
+  }
+
+  function parseJrefUri(uri) {
+    if (!uri || typeof uri !== 'string') return null;
+    var clean = uri.trim();
+    var idx = clean.indexOf('jref://');
+    if (idx < 0) return null;
+    clean = clean.substring(idx);
+    var rest = clean.substring(7);
+    var node = 'Local Cluster (Primary)';
+    var atIdx = rest.indexOf('@');
+    if (atIdx > 0) {
+      node = rest.substring(0, atIdx);
+      rest = rest.substring(atIdx + 1);
+    }
+    var slashIdx = rest.indexOf('/');
+    if (slashIdx <= 0) return null;
+    var left = rest.substring(0, slashIdx);
+    var id = rest.substring(slashIdx + 1);
+    var engine = 'DOCUMENT';
+    var db = left;
+    var colonIdx = left.indexOf(':');
+    if (colonIdx > 0) {
+      engine = left.substring(0, colonIdx).toUpperCase();
+      db = left.substring(colonIdx + 1);
+    }
+    var pfx = {
+      'RECORDS': 'rec:',
+      'KEYVALUE': 'kv:',
+      'VECTOR': 'vec:',
+      'GRAPH': 'graph:',
+      'TIMESERIES': 'ts:',
+      'COLUMN': 'col:',
+      'GEOSPATIAL': 'geo:',
+      'OBJECT': 'obj:'
+    }[engine] || 'doc:';
+    var primaryKey = pfx + db + ':' + id;
+    return { uri: clean, node: node, engine: engine, database: db, entityId: id, primaryStorageAddress: primaryKey };
+  }
+
+  function findJrefsInObject(obj, list, seenUris) {
+    if (!obj) return;
+    if (!seenUris) seenUris = {};
+
+    if (typeof obj === 'string') {
+      var startIdx = 0;
+      while ((startIdx = obj.indexOf('jref://', startIdx)) !== -1) {
+        var endIdx = startIdx + 7;
+        while (endIdx < obj.length) {
+          var code = obj.charCodeAt(endIdx);
+          if (code <= 32 || code === 34 || code === 39 || code === 44 || code === 93 || code === 125) {
+            break;
+          }
+          endIdx++;
+        }
+        var u = obj.substring(startIdx, endIdx);
+        if (u && !seenUris[u]) {
+          seenUris[u] = true;
+          var parsed = parseJrefUri(u);
+          if (parsed) list.push({ fieldKey: 'inline', parsed: parsed });
+        }
+        startIdx = endIdx + 1;
+      }
+      return;
+    }
+
+    if (Array.isArray(obj)) {
+      for (var a = 0; a < obj.length; a++) {
+        findJrefsInObject(obj[a], list, seenUris);
+      }
+      return;
+    }
+
+    if (typeof obj === 'object') {
+      if (obj['$jref'] && typeof obj['$jref'] === 'string') {
+        var u = obj['$jref'].trim();
+        if (!seenUris[u]) {
+          seenUris[u] = true;
+          var parsedObj = parseJrefUri(u);
+          if (parsedObj) list.push({ fieldKey: '$jref', parsed: parsedObj });
+        }
+      }
+
+      for (var k in obj) {
+        if (!obj.hasOwnProperty(k)) continue;
+        var v = obj[k];
+        if (typeof v === 'string') {
+          var startIdx = 0;
+          while ((startIdx = v.indexOf('jref://', startIdx)) !== -1) {
+            var endIdx = startIdx + 7;
+            while (endIdx < v.length) {
+              var code = v.charCodeAt(endIdx);
+              if (code <= 32 || code === 34 || code === 39 || code === 44 || code === 93 || code === 125) {
+                break;
+              }
+              endIdx++;
+            }
+            var u = v.substring(startIdx, endIdx);
+            if (u && !seenUris[u]) {
+              seenUris[u] = true;
+              var parsedItem = parseJrefUri(u);
+              if (parsedItem) list.push({ fieldKey: k, parsed: parsedItem });
+            }
+            startIdx = endIdx + 1;
+          }
+        } else if (v && typeof v === 'object') {
+          findJrefsInObject(v, list, seenUris);
+        }
+      }
+    }
+  }
+
   function openInspectRecordModal(engine, db, unit, id, payloadB64, vCount) {
     var payload = decodeUtf8Base64(payloadB64);
     var parsed = null;
     try { parsed = JSON.parse(payload); } catch(e) {}
-    var pretty = parsed ? JSON.stringify(parsed, null, 2) : payload;
-    currentInspectRecord = { engine: engine, db: db, unit: unit || 'default', id: id, payloadB64: payloadB64, vCount: vCount || 1 };
+    
+    var refs = [];
+    if (parsed) {
+      findJrefsInObject(parsed, refs, {});
+    }
+
+    currentInspectRecord = {
+      engine: engine,
+      db: db,
+      unit: unit || 'default',
+      id: id,
+      rawPayload: payload,
+      parsed: parsed,
+      refs: refs,
+      payloadB64: payloadB64,
+      vCount: vCount || 1
+    };
     
     setElementValues({
       inspectRecordEngineDisplay: engine,
       inspectRecordDbDisplay: db,
       inspectRecordCollDisplay: unit || 'default',
       inspectRecordIdDisplay: id,
-      inspectRecordVersionDisplay: 'v' + (vCount || 1),
-      inspectRecordPayloadDisplay: pretty
+      inspectRecordVersionDisplay: 'v' + (vCount || 1)
     });
-    var modal = document.getElementById('inspectRecordModal');
-    if (modal) modal.style.display = 'flex';
+
+    var chk = document.getElementById('chkInspectResolveRefs');
+    var shouldResolve = chk ? chk.checked : true;
+    toggleInspectReferenceResolution(shouldResolve);
+
+    showModal('inspectRecordModal');
+  }
+
+  function toggleInspectReferenceResolution(shouldResolve) {
+    if (!currentInspectRecord) return;
+    var payloadEl = document.getElementById('inspectRecordPayloadDisplay');
+    var refContainer = document.getElementById('inspectRecordReferencesContainer');
+    var refList = document.getElementById('inspectRecordReferencesList');
+    var refBadge = document.getElementById('inspectReferencesCountBadge');
+
+    var refs = currentInspectRecord.refs || [];
+
+    if (!shouldResolve || refs.length === 0) {
+      var prettyRaw = currentInspectRecord.parsed ? JSON.stringify(currentInspectRecord.parsed, null, 2) : currentInspectRecord.rawPayload;
+      if (payloadEl) payloadEl.value = prettyRaw;
+      if (refContainer) refContainer.style.display = 'none';
+      if (refBadge) {
+        if (refs.length > 0) {
+          refBadge.innerText = refs.length + ' Ref(s) (Unresolved)';
+          refBadge.style.display = 'inline-block';
+          refBadge.style.background = 'rgba(148,163,184,0.2)';
+          refBadge.style.color = '#94a3b8';
+        } else {
+          refBadge.style.display = 'none';
+        }
+      }
+      return;
+    }
+
+    // Resolve references and display enriched view
+    if (refBadge) {
+      refBadge.innerText = refs.length + ' Ref(s) Auto-Resolved';
+      refBadge.style.display = 'inline-block';
+      refBadge.style.background = 'rgba(56,189,248,0.2)';
+      refBadge.style.color = '#38bdf8';
+    }
+
+    var promises = [];
+    var resolvedMap = {};
+
+    refs.forEach(function(item) {
+      var u = item.parsed.uri;
+      if (resolvedCache[u]) {
+        resolvedMap[u] = resolvedCache[u];
+      } else {
+        var p = fetch('/engines?action=resolve_ref&uri=' + encodeURIComponent(u))
+          .then(function(res) {
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            return res.json();
+          })
+          .then(function(data) {
+            resolvedCache[u] = data;
+            resolvedMap[u] = data;
+          }).catch(function() {
+            resolvedMap[u] = { exists: false, uri: u, primaryStorageAddress: item.parsed.primaryStorageAddress, clusterNode: item.parsed.node };
+          });
+        promises.push(p);
+      }
+    });
+
+    Promise.all(promises).then(function() {
+      var enrichedJson = enrichObjectWithRefs(JSON.parse(JSON.stringify(currentInspectRecord.parsed)), resolvedMap);
+      if (payloadEl) {
+        payloadEl.value = JSON.stringify(enrichedJson, null, 2);
+      }
+      renderReferencedCards(refs, resolvedMap, refList);
+      if (refContainer) refContainer.style.display = 'block';
+    });
+  }
+
+  function enrichObjectWithRefs(obj, resolvedMap) {
+    if (!obj || typeof obj !== 'object') return obj;
+    for (var k in obj) {
+      if (!obj.hasOwnProperty(k)) continue;
+      var v = obj[k];
+      if (typeof v === 'string' && v.indexOf('jref://') >= 0) {
+        var p = parseJrefUri(v);
+        if (p && resolvedMap[p.uri] && resolvedMap[p.uri].exists) {
+          var res = resolvedMap[p.uri];
+          obj[k] = {
+            '$jref': p.uri,
+            '_primaryAddress': res.primaryStorageAddress,
+            '_clusterNode': res.clusterNode,
+            '_engine': res.engine,
+            '_database': res.database,
+            '_version': res.version,
+            '_resolved': res.jsonPayload || res.rawPayload || {}
+          };
+        }
+      } else if (v && typeof v === 'object') {
+        if (v['$jref'] && resolvedMap[v['$jref']]) {
+          var resObj = resolvedMap[v['$jref']];
+          v['_primaryAddress'] = resObj.primaryStorageAddress;
+          v['_clusterNode'] = resObj.clusterNode;
+          v['_engine'] = resObj.engine;
+          v['_database'] = resObj.database;
+          v['_version'] = resObj.version;
+          v['_resolved'] = resObj.jsonPayload || resObj.rawPayload || {};
+        } else {
+          enrichObjectWithRefs(v, resolvedMap);
+        }
+      }
+    }
+    return obj;
+  }
+
+  function renderReferencedCards(refs, resolvedMap, container) {
+    if (!container) return;
+    container.innerHTML = '';
+    
+    var engColors = {
+      'DOCUMENT': '#3b82f6',
+      'RECORDS': '#f43f5e',
+      'VECTOR': '#8b5cf6',
+      'GEOSPATIAL': '#14b8a6',
+      'OBJECT': '#a855f7',
+      'KEYVALUE': '#10b981',
+      'TIMESERIES': '#06b6d4',
+      'GRAPH': '#ec4899',
+      'COLUMN': '#f97316'
+    };
+
+    var engIcons = {
+      'DOCUMENT': 'fas fa-file-code',
+      'RECORDS': 'fas fa-id-card',
+      'VECTOR': 'fas fa-brain',
+      'GEOSPATIAL': 'fas fa-location-dot',
+      'OBJECT': 'fas fa-box-archive',
+      'KEYVALUE': 'fas fa-key',
+      'TIMESERIES': 'fas fa-stopwatch',
+      'GRAPH': 'fas fa-circle-nodes',
+      'COLUMN': 'fas fa-table'
+    };
+
+    refs.forEach(function(item) {
+      var p = item.parsed;
+      var res = resolvedMap[p.uri] || {};
+      var color = engColors[p.engine] || '#38bdf8';
+      var icon = engIcons[p.engine] || 'fas fa-link';
+      var exists = res.exists !== false;
+      var primaryAddr = res.primaryStorageAddress || p.primaryStorageAddress;
+      var cluster = res.clusterNode || p.node;
+
+      var card = document.createElement('div');
+      card.style.display = 'flex';
+      card.style.alignItems = 'center';
+      card.style.justifyContent = 'space-between';
+      card.style.padding = '8px 12px';
+      card.style.background = 'rgba(15,23,42,0.85)';
+      card.style.border = '1px solid ' + (exists ? 'rgba(56,189,248,0.25)' : 'rgba(239,68,68,0.3)');
+      card.style.borderRadius = '6px';
+      card.style.gap = '8px';
+
+      var leftInfo = document.createElement('div');
+      leftInfo.style.display = 'flex';
+      leftInfo.style.alignItems = 'center';
+      leftInfo.style.gap = '8px';
+      leftInfo.style.flex = '1';
+      leftInfo.style.minWidth = '0';
+
+      var badge = document.createElement('span');
+      badge.className = 'store-badge';
+      badge.style.background = 'rgba(255,255,255,0.08)';
+      badge.style.color = color;
+      badge.style.border = '1px solid ' + color;
+      badge.style.fontSize = '10px';
+      badge.innerHTML = '<i class="' + icon + '" style="margin-right:4px;"></i>' + p.engine;
+
+      var textCol = document.createElement('div');
+      textCol.style.overflow = 'hidden';
+      textCol.style.textOverflow = 'ellipsis';
+      textCol.style.whiteSpace = 'nowrap';
+
+      var uriText = document.createElement('div');
+      uriText.style.fontFamily = 'monospace';
+      uriText.style.fontSize = '11px';
+      uriText.style.fontWeight = 'bold';
+      uriText.style.color = '#f8fafc';
+      uriText.innerText = p.uri;
+
+      var addressText = document.createElement('div');
+      addressText.style.fontSize = '10.5px';
+      addressText.style.color = '#94a3b8';
+      addressText.innerHTML = '<span style="color:#4ade80;"><i class="fas fa-database"></i> ' + primaryAddr + '</span> | <span style="color:#c084fc;"><i class="fas fa-network-wired"></i> ' + cluster + '</span>' + (exists ? ' | <span style="color:#38bdf8;">v' + (res.version || 1) + '</span>' : ' | <span style="color:#ef4444;">Not Resolved</span>');
+
+      textCol.appendChild(uriText);
+      textCol.appendChild(addressText);
+      leftInfo.appendChild(badge);
+      leftInfo.appendChild(textCol);
+
+      var btnInspect = document.createElement('button');
+      btnInspect.type = 'button';
+      btnInspect.className = 'btn-action btn-secondary';
+      btnInspect.style.fontSize = '10.5px';
+      btnInspect.style.padding = '3px 8px';
+      btnInspect.style.color = color;
+      btnInspect.style.borderColor = color;
+      btnInspect.innerHTML = '<i class="fas fa-external-link-alt"></i> Ver Objeto';
+      btnInspect.onclick = (function(uriToInspect, eng, dbName, entId, pAddr, clNode) {
+        return function() {
+          inspectReferencedEntity(uriToInspect, eng, dbName, entId, pAddr, clNode);
+        };
+      })(p.uri, p.engine, p.database, p.entityId, primaryAddr, cluster);
+
+      card.appendChild(leftInfo);
+      card.appendChild(btnInspect);
+      container.appendChild(card);
+    });
+  }
+
+  function inspectReferencedEntity(uriOrEngine, db, unitOrDb, id, directAddr, clusterNode) {
+    var uri = '';
+    var targetEngine = 'DOCUMENT';
+    var targetDb = 'default';
+    var targetId = '';
+    var targetAddr = directAddr || '';
+    var targetCluster = clusterNode || 'Local Cluster (Primary)';
+
+    if (typeof uriOrEngine === 'string' && uriOrEngine.indexOf('jref://') >= 0) {
+      uri = uriOrEngine.trim();
+      var p = parseJrefUri(uri);
+      if (p) {
+        targetEngine = p.engine;
+        targetDb = p.database;
+        targetId = p.entityId;
+        if (!targetAddr) targetAddr = p.primaryStorageAddress;
+        if (!targetCluster || targetCluster === 'Local Cluster (Primary)') targetCluster = p.node;
+      }
+    } else {
+      targetEngine = uriOrEngine || 'DOCUMENT';
+      targetDb = db || 'default';
+      targetId = id || '';
+      uri = 'jref://' + targetEngine + ':' + targetDb + '/' + targetId;
+      var pfx = {
+        'RECORDS': 'rec:',
+        'KEYVALUE': 'kv:',
+        'VECTOR': 'vec:',
+        'GRAPH': 'graph:',
+        'TIMESERIES': 'ts:',
+        'COLUMN': 'col:',
+        'GEOSPATIAL': 'geo:',
+        'OBJECT': 'obj:'
+      }[targetEngine] || 'doc:';
+      if (!targetAddr) targetAddr = pfx + targetDb + ':' + targetId;
+    }
+
+    fetch('/engines?action=resolve_ref&uri=' + encodeURIComponent(uri))
+      .then(function(res) {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.json();
+      })
+      .then(function(data) {
+        if (!data || data.exists === false) {
+          showReferenceWarningModal(uri, targetEngine, targetDb, targetId, (data ? data.primaryStorageAddress : targetAddr), (data ? data.clusterNode : targetCluster));
+          return;
+        }
+        var rawPayload = data.rawPayload || (data.jsonPayload ? JSON.stringify(data.jsonPayload) : '{}');
+        var b64 = btoa(unescape(encodeURIComponent(rawPayload)));
+        openInspectRecordModal(data.engine || targetEngine, data.database || targetDb, 'default', data.entityId || targetId, b64, data.version || 1);
+      })
+      .catch(function(err) {
+        showReferenceWarningModal(uri, targetEngine, targetDb, targetId, targetAddr, targetCluster);
+      });
+  }
+
+  function toggleGlobalReferenceResolution(checked) {
+    var inspectChk = document.getElementById('chkInspectResolveRefs');
+    if (inspectChk) {
+      inspectChk.checked = checked;
+      toggleInspectReferenceResolution(checked);
+    }
   }
 
   function copyInspectRecordPayload() {
@@ -3864,14 +4438,14 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
   function editFromInspectModal() {
     if (currentInspectRecord) {
-      document.getElementById('inspectRecordModal').style.display = 'none';
+      hideModal('inspectRecordModal');
       openUniversalEditModal(currentInspectRecord.engine, currentInspectRecord.db, currentInspectRecord.unit, currentInspectRecord.id, currentInspectRecord.payloadB64);
     }
   }
 
   function historyFromInspectModal() {
     if (currentInspectRecord) {
-      document.getElementById('inspectRecordModal').style.display = 'none';
+      hideModal('inspectRecordModal');
       var versionsJson = JSON.stringify([{ versionNumber: currentInspectRecord.vCount, isCurrent: true, preview: currentInspectRecord.id, timestamp: Date.now() }]);
       openUniversalRestoreModal(currentInspectRecord.engine, currentInspectRecord.db, currentInspectRecord.unit, currentInspectRecord.id, btoa(versionsJson));
     }
@@ -3915,7 +4489,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
   }
 
   function openAdvSearchHelpModal(tab) {
-    document.getElementById('advSearchHelpModal').style.display = 'flex';
+    showModal('advSearchHelpModal');
     if (tab) {
       filterHelpTab(tab);
     }
@@ -3957,9 +4531,30 @@ public class StoreEnginesPage extends StoreTemplatePage {
     if (values) {
       setElementValues(values);
     }
-    document.getElementById('advSearchHelpModal').style.display = 'none';
-    document.getElementById('advancedSearchModal').style.display = 'flex';
+    hideModal('advSearchHelpModal');
+    showModal('advancedSearchModal');
   }
+
+  // Teleport all modals to document.body on load so they escape any CSS containing blocks
+  document.addEventListener('DOMContentLoaded', function() {
+    var modalIds = [
+      'createDbModal', 'createUnitModal', 'addDocumentModal', 'addKeyValueModal',
+      'addVectorModal', 'addGraphModal', 'addTimeSeriesModal', 'addColumnModal',
+      'addGeoModal', 'addObjectModal', 'addRecordsModal', 'editDocumentModal',
+      'editKeyValueModal', 'editVectorModal', 'editGraphModal', 'editTimeSeriesModal',
+      'editColumnModal', 'editGeoModal', 'editObjectModal', 'editRecordsModal',
+      'universalRestoreModal', 'confirmRestoreModal', 'confirmDeleteModal',
+      'inspectRecordModal', 'referenceWarningModal', 'advancedSearchModal',
+      'advSearchHelpModal', 'backupDbModal', 'restoreDbModal', 'confirmDbRestoreModal',
+      'exportDataModal', 'createIndexModal', 'createSchemaModal'
+    ];
+    modalIds.forEach(function(mid) {
+      var el = document.getElementById(mid);
+      if (el && el.parentElement && el.parentElement !== document.body) {
+        document.body.appendChild(el);
+      }
+    });
+  });
 """;
         return RawScript.of(js);
     }
