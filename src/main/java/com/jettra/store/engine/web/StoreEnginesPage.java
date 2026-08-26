@@ -1616,11 +1616,10 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
             // Header Row
             Widget tableHeaderRow = Div.of(
-                Span.of("ENGINE").modifier(new Modifier().style("width:120px; font-weight:700; color:#94a3b8; font-size:11px;")),
-                Span.of("DATABASE").modifier(new Modifier().style("width:110px; font-weight:700; color:#94a3b8; font-size:11px;")),
-                Span.of("UNIT / COLLECTION").modifier(new Modifier().style("width:140px; font-weight:700; color:#94a3b8; font-size:11px;")),
-                Span.of("RECORD ID").modifier(new Modifier().style("width:150px; font-weight:700; color:#94a3b8; font-size:11px;")),
-                Span.of("VERSION").modifier(new Modifier().style("width:70px; font-weight:700; color:#94a3b8; font-size:11px;")),
+                Span.of("ENGINE").modifier(new Modifier().style("width:130px; font-weight:700; color:#94a3b8; font-size:11px;")),
+                Span.of("UNIT / COLLECTION").modifier(new Modifier().style("width:160px; font-weight:700; color:#94a3b8; font-size:11px;")),
+                Span.of("RECORD ID").modifier(new Modifier().style("width:170px; font-weight:700; color:#94a3b8; font-size:11px;")),
+                Span.of("VERSION").modifier(new Modifier().style("width:75px; font-weight:700; color:#94a3b8; font-size:11px;")),
                 Span.of("PAYLOAD PREVIEW").modifier(new Modifier().style("flex:1; min-width:180px; font-weight:700; color:#94a3b8; font-size:11px;")),
                 Span.of("ACTIONS").modifier(new Modifier().style("width:130px; text-align:right; font-weight:700; color:#94a3b8; font-size:11px;"))
             ).modifier(new Modifier().style("display:flex; align-items:center; padding:8px 12px; background:rgba(30,41,59,0.8); border-bottom:2px solid rgba(255,255,255,0.1); border-radius:6px 6px 0 0; gap:8px;"));
@@ -1639,23 +1638,20 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     Widget engCell = Span.of(
                         Icon.of(item.icon()).modifier(new Modifier().style("color:" + item.color() + "; margin-right:4px; font-size:11px;")),
                         Span.of(item.engine()).modifier(new Modifier().style("font-weight:700; font-size:10.5px; color:" + item.color() + ";"))
-                    ).modifier(new Modifier().style("width:120px; display:flex; align-items:center;"));
-
-                    Widget dbCell = Span.of(item.db())
-                        .modifier(new Modifier().style("width:110px; color:#38bdf8; font-size:11px; font-weight:600;"));
+                    ).modifier(new Modifier().style("width:130px; display:flex; align-items:center;"));
 
                     Widget unitCell = Span.of(
                         Text.of("📁 "),
                         Span.of(item.unit()).modifier(new Modifier().style("color:#cbd5e1; font-size:11px; font-weight:500;"))
-                    ).modifier(new Modifier().style("width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"));
+                    ).modifier(new Modifier().style("width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"));
 
                     Widget idCell = Span.of(item.id())
-                        .modifier(new Modifier().style("width:150px; color:#f8fafc; font-family:monospace; font-weight:700; font-size:11.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"));
+                        .modifier(new Modifier().style("width:170px; color:#f8fafc; font-family:monospace; font-weight:700; font-size:11.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"));
 
                     Widget versionCell = Span.of("v" + item.vCount())
-                        .modifier(new Modifier().cssClass("store-badge").style("width:70px; background:rgba(56,189,248,0.15); color:#38bdf8; font-size:10px; padding:2px 6px; text-align:center;"));
+                        .modifier(new Modifier().cssClass("store-badge").style("width:75px; background:rgba(56,189,248,0.15); color:#38bdf8; font-size:10px; padding:2px 6px; text-align:center;"));
 
-                    String preview = item.payload().length() > 65 ? item.payload().substring(0, 65) + "..." : item.payload();
+                    String preview = item.payload().length() > 75 ? item.payload().substring(0, 75) + "..." : item.payload();
                     Widget previewCell = Span.of(preview)
                         .modifier(new Modifier().style("flex:1; min-width:180px; color:#94a3b8; font-family:monospace; font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"));
 
@@ -1680,7 +1676,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     Widget actionsCell = Div.of(actionBtns.toArray(new Widget[0]))
                         .modifier(new Modifier().style("width:130px; display:flex; justify-content:flex-end; align-items:center; gap:3px;"));
 
-                    Widget row = Div.of(engCell, dbCell, unitCell, idCell, versionCell, previewCell, actionsCell)
+                    Widget row = Div.of(engCell, unitCell, idCell, versionCell, previewCell, actionsCell)
                         .modifier(new Modifier().cssClass("explorer-table-row").style("display:flex; align-items:center; padding:8px 12px; border-bottom:1px solid rgba(255,255,255,0.05); background:#0f172a; gap:8px;"));
 
                     tableRows.add(row);
@@ -2050,6 +2046,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
         modals.add(buildConfirmRestoreModal(actionUrl));
         modals.add(buildConfirmDeleteModal(actionUrl));
         modals.add(buildAdvancedSearchModal(actionUrl, targetDb, currentColl));
+        modals.add(buildAdvancedSearchHelpModal());
         modals.add(buildCreateIndexModal(actionUrl));
         modals.add(buildCreateSchemaModal(actionUrl));
         modals.add(buildModalsScript());
@@ -3044,8 +3041,27 @@ public class StoreEnginesPage extends StoreTemplatePage {
         return createModalOverlay("inspectRecordModal", "720px", "rgba(56,189,248,0.4)", header, content);
     }
 
+    private Widget createAdvancedSearchModalHeader() {
+        return Div.of(
+            Header.of(3,
+                Icon.of("fas fa-search-plus").modifier(new Modifier().style("color:#38bdf8; margin-right:8px;")),
+                Text.of(" Búsqueda Avanzada Multi-Model Explorer")
+            ).modifier(new Modifier().style("margin:0; font-size:18px; font-weight:700; color:#f8fafc; display:flex; align-items:center; gap:6px;")),
+            Div.of(
+                Button.of(Icon.of("fas fa-question-circle"), Text.of(" Guía y Ejemplos"))
+                    .attribute("type", "button")
+                    .attribute("onclick", "openAdvSearchHelpModal('all')")
+                    .modifier(new Modifier().style("background:rgba(56,189,248,0.15); border:1px solid rgba(56,189,248,0.4); color:#38bdf8; font-size:12px; font-weight:600; padding:4px 10px; border-radius:6px; cursor:pointer; margin-right:8px; display:inline-flex; align-items:center; gap:6px; transition:all 0.2s;")),
+                Button.of(Icon.of("fas fa-times"))
+                    .attribute("type", "button")
+                    .attribute("onclick", "document.getElementById('advancedSearchModal').style.display='none'")
+                    .modifier(new Modifier().style("background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;"))
+            ).modifier(new Modifier().style("display:flex; align-items:center;"))
+        ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; flex-wrap:wrap; gap:8px;"));
+    }
+
     private Widget buildAdvancedSearchModal(String actionUrl, String targetDb, String currentColl) {
-        Widget header = createModalHeader("Búsqueda Avanzada Multi-Model Explorer", "fas fa-search-plus", "#38bdf8", "advancedSearchModal");
+        Widget header = createAdvancedSearchModalHeader();
         Set<String> dbs = discoverAllDatabases();
         Map<String, String> dbMap = new LinkedHashMap<>();
         for (String d : dbs) {
@@ -3109,7 +3125,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
         Widget querySection = Div.of(
             Inputs.of(
                 createLabel("Field Name to Query (leave blank to search all properties):"),
-                createTextInput("query_field", "e.g. role, status, amount, age, category", "", "#38bdf8")
+                createTextInput("query_field", "e.g. role, status, amount, age, category", "", "#38bdf8").id("advSearchQueryField")
             ).modifier(new Modifier().style("margin-bottom:10px;")),
             Inputs.of(
                 createLabel("Comparison Operator:"),
@@ -3117,14 +3133,14 @@ public class StoreEnginesPage extends StoreTemplatePage {
             ).modifier(new Modifier().style("margin-bottom:10px;")),
             Inputs.of(
                 createLabel("Target Comparison Value:"),
-                createTextInput("query_val", "e.g. Maintainer, COMPLETED, 100", "", "#f8fafc")
+                createTextInput("query_val", "e.g. Maintainer, COMPLETED, 100", "", "#f8fafc").id("advSearchQueryVal")
             ).modifier(new Modifier().style("margin-bottom:10px;"))
         ).id("advSectionQuery").modifier(new Modifier().style("display:none;"));
 
         Widget vectorSection = Div.of(
             Inputs.of(
                 createLabel("Query Vector Coordinates (JSON array or comma-separated floats):"),
-                createTextInput("vector_raw", "[0.12, 0.45, 0.88, 0.31]", "[0.12, 0.45, 0.88, 0.31]", "#a855f7")
+                createTextInput("vector_raw", "[0.12, 0.45, 0.88, 0.31]", "[0.12, 0.45, 0.88, 0.31]", "#a855f7").id("advSearchVectorRaw")
             ).modifier(new Modifier().style("margin-bottom:10px;")),
             Inputs.of(
                 createLabel("Similarity Metric:"),
@@ -3132,49 +3148,61 @@ public class StoreEnginesPage extends StoreTemplatePage {
             ).modifier(new Modifier().style("margin-bottom:10px;")),
             Inputs.of(
                 createLabel("Top-K Nearest Neighbors Limit:"),
-                createTextInput("vector_topk", "10", "10", "#f8fafc")
+                createTextInput("vector_topk", "10", "10", "#f8fafc").id("advSearchVectorTopK")
             ).modifier(new Modifier().style("margin-bottom:10px;"))
         ).id("advSectionVector").modifier(new Modifier().style("display:none;"));
 
         Widget geoSection = Div.of(
             Inputs.of(
                 createLabel("Center Latitude:"),
-                createTextInput("geo_lat", "8.9824", "8.9824", "#14b8a6")
+                createTextInput("geo_lat", "8.9824", "8.9824", "#14b8a6").id("advSearchGeoLat")
             ).modifier(new Modifier().style("margin-bottom:10px;")),
             Inputs.of(
                 createLabel("Center Longitude:"),
-                createTextInput("geo_lon", "-79.5199", "-79.5199", "#14b8a6")
+                createTextInput("geo_lon", "-79.5199", "-79.5199", "#14b8a6").id("advSearchGeoLon")
             ).modifier(new Modifier().style("margin-bottom:10px;")),
             Inputs.of(
                 createLabel("Search Radius (Kilometers):"),
-                createTextInput("geo_radius", "50.0", "50.0", "#f8fafc")
+                createTextInput("geo_radius", "50.0", "50.0", "#f8fafc").id("advSearchGeoRadius")
             ).modifier(new Modifier().style("margin-bottom:10px;"))
         ).id("advSectionGeo").modifier(new Modifier().style("display:none;"));
 
         Widget tsSection = Div.of(
             Inputs.of(
                 createLabel("From Timestamp (epoch ms or 0 for beginning):"),
-                createTextInput("ts_from", "0", "0", "#06b6d4")
+                createTextInput("ts_from", "0", "0", "#06b6d4").id("advSearchTsFrom")
             ).modifier(new Modifier().style("margin-bottom:10px;")),
             Inputs.of(
                 createLabel("To Timestamp (epoch ms, leave blank for current):"),
-                createTextInput("ts_to", "", "", "#06b6d4")
+                createTextInput("ts_to", "", "", "#06b6d4").id("advSearchTsTo")
             ).modifier(new Modifier().style("margin-bottom:10px;"))
         ).id("advSectionTimeseries").modifier(new Modifier().style("display:none;"));
 
         Widget graphSection = Div.of(
             Inputs.of(
                 createLabel("Start Node ID (Filter by originating vertex):"),
-                createTextInput("graph_from_node", "e.g. user_1, node_A", "", "#ec4899")
+                createTextInput("graph_from_node", "e.g. user_1, node_A", "", "#ec4899").id("advSearchGraphFromNode")
             ).modifier(new Modifier().style("margin-bottom:10px;")),
             Inputs.of(
                 createLabel("Edge Relationship Label (optional):"),
-                createTextInput("graph_edge_label", "e.g. FOLLOWS, PURCHASED, CONNECTS", "", "#ec4899")
+                createTextInput("graph_edge_label", "e.g. FOLLOWS, PURCHASED, CONNECTS", "", "#ec4899").id("advSearchGraphEdgeLabel")
             ).modifier(new Modifier().style("margin-bottom:10px;"))
         ).id("advSectionGraph").modifier(new Modifier().style("display:none;"));
 
+        Widget helpBanner = Div.of(
+            Div.of(
+                Icon.of("fas fa-lightbulb").modifier(new Modifier().style("color:#f59e0b; margin-right:6px; font-size:13px;")),
+                Span.of("¿Dudas sobre cómo hacer consultas o la sintaxis de cada motor? ").modifier(new Modifier().style("color:#cbd5e1; font-size:12px;")),
+                Button.of(Icon.of("fas fa-book-open"), Text.of(" Ver Guía con Ejemplos Interactivos"))
+                    .attribute("type", "button")
+                    .attribute("onclick", "openAdvSearchHelpModal('all')")
+                    .modifier(new Modifier().style("background:rgba(56,189,248,0.18); border:1px solid rgba(56,189,248,0.45); color:#38bdf8; font-size:11.5px; font-weight:600; padding:3px 8px; border-radius:4px; cursor:pointer; margin-left:4px; transition:all 0.2s;"))
+            ).modifier(new Modifier().style("display:flex; align-items:center; flex-wrap:wrap; gap:4px;"))
+        ).modifier(new Modifier().style("background:rgba(15,23,42,0.6); border:1px dashed rgba(56,189,248,0.3); border-radius:6px; padding:8px 12px; margin-bottom:14px;"));
+
         Widget form = Form.of(
             InputHidden.of("action", "advanced_search"),
+            helpBanner,
             Inputs.of(
                 createLabel("Target Database:"),
                 createSelectOne("target_db", "", "#38bdf8", "advSearchDbSelect", dbMap, targetDb)
@@ -3194,6 +3222,298 @@ public class StoreEnginesPage extends StoreTemplatePage {
         ).method("POST").action(actionUrl);
 
         return createModalOverlay("advancedSearchModal", "620px", "rgba(59,130,246,0.4)", header, form);
+    }
+
+    private Widget createHelpExampleBox(String title, String desc, String codePreview, String onclickJs) {
+        return Div.of(
+            Div.of(
+                Span.of(title).modifier(new Modifier().style("font-size:12px; font-weight:700; color:#38bdf8;")),
+                Button.of(Icon.of("fas fa-play"), Text.of(" Cargar en Búsqueda"))
+                    .attribute("type", "button")
+                    .attribute("onclick", onclickJs)
+                    .modifier(new Modifier().style("background:rgba(56,189,248,0.2); border:1px solid rgba(56,189,248,0.5); color:#38bdf8; font-size:11px; font-weight:600; padding:3px 10px; border-radius:5px; cursor:pointer; display:inline-flex; align-items:center; gap:5px; transition:all 0.2s;"))
+            ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:4px;")),
+            Paragraph.of(Text.of(desc)).modifier(new Modifier().style("margin:0 0 6px 0; font-size:11.5px; color:#94a3b8; line-height:1.4;")),
+            Div.of(
+                Span.of(codePreview).modifier(new Modifier().style("font-family:monospace; font-size:11.5px; color:#e2e8f0; white-space:pre-wrap; word-break:break-all; display:block;"))
+            ).modifier(new Modifier().style("background:#090d16; border:1px solid rgba(255,255,255,0.08); border-radius:5px; padding:8px 10px;"))
+        ).modifier(new Modifier().style("background:rgba(15,23,42,0.7); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:12px; margin-bottom:10px;"));
+    }
+
+    private Widget createHelpEngineCard(String id, String title, String badgeText, String badgeColor, String iconClass, String iconColor, String description, Widget detailsWidget, Widget... examples) {
+        List<Widget> children = new ArrayList<>();
+        children.add(
+            Div.of(
+                Div.of(
+                    Icon.of(iconClass).modifier(new Modifier().style("color:" + iconColor + "; font-size:16px; margin-right:8px;")),
+                    Span.of(title).modifier(new Modifier().style("font-size:14px; font-weight:700; color:#f8fafc;"))
+                ).modifier(new Modifier().style("display:flex; align-items:center;")),
+                Span.of(badgeText).modifier(new Modifier().style("font-size:10px; font-weight:700; padding:2px 8px; border-radius:4px; background:" + badgeColor + "22; color:" + badgeColor + "; border:1px solid " + badgeColor + "55;"))
+            ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;"))
+        );
+        children.add(
+            Paragraph.of(Text.of(description)).modifier(new Modifier().style("margin:0 0 10px 0; font-size:12px; color:#cbd5e1; line-height:1.5;"))
+        );
+        if (detailsWidget != null) {
+            children.add(detailsWidget);
+        }
+        for (Widget ex : examples) {
+            children.add(ex);
+        }
+        return Div.of(children.toArray(new Widget[0]))
+            .id(id)
+            .modifier(new Modifier().cssClass("help-engine-card").style("background:rgba(30,41,59,0.7); border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:16px; margin-bottom:16px; display:block;"));
+    }
+
+    private Widget buildAdvancedSearchHelpModal() {
+        Widget header = Div.of(
+            Div.of(
+                Header.of(3,
+                    Icon.of("fas fa-graduation-cap").modifier(new Modifier().style("color:#38bdf8; margin-right:8px;")),
+                    Text.of(" Guía de Motores de Búsqueda y Ejemplos de Consultas")
+                ).modifier(new Modifier().style("margin:0; font-size:18px; font-weight:700; color:#f8fafc; display:flex; align-items:center;")),
+                Paragraph.of(
+                    Text.of("Aprende la sintaxis, operadores soportados y carga ejemplos listos para ejecutar en cada motor de búsqueda de Jettra.")
+                ).modifier(new Modifier().style("margin:4px 0 0 0; font-size:12px; color:#94a3b8;"))
+            ),
+            Button.of(Icon.of("fas fa-times"))
+                .attribute("type", "button")
+                .attribute("onclick", "document.getElementById('advSearchHelpModal').style.display='none'")
+                .modifier(new Modifier().style("background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;"))
+        ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:16px; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:12px;"));
+
+        Widget tabsBar = Div.of(
+            Button.of(Text.of("Todos los Motores")).id("tab-btn-all").attribute("type", "button").attribute("onclick", "filterHelpTab('all')")
+                .modifier(new Modifier().cssClass("help-engine-tab").style("padding:6px 12px; font-size:11.5px; font-weight:600; border-radius:6px; background:rgba(56,189,248,0.2); color:#38bdf8; border:1px solid rgba(56,189,248,0.5); cursor:pointer;")),
+            Button.of(Text.of("Jettra Query")).id("tab-btn-query").attribute("type", "button").attribute("onclick", "filterHelpTab('query')")
+                .modifier(new Modifier().cssClass("help-engine-tab").style("padding:6px 12px; font-size:11.5px; font-weight:600; border-radius:6px; background:rgba(255,255,255,0.06); color:#cbd5e1; border:1px solid rgba(255,255,255,0.1); cursor:pointer;")),
+            Button.of(Text.of("Universal Scan")).id("tab-btn-universal").attribute("type", "button").attribute("onclick", "filterHelpTab('universal')")
+                .modifier(new Modifier().cssClass("help-engine-tab").style("padding:6px 12px; font-size:11.5px; font-weight:600; border-radius:6px; background:rgba(255,255,255,0.06); color:#cbd5e1; border:1px solid rgba(255,255,255,0.1); cursor:pointer;")),
+            Button.of(Text.of("Vector (ANN)")).id("tab-btn-vector").attribute("type", "button").attribute("onclick", "filterHelpTab('vector')")
+                .modifier(new Modifier().cssClass("help-engine-tab").style("padding:6px 12px; font-size:11.5px; font-weight:600; border-radius:6px; background:rgba(255,255,255,0.06); color:#cbd5e1; border:1px solid rgba(255,255,255,0.1); cursor:pointer;")),
+            Button.of(Text.of("Geospatial (GPS)")).id("tab-btn-geo").attribute("type", "button").attribute("onclick", "filterHelpTab('geo')")
+                .modifier(new Modifier().cssClass("help-engine-tab").style("padding:6px 12px; font-size:11.5px; font-weight:600; border-radius:6px; background:rgba(255,255,255,0.06); color:#cbd5e1; border:1px solid rgba(255,255,255,0.1); cursor:pointer;")),
+            Button.of(Text.of("TimeSeries (IoT)")).id("tab-btn-ts").attribute("type", "button").attribute("onclick", "filterHelpTab('ts')")
+                .modifier(new Modifier().cssClass("help-engine-tab").style("padding:6px 12px; font-size:11.5px; font-weight:600; border-radius:6px; background:rgba(255,255,255,0.06); color:#cbd5e1; border:1px solid rgba(255,255,255,0.1); cursor:pointer;")),
+            Button.of(Text.of("Graph (Grafos)")).id("tab-btn-graph").attribute("type", "button").attribute("onclick", "filterHelpTab('graph')")
+                .modifier(new Modifier().cssClass("help-engine-tab").style("padding:6px 12px; font-size:11.5px; font-weight:600; border-radius:6px; background:rgba(255,255,255,0.06); color:#cbd5e1; border:1px solid rgba(255,255,255,0.1); cursor:pointer;"))
+        ).modifier(new Modifier().style("display:flex; flex-wrap:wrap; gap:6px; margin-bottom:18px;"));
+
+        // 1. QUERY ENGINE CARD
+        Widget queryOpsPills = Div.of(
+            Span.of("Operadores Disponibles:").modifier(new Modifier().style("font-size:11px; font-weight:700; color:#94a3b8; display:block; margin-bottom:6px;")),
+            Div.of(
+                Span.of("EQUALS (= Coincidencia Exacta)").modifier(new Modifier().style("font-size:10.5px; background:rgba(56,189,248,0.15); color:#38bdf8; padding:3px 8px; border-radius:4px; border:1px solid rgba(56,189,248,0.3);")),
+                Span.of("CONTAINS (Subcadena)").modifier(new Modifier().style("font-size:10.5px; background:rgba(56,189,248,0.15); color:#38bdf8; padding:3px 8px; border-radius:4px; border:1px solid rgba(56,189,248,0.3);")),
+                Span.of("GT ( > Mayor numérico)").modifier(new Modifier().style("font-size:10.5px; background:rgba(56,189,248,0.15); color:#38bdf8; padding:3px 8px; border-radius:4px; border:1px solid rgba(56,189,248,0.3);")),
+                Span.of("LT ( < Menor numérico)").modifier(new Modifier().style("font-size:10.5px; background:rgba(56,189,248,0.15); color:#38bdf8; padding:3px 8px; border-radius:4px; border:1px solid rgba(56,189,248,0.3);")),
+                Span.of("GTE ( >= Mayor o Igual)").modifier(new Modifier().style("font-size:10.5px; background:rgba(56,189,248,0.15); color:#38bdf8; padding:3px 8px; border-radius:4px; border:1px solid rgba(56,189,248,0.3);")),
+                Span.of("LTE ( <= Menor o Igual)").modifier(new Modifier().style("font-size:10.5px; background:rgba(56,189,248,0.15); color:#38bdf8; padding:3px 8px; border-radius:4px; border:1px solid rgba(56,189,248,0.3);")),
+                Span.of("NOT_EQUALS (!= Distinto)").modifier(new Modifier().style("font-size:10.5px; background:rgba(56,189,248,0.15); color:#38bdf8; padding:3px 8px; border-radius:4px; border:1px solid rgba(56,189,248,0.3);")),
+                Span.of("STARTS_WITH (Prefijo)").modifier(new Modifier().style("font-size:10.5px; background:rgba(56,189,248,0.15); color:#38bdf8; padding:3px 8px; border-radius:4px; border:1px solid rgba(56,189,248,0.3);"))
+            ).modifier(new Modifier().style("display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px;"))
+        );
+
+        Widget queryCard = createHelpEngineCard(
+            "help-card-query",
+            "Jettra Query Engine",
+            "JSON Filter",
+            "#38bdf8",
+            "fas fa-filter",
+            "#38bdf8",
+            "Motor de consulta estructurada sobre campos y propiedades JSON en colecciones de Documentos, Columnas y Registros inmutables. Permite evaluar condiciones sobre propiedades individuales o escanear todas las propiedades dejando el campo en blanco.",
+            queryOpsPills,
+            createHelpExampleBox(
+                "Ejemplo 1: Filtrar por Campo Exacto (EQUALS)",
+                "Busca documentos donde el campo 'role' tenga el valor exacto 'Maintainer'.",
+                "Field: role\nOperator: EQUALS (=)\nValue: Maintainer",
+                "applySearchExample('QUERY', {advSearchQueryField:'role', advSearchQueryOp:'EQUALS', advSearchQueryVal:'Maintainer'})"
+            ),
+            createHelpExampleBox(
+                "Ejemplo 2: Comparación Numérica Mayor o Igual (GTE)",
+                "Filtra registros o documentos donde el campo numérico 'amount' o 'price' sea >= 100.",
+                "Field: amount\nOperator: GTE (>=)\nValue: 100",
+                "applySearchExample('QUERY', {advSearchQueryField:'amount', advSearchQueryOp:'GTE', advSearchQueryVal:'100'})"
+            ),
+            createHelpExampleBox(
+                "Ejemplo 3: Búsqueda de Subcadena (CONTAINS)",
+                "Busca usuarios cuyo campo 'email' contenga '@jettra.io'.",
+                "Field: email\nOperator: CONTAINS\nValue: @jettra.io",
+                "applySearchExample('QUERY', {advSearchQueryField:'email', advSearchQueryOp:'CONTAINS', advSearchQueryVal:'@jettra.io'})"
+            ),
+            createHelpExampleBox(
+                "Ejemplo 4: Búsqueda Universal en Todas las Propiedades",
+                "Dejar el campo en blanco para que evalúe si CUALQUIER propiedad del objeto contiene 'VIP'.",
+                "Field: (vacío)\nOperator: CONTAINS\nValue: VIP",
+                "applySearchExample('QUERY', {advSearchQueryField:'', advSearchQueryOp:'CONTAINS', advSearchQueryVal:'VIP'})"
+            )
+        );
+
+        // 2. UNIVERSAL SCAN CARD
+        Widget universalCard = createHelpEngineCard(
+            "help-card-universal",
+            "Universal Multi-Model Key & Keyword Scan",
+            "Multi-Model Scan",
+            "#a855f7",
+            "fas fa-globe",
+            "#a855f7",
+            "Escanea exhaustivamente todas las estructuras multi-modelo (DOCUMENT, KEYVALUE, VECTOR, GRAPH, TIMESERIES, COLUMN, GEOSPATIAL, OBJECT, RECORDS) a través de prefijos de claves, comodines (*) y coincidencia de texto completo sobre el payload serializado.",
+            null,
+            createHelpExampleBox(
+                "Ejemplo 1: Búsqueda por Patrón de Clave con Comodín (*)",
+                "Busca todas las claves que comiencen con el prefijo 'doc_' en todos los motores de la base de datos seleccionada.",
+                "Engine: ALL\nCollection: (opcional)\nRecord ID / Key: doc_*\nKeyword: (vacío)",
+                "applySearchExample('UNIVERSAL', {advSearchEngineSelect:'ALL', advSearchCollInput:'', advSearchKeyInput:'doc_*', advSearchKeywordInput:''})"
+            ),
+            createHelpExampleBox(
+                "Ejemplo 2: Búsqueda de Palabra Clave en Colección Específica",
+                "Busca la palabra 'active' en el contenido JSON de la colección 'users' dentro del motor DOCUMENT.",
+                "Engine: DOCUMENT\nCollection: users\nRecord ID / Key: (vacío)\nKeyword: active",
+                "applySearchExample('UNIVERSAL', {advSearchEngineSelect:'DOCUMENT', advSearchCollInput:'users', advSearchKeyInput:'', advSearchKeywordInput:'active'})"
+            ),
+            createHelpExampleBox(
+                "Ejemplo 3: Búsqueda de Clave Específica en Cualquier Motor",
+                "Localiza el registro exacto con identificador 'user_101' sin importar en qué motor esté almacenado.",
+                "Engine: ALL\nCollection: (vacío)\nRecord ID / Key: user_101\nKeyword: (vacío)",
+                "applySearchExample('UNIVERSAL', {advSearchEngineSelect:'ALL', advSearchCollInput:'', advSearchKeyInput:'user_101', advSearchKeywordInput:''})"
+            )
+        );
+
+        // 3. VECTOR SIMILARITY CARD
+        Widget vectorMetricsPills = Div.of(
+            Span.of("Métricas de Distancia Disponibles:").modifier(new Modifier().style("font-size:11px; font-weight:700; color:#94a3b8; display:block; margin-bottom:6px;")),
+            Div.of(
+                Span.of("COSINE: Similitud Coseno (Óptimo para embeddings de texto, LLMs y NLP)").modifier(new Modifier().style("font-size:10.5px; background:rgba(168,85,247,0.15); color:#c084fc; padding:3px 8px; border-radius:4px; border:1px solid rgba(168,85,247,0.3);")),
+                Span.of("EUCLIDEAN: Distancia Euclidiana L2 (Distancia geométrica espacial directa)").modifier(new Modifier().style("font-size:10.5px; background:rgba(168,85,247,0.15); color:#c084fc; padding:3px 8px; border-radius:4px; border:1px solid rgba(168,85,247,0.3);"))
+            ).modifier(new Modifier().style("display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px;"))
+        );
+
+        Widget vectorCard = createHelpEngineCard(
+            "help-card-vector",
+            "Vector Similarity Search (ANN)",
+            "AI Embeddings",
+            "#c084fc",
+            "fas fa-project-diagram",
+            "#a855f7",
+            "Búsqueda vectorial de vecinos más cercanos (ANN - Approximate Nearest Neighbors) comparando un vector numérico de consulta contra las coordenadas de embeddings almacenadas en la base de datos.",
+            vectorMetricsPills,
+            createHelpExampleBox(
+                "Ejemplo 1: Similitud Coseno con Top-10 Vecinos",
+                "Compara un vector de consulta 4D contra los embeddings almacenados retornando los 10 más cercanos ordenados por similitud.",
+                "Query Vector: [0.12, 0.45, 0.88, 0.31]\nMetric: COSINE\nTop-K: 10",
+                "applySearchExample('VECTOR', {advSearchVectorRaw:'[0.12, 0.45, 0.88, 0.31]', advSearchVecMetric:'COSINE', advSearchVectorTopK:'10'})"
+            ),
+            createHelpExampleBox(
+                "Ejemplo 2: Distancia Euclidiana con Top-5 Vecinos",
+                "Calcula la distancia euclidiana espacial L2 para recuperar los 5 vectores más cercanos.",
+                "Query Vector: [0.85, 0.15, 0.33, 0.67]\nMetric: EUCLIDEAN\nTop-K: 5",
+                "applySearchExample('VECTOR', {advSearchVectorRaw:'[0.85, 0.15, 0.33, 0.67]', advSearchVecMetric:'EUCLIDEAN', advSearchVectorTopK:'5'})"
+            )
+        );
+
+        // 4. GEOSPATIAL CARD
+        Widget geoCard = createHelpEngineCard(
+            "help-card-geo",
+            "Geospatial Proximity Search (GPS)",
+            "GIS Layers",
+            "#14b8a6",
+            "fas fa-globe-americas",
+            "#14b8a6",
+            "Filtrado geoespacial por radio de proximidad sobre puntos de interés, sucursales y capas GIS utilizando la fórmula esférica de Haversine para calcular distancias exactas en kilómetros.",
+            null,
+            createHelpExampleBox(
+                "Ejemplo 1: Radio de Cobertura en Panamá Centro (50 Km)",
+                "Busca todas las ubicaciones y puntos GIS dentro de un radio de 50 km de Ciudad de Panamá.",
+                "Center Latitude: 8.9824\nCenter Longitude: -79.5199\nSearch Radius (Km): 50.0",
+                "applySearchExample('GEOSPATIAL', {advSearchGeoLat:'8.9824', advSearchGeoLon:'-79.5199', advSearchGeoRadius:'50.0'})"
+            ),
+            createHelpExampleBox(
+                "Ejemplo 2: Radio de Cobertura en Madrid (25 Km)",
+                "Encuentra puntos de interés dentro de 25 km en el área metropolitana de Madrid.",
+                "Center Latitude: 40.4168\nCenter Longitude: -3.7038\nSearch Radius (Km): 25.0",
+                "applySearchExample('GEOSPATIAL', {advSearchGeoLat:'40.4168', advSearchGeoLon:'-3.7038', advSearchGeoRadius:'25.0'})"
+            )
+        );
+
+        // 5. TIMESERIES CARD
+        Widget tsCard = createHelpEngineCard(
+            "help-card-ts",
+            "TimeSeries Metrics Search (IoT)",
+            "Telemetry & Logs",
+            "#06b6d4",
+            "fas fa-chart-line",
+            "#06b6d4",
+            "Filtrado y consulta temporal de métricas, telemetría IoT y lecturas continuas de sensores indexadas por marcas de tiempo Epoch en milisegundos (ms).",
+            null,
+            createHelpExampleBox(
+                "Ejemplo 1: Histórico Completo de Telemetría",
+                "Consulta todas las lecturas registradas desde el inicio histórico (timestamp 0) hasta la actualidad.",
+                "From Timestamp: 0\nTo Timestamp: (dejar vacío para hasta la actualidad)",
+                "applySearchExample('TIMESERIES', {advSearchTsFrom:'0', advSearchTsTo:''})"
+            ),
+            createHelpExampleBox(
+                "Ejemplo 2: Ventana Temporal Específica",
+                "Filtra datos de sensores capturados en un intervalo de tiempo concreto.",
+                "From Timestamp: 1700000000000\nTo Timestamp: 1750000000000",
+                "applySearchExample('TIMESERIES', {advSearchTsFrom:'1700000000000', advSearchTsTo:'1750000000000'})"
+            )
+        );
+
+        // 6. GRAPH CARD
+        Widget graphCard = createHelpEngineCard(
+            "help-card-graph",
+            "Graph Traversal Search (Grafos)",
+            "Nodes & Edges",
+            "#ec4899",
+            "fas fa-share-alt",
+            "#ec4899",
+            "Exploración de vértices (nodos) y relaciones dirigidas (edges) en grafos de conocimiento, redes sociales y topologías de dependencias.",
+            null,
+            createHelpExampleBox(
+                "Ejemplo 1: Relaciones desde Nodo de Origen",
+                "Filtra todas las relaciones y aristas que parten del vértice 'user_1'.",
+                "Start Node ID: user_1\nEdge Relationship Label: (vacío)",
+                "applySearchExample('GRAPH', {advSearchGraphFromNode:'user_1', advSearchGraphEdgeLabel:''})"
+            ),
+            createHelpExampleBox(
+                "Ejemplo 2: Filtrar por Tipo de Relación (FOLLOWS)",
+                "Busca todas las conexiones del grafo clasificadas bajo la etiqueta 'FOLLOWS'.",
+                "Start Node ID: (vacío)\nEdge Relationship Label: FOLLOWS",
+                "applySearchExample('GRAPH', {advSearchGraphFromNode:'', advSearchGraphEdgeLabel:'FOLLOWS'})"
+            ),
+            createHelpExampleBox(
+                "Ejemplo 3: Relación Específica desde un Nodo",
+                "Busca si el nodo 'user_1' tiene una conexión de tipo 'PURCHASED'.",
+                "Start Node ID: user_1\nEdge Relationship Label: PURCHASED",
+                "applySearchExample('GRAPH', {advSearchGraphFromNode:'user_1', advSearchGraphEdgeLabel:'PURCHASED'})"
+            )
+        );
+
+        Widget scrollableContent = Div.of(
+            tabsBar,
+            queryCard,
+            universalCard,
+            vectorCard,
+            geoCard,
+            tsCard,
+            graphCard
+        ).modifier(new Modifier().style("max-height:68vh; overflow-y:auto; padding-right:6px;"));
+
+        Widget footer = Div.of(
+            Span.of("Haz clic en 'Cargar en Búsqueda' en cualquiera de los ejemplos para aplicar automáticamente los parámetros al formulario de búsqueda avanzada.")
+                .modifier(new Modifier().style("font-size:11.5px; color:#94a3b8; font-style:italic;")),
+            Button.of(Text.of("Cerrar Guía"))
+                .attribute("type", "button")
+                .attribute("onclick", "document.getElementById('advSearchHelpModal').style.display='none'")
+                .modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:6px 16px; font-size:12px;"))
+        ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; margin-top:16px; border-top:1px solid rgba(255,255,255,0.08); padding-top:12px; flex-wrap:wrap; gap:8px;"));
+
+        Widget modalContent = Div.of(header, scrollableContent, footer);
+
+        return Div.of(
+            Div.of(modalContent).modifier(new Modifier().cssClass("store-card")
+                .style("width:820px; max-width:94%; background:#1e293b; border:1px solid rgba(56,189,248,0.4); box-shadow:0 20px 50px rgba(0,0,0,0.75); padding:22px; border-radius:12px;"))
+        ).id("advSearchHelpModal").modifier(new Modifier().style("display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); backdrop-filter:blur(6px); z-index:10050; align-items:center; justify-content:center;"));
     }
 
     private Widget buildCreateIndexModal(String actionUrl) {
@@ -3592,6 +3912,53 @@ public class StoreEnginesPage extends StoreTemplatePage {
     var targetId = modeMap[mode] || 'advSectionUniversal';
     var targetEl = document.getElementById(targetId);
     if (targetEl) targetEl.style.display = 'block';
+  }
+
+  function openAdvSearchHelpModal(tab) {
+    document.getElementById('advSearchHelpModal').style.display = 'flex';
+    if (tab) {
+      filterHelpTab(tab);
+    }
+  }
+
+  function filterHelpTab(tabId) {
+    var tabs = document.querySelectorAll('.help-engine-tab');
+    var contents = document.querySelectorAll('.help-engine-card');
+    for (var i = 0; i < tabs.length; i++) {
+      tabs[i].style.background = 'rgba(255,255,255,0.06)';
+      tabs[i].style.color = '#cbd5e1';
+      tabs[i].style.borderColor = 'rgba(255,255,255,0.1)';
+    }
+    for (var j = 0; j < contents.length; j++) {
+      contents[j].style.display = 'none';
+    }
+    var activeTab = document.getElementById('tab-btn-' + tabId);
+    if (activeTab) {
+      activeTab.style.background = 'rgba(56,189,248,0.2)';
+      activeTab.style.color = '#38bdf8';
+      activeTab.style.borderColor = 'rgba(56,189,248,0.5)';
+    }
+    if (tabId === 'all') {
+      for (var k = 0; k < contents.length; k++) {
+        contents[k].style.display = 'block';
+      }
+    } else {
+      var activeContent = document.getElementById('help-card-' + tabId);
+      if (activeContent) activeContent.style.display = 'block';
+    }
+  }
+
+  function applySearchExample(mode, values) {
+    var modeSelect = document.getElementById('advSearchModeSelect');
+    if (modeSelect) {
+      modeSelect.value = mode;
+      onSearchModeChange(mode);
+    }
+    if (values) {
+      setElementValues(values);
+    }
+    document.getElementById('advSearchHelpModal').style.display = 'none';
+    document.getElementById('advancedSearchModal').style.display = 'flex';
   }
 """;
         return RawScript.of(js);

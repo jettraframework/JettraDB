@@ -62,6 +62,22 @@
 - [Chapter 12: Backups, Snapshot Replication & Disaster Recovery](#chapter-12-backups-snapshot-replication--disaster-recovery)
   - [12.1 Automated Background Backup & Cron Service](#121-automated-background-backup--cron-service)
   - [12.2 Automatic Restore on Node Boot (`store.restore.auto`)](#122-automatic-restore-on-node-boot-storerestoreauto)
+- [Chapter 13: High-Performance Cross-Engine Fast References (`JettraReference`)](#chapter-13-high-performance-cross-engine-fast-references-jettrareference)
+  - [13.1 Universal Reference URI Specification](#131-universal-reference-uri-specification)
+  - [13.2 JSON Representation & Deep Dereferencing](#132-json-representation--deep-dereferencing)
+  - [13.3 Java 25 Driver Usage](#133-java-25-driver-usage)
+  - [13.4 Python & Go Driver Usage](#134-python-driver-usage)
+  - [13.5 Interactive Shell Commands](#136-interactive-shell-commands-jettrastoreshell)
+- [Chapter 14: Search Engines & Advanced Multi-Model Querying Architecture](#chapter-14-search-engines--advanced-multi-model-querying-architecture)
+  - [14.1 Architecture & Multi-Model Query Routing](#141-architecture--multi-model-query-routing)
+  - [14.2 Jettra Query Engine (JSON Field & Condition Filter)](#142-jettra-query-engine-json-field--condition-filter)
+  - [14.3 Universal Multi-Model Key & Keyword Scan](#143-universal-multi-model-key--keyword-scan)
+  - [14.4 Vector Similarity Search (Cosine & Euclidean ANN)](#144-vector-similarity-search-cosine--euclidean-ann)
+  - [14.5 Geospatial Proximity Search (GPS Radius & Haversine)](#145-geospatial-proximity-search-gps-radius--haversine)
+  - [14.6 TimeSeries Metrics Search (Temporal Epoch Range)](#146-timeseries-metrics-search-temporal-epoch-range)
+  - [14.7 Graph Traversal Search (Node & Edge Relations)](#147-graph-traversal-search-node--edge-relations)
+  - [14.8 Visual Search Console & 1-Click Interactive Help in JettraFlux](#148-visual-search-console--1-click-interactive-help-in-jettraflux)
+  - [14.9 REST & Programmatic Search API Reference](#149-rest--programmatic-search-api-reference)
 - [Appendix A: High-Performance Keyset Pagination & Tombstone Sweeping](#appendix-a-high-performance-keyset-pagination--tombstone-sweeping)
 - [Appendix B: JVM 25, Generational ZGC & Compact Object Headers Tuning](#appendix-b-jvm-25-generational-zgc--compact-object-headers-tuning)
 
@@ -1301,6 +1317,252 @@ Resolved Reference [jref://DOCUMENT:geo_db/PAIS_PA]:
 jettra> ref create RECORDS hr_db emp_101
 Generated Reference URI: jref://RECORDS:hr_db/emp_101
 Direct Storage Key:      rec:hr_db:emp_101
+```
+
+---
+
+# Chapter 14: Search Engines & Advanced Multi-Model Querying Architecture
+
+`JettraStoreEngine` incorporates a unified, high-performance query execution pipeline designed to evaluate complex search criteria across all 9 storage models without requiring external search clusters (like Elasticsearch or Solr). 
+
+```mermaid
+graph TD
+    ClientReq["Client Search Request (GUI / REST / Drivers)"] --> Dispatcher["Advanced Search Dispatcher"]
+    
+    Dispatcher -->|mode=QUERY| QueryEngine["1. Jettra Query Engine (JSON Field & Condition Filter)"]
+    Dispatcher -->|mode=UNIVERSAL| UniversalScan["2. Universal Multi-Model Key & Keyword Scan"]
+    Dispatcher -->|mode=VECTOR| VectorANN["3. Vector Similarity Search (Cosine / Euclidean ANN)"]
+    Dispatcher -->|mode=GEOSPATIAL| GeoSearch["4. Geospatial Proximity Search (GPS & Haversine)"]
+    Dispatcher -->|mode=TIMESERIES| TimeSeriesSearch["5. TimeSeries Metrics Search (Timestamp Range)"]
+    Dispatcher -->|mode=GRAPH| GraphSearch["6. Graph Traversal Search (Node & Edge Relations)"]
+    
+    QueryEngine --> StorageCore["Hybrid LSM/B-Tree Storage Core"]
+    UniversalScan --> StorageCore
+    VectorANN --> StorageCore
+    GeoSearch --> StorageCore
+    TimeSeriesSearch --> StorageCore
+    GraphSearch --> StorageCore
+    
+    StorageCore --> ResultAggregator["Result Matcher & Relevance Scorer"]
+    ResultAggregator --> JSONOutput["Standard JSON Match Results Array"]
+```
+
+---
+
+### 14.1 Architecture & Multi-Model Query Routing
+Every query request is evaluated directly against the active in-memory `MemTable` and indexed SSTables via memory-mapped byte scans. Depending on the `search_mode` parameter, the engine activates specialized mathematical or algorithmic filters:
+
+| Search Strategy | Target Engines | Key Capabilities | Best For |
+| :--- | :--- | :--- | :--- |
+| **`QUERY`** | `DOCUMENT`, `COLUMN`, `RECORDS` | JSON property inspection, 8 comparison operators, global property scan | Structured entity filtering, status checks, range filters |
+| **`UNIVERSAL`** | All 9 Engines (`ALL`) | Key pattern matching (`*` wildcards), serialized payload full-text substring search | Rapid database-wide discovery, key pattern scans |
+| **`VECTOR`** | `VECTOR` | ANN similarity search, Cosine distance, Euclidean $L_2$ distance, Top-K limits | AI embeddings, LLM semantic search, recommendations |
+| **`GEOSPATIAL`** | `GEOSPATIAL` | GPS coordinate evaluation, Haversine spherical distance, radius bounding | Points of interest, delivery coverage, GIS layers |
+| **`TIMESERIES`** | `TIMESERIES` | Epoch millisecond timestamp range filtering (`ts_from`, `ts_to`) | IoT telemetry, server monitoring, historical metrics |
+| **`GRAPH`** | `GRAPH` | Originating vertex filtering (`graph_from_node`), edge relationship labels | Knowledge graphs, social networks, dependency trees |
+
+---
+
+### 14.2 Jettra Query Engine (JSON Field & Condition Filter)
+The **Jettra Query Engine** inspects structured JSON payloads and evaluates boolean and numeric predicates with sub-millisecond overhead.
+
+#### Supported Comparison Operators
+The engine natively supports 8 comparison operators:
+
+| Operator | Syntax Code | Description & Type Behavior | Example |
+| :--- | :--- | :--- | :--- |
+| **Equals** | `EQUALS` | Exact equality match for strings, numbers, or booleans. | `role = "Maintainer"`, `active = true` |
+| **Contains** | `CONTAINS` | Case-insensitive substring matching within the field value. | `email CONTAINS "@jettra.io"` |
+| **Greater Than** | `GT` | Strict numeric greater-than comparison (`>`). | `amount > 500.00` |
+| **Less Than** | `LT` | Strict numeric less-than comparison (`<`). | `age < 30` |
+| **Greater or Equal** | `GTE` | Inclusive numeric greater-than-or-equal comparison (`>=`). | `stock >= 50` |
+| **Less or Equal** | `LTE` | Inclusive numeric less-than-or-equal comparison (`<=`). | `score <= 9.5` |
+| **Not Equals** | `NOT_EQUALS` | Value negation / exclusion (`!=`). | `status != "ARCHIVED"` |
+| **Starts With** | `STARTS_WITH` | Prefix match for strings and codes. | `orderCode STARTS_WITH "ORD-2026-"` |
+
+#### Global Property Scanning (`field = ""` / blank)
+If the field name (`query_field`) is left empty or blank, the query engine dynamically inspects **all** top-level properties in the JSON document. If any property satisfies the comparison condition, the record is immediately matched and returned with metadata detailing which property matched.
+
+#### Example Queries
+
+##### 1. Exact Field Match
+```json
+{
+  "search_mode": "QUERY",
+  "target_db": "customers_db",
+  "target_coll": "users",
+  "query_field": "role",
+  "query_op": "EQUALS",
+  "query_val": "Maintainer"
+}
+```
+
+##### 2. Numeric Range Filter
+```json
+{
+  "search_mode": "QUERY",
+  "target_db": "ecommerce_db",
+  "target_coll": "invoices",
+  "query_field": "totalAmount",
+  "query_op": "GTE",
+  "query_val": "150.00"
+}
+```
+
+##### 3. Global Substring Match (Any Field)
+```json
+{
+  "search_mode": "QUERY",
+  "target_db": "app_db",
+  "query_field": "",
+  "query_op": "CONTAINS",
+  "query_val": "VIP"
+}
+```
+
+---
+
+### 14.3 Universal Multi-Model Key & Keyword Scan
+The **Universal Scan** mode performs full-spectrum scans across the multi-model hierarchy using key prefix patterns and content keywords.
+
+- **Storage Engine Filter (`search_engine`)**: Target a specific engine (`DOCUMENT`, `KEYVALUE`, `VECTOR`, `GRAPH`, `TIMESERIES`, `COLUMN`, `GEOSPATIAL`, `OBJECT`, `RECORDS`) or select `ALL` to search simultaneously across all storage trees.
+- **Key Pattern Wildcards (`search_key`)**: Accepts wildcard patterns such as `doc_*`, `user_101`, or `sensor_temp_*`.
+- **Content Keyword Search (`search_keyword`)**: Performs full-text case-insensitive scanning over the raw JSON payload.
+
+##### Example:
+```json
+{
+  "search_mode": "UNIVERSAL",
+  "target_db": "enterprise_db",
+  "search_engine": "ALL",
+  "search_key": "doc_*",
+  "search_keyword": "active"
+}
+```
+
+---
+
+### 14.4 Vector Similarity Search (Cosine & Euclidean ANN)
+The **Vector Engine** provides embedded Approximate Nearest Neighbor (ANN) search over multi-dimensional floating-point embeddings.
+
+#### Distance Metrics
+1. **Cosine Similarity (`COSINE`)**:
+   Measures the angular similarity between query vector $\vec{A}$ and stored vector $\vec{B}$:
+   $$\text{Similarity}(\vec{A}, \vec{B}) = \frac{\vec{A} \cdot \vec{B}}{\|\vec{A}\|_2 \|\vec{B}\|_2}$$
+   $$\text{Distance} = 1 - \text{Similarity}(\vec{A}, \vec{B})$$
+   *Recommended for NLP embeddings, sentence transformers, and LLM semantic retrieval.*
+
+2. **Euclidean Distance (`EUCLIDEAN`)**:
+   Computes the geometric $L_2$ Euclidean distance:
+   $$\text{Distance}(\vec{A}, \vec{B}) = \sqrt{\sum_{i=1}^n (A_i - B_i)^2}$$
+
+#### Parameters:
+- `vector_raw`: JSON array string or comma-separated float values (e.g. `[0.12, 0.45, 0.88, 0.31]`).
+- `vector_metric`: `COSINE` or `EUCLIDEAN`.
+- `vector_topk`: Maximum number of nearest neighbors to return (e.g. `10`).
+
+##### Example Query:
+```json
+{
+  "search_mode": "VECTOR",
+  "target_db": "ai_embeddings_db",
+  "vector_raw": "[0.12, 0.45, 0.88, 0.31]",
+  "vector_metric": "COSINE",
+  "vector_topk": "10"
+}
+```
+
+---
+
+### 14.5 Geospatial Proximity Search (GPS Radius & Haversine)
+The **Geospatial Engine** calculates real-time geodesic distances on the Earth's sphere using the Haversine formula:
+
+$$d = 2R \cdot \arcsin\left(\sqrt{\sin^2\left(\frac{\Delta \phi}{2}\right) + \cos(\phi_1)\cos(\phi_2)\sin^2\left(\frac{\Delta \lambda}{2}\right)}\right)$$
+Where $\phi$ is latitude, $\lambda$ is longitude in radians, and $R = 6371\text{ km}$.
+
+#### Parameters:
+- `geo_lat`: Center point latitude in decimal degrees (e.g. `8.9824`).
+- `geo_lon`: Center point longitude in decimal degrees (e.g. `-79.5199`).
+- `geo_radius`: Maximum search radius in Kilometers (e.g. `50.0`).
+
+##### Example Query:
+```json
+{
+  "search_mode": "GEOSPATIAL",
+  "target_db": "gis_layers",
+  "geo_lat": "8.9824",
+  "geo_lon": "-79.5199",
+  "geo_radius": "50.0"
+}
+```
+
+---
+
+### 14.6 TimeSeries Metrics Search (Temporal Epoch Range)
+The **TimeSeries Engine** queries metric data points and IoT telemetry streams within a monotonic timestamp interval.
+
+#### Parameters:
+- `ts_from`: Starting Unix epoch timestamp in milliseconds (use `0` for beginning of history).
+- `ts_to`: Ending Unix epoch timestamp in milliseconds (leave empty to query up to the present moment).
+
+##### Example Query:
+```json
+{
+  "search_mode": "TIMESERIES",
+  "target_db": "iot_telemetry",
+  "ts_from": "1700000000000",
+  "ts_to": "1750000000000"
+}
+```
+
+---
+
+### 14.7 Graph Traversal Search (Node & Edge Relations)
+The **Graph Engine** filters directed vertices and labeled edges in knowledge networks and dependency structures.
+
+#### Parameters:
+- `graph_from_node`: Filter relationships originating from a specific vertex ID (e.g. `user_1`, `node_A`).
+- `graph_edge_label`: Filter by directed relationship type (e.g. `FOLLOWS`, `PURCHASED`, `REPORTS_TO`, `CONNECTS`).
+
+##### Example Query:
+```json
+{
+  "search_mode": "GRAPH",
+  "target_db": "knowledge_graph",
+  "graph_from_node": "user_1",
+  "graph_edge_label": "FOLLOWS"
+}
+```
+
+---
+
+### 14.8 Visual Search Console & 1-Click Interactive Help in JettraFlux
+The **Multi-Model Storage Hierarchy Explorer** in `StoreEnginesPage` includes an integrated Advanced Search suite:
+
+1. **Búsqueda Avanzada Modal (`advancedSearchModal`)**:
+   - Dynamic mode selector that adapts the visible input controls in real-time.
+   - Prominent **[ Guía y Ejemplos ]** button in the header and guidance banner.
+2. **Interactive Search Guide Dialog (`advSearchHelpModal`)**:
+   - Quick tab navigation across all search strategies (*Todos los Motores*, *Jettra Query*, *Universal Scan*, *Vector ANN*, *Geospatial GPS*, *TimeSeries IoT*, *Graph Relations*).
+   - Detailed operator pills, usage guidelines, and code snippets.
+   - **"Cargar en Búsqueda" 1-Click Actions**: Clicking any example automatically populates the form fields, selects the correct search mode, and returns to the search modal ready for immediate execution.
+3. **Table View Optimization**:
+   - The Table View mode highlights the active database in the filter bar header badge and dedicates full horizontal space to Engine, Unit/Collection, Record ID, Version, and Payload Content.
+
+---
+
+### 14.9 REST & Programmatic Search API Reference
+All search capabilities are accessible via HTTP `POST` to the web administration port or REST DB port:
+
+```bash
+# Execute Jettra Query Search via REST API
+curl -X POST http://localhost:50050/engines/DOCUMENT \
+  -d "action=advanced_search" \
+  -d "target_db=customers_db" \
+  -d "search_mode=QUERY" \
+  -d "query_field=role" \
+  -d "query_op=EQUALS" \
+  -d "query_val=Maintainer"
 ```
 
 ---
