@@ -189,7 +189,8 @@ public class SampleDatasetManager {
                 empId, empNames[i - 1], empRoles[i - 1], 95000.0 + (i * 8000.0), recKey
             );
             engine.getStorageCore().put(recKey, payload.getBytes(StandardCharsets.UTF_8), now);
-            count++;
+            engine.getStorageCore().put(db + ":" + empId, payload.getBytes(StandardCharsets.UTF_8), now);
+            count += 2;
         }
 
         // 3. Referenced Target: GEOSPATIAL Distribution Hubs
@@ -203,7 +204,8 @@ public class SampleDatasetManager {
                 hubId, hubNames[i - 1], coords[i - 1][0], coords[i - 1][1], 25000 * i, geoKey
             );
             engine.getStorageCore().put(geoKey, payload.getBytes(StandardCharsets.UTF_8), now);
-            count++;
+            engine.getStorageCore().put(db + ":" + hubId, payload.getBytes(StandardCharsets.UTF_8), now);
+            count += 2;
         }
 
         // 4. Referenced Target: VECTOR AI Embeddings
@@ -217,7 +219,8 @@ public class SampleDatasetManager {
                 vecId, vecLabels[i - 1], String.format(Locale.US, "%.2f, %.2f, %.2f, %.2f", vectors[i - 1][0], vectors[i - 1][1], vectors[i - 1][2], vectors[i - 1][3]), vecKey
             );
             engine.getStorageCore().put(vecKey, payload.getBytes(StandardCharsets.UTF_8), now);
-            count++;
+            engine.getStorageCore().put(db + ":" + vecId, payload.getBytes(StandardCharsets.UTF_8), now);
+            count += 2;
         }
 
         // 5. Referenced Target: OBJECT Digital BLOBs & Invoices
@@ -229,20 +232,23 @@ public class SampleDatasetManager {
                 objFiles[i - 1], 102400 * i, i * 77, objKey
             );
             engine.getStorageCore().put(objKey, payload.getBytes(StandardCharsets.UTF_8), now);
-            count++;
+            engine.getStorageCore().put(db + ":" + objFiles[i - 1], payload.getBytes(StandardCharsets.UTF_8), now);
+            count += 2;
         }
 
         // 6. Referenced Target: KEYVALUE Dynamic Session & Config
         String kvKey1 = "kv:" + db + ":session_token_carlos";
         String kvPayload1 = "{\"token\":\"JWT_SECURE_TOKEN_2026_CARLOS\",\"userId\":\"emp_201\",\"active\":true,\"expiresIn\":86400,\"primaryStorageAddress\":\"kv:ExampleDBReferences:session_token_carlos\"}";
         engine.getStorageCore().put(kvKey1, kvPayload1.getBytes(StandardCharsets.UTF_8), now);
-        count++;
+        engine.getStorageCore().put(db + ":session_token_carlos", kvPayload1.getBytes(StandardCharsets.UTF_8), now);
+        count += 2;
 
         // 7. Referenced Target: TIMESERIES IoT Power Reading
         String tsKey1 = "ts:" + db + ":iot_hub_power_01";
         String tsPayload1 = String.format("{\"metric\":\"power_consumption_kwh\",\"stationRef\":\"jref://GEOSPATIAL:ExampleDBReferences/hub_panama\",\"value\":48.6,\"unit\":\"kWh\",\"status\":\"OPTIMAL\",\"timestamp\":%d,\"primaryStorageAddress\":\"ts:ExampleDBReferences:iot_hub_power_01\"}", now);
         engine.getStorageCore().put(tsKey1, tsPayload1.getBytes(StandardCharsets.UTF_8), now);
-        count++;
+        engine.getStorageCore().put(db + ":iot_hub_power_01", tsPayload1.getBytes(StandardCharsets.UTF_8), now);
+        count += 2;
 
         // 8. MASTER ENTITY 1 (DOCUMENT): Order Master with Local & Multi-Cluster References
         String orderDocKey = "doc:" + db + ":order_master_7001";

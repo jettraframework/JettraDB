@@ -49,6 +49,9 @@ public record JettraReference(
             throw new IllegalArgumentException("Reference URI cannot be null or empty");
         }
         String clean = uri.trim();
+        if (clean.startsWith("\"") && clean.endsWith("\"") && clean.length() >= 2) {
+            clean = clean.substring(1, clean.length() - 1).trim();
+        }
         Matcher m = JREF_PATTERN.matcher(clean);
         if (m.matches()) {
             String node = m.group(1);
@@ -71,7 +74,9 @@ public record JettraReference(
     }
 
     public static boolean isReference(String str) {
-        return str != null && (str.startsWith("jref://") || str.startsWith("{\"$jref\""));
+        if (str == null) return false;
+        String s = str.trim();
+        return s.startsWith("jref://") || s.startsWith("{\"$jref\"") || (s.contains("\"$jref\"") && s.contains("jref://"));
     }
 
     public static String computeDirectStorageKey(String engine, String database, String entityId) {
@@ -84,7 +89,7 @@ public record JettraReference(
             case "COLUMN" -> "col:";
             case "GEOSPATIAL" -> "geo:";
             case "OBJECT" -> "obj:";
-            default -> ""; // DOCUMENT
+            default -> "doc:"; // DOCUMENT
         };
         return pfx + database + ":" + entityId;
     }

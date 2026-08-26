@@ -155,23 +155,40 @@ public class StorageEnginesFeaturesTest {
         assertNotNull(resCust.jsonPayload());
         assertEquals("cust_101", resCust.jsonPayload().getAsString("id"));
 
-        // 2. Resolve Records Employee reference
+        // 2. Resolve Records Employee reference (emp_201 & emp_202)
         var resEmp = resolver.resolve("jref://RECORDS:ExampleDBReferences/emp_201");
-        assertTrue(resEmp.exists(), "Employee record should resolve");
+        assertTrue(resEmp.exists(), "Employee record 201 should resolve");
         assertEquals("rec:ExampleDBReferences:emp_201", resEmp.primaryStorageAddress());
         assertNotNull(resEmp.jsonPayload());
         assertEquals("emp_201", resEmp.jsonPayload().getAsString("id"));
 
-        // 3. Resolve Geospatial Hub reference
+        var resEmp202 = resolver.resolve("jref://RECORDS:ExampleDBReferences/emp_202");
+        assertTrue(resEmp202.exists(), "Employee record 202 should resolve without failure");
+        assertEquals("rec:ExampleDBReferences:emp_202", resEmp202.primaryStorageAddress());
+        assertNotNull(resEmp202.jsonPayload());
+        assertEquals("emp_202", resEmp202.jsonPayload().getAsString("id"));
+
+        // 3. Resolve Geospatial Hub reference (hub_panama & hub_colon)
         var resGeo = resolver.resolve("jref://GEOSPATIAL:ExampleDBReferences/hub_panama");
-        assertTrue(resGeo.exists(), "Geospatial hub should resolve");
+        assertTrue(resGeo.exists(), "Geospatial hub panama should resolve");
         assertEquals("geo:ExampleDBReferences:hub_panama", resGeo.primaryStorageAddress());
+
+        var resGeoColon = resolver.resolve("jref://GEOSPATIAL:ExampleDBReferences/hub_colon");
+        assertTrue(resGeoColon.exists(), "Geospatial hub colon should resolve without failure");
+        assertEquals("geo:ExampleDBReferences:hub_colon", resGeoColon.primaryStorageAddress());
+        assertNotNull(resGeoColon.jsonPayload());
+        assertEquals("hub_colon", resGeoColon.jsonPayload().getAsString("id"));
 
         // 4. Resolve multi-cluster node reference (remote cluster)
         var resRemote = resolver.resolve("jref://cluster-east-01@DOCUMENT:ExampleDBReferences/cust_101");
         assertTrue(resRemote.exists(), "Remote cluster reference should resolve with primary storage key fallback");
         assertEquals("cluster-east-01", resRemote.clusterNode());
         assertEquals("doc:ExampleDBReferences:cust_101", resRemote.primaryStorageAddress());
+
+        var resRemoteSec = resolver.resolve("jref://cluster-secondary-02@RECORDS:ExampleDBReferences/emp_202");
+        assertTrue(resRemoteSec.exists(), "Remote secondary cluster RECORDS reference should resolve with fallback");
+        assertEquals("cluster-secondary-02", resRemoteSec.clusterNode());
+        assertEquals("rec:ExampleDBReferences:emp_202", resRemoteSec.primaryStorageAddress());
 
         // 5. Resolve Object engine BLOB reference (with .pdf file extension in ID)
         var resObj = resolver.resolve("jref://OBJECT:ExampleDBReferences/contract_enterprise_2026.pdf");
@@ -189,7 +206,7 @@ public class StorageEnginesFeaturesTest {
         var resTs = resolver.resolve("jref://TIMESERIES:ExampleDBReferences/iot_hub_power_01");
         assertTrue(resTs.exists(), "TimeSeries IoT power reading should resolve");
 
-        // 7. Expand master entity references
+        // 7. Expand master entity references (order_master_7001 & order_master_7002)
         byte[] orderBytes = engine.getStorageCore().get("doc:ExampleDBReferences:order_master_7001");
         assertNotNull(orderBytes);
         io.jettra.json.JettraJson jsonParser = new io.jettra.json.JettraJson();
@@ -208,6 +225,15 @@ public class StorageEnginesFeaturesTest {
         assertTrue(expanded.get("contractDocRef") instanceof JsonObject);
         JsonObject expContract = (JsonObject) expanded.get("contractDocRef");
         assertEquals("obj:ExampleDBReferences:contract_enterprise_2026.pdf", expContract.getAsString("_primaryAddress"));
+
+        // Verify order_master_7002
+        byte[] order7002Bytes = engine.getStorageCore().get("doc:ExampleDBReferences:order_master_7002");
+        assertNotNull(order7002Bytes);
+        JsonObject order7002Obj = jsonParser.fromJson(new String(order7002Bytes, java.nio.charset.StandardCharsets.UTF_8), JsonObject.class);
+        JsonObject exp7002 = resolver.expandReferences(order7002Obj, 3);
+        assertNotNull(exp7002);
+        assertTrue(exp7002.has("leadArchitectRef"));
+        assertTrue(exp7002.has("fulfillmentHubRef"));
     }
 
     @Test

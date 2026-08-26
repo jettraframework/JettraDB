@@ -64,7 +64,16 @@ public class JettraReferenceResolver {
             ref.directStorageKey(),
             pfx + ref.database() + ":default:" + ref.entityId(),
             ref.database() + ":" + ref.entityId(),
-            ref.database() + ":default:" + ref.entityId()
+            ref.database() + ":default:" + ref.entityId(),
+            "doc:" + ref.database() + ":" + ref.entityId(),
+            "rec:" + ref.database() + ":" + ref.entityId(),
+            "geo:" + ref.database() + ":" + ref.entityId(),
+            "obj:" + ref.database() + ":" + ref.entityId(),
+            "vec:" + ref.database() + ":" + ref.entityId(),
+            "kv:" + ref.database() + ":" + ref.entityId(),
+            "ts:" + ref.database() + ":" + ref.entityId(),
+            "graph:" + ref.database() + ":" + ref.entityId(),
+            "col:" + ref.database() + ":" + ref.entityId()
         };
 
         byte[] rawBytes = null;
@@ -116,6 +125,16 @@ public class JettraReferenceResolver {
                     foundKey = ap + ref.database() + ":default:" + ref.entityId();
                     break;
                 }
+                Map<String, byte[]> pfxScanned = storageEngine.getStorageCore().scanPrefix(ap + ref.database() + ":");
+                for (Map.Entry<String, byte[]> e : pfxScanned.entrySet()) {
+                    String k = e.getKey();
+                    if (k.endsWith(":" + ref.entityId())) {
+                        rawBytes = e.getValue();
+                        foundKey = k;
+                        break;
+                    }
+                }
+                if (rawBytes != null && rawBytes.length > 0) break;
             }
         }
 
