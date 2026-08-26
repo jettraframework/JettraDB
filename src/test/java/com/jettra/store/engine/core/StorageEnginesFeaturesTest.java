@@ -370,4 +370,47 @@ public class StorageEnginesFeaturesTest {
         assertNotNull(expanded);
         assertTrue(expanded.has("fulfillmentHubRef"));
     }
+
+    @Test
+    void testEditOrderMasterVersionIncrement() {
+        new com.jettra.store.engine.samples.SampleDatasetManager(engine).loadExampleDBReferencesDataset();
+        com.jettra.store.engine.web.StoreEnginesPage page = new com.jettra.store.engine.web.StoreEnginesPage(engine);
+
+        String db = "ExampleDBReferences";
+        String id = "order_master_7002";
+        String key = "doc:" + db + ":" + id;
+
+        assertEquals(1, engine.getStorageCore().getVersionCount(key), "Initial version must be 1");
+
+        // Edit 1
+        java.util.Map<String, String> p1 = new java.util.HashMap<>();
+        p1.put("doc_payload", "{\"orderId\":\"ORD-2026-7002\",\"totalAmount\":19500,\"status\":\"IN_TRANSIT\"}");
+        engine.getStorageCore().put(key, p1.get("doc_payload").getBytes(java.nio.charset.StandardCharsets.UTF_8), System.currentTimeMillis());
+        assertEquals(2, engine.getStorageCore().getVersionCount(key), "Version after edit 1 must be exactly 2");
+
+        // Edit 2
+        java.util.Map<String, String> p2 = new java.util.HashMap<>();
+        p2.put("doc_payload", "{\"orderId\":\"ORD-2026-7002\",\"totalAmount\":21000,\"status\":\"DELIVERED\"}");
+        engine.getStorageCore().put(key, p2.get("doc_payload").getBytes(java.nio.charset.StandardCharsets.UTF_8), System.currentTimeMillis());
+        assertEquals(3, engine.getStorageCore().getVersionCount(key), "Version after edit 2 must be exactly 3");
+
+        // Edit 3
+        java.util.Map<String, String> p3 = new java.util.HashMap<>();
+        p3.put("doc_payload", "{\"orderId\":\"ORD-2026-7002\",\"totalAmount\":21000,\"status\":\"ARCHIVED\"}");
+        engine.getStorageCore().put(key, p3.get("doc_payload").getBytes(java.nio.charset.StandardCharsets.UTF_8), System.currentTimeMillis());
+        assertEquals(4, engine.getStorageCore().getVersionCount(key), "Version after edit 3 must be exactly 4");
+
+        var history = engine.getStorageCore().getVersionHistory(key);
+        assertEquals(4, history.size(), "History must contain exactly 4 versions");
+        assertEquals("v4", "v" + history.get(0).versionNumber());
+        assertTrue(history.get(0).isCurrent());
+
+        // Verify other records in ExampleDBReferences were NOT affected and remain at version 1
+        assertEquals(1, engine.getStorageCore().getVersionCount("doc:" + db + ":order_master_7001"), "order_master_7001 must stay at version 1");
+        assertEquals(1, engine.getStorageCore().getVersionCount("doc:" + db + ":cust_101"), "cust_101 must stay at version 1");
+        assertEquals(1, engine.getStorageCore().getVersionCount("doc:" + db + ":cust_102"), "cust_102 must stay at version 1");
+        assertEquals(1, engine.getStorageCore().getVersionCount("rec:" + db + ":emp_201"), "emp_201 must stay at version 1");
+        assertEquals(1, engine.getStorageCore().getVersionCount("rec:" + db + ":emp_202"), "emp_202 must stay at version 1");
+        assertEquals(1, engine.getStorageCore().getVersionCount("geo:" + db + ":hub_colon"), "hub_colon must stay at version 1");
+    }
 }

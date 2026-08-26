@@ -25,6 +25,8 @@ public class LsmBTreeHybrid {
     private final ConcurrentSkipListMap<String, byte[]> memTable;
     // In-memory index of on-disk records (Key -> Offset)
     private final Map<String, Long> diskIndex;
+    // Dedicated monotonic version tracker per key: key -> (timestamp -> payload)
+    private final ConcurrentHashMap<String, ConcurrentSkipListMap<Long, byte[]>> versionHistory;
     private JettraFileManager fileManager;
     private final int FLUSH_THRESHOLD = 1000; // items
     
@@ -33,6 +35,7 @@ public class LsmBTreeHybrid {
         this.journalFile = storageDirectory.resolve("jettra_storage_wal.jettra");
         this.memTable = new ConcurrentSkipListMap<>();
         this.diskIndex = new ConcurrentHashMap<>();
+        this.versionHistory = new ConcurrentHashMap<>();
         
         try {
             if (!java.nio.file.Files.exists(storageDirectory)) {
@@ -60,6 +63,7 @@ public class LsmBTreeHybrid {
                 if (len > 0) {
                     dis.readFully(data);
                     memTable.put(key + "@" + ts, data);
+                    versionHistory.computeIfAbsent(key, k -> new ConcurrentSkipListMap<>()).put(ts, data);
                 } else {
                     // Tombstone deletion: purge any prior entries for this key
                     java.util.List<String> toRemove = new java.util.ArrayList<>();
@@ -71,6 +75,7 @@ public class LsmBTreeHybrid {
                     for (String k : toRemove) {
                         memTable.remove(k);
                     }
+                    versionHistory.remove(key);
                     memTable.put(key + "@" + ts, new byte[0]);
                 }
             }
@@ -110,10 +115,17 @@ public class LsmBTreeHybrid {
     public void put(String key, byte[] data, long timestamp) {
         if (key == null || data == null) return;
 
-        // Construct a versioned key: "key@timestamp"
-        String versionedKey = key + "@" + timestamp;
+        ConcurrentSkipListMap<Long, byte[]> history = versionHistory.computeIfAbsent(key, k -> new ConcurrentSkipListMap<>());
+        long effectiveTs = timestamp;
+        if (!history.isEmpty() && history.lastKey() >= effectiveTs) {
+            effectiveTs = history.lastKey() + 1;
+        }
+        history.put(effectiveTs, data);
+
+        // Construct a versioned key: "key@effectiveTs"
+        String versionedKey = key + "@" + effectiveTs;
         memTable.put(versionedKey, data);
-        appendWal(key, timestamp, data);
+        appendWal(key, effectiveTs, data);
         
         // If exceeds threshold, flush to Disk as a B-Tree SSTable.
         if (memTable.size() >= FLUSH_THRESHOLD) {
@@ -159,6 +171,7 @@ public class LsmBTreeHybrid {
         for (String k : toRemove) {
             memTable.remove(k);
         }
+        versionHistory.remove(key);
         String versionedKey = key + "@" + timestamp;
         memTable.put(versionedKey, new byte[0]);
         appendWal(key, timestamp, new byte[0]);
@@ -212,23 +225,30 @@ public class LsmBTreeHybrid {
         String prefix = key + "@";
         java.time.format.DateTimeFormatter dtf = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
         
-        // Scan memTable for all timestamped versions of this key (sorted ascending by timestamp)
         java.util.Map<Long, byte[]> timeMap = new java.util.TreeMap<>();
-        for (Map.Entry<String, byte[]> entry : memTable.entrySet()) {
-            String k = entry.getKey();
-            if (k.startsWith(prefix)) {
-                try {
-                    long ts = Long.parseLong(k.substring(prefix.length()));
-                    byte[] data = entry.getValue();
-                    if (data != null && data.length > 0) {
-                        timeMap.put(ts, data);
-                    }
-                } catch (Exception ignored) {}
+        
+        // 1. Check versionHistory map
+        ConcurrentSkipListMap<Long, byte[]> hist = versionHistory.get(key);
+        if (hist != null && !hist.isEmpty()) {
+            timeMap.putAll(hist);
+        } else {
+            // Scan memTable for any timestamped versions
+            for (Map.Entry<String, byte[]> entry : memTable.entrySet()) {
+                String k = entry.getKey();
+                if (k.startsWith(prefix)) {
+                    try {
+                        long ts = Long.parseLong(k.substring(prefix.length()));
+                        byte[] data = entry.getValue();
+                        if (data != null && data.length > 0) {
+                            timeMap.put(ts, data);
+                        }
+                    } catch (Exception ignored) {}
+                }
             }
         }
 
-        // Also check if diskIndex has a record not in memTable
-        if (timeMap.isEmpty() && diskIndex.containsKey(key)) {
+        // Also check if diskIndex has a record not in timeMap
+        if (timeMap.isEmpty() && (diskIndex.containsKey(key) || get(key) != null)) {
             byte[] diskVal = get(key);
             if (diskVal != null && diskVal.length > 0) {
                 timeMap.put(System.currentTimeMillis(), diskVal);
@@ -267,6 +287,10 @@ public class LsmBTreeHybrid {
      * Returns total version count for a key.
      */
     public int getVersionCount(String key) {
+        ConcurrentSkipListMap<Long, byte[]> hist = versionHistory.get(key);
+        if (hist != null && !hist.isEmpty()) {
+            return hist.size();
+        }
         String prefix = key + "@";
         int count = 0;
         for (String k : memTable.keySet()) {
@@ -283,6 +307,10 @@ public class LsmBTreeHybrid {
      * Retrieves a specific historical version of a document.
      */
     public byte[] getVersion(String key, long timestamp) {
+        ConcurrentSkipListMap<Long, byte[]> hist = versionHistory.get(key);
+        if (hist != null && hist.containsKey(timestamp)) {
+            return hist.get(timestamp);
+        }
         String versionedKey = key + "@" + timestamp;
         if (memTable.containsKey(versionedKey)) {
             return memTable.get(versionedKey);
