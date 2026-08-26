@@ -138,6 +138,19 @@ public class JettraReferenceResolver {
             }
         }
 
+        if ((rawBytes == null || rawBytes.length == 0) && "ExampleDBReferences".equalsIgnoreCase(ref.database())) {
+            try {
+                new com.jettra.store.engine.samples.SampleDatasetManager(storageEngine).loadExampleDBReferencesDataset();
+                for (String k : candidateKeys) {
+                    rawBytes = storageEngine.getStorageCore().get(k);
+                    if (rawBytes != null && rawBytes.length > 0) {
+                        foundKey = k;
+                        break;
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+
         String cluster = ref.node() != null ? ref.node() : localNodeId;
 
         if (rawBytes == null || rawBytes.length == 0) {

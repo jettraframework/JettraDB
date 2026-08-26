@@ -53,7 +53,10 @@ public class StoreEnginesPage extends StoreTemplatePage {
     public StoreEnginesPage(JettraStorageEngine engine) {
         this.engine = engine;
         this.refResolver = new JettraReferenceResolver(engine);
-        if (engine != null && engine.getStorageCore() != null && engine.getStorageCore().scanPrefix("doc:ExampleDBReferences:").isEmpty()) {
+        if (engine != null && engine.getStorageCore() != null && 
+            (engine.getStorageCore().scanPrefix("doc:ExampleDBReferences:").isEmpty() ||
+             engine.getStorageCore().scanPrefix("rec:ExampleDBReferences:").isEmpty() ||
+             engine.getStorageCore().scanPrefix("geo:ExampleDBReferences:").isEmpty())) {
             new SampleDatasetManager(engine).loadExampleDBReferencesDataset();
         }
     }
@@ -1894,7 +1897,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
                             .modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; padding:2px 0;"));
 
                         List<Widget> itemWidgets = new ArrayList<>();
-                        int pageSize = 5;
+                        int pageSize = 10;
                         int totalUnitItems = items.size();
                         int totalPages = Math.max(1, (int) Math.ceil((double) totalUnitItems / pageSize));
 
@@ -3195,10 +3198,10 @@ public class StoreEnginesPage extends StoreTemplatePage {
             Button.of(Icon.of("fas fa-copy"), Text.of(" Copy JSON"))
                 .id("btnCopyInspect")
                 .modifier(new Modifier().attribute("type", "button").attribute("onclick", "copyInspectRecordPayload()").cssClass("btn-action btn-secondary").style("font-size:12px; padding:6px 14px; background:rgba(56,189,248,0.15); border-color:rgba(56,189,248,0.4); color:#38bdf8; margin-right:8px;")),
-            Button.of(Icon.of("fas fa-edit"), Text.of(" Edit Record"))
-                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "editFromInspectModal()").cssClass("btn-action btn-primary").style("font-size:12px; padding:6px 14px; margin-right:8px;")),
-            Button.of(Icon.of("fas fa-history"), Text.of(" Versions"))
-                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "historyFromInspectModal()").cssClass("btn-action btn-secondary").style("font-size:12px; padding:6px 14px; background:rgba(168,85,247,0.15); border-color:rgba(168,85,247,0.4); color:#c084fc; margin-right:8px;")),
+//            Button.of(Icon.of("fas fa-edit"), Text.of(" Edit Record"))
+//                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "editFromInspectModal()").cssClass("btn-action btn-primary").style("font-size:12px; padding:6px 14px; margin-right:8px;")),
+//            Button.of(Icon.of("fas fa-history"), Text.of(" Versions"))
+//                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "historyFromInspectModal()").cssClass("btn-action btn-secondary").style("font-size:12px; padding:6px 14px; background:rgba(168,85,247,0.15); border-color:rgba(168,85,247,0.4); color:#c084fc; margin-right:8px;")),
             Button.of(Text.of("Close"))
                 .modifier(new Modifier().attribute("type", "button").attribute("onclick", "document.getElementById('inspectRecordModal').style.display='none'").cssClass("btn-action btn-secondary").style("font-size:12px; padding:6px 14px;"))
         ).modifier(new Modifier().style("display:flex; justify-content:flex-end; align-items:center; margin-top:14px; flex-wrap:wrap; gap:6px;"));
@@ -4334,12 +4337,18 @@ public class StoreEnginesPage extends StoreTemplatePage {
     var promises = [];
     var resolvedMap = {};
 
+    var getRefEndpoint = function(uriStr) {
+      var base = window.location.pathname || '/engines';
+      if (base.indexOf('?') >= 0) base = base.split('?')[0];
+      return base + '?action=resolve_ref&uri=' + encodeURIComponent(uriStr);
+    };
+
     refs.forEach(function(item) {
       var u = item.parsed.uri;
       if (resolvedCache[u]) {
         resolvedMap[u] = resolvedCache[u];
       } else {
-        var p = fetch('/engines?action=resolve_ref&uri=' + encodeURIComponent(u))
+        var p = fetch(getRefEndpoint(u))
           .then(function(res) {
             if (!res.ok) throw new Error('HTTP ' + res.status);
             return res.json();
@@ -4368,30 +4377,35 @@ public class StoreEnginesPage extends StoreTemplatePage {
     if (!obj || typeof obj !== 'object') return obj;
     for (var k in obj) {
       if (!obj.hasOwnProperty(k)) continue;
+      if (k === '_resolved') continue;
       var v = obj[k];
       if (typeof v === 'string' && v.indexOf('jref://') >= 0) {
         var p = parseJrefUri(v);
-        if (p && resolvedMap[p.uri] && resolvedMap[p.uri].exists) {
+        if (p && resolvedMap[p.uri] && (resolvedMap[p.uri].exists || resolvedMap[p.uri].jsonPayload || resolvedMap[p.uri].rawPayload)) {
           var res = resolvedMap[p.uri];
           obj[k] = {
             '$jref': p.uri,
-            '_primaryAddress': res.primaryStorageAddress,
-            '_clusterNode': res.clusterNode,
-            '_engine': res.engine,
-            '_database': res.database,
-            '_version': res.version,
+            '_primaryAddress': res.primaryStorageAddress || p.primaryStorageAddress,
+            '_clusterNode': res.clusterNode || p.node,
+            '_engine': res.engine || p.engine,
+            '_database': res.database || p.database,
+            '_version': res.version || 1,
             '_resolved': res.jsonPayload || res.rawPayload || {}
           };
         }
       } else if (v && typeof v === 'object') {
-        if (v['$jref'] && resolvedMap[v['$jref']]) {
-          var resObj = resolvedMap[v['$jref']];
-          v['_primaryAddress'] = resObj.primaryStorageAddress;
-          v['_clusterNode'] = resObj.clusterNode;
-          v['_engine'] = resObj.engine;
-          v['_database'] = resObj.database;
-          v['_version'] = resObj.version;
-          v['_resolved'] = resObj.jsonPayload || resObj.rawPayload || {};
+        if (v['$jref'] && typeof v['$jref'] === 'string') {
+          var p2 = parseJrefUri(v['$jref']);
+          var lookupKey = p2 ? p2.uri : v['$jref'];
+          if (resolvedMap[lookupKey] && (resolvedMap[lookupKey].exists || resolvedMap[lookupKey].jsonPayload || resolvedMap[lookupKey].rawPayload)) {
+            var resObj = resolvedMap[lookupKey];
+            v['_primaryAddress'] = resObj.primaryStorageAddress || (p2 ? p2.primaryStorageAddress : '');
+            v['_clusterNode'] = resObj.clusterNode || (p2 ? p2.node : 'Local Cluster (Primary)');
+            v['_engine'] = resObj.engine || (p2 ? p2.engine : 'DOCUMENT');
+            v['_database'] = resObj.database || (p2 ? p2.database : '');
+            v['_version'] = resObj.version || 1;
+            v['_resolved'] = resObj.jsonPayload || resObj.rawPayload || {};
+          }
         } else {
           enrichObjectWithRefs(v, resolvedMap);
         }
@@ -4540,7 +4554,11 @@ public class StoreEnginesPage extends StoreTemplatePage {
       if (!targetAddr) targetAddr = pfx + targetDb + ':' + targetId;
     }
 
-    fetch('/engines?action=resolve_ref&uri=' + encodeURIComponent(uri))
+    var base = window.location.pathname || '/engines';
+    if (base.indexOf('?') >= 0) base = base.split('?')[0];
+    var endpoint = base + '?action=resolve_ref&uri=' + encodeURIComponent(uri);
+
+    fetch(endpoint)
       .then(function(res) {
         if (!res.ok) throw new Error('HTTP ' + res.status);
         return res.json();
