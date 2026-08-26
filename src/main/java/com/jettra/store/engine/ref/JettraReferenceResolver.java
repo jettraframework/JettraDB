@@ -59,21 +59,32 @@ public class JettraReferenceResolver {
             default -> "doc:";
         };
 
+        String entId = ref.entityId();
+        String entIdLower = entId.toLowerCase();
+
         String[] candidateKeys = {
-            pfx + ref.database() + ":" + ref.entityId(),
+            pfx + ref.database() + ":" + entId,
+            pfx + ref.database() + ":" + entIdLower,
             ref.directStorageKey(),
-            pfx + ref.database() + ":default:" + ref.entityId(),
-            ref.database() + ":" + ref.entityId(),
-            ref.database() + ":default:" + ref.entityId(),
-            "doc:" + ref.database() + ":" + ref.entityId(),
-            "rec:" + ref.database() + ":" + ref.entityId(),
-            "geo:" + ref.database() + ":" + ref.entityId(),
-            "obj:" + ref.database() + ":" + ref.entityId(),
-            "vec:" + ref.database() + ":" + ref.entityId(),
-            "kv:" + ref.database() + ":" + ref.entityId(),
-            "ts:" + ref.database() + ":" + ref.entityId(),
-            "graph:" + ref.database() + ":" + ref.entityId(),
-            "col:" + ref.database() + ":" + ref.entityId()
+            pfx + ref.database() + ":default:" + entId,
+            pfx + ref.database() + ":default:" + entIdLower,
+            pfx + ref.database() + ":stores_layer:" + entId,
+            pfx + ref.database() + ":stores_layer:" + entIdLower,
+            "geo:" + ref.database() + ":" + entId,
+            "geo:" + ref.database() + ":" + entIdLower,
+            "geo:" + ref.database() + ":geo_" + entIdLower,
+            "geo:" + ref.database() + ":hub_" + entIdLower,
+            ref.database() + ":" + entId,
+            ref.database() + ":" + entIdLower,
+            ref.database() + ":default:" + entId,
+            "doc:" + ref.database() + ":" + entId,
+            "rec:" + ref.database() + ":" + entId,
+            "obj:" + ref.database() + ":" + entId,
+            "vec:" + ref.database() + ":" + entId,
+            "kv:" + ref.database() + ":" + entId,
+            "ts:" + ref.database() + ":" + entId,
+            "graph:" + ref.database() + ":" + entId,
+            "col:" + ref.database() + ":" + entId
         };
 
         byte[] rawBytes = null;
@@ -90,7 +101,8 @@ public class JettraReferenceResolver {
             Map<String, byte[]> scanned = storageEngine.getStorageCore().scanPrefix(pfx + ref.database() + ":");
             for (Map.Entry<String, byte[]> e : scanned.entrySet()) {
                 String k = e.getKey();
-                if (k.endsWith(":" + ref.entityId()) || k.equals(pfx + ref.database() + ":" + ref.entityId()) || k.contains(":" + ref.entityId() + ":") || k.contains(":" + ref.entityId() + "_")) {
+                String kLower = k.toLowerCase();
+                if (kLower.endsWith(":" + entIdLower) || kLower.equals(pfx + ref.database().toLowerCase() + ":" + entIdLower) || kLower.contains(":" + entIdLower + ":") || kLower.contains(":" + entIdLower + "_") || kLower.endsWith("/" + entIdLower)) {
                     rawBytes = e.getValue();
                     foundKey = k;
                     break;
@@ -102,7 +114,8 @@ public class JettraReferenceResolver {
             Map<String, byte[]> scanned = storageEngine.getStorageCore().scanPrefix(ref.database() + ":");
             for (Map.Entry<String, byte[]> e : scanned.entrySet()) {
                 String k = e.getKey();
-                if (k.endsWith(":" + ref.entityId()) || k.equals(ref.database() + ":" + ref.entityId()) || k.contains(":" + ref.entityId() + ":") || k.contains(":" + ref.entityId() + "_")) {
+                String kLower = k.toLowerCase();
+                if (kLower.endsWith(":" + entIdLower) || kLower.equals(ref.database().toLowerCase() + ":" + entIdLower) || kLower.contains(":" + entIdLower + ":") || kLower.contains(":" + entIdLower + "_") || kLower.endsWith("/" + entIdLower)) {
                     rawBytes = e.getValue();
                     foundKey = k;
                     break;
@@ -111,24 +124,31 @@ public class JettraReferenceResolver {
         }
 
         if (rawBytes == null || rawBytes.length == 0) {
-            String[] allPrefixes = {"rec:", "doc:", "vec:", "geo:", "obj:", "kv:", "ts:", "graph:", "col:"};
+            String[] allPrefixes = {"geo:", "rec:", "doc:", "vec:", "obj:", "kv:", "ts:", "graph:", "col:"};
             for (String ap : allPrefixes) {
-                byte[] b = storageEngine.getStorageCore().get(ap + ref.database() + ":" + ref.entityId());
+                byte[] b = storageEngine.getStorageCore().get(ap + ref.database() + ":" + entIdLower);
                 if (b != null && b.length > 0) {
                     rawBytes = b;
-                    foundKey = ap + ref.database() + ":" + ref.entityId();
+                    foundKey = ap + ref.database() + ":" + entIdLower;
                     break;
                 }
-                b = storageEngine.getStorageCore().get(ap + ref.database() + ":default:" + ref.entityId());
+                b = storageEngine.getStorageCore().get(ap + ref.database() + ":default:" + entIdLower);
                 if (b != null && b.length > 0) {
                     rawBytes = b;
-                    foundKey = ap + ref.database() + ":default:" + ref.entityId();
+                    foundKey = ap + ref.database() + ":default:" + entIdLower;
+                    break;
+                }
+                b = storageEngine.getStorageCore().get(ap + ref.database() + ":stores_layer:" + entIdLower);
+                if (b != null && b.length > 0) {
+                    rawBytes = b;
+                    foundKey = ap + ref.database() + ":stores_layer:" + entIdLower;
                     break;
                 }
                 Map<String, byte[]> pfxScanned = storageEngine.getStorageCore().scanPrefix(ap + ref.database() + ":");
                 for (Map.Entry<String, byte[]> e : pfxScanned.entrySet()) {
                     String k = e.getKey();
-                    if (k.endsWith(":" + ref.entityId())) {
+                    String kLower = k.toLowerCase();
+                    if (kLower.endsWith(":" + entIdLower) || kLower.contains(":" + entIdLower + ":") || kLower.endsWith("/" + entIdLower)) {
                         rawBytes = e.getValue();
                         foundKey = k;
                         break;

@@ -339,4 +339,35 @@ public class StorageEnginesFeaturesTest {
         assertEquals("v1", "v" + history.get(2).versionNumber());
         assertFalse(history.get(2).isCurrent());
     }
+
+    @Test
+    void testGeospatialReferenceResolution() {
+        new com.jettra.store.engine.samples.SampleDatasetManager(engine).loadExampleDBReferencesDataset();
+        com.jettra.store.engine.ref.JettraReferenceResolver resolver = new com.jettra.store.engine.ref.JettraReferenceResolver(engine);
+
+        // Test 1: Standard lowercase URI
+        var res1 = resolver.resolve("jref://GEOSPATIAL:ExampleDBReferences/hub_colon");
+        assertTrue(res1.exists(), "hub_colon must resolve");
+        assertEquals("GEOSPATIAL", res1.reference().engine());
+        assertEquals("ExampleDBReferences", res1.reference().database());
+        assertNotNull(res1.jsonPayload());
+        assertEquals("hub_colon", res1.jsonPayload().getAsString("id"));
+
+        // Test 2: Mixed case URI (hub_coloN)
+        var res2 = resolver.resolve("jref://GEOSPATIAL:ExampleDBReferences/hub_coloN");
+        assertTrue(res2.exists(), "hub_coloN must resolve case-insensitively");
+        assertNotNull(res2.jsonPayload());
+        assertEquals("hub_colon", res2.jsonPayload().getAsString("id"));
+
+        // Test 3: Alias 202
+        var res3 = resolver.resolve("jref://GEOSPATIAL:ExampleDBReferences/202");
+        assertTrue(res3.exists(), "202 alias must resolve");
+
+        // Test 4: Expansion in order_master_7002
+        var orderEntity = resolver.resolve("jref://DOCUMENT:ExampleDBReferences/order_master_7002");
+        assertTrue(orderEntity.exists(), "order_master_7002 must resolve");
+        var expanded = resolver.expandReferences(orderEntity.jsonPayload(), 2);
+        assertNotNull(expanded);
+        assertTrue(expanded.has("fulfillmentHubRef"));
+    }
 }

@@ -643,137 +643,114 @@ public class StoreEnginesPage extends StoreTemplatePage {
         String directKey = pfx + db + ":" + id;
         String collKey = pfx + db + ":" + coll + ":" + id;
         String simpleKey = db + ":" + id;
-        String simpleCollKey = db + ":" + coll + ":" + id;
+
+        // Determine which primary key is the master key for this entity
+        String targetKey = directKey;
+        if (engine.getStorageCore().get(collKey) != null && engine.getStorageCore().get(directKey) == null) {
+            targetKey = collKey;
+        } else if (engine.getStorageCore().get(directKey) != null) {
+            targetKey = directKey;
+        } else if (engine.getStorageCore().get(simpleKey) != null) {
+            targetKey = directKey;
+        }
+
+        String finalPayloadStr = payload != null ? payload : "{}";
 
         switch (engineName) {
             case "DOCUMENT" -> {
-                DocumentEngine de = (DocumentEngine) engine.getEngine("DOCUMENT");
-                if (de != null) {
-                    String json = params.getOrDefault("doc_payload", payload);
-                    JsonObject doc = parseJsonOrWrap(json);
-                    String docClass = params.get("doc_class");
-                    if (docClass != null && !docClass.isBlank()) doc.addProperty("_class", docClass.trim());
-                    de.insert(db, coll != null && !coll.isBlank() ? coll : "default", id, doc);
-                }
+                String json = params.getOrDefault("doc_payload", payload);
+                JsonObject doc = parseJsonOrWrap(json);
+                String docClass = params.get("doc_class");
+                if (docClass != null && !docClass.isBlank()) doc.addProperty("_class", docClass.trim());
+                finalPayloadStr = jsonParser.toJson(doc);
             }
             case "KEYVALUE" -> {
-                KeyValueEngine ke = (KeyValueEngine) engine.getEngine("KEYVALUE");
-                if (ke != null) {
-                    String val = params.getOrDefault("kv_value", payload);
-                    String resolvedKey = (coll == null || coll.equals("default") || id.contains(":")) ? id : coll + ":" + id;
-                    ke.put(db, resolvedKey, val);
-                }
+                finalPayloadStr = params.getOrDefault("kv_value", payload);
             }
             case "VECTOR" -> {
-                VectorEngine ve = (VectorEngine) engine.getEngine("VECTOR");
-                if (ve != null) {
-                    float[] coords = new float[]{0.12f, 0.45f, 0.88f, 0.31f};
-                    if (params.containsKey("vector_coords") && !params.get("vector_coords").isBlank()) {
-                        coords = parseFloats(params.get("vector_coords"));
-                    }
-                    String metaStr = params.getOrDefault("vector_meta", payload);
-                    JsonObject vecObj = parseJsonOrWrap(metaStr);
-                    vecObj.addProperty("_index", coll != null ? coll : "default");
-                    ve.insertVector(db, id, coords, vecObj);
+                float[] coords = new float[]{0.12f, 0.45f, 0.88f, 0.31f};
+                if (params.containsKey("vector_coords") && !params.get("vector_coords").isBlank()) {
+                    coords = parseFloats(params.get("vector_coords"));
                 }
+                String metaStr = params.getOrDefault("vector_meta", payload);
+                JsonObject vecObj = parseJsonOrWrap(metaStr);
+                vecObj.addProperty("_index", coll != null ? coll : "default");
+                finalPayloadStr = jsonParser.toJson(vecObj);
             }
             case "GRAPH" -> {
-                GraphEngine ge = (GraphEngine) engine.getEngine("GRAPH");
-                if (ge != null) {
-                    String nodeProps = params.getOrDefault("node_props", payload);
-                    JsonObject gObj = parseJsonOrWrap(nodeProps);
-                    String nodeLabel = params.getOrDefault("node_label", coll != null && !coll.isBlank() ? coll : "Vertex");
-                    gObj.addProperty("label", nodeLabel);
-                    ge.addNode(db, id, gObj);
-                }
+                String nodeProps = params.getOrDefault("node_props", payload);
+                JsonObject gObj = parseJsonOrWrap(nodeProps);
+                String nodeLabel = params.getOrDefault("node_label", coll != null && !coll.isBlank() ? coll : "Vertex");
+                gObj.addProperty("label", nodeLabel);
+                finalPayloadStr = jsonParser.toJson(gObj);
             }
             case "TIMESERIES" -> {
-                TimeSeriesEngine te = (TimeSeriesEngine) engine.getEngine("TIMESERIES");
-                if (te != null) {
-                    long ts = now;
-                    String rawTs = params.get("ts_timestamp");
-                    if (rawTs != null && !rawTs.isBlank()) {
-                        try { ts = Long.parseLong(rawTs.trim()); } catch (Exception ignored) {}
-                    } else {
-                        try { ts = Long.parseLong(id); } catch (Exception ignored) {}
-                    }
-                    String tagsStr = params.getOrDefault("ts_tags", payload);
-                    JsonObject tsObj = parseJsonOrWrap(tagsStr);
-                    if (params.containsKey("ts_value")) {
-                        try { tsObj.addProperty("value", Double.parseDouble(params.get("ts_value"))); } catch (Exception ignored) {}
-                    }
-                    if (params.containsKey("ts_unit") && !params.get("ts_unit").isBlank()) {
-                        tsObj.addProperty("unit", params.get("ts_unit"));
-                    }
-                    tsObj.addProperty("metric", coll != null ? coll : "telemetry");
-                    te.insert(db, ts, tsObj);
+                String tagsStr = params.getOrDefault("ts_tags", payload);
+                JsonObject tsObj = parseJsonOrWrap(tagsStr);
+                if (params.containsKey("ts_value")) {
+                    try { tsObj.addProperty("value", Double.parseDouble(params.get("ts_value"))); } catch (Exception ignored) {}
                 }
+                if (params.containsKey("ts_unit") && !params.get("ts_unit").isBlank()) {
+                    tsObj.addProperty("unit", params.get("ts_unit"));
+                }
+                tsObj.addProperty("metric", coll != null ? coll : "telemetry");
+                finalPayloadStr = jsonParser.toJson(tsObj);
             }
             case "COLUMN" -> {
-                ColumnEngine ce = (ColumnEngine) engine.getEngine("COLUMN");
-                if (ce != null) {
-                    String colData = params.getOrDefault("col_data", payload);
-                    JsonObject colObj = parseJsonOrColumns(colData);
-                    colObj.addProperty("_family", coll != null ? coll : "analytics");
-                    ce.insertRow(db, id, colObj);
-                }
+                String colData = params.getOrDefault("col_data", payload);
+                JsonObject colObj = parseJsonOrColumns(colData);
+                colObj.addProperty("_family", coll != null ? coll : "analytics");
+                finalPayloadStr = jsonParser.toJson(colObj);
             }
             case "GEOSPATIAL" -> {
-                GeospatialEngine ge = (GeospatialEngine) engine.getEngine("GEOSPATIAL");
-                if (ge != null) {
-                    double lat = 8.9824;
-                    double lon = -79.5199;
-                    if (params.containsKey("geo_lat")) {
-                        try { lat = Double.parseDouble(params.get("geo_lat")); } catch (Exception ignored) {}
-                    }
-                    if (params.containsKey("geo_lon")) {
-                        try { lon = Double.parseDouble(params.get("geo_lon")); } catch (Exception ignored) {}
-                    }
-                    String name = params.getOrDefault("geo_name", id);
-                    JsonObject geoObj = parseJsonOrWrap(payload);
-                    geoObj.addProperty("name", name);
-                    geoObj.addProperty("_layer", coll != null ? coll : "stores_layer");
-                    ge.insertLocation(db, id, lat, lon, geoObj);
+                double lat = 8.9824;
+                double lon = -79.5199;
+                if (params.containsKey("geo_lat")) {
+                    try { lat = Double.parseDouble(params.get("geo_lat")); } catch (Exception ignored) {}
                 }
+                if (params.containsKey("geo_lon")) {
+                    try { lon = Double.parseDouble(params.get("geo_lon")); } catch (Exception ignored) {}
+                }
+                String name = params.getOrDefault("geo_name", id);
+                JsonObject geoObj = parseJsonOrWrap(payload);
+                geoObj.addProperty("name", name);
+                geoObj.addProperty("lat", lat);
+                geoObj.addProperty("lon", lon);
+                geoObj.addProperty("_layer", coll != null ? coll : "stores_layer");
+                finalPayloadStr = jsonParser.toJson(geoObj);
             }
             case "OBJECT" -> {
-                ObjectEngine oe = (ObjectEngine) engine.getEngine("OBJECT");
-                if (oe != null) {
-                    String objMime = params.getOrDefault("obj_mime", "application/json");
-                    String objPayload = params.getOrDefault("obj_payload", payload);
-                    JsonObject state = new JsonObject();
-                    state.addProperty("mimeType", objMime);
-                    state.addProperty("bucket", coll != null ? coll : "media_bucket");
-                    state.addProperty("sizeBytes", objPayload.getBytes(StandardCharsets.UTF_8).length);
-                    state.addProperty("content", objPayload);
-                    oe.saveObject(db, id, "GenericBlob", state);
-                }
+                String objMime = params.getOrDefault("obj_mime", "application/json");
+                String objPayload = params.getOrDefault("obj_payload", payload);
+                JsonObject state = new JsonObject();
+                state.addProperty("mimeType", objMime);
+                state.addProperty("bucket", coll != null ? coll : "media_bucket");
+                state.addProperty("sizeBytes", objPayload.getBytes(StandardCharsets.UTF_8).length);
+                state.addProperty("content", objPayload);
+                finalPayloadStr = jsonParser.toJson(state);
             }
             case "RECORDS" -> {
-                RecordsEngine re = (RecordsEngine) engine.getEngine("RECORDS");
-                if (re != null) {
-                    String recClass = params.getOrDefault("rec_class", "com.jettra.model.PersonRecord");
-                    String recPayload = params.getOrDefault("rec_payload", payload);
-                    JsonObject recObj = parseJsonOrWrap(recPayload);
-                    recObj.addProperty("_table", coll != null ? coll : "default");
-                    re.saveRecord(db, id, recClass, recObj);
-                }
+                String recClass = params.getOrDefault("rec_class", "com.jettra.model.PersonRecord");
+                String recPayload = params.getOrDefault("rec_payload", payload);
+                JsonObject recObj = parseJsonOrWrap(recPayload);
+                recObj.addProperty("_table", coll != null ? coll : "default");
+                recObj.addProperty("_recordClass", recClass);
+                finalPayloadStr = jsonParser.toJson(recObj);
             }
         }
 
-        // Guarantee that storage core keys corresponding to this item get updated with a new version timestamp
-        byte[] payloadBytes = (payload != null && !payload.isBlank()) ? payload.getBytes(StandardCharsets.UTF_8) : new byte[0];
-        String[] candidateKeys = { directKey, collKey, simpleKey, simpleCollKey };
-        boolean updatedAny = false;
-        for (String ck : candidateKeys) {
-            byte[] existing = engine.getStorageCore().get(ck);
-            if (existing != null && existing.length > 0) {
-                engine.getStorageCore().put(ck, payloadBytes, now);
-                updatedAny = true;
-            }
+        byte[] payloadBytes = finalPayloadStr.getBytes(StandardCharsets.UTF_8);
+
+        // Put strictly once to targetKey with new timestamp to increment version by +1
+        engine.getStorageCore().put(targetKey, payloadBytes, now);
+
+        // Mirror to collKey if different and already exists
+        if (!targetKey.equals(collKey) && engine.getStorageCore().get(collKey) != null) {
+            engine.getStorageCore().put(collKey, payloadBytes, now);
         }
-        if (!updatedAny) {
-            engine.getStorageCore().put(directKey, payloadBytes, now);
+        // Mirror to simpleKey if already exists
+        if (engine.getStorageCore().get(simpleKey) != null) {
+            engine.getStorageCore().put(simpleKey, payloadBytes, now);
         }
     }
 
@@ -886,19 +863,20 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
     private int getItemVersionCount(String engineKey, String db, String coll, String id) {
         String prefix = getPrefixForEngine(engineKey);
-        String[] candidateKeys = {
-            prefix + db + ":" + coll + ":" + id,
-            prefix + db + ":" + id,
-            db + ":" + coll + ":" + id,
-            db + ":" + id
-        };
+        String directKey = prefix + db + ":" + id;
+        String collKey = prefix + db + ":" + coll + ":" + id;
+        String simpleKey = db + ":" + id;
 
-        int max = 1;
-        for (String k : candidateKeys) {
-            int c = engine.getStorageCore().getVersionCount(k);
-            if (c > max) max = c;
+        if (engine.getStorageCore().get(directKey) != null) {
+            return engine.getStorageCore().getVersionCount(directKey);
         }
-        return max;
+        if (engine.getStorageCore().get(collKey) != null) {
+            return engine.getStorageCore().getVersionCount(collKey);
+        }
+        if (engine.getStorageCore().get(simpleKey) != null) {
+            return engine.getStorageCore().getVersionCount(simpleKey);
+        }
+        return 1;
     }
 
     private String executeTypeSpecificQuery(String engineName, String db, String id, Map<String, String> params) {

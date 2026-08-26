@@ -204,8 +204,18 @@ public class SampleDatasetManager {
                 hubId, hubNames[i - 1], coords[i - 1][0], coords[i - 1][1], 25000 * i, geoKey
             );
             engine.getStorageCore().put(geoKey, payload.getBytes(StandardCharsets.UTF_8), now);
+            engine.getStorageCore().put("geo:" + db + ":stores_layer:" + hubId, payload.getBytes(StandardCharsets.UTF_8), now);
+            engine.getStorageCore().put("geo:" + db + ":default:" + hubId, payload.getBytes(StandardCharsets.UTF_8), now);
             engine.getStorageCore().put(db + ":" + hubId, payload.getBytes(StandardCharsets.UTF_8), now);
-            count += 2;
+            count += 4;
+
+            if (i == 2) {
+                // Also provide geo_202 and 202 alias for Colon port hub
+                engine.getStorageCore().put("geo:" + db + ":geo_202", payload.getBytes(StandardCharsets.UTF_8), now);
+                engine.getStorageCore().put("geo:" + db + ":202", payload.getBytes(StandardCharsets.UTF_8), now);
+                engine.getStorageCore().put(db + ":geo_202", payload.getBytes(StandardCharsets.UTF_8), now);
+                count += 3;
+            }
         }
 
         // 4. Referenced Target: VECTOR AI Embeddings
