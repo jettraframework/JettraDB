@@ -110,12 +110,6 @@ public class LsmBTreeHybrid {
     public void put(String key, byte[] data, long timestamp) {
         if (key == null || data == null) return;
 
-        // Prevent duplicate version if latest version already has identical data
-        byte[] latest = get(key);
-        if (latest != null && java.util.Arrays.equals(latest, data)) {
-            return;
-        }
-
         // Construct a versioned key: "key@timestamp"
         String versionedKey = key + "@" + timestamp;
         memTable.put(versionedKey, data);

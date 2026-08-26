@@ -309,5 +309,34 @@ public class StorageEnginesFeaturesTest {
         assertTrue(html.contains("openInspectRecordModal"), "JS must contain openInspectRecordModal");
         assertTrue(html.contains("showModal"), "JS must contain showModal");
         assertTrue(html.contains("hideModal"), "JS must contain hideModal");
+        assertTrue(html.contains("item_detail_"), "HTML must contain level 5 item detail subtrees");
+    }
+
+    @Test
+    void testRecordEditVersionIncrementAndHistory() {
+        String testKey = "doc:test_v_db:record_01";
+        long t1 = 1000000L;
+        long t2 = 2000000L;
+        long t3 = 3000000L;
+
+        engine.getStorageCore().put(testKey, "{\"v\":1,\"name\":\"alpha\"}".getBytes(java.nio.charset.StandardCharsets.UTF_8), t1);
+        assertEquals(1, engine.getStorageCore().getVersionCount(testKey));
+
+        // Simulate Edit 1
+        engine.getStorageCore().put(testKey, "{\"v\":2,\"name\":\"beta\"}".getBytes(java.nio.charset.StandardCharsets.UTF_8), t2);
+        assertEquals(2, engine.getStorageCore().getVersionCount(testKey));
+
+        // Simulate Edit 2
+        engine.getStorageCore().put(testKey, "{\"v\":3,\"name\":\"gamma\"}".getBytes(java.nio.charset.StandardCharsets.UTF_8), t3);
+        assertEquals(3, engine.getStorageCore().getVersionCount(testKey));
+
+        var history = engine.getStorageCore().getVersionHistory(testKey);
+        assertEquals(3, history.size());
+        assertEquals("v3", "v" + history.get(0).versionNumber());
+        assertTrue(history.get(0).isCurrent());
+        assertEquals("v2", "v" + history.get(1).versionNumber());
+        assertFalse(history.get(1).isCurrent());
+        assertEquals("v1", "v" + history.get(2).versionNumber());
+        assertFalse(history.get(2).isCurrent());
     }
 }
