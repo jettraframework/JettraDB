@@ -1879,7 +1879,13 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 dbToggleIcon,
                 Icon.of("fas fa-database").modifier(new Modifier().style("margin-right:4px; color:#38bdf8; font-size:11px;")),
                 Span.of(db).modifier(new Modifier().style("color:" + (isActiveDb ? "#38bdf8" : "#cbd5e1") + "; font-weight:700; font-size:11px; cursor:pointer;"))
-            ).modifier(new Modifier().attribute("onclick", "toggleSubtree('" + dbContainerId + "')").style("display:inline-flex; align-items:center; cursor:pointer;"));
+            ).modifier(new Modifier()
+                .attribute("onclick", "toggleSubtree('" + dbContainerId + "')")
+                .attribute("tabindex", "0")
+                .attribute("role", "treeitem")
+                .attribute("aria-expanded", "false")
+                .attribute("onkeydown", "handleTreeKeyDown(event, '" + dbContainerId + "')")
+                .style("display:inline-flex; align-items:center; cursor:pointer; outline:none;"));
 
             List<Widget> dbRightWidgets = new ArrayList<>();
             if (isActiveDb) {
@@ -1899,9 +1905,8 @@ public class StoreEnginesPage extends StoreTemplatePage {
             List<Widget> dbContentWidgets = new ArrayList<>();
             dbContentWidgets.add(dbHeaderRow);
 
-            if (isActiveDb) {
-                List<Widget> engineSubtreeWidgets = new ArrayList<>();
-                int engIdx = 0;
+            List<Widget> engineSubtreeWidgets = new ArrayList<>();
+            int engIdx = 0;
 
                 for (String[] spec : allEngSpecs) {
                     engIdx++;
@@ -2226,10 +2231,9 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     .modifier(new Modifier().cssClass("tree-collapsible-content").style("margin-left:8px; border-left: 2px dashed rgba(56,189,248,0.3); padding-left:6px; margin-top:3px; display:none;"));
 
                 dbContentWidgets.add(dbSubtreeContainer);
-            }
 
             Widget dbCard = Div.of(dbContentWidgets.toArray(new Widget[0]))
-                .modifier(new Modifier().style("margin-bottom:6px; padding:4px 8px; border-radius:6px; background:" + (isActiveDb ? "rgba(56,189,248,0.06)" : "transparent") + "; border:" + (isActiveDb ? "1px solid rgba(56,189,248,0.2)" : "1px solid transparent") + ";"));
+                .modifier(new Modifier().style("margin-bottom:6px; padding:4px 8px; border-radius:6px; background:" + (isActiveDb ? "rgba(56,189,248,0.06)" : "rgba(255,255,255,0.015)") + "; border:" + (isActiveDb ? "1px solid rgba(56,189,248,0.2)" : "1px solid rgba(255,255,255,0.04)") + ";"));
 
             dbCardWidgets.add(dbCard);
         }
@@ -4413,6 +4417,18 @@ public class StoreEnginesPage extends StoreTemplatePage {
     showModal('inspectRecordModal');
   }
 
+  function handleTreeKeyDown(e, elementId) {
+    if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+      e.preventDefault();
+      var el = document.getElementById(elementId);
+      if (!el) return;
+      var isHidden = (el.style.display === 'none' || el.style.display === '');
+      if ((e.key === 'ArrowRight' && isHidden) || (e.key === 'ArrowLeft' && !isHidden) || e.key === 'Enter' || e.key === ' ') {
+        toggleSubtree(elementId);
+      }
+    }
+  }
+
   function toggleInspectReferenceResolution(shouldResolve) {
     if (!currentInspectRecord) return;
     var payloadEl = document.getElementById('inspectRecordPayloadDisplay');
@@ -4423,12 +4439,13 @@ public class StoreEnginesPage extends StoreTemplatePage {
     var refs = currentInspectRecord.refs || [];
 
     if (!shouldResolve || refs.length === 0) {
+      // Manual Exploration Mode: show original unexpanded payload, display manual list and action buttons
       var prettyRaw = currentInspectRecord.parsed ? JSON.stringify(currentInspectRecord.parsed, null, 2) : currentInspectRecord.rawPayload;
       if (payloadEl) payloadEl.value = prettyRaw;
-      if (refContainer) refContainer.style.display = 'none';
+      if (refContainer) refContainer.style.display = (refs.length > 0) ? 'block' : 'none';
       if (refBadge) {
         if (refs.length > 0) {
-          refBadge.innerText = refs.length + ' Ref(s) (Unresolved)';
+          refBadge.innerText = refs.length + ' Ref(s) (Modo Manual)';
           refBadge.style.display = 'inline-block';
           refBadge.style.background = 'rgba(148,163,184,0.2)';
           refBadge.style.color = '#94a3b8';
@@ -4436,12 +4453,16 @@ public class StoreEnginesPage extends StoreTemplatePage {
           refBadge.style.display = 'none';
         }
       }
+      if (refs.length > 0) {
+        renderManualReferenceCards(refs, resolvedCache, refList);
+      }
       return;
     }
 
-    // Resolve references and display enriched view
+    // Auto-Resolve Mode: hide manual reference list container and inline resolved references into payload viewer
+    if (refContainer) refContainer.style.display = 'none';
     if (refBadge) {
-      refBadge.innerText = refs.length + ' Ref(s) Auto-Resolved';
+      refBadge.innerText = refs.length + ' Ref(s) Auto-Resolving...';
       refBadge.style.display = 'inline-block';
       refBadge.style.background = 'rgba(56,189,248,0.2)';
       refBadge.style.color = '#38bdf8';
@@ -4469,8 +4490,15 @@ public class StoreEnginesPage extends StoreTemplatePage {
           .then(function(data) {
             resolvedCache[u] = data;
             resolvedMap[u] = data;
-          }).catch(function() {
-            resolvedMap[u] = { exists: false, status: 'NODE_UNREACHABLE', diagnostic: 'Network request failed', uri: u, primaryStorageAddress: item.parsed.primaryStorageAddress, clusterNode: item.parsed.node };
+          }).catch(function(err) {
+            resolvedMap[u] = {
+              exists: false,
+              status: 'NODE_UNREACHABLE',
+              diagnostic: 'Network request failed: ' + (err && err.message ? err.message : ''),
+              uri: u,
+              primaryStorageAddress: item.parsed.primaryStorageAddress,
+              clusterNode: item.parsed.node
+            };
           });
         promises.push(p);
       }
@@ -4481,8 +4509,9 @@ public class StoreEnginesPage extends StoreTemplatePage {
       if (payloadEl) {
         payloadEl.value = JSON.stringify(enrichedJson, null, 2);
       }
-      renderReferencedCards(refs, resolvedMap, refList);
-      if (refContainer) refContainer.style.display = 'block';
+      if (refBadge) {
+        refBadge.innerText = refs.length + ' Ref(s) Auto-Resolved';
+      }
     });
   }
 
@@ -4660,6 +4689,187 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
       card.appendChild(leftInfo);
       card.appendChild(btnInspect);
+      container.appendChild(card);
+    });
+  }
+
+  function renderManualReferenceCards(refs, cachedMap, container) {
+    if (!container) return;
+    container.innerHTML = '';
+
+    var engColors = {
+      'DOCUMENT': '#3b82f6',
+      'RECORDS': '#f43f5e',
+      'VECTOR': '#8b5cf6',
+      'GEOSPATIAL': '#14b8a6',
+      'OBJECT': '#a855f7',
+      'KEYVALUE': '#10b981',
+      'TIMESERIES': '#06b6d4',
+      'GRAPH': '#ec4899',
+      'COLUMN': '#f97316'
+    };
+
+    var engIcons = {
+      'DOCUMENT': 'fas fa-file-code',
+      'RECORDS': 'fas fa-id-card',
+      'VECTOR': 'fas fa-brain',
+      'GEOSPATIAL': 'fas fa-location-dot',
+      'OBJECT': 'fas fa-box-archive',
+      'KEYVALUE': 'fas fa-key',
+      'TIMESERIES': 'fas fa-stopwatch',
+      'GRAPH': 'fas fa-circle-nodes',
+      'COLUMN': 'fas fa-table'
+    };
+
+    var seenUrisInRender = {};
+
+    refs.forEach(function(item) {
+      var p = item.parsed;
+      if (!p || !p.uri) return;
+      if (seenUrisInRender[p.uri]) return;
+      seenUrisInRender[p.uri] = true;
+
+      var color = engColors[p.engine] || '#38bdf8';
+      var icon = engIcons[p.engine] || 'fas fa-link';
+      var cluster = p.node || 'Local Cluster (Primary)';
+      var cached = cachedMap ? cachedMap[p.uri] : null;
+
+      var card = document.createElement('div');
+      card.style.display = 'flex';
+      card.style.alignItems = 'center';
+      card.style.justifyContent = 'space-between';
+      card.style.padding = '8px 12px';
+      card.style.background = 'rgba(15,23,42,0.85)';
+      card.style.border = '1px solid rgba(56,189,248,0.2)';
+      card.style.borderRadius = '6px';
+      card.style.gap = '8px';
+      card.style.marginBottom = '4px';
+
+      var leftInfo = document.createElement('div');
+      leftInfo.style.display = 'flex';
+      leftInfo.style.alignItems = 'center';
+      leftInfo.style.gap = '8px';
+      leftInfo.style.flex = '1';
+      leftInfo.style.minWidth = '0';
+
+      var badge = document.createElement('span');
+      badge.className = 'store-badge';
+      badge.style.background = 'rgba(255,255,255,0.08)';
+      badge.style.color = color;
+      badge.style.border = '1px solid ' + color;
+      badge.style.fontSize = '10px';
+      badge.innerHTML = '<i class="' + icon + '" style="margin-right:4px;"></i>' + p.engine;
+
+      var textCol = document.createElement('div');
+      textCol.style.overflow = 'hidden';
+      textCol.style.textOverflow = 'ellipsis';
+      textCol.style.whiteSpace = 'nowrap';
+
+      var uriText = document.createElement('div');
+      uriText.style.fontFamily = 'monospace';
+      uriText.style.fontSize = '11px';
+      uriText.style.fontWeight = 'bold';
+      uriText.style.color = '#f8fafc';
+      uriText.innerText = p.uri;
+
+      var statusText = document.createElement('div');
+      statusText.className = 'manual-ref-status-line';
+      statusText.style.fontSize = '10.5px';
+      statusText.style.color = '#94a3b8';
+
+      var updateCardStatus = function(data) {
+        if (!data) {
+          statusText.innerHTML = '<span style="color:#c084fc;"><i class="fas fa-network-wired"></i> ' + cluster + '</span> | <span style="color:#94a3b8;"><i class="fas fa-clock"></i> Pendiente de carga manual</span>';
+          return;
+        }
+        var sBadge = '';
+        if (data.exists === true) {
+          sBadge = '<span style="color:#4ade80;"><i class="fas fa-check-circle"></i> Resolved (v' + (data.version || 1) + ')</span>';
+        } else if (data.status === 'NODE_UNREACHABLE') {
+          sBadge = '<span style="color:#f59e0b;"><i class="fas fa-exclamation-triangle"></i> Node Unreachable</span>';
+        } else if (data.status === 'NOT_FOUND') {
+          sBadge = '<span style="color:#ef4444;"><i class="fas fa-times-circle"></i> Record Not Found</span>';
+        } else {
+          sBadge = '<span style="color:#ef4444;"><i class="fas fa-times-circle"></i> ' + (data.diagnostic || 'Not Resolved') + '</span>';
+        }
+
+        var pSummary = '';
+        if (data.exists && data.jsonPayload) {
+          var jp = data.jsonPayload;
+          if (p.engine === 'GEOSPATIAL') {
+            if (jp.lat !== undefined && jp.lon !== undefined) {
+              pSummary = ' | <span style="color:#14b8a6;"><i class="fas fa-map-pin"></i> [' + jp.lat + ', ' + jp.lon + ']' + (jp.name ? ' ' + jp.name : '') + '</span>';
+            } else if (jp.coordinates && jp.coordinates.lat !== undefined) {
+              pSummary = ' | <span style="color:#14b8a6;"><i class="fas fa-map-pin"></i> [' + jp.coordinates.lat + ', ' + jp.coordinates.lon + ']</span>';
+            }
+          } else if (p.engine === 'RECORDS' && (jp.fullName || jp.role)) {
+            pSummary = ' | <span style="color:#f43f5e;"><i class="fas fa-user-tag"></i> ' + (jp.fullName || '') + (jp.role ? ' (' + jp.role + ')' : '') + '</span>';
+          } else if (p.engine === 'DOCUMENT' && (jp.companyName || jp.title || jp.description)) {
+            pSummary = ' | <span style="color:#38bdf8;"><i class="fas fa-file-lines"></i> ' + (jp.companyName || jp.title || jp.description) + '</span>';
+          }
+        }
+        statusText.innerHTML = '<span style="color:#c084fc;"><i class="fas fa-network-wired"></i> ' + (data.clusterNode || cluster) + '</span> | ' + sBadge + pSummary;
+        card.style.border = '1px solid ' + (data.exists ? 'rgba(74,222,128,0.3)' : (data.status === 'NODE_UNREACHABLE' ? 'rgba(245,158,11,0.4)' : 'rgba(239,68,68,0.3)'));
+      };
+
+      updateCardStatus(cached);
+
+      textCol.appendChild(uriText);
+      textCol.appendChild(statusText);
+      leftInfo.appendChild(badge);
+      leftInfo.appendChild(textCol);
+
+      var btnGroup = document.createElement('div');
+      btnGroup.style.display = 'flex';
+      btnGroup.style.gap = '4px';
+      btnGroup.style.alignItems = 'center';
+
+      var btnLoad = document.createElement('button');
+      btnLoad.type = 'button';
+      btnLoad.className = 'btn-action btn-secondary';
+      btnLoad.style.fontSize = '10.5px';
+      btnLoad.style.padding = '3px 8px';
+      btnLoad.style.color = '#38bdf8';
+      btnLoad.style.borderColor = 'rgba(56,189,248,0.4)';
+      btnLoad.innerHTML = cached ? '<i class="fas fa-sync"></i> Recargar' : '<i class="fas fa-download"></i> Cargar Datos';
+      btnLoad.onclick = function() {
+        btnLoad.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Cargando...';
+        var base = window.location.pathname || '/engines';
+        if (base.indexOf('?') >= 0) base = base.split('?')[0];
+        fetch(base + '?action=resolve_ref&uri=' + encodeURIComponent(p.uri))
+          .then(function(res) { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
+          .then(function(data) {
+            resolvedCache[p.uri] = data;
+            updateCardStatus(data);
+            btnLoad.innerHTML = '<i class="fas fa-sync"></i> Recargar';
+          })
+          .catch(function(err) {
+            var failData = { exists: false, status: 'NODE_UNREACHABLE', diagnostic: 'Network error: ' + (err && err.message ? err.message : '') };
+            resolvedCache[p.uri] = failData;
+            updateCardStatus(failData);
+            btnLoad.innerHTML = '<i class="fas fa-redo"></i> Reintentar';
+          });
+      };
+
+      var btnInspect = document.createElement('button');
+      btnInspect.type = 'button';
+      btnInspect.className = 'btn-action btn-secondary';
+      btnInspect.style.fontSize = '10.5px';
+      btnInspect.style.padding = '3px 8px';
+      btnInspect.style.color = color;
+      btnInspect.style.borderColor = color;
+      btnInspect.innerHTML = '<i class="fas fa-external-link-alt"></i> Ver Objeto';
+      btnInspect.onclick = (function(uriToInspect, eng, dbName, entId, pAddr, clNode) {
+        return function() {
+          inspectReferencedEntity(uriToInspect, eng, dbName, entId, pAddr, clNode);
+        };
+      })(p.uri, p.engine, p.database, p.entityId, p.primaryStorageAddress, cluster);
+
+      btnGroup.appendChild(btnLoad);
+      btnGroup.appendChild(btnInspect);
+
+      card.appendChild(leftInfo);
+      card.appendChild(btnGroup);
       container.appendChild(card);
     });
   }

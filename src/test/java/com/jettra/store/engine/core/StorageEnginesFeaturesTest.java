@@ -586,12 +586,18 @@ public class StorageEnginesFeaturesTest {
         assertEquals("geo:ExampleDBReferences:hub_colon", resGeoRemote.primaryStorageAddress());
         assertEquals("RESOLVED", resGeoRemote.status());
 
-        // 8. Verify Tree View HTML rendering (default collapsed and Explore DB icon)
+        // 8. Verify Tree View HTML rendering (default collapsed, Explore DB icon, accessibility and direct expansion)
         com.jettra.store.engine.web.StoreEnginesPage page = new com.jettra.store.engine.web.StoreEnginesPage(engine);
         io.jettra.flux.core.Widget ui = page.buildContent(null, java.util.Map.of("engine", "DOCUMENT", "target_db", "ExampleDBReferences"), "dark");
         String html = ui.render(io.jettra.flux.theme.Themes.FlatTheme());
         assertTrue(html.contains("[Explore DB]"), "HTML must contain Explore DB link");
         assertTrue(html.contains("fa-compass"), "HTML must contain compass icon next to Explore DB");
         assertTrue(html.contains("display:none"), "Tree content must be collapsed by default with display:none");
+        assertTrue(html.contains("role=\"treeitem\""), "Tree nodes must have treeitem role for direct accessible selection");
+        assertTrue(html.contains("handleTreeKeyDown"), "HTML script must contain keyboard navigation handler");
+        assertTrue(html.contains("renderManualReferenceCards"), "HTML script must contain manual reference list renderer");
+        assertTrue(html.contains("chkInspectResolveRefs"), "Inspect modal must contain auto-resolve toggle checkbox");
+        assertTrue(html.contains("id=\"db_content_1\""), "Database tree must render container for first db");
+        assertTrue(html.contains("id=\"db_content_2\""), "Database tree must render direct subtree for second db");
     }
 }
