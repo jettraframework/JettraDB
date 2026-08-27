@@ -599,5 +599,13 @@ public class StorageEnginesFeaturesTest {
         assertTrue(html.contains("chkInspectResolveRefs"), "Inspect modal must contain auto-resolve toggle checkbox");
         assertTrue(html.contains("id=\"db_content_1\""), "Database tree must render container for first db");
         assertTrue(html.contains("id=\"db_content_2\""), "Database tree must render direct subtree for second db");
+
+        // 9. Verify Table View HTML rendering with Database SelectOne and Expandable Rows
+        io.jettra.flux.core.Widget uiTable = page.buildContent(null, java.util.Map.of("engine", "DOCUMENT", "target_db", "ExampleDBReferences", "view_mode", "table"), "dark");
+        String htmlTable = uiTable.render(io.jettra.flux.theme.Themes.FlatTheme());
+        assertTrue(htmlTable.contains("table_db_selector"), "Table view must render Database SelectOne component");
+        assertTrue(htmlTable.contains("toggleTableRowDetail"), "Table view must contain row expansion toggle function");
+        assertTrue(htmlTable.contains("explorer-table-detail-row"), "Table view must render expandable detail panels for rows");
+        assertTrue(htmlTable.contains("tbl_row_detail_"), "Table rows must have unique detail identifiers");
     }
 }

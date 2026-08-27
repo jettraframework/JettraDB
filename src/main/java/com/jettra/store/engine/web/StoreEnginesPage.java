@@ -1734,17 +1734,26 @@ public class StoreEnginesPage extends StoreTemplatePage {
             int endIndex = Math.min(startIndex + pageSize, totalItems);
             List<FlatRecordItem> pageItems = totalItems > 0 ? flatItems.subList(startIndex, endIndex) : Collections.emptyList();
 
-            // Table Filter Bar
+            // Table Filter Bar with Database SelectOne Dropdown
+            Map<String, String> dbSelectOptions = new LinkedHashMap<>();
+            for (String d : allDbs) {
+                dbSelectOptions.put(d, "📦 " + d + (d.equalsIgnoreCase(targetDb) ? " (Active)" : ""));
+            }
+
+            String onDbChangeScript = "location.href='" + actionUrl + selectedEngine + "&view_mode=table&target_db=' + encodeURIComponent(this.value) + '&coll=" + escapeJs(currentColl) + "&table_size=" + pageSize + "'";
+
+            Widget dbSelectDropdown = createSelectOne("table_db_selector", "tableDbSelector", "#38bdf8", onDbChangeScript, dbSelectOptions, targetDb);
+
+            Widget dbPickerGroup = Div.of(
+                Span.of(Icon.of("fas fa-database").modifier(new Modifier().style("color:#38bdf8; margin-right:4px;")), Text.of("DB:")).modifier(new Modifier().style("font-size:11px; font-weight:700; color:#38bdf8; margin-right:6px; white-space:nowrap; display:flex; align-items:center;")),
+                dbSelectDropdown
+            ).modifier(new Modifier().style("display:inline-flex; align-items:center; min-width:200px; max-width:260px; background:rgba(56,189,248,0.08); border:1px solid rgba(56,189,248,0.25); padding:3px 8px; border-radius:6px;"));
+
             Widget quickFilterInput = TextField.of("table_quick_filter", "Quick filter by Record ID, unit, engine, or payload content...")
                 .id("tableExplorerQuickFilter")
                 .modifier(new Modifier()
                     .attribute("onkeyup", "filterExplorerTable()")
                     .style("flex:1; min-width:220px; padding:6px 12px; background:#0f172a; border:1px solid rgba(56,189,248,0.3); border-radius:6px; color:#f8fafc; font-size:12px;"));
-
-            Widget activeDbBadge = Span.of(
-                Icon.of("fas fa-database").modifier(new Modifier().style("margin-right:4px; color:#38bdf8;")),
-                Text.of("DB: " + targetDb)
-            ).modifier(new Modifier().style("color:#38bdf8; font-weight:bold; font-size:12px; background:rgba(56,189,248,0.1); border:1px solid rgba(56,189,248,0.25); padding:5px 10px; border-radius:6px;"));
 
             Widget resolveRefCheckbox = Label.of(
                 RawHtml.of("<input type=\"checkbox\" id=\"chkAutoResolveRefsGlobal\" checked onchange=\"toggleGlobalReferenceResolution(this.checked)\" style=\"accent-color:#38bdf8; width:14px; height:14px; cursor:pointer; margin-right:4px;\" />"),
@@ -1756,7 +1765,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 .modifier(new Modifier().cssClass("store-badge badge-active").style("font-size:11px; padding:4px 8px;"));
 
             Widget tableFilterBar = Div.of(
-                activeDbBadge,
+                dbPickerGroup,
                 resolveRefCheckbox,
                 quickFilterInput,
                 totalCountBadge
@@ -1767,10 +1776,11 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
             // Header Row
             Widget tableHeaderRow = Div.of(
-                Span.of("ENGINE").modifier(new Modifier().style("width:130px; font-weight:700; color:#94a3b8; font-size:11px;")),
-                Span.of("UNIT / COLLECTION").modifier(new Modifier().style("width:160px; font-weight:700; color:#94a3b8; font-size:11px;")),
-                Span.of("RECORD ID").modifier(new Modifier().style("width:170px; font-weight:700; color:#94a3b8; font-size:11px;")),
-                Span.of("VERSION").modifier(new Modifier().style("width:75px; font-weight:700; color:#94a3b8; font-size:11px;")),
+                Span.of("").modifier(new Modifier().style("width:28px; text-align:center;")),
+                Span.of("ENGINE").modifier(new Modifier().style("width:125px; font-weight:700; color:#94a3b8; font-size:11px;")),
+                Span.of("UNIT / COLLECTION").modifier(new Modifier().style("width:150px; font-weight:700; color:#94a3b8; font-size:11px;")),
+                Span.of("RECORD ID").modifier(new Modifier().style("width:160px; font-weight:700; color:#94a3b8; font-size:11px;")),
+                Span.of("VERSION").modifier(new Modifier().style("width:70px; font-weight:700; color:#94a3b8; font-size:11px;")),
                 Span.of("PAYLOAD PREVIEW").modifier(new Modifier().style("flex:1; min-width:180px; font-weight:700; color:#94a3b8; font-size:11px;")),
                 Span.of("ACTIONS").modifier(new Modifier().style("width:130px; text-align:right; font-weight:700; color:#94a3b8; font-size:11px;"))
             ).modifier(new Modifier().style("display:flex; align-items:center; padding:8px 12px; background:rgba(30,41,59,0.8); border-bottom:2px solid rgba(255,255,255,0.1); border-radius:6px 6px 0 0; gap:8px;"));
@@ -1786,21 +1796,31 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 );
             } else {
                 for (FlatRecordItem item : pageItems) {
+                    String rowDetailId = "tbl_row_detail_" + Math.abs((item.engine() + "_" + item.db() + "_" + item.unit() + "_" + item.id()).hashCode());
+                    String rowIconId = "icon_" + rowDetailId;
+
+                    Widget expandBtn = Button.of(Icon.of("fas fa-chevron-right tree-toggle-icon").id(rowIconId))
+                        .modifier(new Modifier()
+                            .attribute("type", "button")
+                            .attribute("onclick", "toggleTableRowDetail('" + rowDetailId + "')")
+                            .attribute("title", "Expand record details")
+                            .style("background:none; border:none; color:#38bdf8; font-size:10px; cursor:pointer; width:28px; height:28px; display:inline-flex; align-items:center; justify-content:center; border-radius:4px; transition:all 0.15s ease;"));
+
                     Widget engCell = Span.of(
                         Icon.of(item.icon()).modifier(new Modifier().style("color:" + item.color() + "; margin-right:4px; font-size:11px;")),
                         Span.of(item.engine()).modifier(new Modifier().style("font-weight:700; font-size:10.5px; color:" + item.color() + ";"))
-                    ).modifier(new Modifier().style("width:130px; display:flex; align-items:center;"));
+                    ).modifier(new Modifier().style("width:125px; display:flex; align-items:center;"));
 
                     Widget unitCell = Span.of(
                         Text.of("📁 "),
                         Span.of(item.unit()).modifier(new Modifier().style("color:#cbd5e1; font-size:11px; font-weight:500;"))
-                    ).modifier(new Modifier().style("width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"));
+                    ).modifier(new Modifier().style("width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"));
 
                     Widget idCell = Span.of(item.id())
-                        .modifier(new Modifier().style("width:170px; color:#f8fafc; font-family:monospace; font-weight:700; font-size:11.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"));
+                        .modifier(new Modifier().style("width:160px; color:#f8fafc; font-family:monospace; font-weight:700; font-size:11.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"));
 
                     Widget versionCell = Span.of("v" + item.vCount())
-                        .modifier(new Modifier().cssClass("store-badge").style("width:75px; background:rgba(56,189,248,0.15); color:#38bdf8; font-size:10px; padding:2px 6px; text-align:center;"));
+                        .modifier(new Modifier().cssClass("store-badge").style("width:70px; background:rgba(56,189,248,0.15); color:#38bdf8; font-size:10px; padding:2px 6px; text-align:center;"));
 
                     String preview = item.payload().length() > 75 ? item.payload().substring(0, 75) + "..." : item.payload();
                     Widget previewCell = Span.of(preview)
@@ -1827,10 +1847,17 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     Widget actionsCell = Div.of(actionBtns.toArray(new Widget[0]))
                         .modifier(new Modifier().style("width:130px; display:flex; justify-content:flex-end; align-items:center; gap:3px;"));
 
-                    Widget row = Div.of(engCell, unitCell, idCell, versionCell, previewCell, actionsCell)
-                        .modifier(new Modifier().cssClass("explorer-table-row").style("display:flex; align-items:center; padding:8px 12px; border-bottom:1px solid rgba(255,255,255,0.05); background:#0f172a; gap:8px;"));
+                    Widget row = Div.of(expandBtn, engCell, unitCell, idCell, versionCell, previewCell, actionsCell)
+                        .modifier(new Modifier().cssClass("explorer-table-row").attribute("data-detail-id", rowDetailId).style("display:flex; align-items:center; padding:8px 12px; border-bottom:1px solid rgba(255,255,255,0.05); background:#0f172a; gap:8px;"));
+
+                    Widget detailContent = renderItemDetailSummary(item.engine(), item.db(), item.unit(), item.id(), item.payload(), item.vCount(), item.payloadB64(), item.versionsB64());
+
+                    Widget detailRow = Div.of(detailContent)
+                        .id(rowDetailId)
+                        .modifier(new Modifier().cssClass("explorer-table-detail-row").style("display:none; padding:10px 16px; background:rgba(15,23,42,0.95); border-bottom:1px solid rgba(56,189,248,0.2); border-left:3px solid " + item.color() + "; margin-left:32px; border-radius:0 0 6px 6px; box-shadow:inset 0 2px 8px rgba(0,0,0,0.5); margin-bottom:4px;"));
 
                     tableRows.add(row);
+                    tableRows.add(detailRow);
                 }
             }
 
@@ -4969,6 +4996,20 @@ public class StoreEnginesPage extends StoreTemplatePage {
     }
   }
 
+  function toggleTableRowDetail(detailId) {
+    var el = document.getElementById(detailId);
+    var icon = document.getElementById('icon_' + detailId);
+    if (!el) return;
+    var isHidden = (el.style.display === 'none' || el.style.display === '');
+    if (isHidden) {
+      el.style.display = 'block';
+      if (icon) icon.className = 'fas fa-chevron-down tree-toggle-icon';
+    } else {
+      el.style.display = 'none';
+      if (icon) icon.className = 'fas fa-chevron-right tree-toggle-icon';
+    }
+  }
+
   function filterExplorerTable() {
     var input = document.getElementById('tableExplorerQuickFilter');
     var filter = input ? input.value.toLowerCase().trim() : '';
@@ -4976,11 +5017,18 @@ public class StoreEnginesPage extends StoreTemplatePage {
     var visibleCount = 0;
     for (var i = 0; i < rows.length; i++) {
       var text = rows[i].innerText.toLowerCase();
+      var detailId = rows[i].getAttribute('data-detail-id');
+      var detailEl = detailId ? document.getElementById(detailId) : null;
       if (!filter || text.indexOf(filter) > -1) {
         rows[i].style.display = 'flex';
         visibleCount++;
       } else {
         rows[i].style.display = 'none';
+        if (detailEl) {
+          detailEl.style.display = 'none';
+          var icon = document.getElementById('icon_' + detailId);
+          if (icon) icon.className = 'fas fa-chevron-right tree-toggle-icon';
+        }
       }
     }
     var counter = document.getElementById('tableFilterVisibleCount');
