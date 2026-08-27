@@ -1575,6 +1575,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
     private Map<String, List<String>> discoverUnitsAndItems(String engineKey, String dbName) {
         Map<String, List<String>> unitMap = new TreeMap<>();
+        if (dbName == null || dbName.isBlank()) return unitMap;
         String prefix = getPrefixForEngine(engineKey) + dbName + ":";
         Map<String, byte[]> keys = engine.getStorageCore().scanPrefix(prefix);
         
@@ -1584,7 +1585,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
             String valStr = new String(e.getValue(), StandardCharsets.UTF_8).trim();
             if (valStr.isEmpty() || "__TOMBSTONE__".equals(valStr)) continue;
 
-            if (!k.contains("@")) {
+            if (!k.contains("@") && k.startsWith(prefix)) {
                 String rest = k.substring(prefix.length());
                 int idx = rest.indexOf(':');
                 if (idx > 0) {
@@ -1610,7 +1611,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 String valStr = new String(e.getValue(), StandardCharsets.UTF_8).trim();
                 if (valStr.isEmpty() || "__TOMBSTONE__".equals(valStr)) continue;
 
-                if (!k.contains("@")) {
+                if (!k.contains("@") && k.startsWith(docPrefix)) {
                     String rest = k.substring(docPrefix.length());
                     int idx = rest.indexOf(':');
                     if (idx > 0) {
@@ -1734,13 +1735,51 @@ public class StoreEnginesPage extends StoreTemplatePage {
             int endIndex = Math.min(startIndex + pageSize, totalItems);
             List<FlatRecordItem> pageItems = totalItems > 0 ? flatItems.subList(startIndex, endIndex) : Collections.emptyList();
 
+            // Multi-Engine Counts & Filter Chips Toolbar
+            Map<String, Integer> engineCounts = new LinkedHashMap<>();
+            for (FlatRecordItem itm : flatItems) {
+                engineCounts.put(itm.engine(), engineCounts.getOrDefault(itm.engine(), 0) + 1);
+            }
+
+            List<Widget> filterChips = new ArrayList<>();
+            filterChips.add(
+                Button.of(Icon.of("fas fa-layer-group").modifier(new Modifier().style("margin-right:4px; font-size:10px;")), Text.of("All Models (" + totalItems + ")"))
+                    .modifier(new Modifier()
+                        .attribute("type", "button")
+                        .attribute("onclick", "filterByEngineType('ALL')")
+                        .attribute("data-engine-target", "ALL")
+                        .cssClass("engine-filter-chip active")
+                        .style("padding:3px 10px; font-size:11px; font-weight:600; background:rgba(56,189,248,0.25); border:1px solid #38bdf8; color:#38bdf8; border-radius:16px; cursor:pointer; transition:all 0.15s ease; display:inline-flex; align-items:center;"))
+            );
+
+            for (String[] spec : allEngSpecs) {
+                String engName = spec[0];
+                String engColor = spec[1];
+                String engIcon = spec[2];
+                int cnt = engineCounts.getOrDefault(engName, 0);
+                if (cnt > 0) {
+                    filterChips.add(
+                        Button.of(Icon.of(engIcon).modifier(new Modifier().style("margin-right:4px; font-size:10px; color:" + engColor + ";")), Text.of(engName + " (" + cnt + ")"))
+                            .modifier(new Modifier()
+                                .attribute("type", "button")
+                                .attribute("onclick", "filterByEngineType('" + engName + "')")
+                                .attribute("data-engine-target", engName)
+                                .cssClass("engine-filter-chip")
+                                .style("padding:3px 10px; font-size:11px; font-weight:600; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); color:#94a3b8; border-radius:16px; cursor:pointer; transition:all 0.15s ease; display:inline-flex; align-items:center;"))
+                    );
+                }
+            }
+
+            Widget engineFilterChipsBar = Div.of(filterChips.toArray(new Widget[0]))
+                .modifier(new Modifier().style("display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:10px; padding:2px 0;"));
+
             // Table Filter Bar with Database SelectOne Dropdown
             Map<String, String> dbSelectOptions = new LinkedHashMap<>();
             for (String d : allDbs) {
                 dbSelectOptions.put(d, "📦 " + d + (d.equalsIgnoreCase(targetDb) ? " (Active)" : ""));
             }
 
-            String onDbChangeScript = "location.href='" + actionUrl + selectedEngine + "&view_mode=table&target_db=' + encodeURIComponent(this.value) + '&coll=" + escapeJs(currentColl) + "&table_size=" + pageSize + "'";
+            String onDbChangeScript = "onTableDatabaseChange(this.value, '" + actionUrl + selectedEngine + "', " + pageSize + ")";
 
             Widget dbSelectDropdown = createSelectOne("table_db_selector", "tableDbSelector", "#38bdf8", onDbChangeScript, dbSelectOptions, targetDb);
 
@@ -1761,7 +1800,9 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 Span.of("Cargar Objetos Referenciados (Auto-Resolve Jref)").modifier(new Modifier().style("color:#cbd5e1; font-size:11px; font-weight:600;"))
             ).modifier(new Modifier().style("display:inline-flex; align-items:center; cursor:pointer; background:rgba(56,189,248,0.1); border:1px solid rgba(56,189,248,0.25); padding:4px 8px; border-radius:6px;"));
 
-            Widget totalCountBadge = Span.of(totalItems + " Total Records").id("tableFilterVisibleCount")
+            int activeWithData = (int) java.util.Arrays.stream(allEngSpecs).filter(s -> engineCounts.getOrDefault(s[0], 0) > 0).count();
+
+            Widget totalCountBadge = Span.of(totalItems + " Total Records (" + activeWithData + " Active Models)").id("tableFilterVisibleCount")
                 .modifier(new Modifier().cssClass("store-badge badge-active").style("font-size:11px; padding:4px 8px;"));
 
             Widget tableFilterBar = Div.of(
@@ -1769,7 +1810,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 resolveRefCheckbox,
                 quickFilterInput,
                 totalCountBadge
-            ).modifier(new Modifier().style("display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px; background:rgba(15,23,42,0.6); padding:8px 12px; border-radius:6px; border:1px solid rgba(255,255,255,0.05);"));
+            ).modifier(new Modifier().style("display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px; background:rgba(15,23,42,0.6); padding:8px 12px; border-radius:6px; border:1px solid rgba(255,255,255,0.05);"));
 
             // Table Headers & Rows
             List<Widget> tableRows = new ArrayList<>();
@@ -1790,9 +1831,18 @@ public class StoreEnginesPage extends StoreTemplatePage {
             if (pageItems.isEmpty()) {
                 tableRows.add(
                     Div.of(
-                        Span.of("No records found in database [" + targetDb + "]. Click [+ DB], [+ Unit], or insert objects to begin.")
-                            .modifier(new Modifier().style("font-style:italic; color:#94a3b8; font-size:12px;"))
-                    ).modifier(new Modifier().style("padding:24px; text-align:center; background:#0f172a; border-bottom:1px solid rgba(255,255,255,0.05);"))
+                        Icon.of("fas fa-database").modifier(new Modifier().style("color:#64748b; font-size:28px; margin-bottom:8px; display:block;")),
+                        Header.of(4, Text.of("No engines or components found for [" + targetDb + "]"))
+                            .modifier(new Modifier().style("margin:0; font-size:14px; font-weight:700; color:#f8fafc; margin-bottom:4px;")),
+                        Span.of("This database currently contains no active units or stored entities across the multi-model engines.")
+                            .modifier(new Modifier().style("color:#94a3b8; font-size:12px; display:block; margin-bottom:12px;")),
+                        Div.of(
+                            Button.of(Icon.of("fas fa-plus"), Text.of(" Add Unit / Collection"))
+                                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "showModal('createUnitModal')").cssClass("btn-action btn-primary").style("padding:5px 12px; font-size:11px; margin-right:6px;")),
+                            Button.of(Icon.of("fas fa-file-code"), Text.of(" Insert Document"))
+                                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "showModal('addDocumentModal')").cssClass("btn-action btn-secondary").style("padding:5px 12px; font-size:11px;"))
+                        ).modifier(new Modifier().style("display:flex; justify-content:center; gap:6px;"))
+                    ).modifier(new Modifier().style("padding:36px 20px; text-align:center; background:#0f172a; border-bottom:1px solid rgba(255,255,255,0.05);"))
                 );
             } else {
                 for (FlatRecordItem item : pageItems) {
@@ -1848,7 +1898,12 @@ public class StoreEnginesPage extends StoreTemplatePage {
                         .modifier(new Modifier().style("width:130px; display:flex; justify-content:flex-end; align-items:center; gap:3px;"));
 
                     Widget row = Div.of(expandBtn, engCell, unitCell, idCell, versionCell, previewCell, actionsCell)
-                        .modifier(new Modifier().cssClass("explorer-table-row").attribute("data-detail-id", rowDetailId).style("display:flex; align-items:center; padding:8px 12px; border-bottom:1px solid rgba(255,255,255,0.05); background:#0f172a; gap:8px;"));
+                        .modifier(new Modifier()
+                            .cssClass("explorer-table-row")
+                            .attribute("data-detail-id", rowDetailId)
+                            .attribute("data-db-name", item.db())
+                            .attribute("data-engine-type", item.engine())
+                            .style("display:flex; align-items:center; padding:8px 12px; border-bottom:1px solid rgba(255,255,255,0.05); background:#0f172a; gap:8px;"));
 
                     Widget detailContent = renderItemDetailSummary(item.engine(), item.db(), item.unit(), item.id(), item.payload(), item.vCount(), item.payloadB64(), item.versionsB64());
 
@@ -1862,7 +1917,10 @@ public class StoreEnginesPage extends StoreTemplatePage {
             }
 
             Widget tableContainer = Div.of(tableRows.toArray(new Widget[0]))
-                .modifier(new Modifier().style("border:1px solid rgba(255,255,255,0.1); border-radius:6px; overflow-x:auto; margin-bottom:12px;"));
+                .id("tableExplorerContainer")
+                .modifier(new Modifier().style("border:1px solid rgba(255,255,255,0.1); border-radius:6px; overflow-x:auto; margin-bottom:12px; position:relative;"));
+
+            Widget completeTableView = Div.of(tableFilterBar, engineFilterChipsBar, tableContainer);
 
             // Pagination Controls
             String baseTableUrl = actionUrl + selectedEngine + "&target_db=" + targetDb + "&coll=" + currentColl + "&view_mode=table&table_size=" + pageSize;
@@ -1886,7 +1944,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 Div.of(pageButtons.toArray(new Widget[0])).modifier(new Modifier().style("display:flex; align-items:center; gap:2px;"))
             ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; padding:6px 4px;"));
 
-            return Div.of(treeHeader, tableFilterBar, tableContainer, paginationFooter)
+            return Div.of(treeHeader, tableFilterBar, engineFilterChipsBar, tableContainer, paginationFooter)
                 .modifier(new Modifier().cssClass("store-card").style("margin-bottom:20px; border: 1px solid rgba(56,189,248,0.3); background:rgba(18,24,38,0.9); padding:16px;"));
         }
 
@@ -5010,6 +5068,45 @@ public class StoreEnginesPage extends StoreTemplatePage {
     }
   }
 
+  function onTableDatabaseChange(newDb, baseUrl, pageSize) {
+    if (!newDb) return;
+    var container = document.getElementById('tableExplorerContainer');
+    if (container) {
+      container.innerHTML = '<div style="padding:48px 24px; text-align:center; color:#38bdf8;"><i class="fas fa-circle-notch fa-spin" style="font-size:28px; margin-bottom:12px; display:block;"></i><div style="font-weight:700; font-size:14px; color:#f8fafc;">Switching database to [' + newDb + ']...</div><div style="font-size:12px; color:#94a3b8; margin-top:4px;">Purging prior table cache and scoping multi-model engines...</div></div>';
+    }
+    // Collapse any open details and reset filters
+    var details = document.querySelectorAll('.explorer-table-detail-row');
+    for (var i = 0; i < details.length; i++) {
+      details[i].style.display = 'none';
+    }
+    currentEngineFilter = 'ALL';
+    var qf = document.getElementById('tableExplorerQuickFilter');
+    if (qf) qf.value = '';
+    location.href = baseUrl + '&view_mode=table&target_db=' + encodeURIComponent(newDb) + '&coll=default&table_page=1&table_size=' + pageSize;
+  }
+
+  var currentEngineFilter = 'ALL';
+
+  function filterByEngineType(engineType) {
+    currentEngineFilter = engineType || 'ALL';
+    var chips = document.querySelectorAll('.engine-filter-chip');
+    for (var i = 0; i < chips.length; i++) {
+      var t = chips[i].getAttribute('data-engine-target');
+      if (t === currentEngineFilter) {
+        chips[i].classList.add('active');
+        chips[i].style.background = 'rgba(56,189,248,0.25)';
+        chips[i].style.borderColor = '#38bdf8';
+        chips[i].style.color = '#38bdf8';
+      } else {
+        chips[i].classList.remove('active');
+        chips[i].style.background = 'rgba(255,255,255,0.04)';
+        chips[i].style.borderColor = 'rgba(255,255,255,0.1)';
+        chips[i].style.color = '#94a3b8';
+      }
+    }
+    filterExplorerTable();
+  }
+
   function filterExplorerTable() {
     var input = document.getElementById('tableExplorerQuickFilter');
     var filter = input ? input.value.toLowerCase().trim() : '';
@@ -5017,9 +5114,12 @@ public class StoreEnginesPage extends StoreTemplatePage {
     var visibleCount = 0;
     for (var i = 0; i < rows.length; i++) {
       var text = rows[i].innerText.toLowerCase();
+      var rowEngine = rows[i].getAttribute('data-engine-type') || '';
+      var engineMatch = (currentEngineFilter === 'ALL' || rowEngine === currentEngineFilter);
+      var textMatch = (!filter || text.indexOf(filter) > -1);
       var detailId = rows[i].getAttribute('data-detail-id');
       var detailEl = detailId ? document.getElementById(detailId) : null;
-      if (!filter || text.indexOf(filter) > -1) {
+      if (engineMatch && textMatch) {
         rows[i].style.display = 'flex';
         visibleCount++;
       } else {

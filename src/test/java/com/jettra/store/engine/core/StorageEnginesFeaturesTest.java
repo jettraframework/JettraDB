@@ -600,12 +600,30 @@ public class StorageEnginesFeaturesTest {
         assertTrue(html.contains("id=\"db_content_1\""), "Database tree must render container for first db");
         assertTrue(html.contains("id=\"db_content_2\""), "Database tree must render direct subtree for second db");
 
-        // 9. Verify Table View HTML rendering with Database SelectOne and Expandable Rows
-        io.jettra.flux.core.Widget uiTable = page.buildContent(null, java.util.Map.of("engine", "DOCUMENT", "target_db", "ExampleDBReferences", "view_mode", "table"), "dark");
+        // 9. Verify Table View HTML rendering with Multi-Engine Aggregation, Database SelectOne and Filter Chips
+        io.jettra.flux.core.Widget uiTable = page.buildContent(null, java.util.Map.of("engine", "DOCUMENT", "target_db", "ExampleDBReferences", "view_mode", "table", "table_size", "50"), "dark");
         String htmlTable = uiTable.render(io.jettra.flux.theme.Themes.FlatTheme());
         assertTrue(htmlTable.contains("table_db_selector"), "Table view must render Database SelectOne component");
         assertTrue(htmlTable.contains("toggleTableRowDetail"), "Table view must contain row expansion toggle function");
         assertTrue(htmlTable.contains("explorer-table-detail-row"), "Table view must render expandable detail panels for rows");
         assertTrue(htmlTable.contains("tbl_row_detail_"), "Table rows must have unique detail identifiers");
+        assertTrue(htmlTable.contains("engine-filter-chip"), "Table view must render multi-engine filter chips");
+        assertTrue(htmlTable.contains("filterByEngineType"), "Table view must contain filterByEngineType JavaScript function");
+        assertTrue(htmlTable.contains("data-engine-type=\"DOCUMENT\""), "Table rows must contain DOCUMENT engine type tag");
+        assertTrue(htmlTable.contains("data-engine-type=\"RECORDS\""), "Table rows must aggregate and contain RECORDS engine type tag");
+        assertTrue(htmlTable.contains("data-engine-type=\"GEOSPATIAL\""), "Table rows must aggregate and contain GEOSPATIAL engine type tag");
+        assertTrue(htmlTable.contains("data-engine-target=\"RECORDS\""), "Filter chips must contain RECORDS target");
+        assertTrue(htmlTable.contains("data-engine-target=\"GEOSPATIAL\""), "Filter chips must contain GEOSPATIAL target");
+        assertTrue(htmlTable.contains("data-db-name=\"ExampleDBReferences\""), "Table rows must be strictly tagged with the active target database");
+        assertFalse(htmlTable.contains("data-db-name=\"test_isolated_empty_db\""), "Table rows must not contain foreign database tags");
+        assertTrue(htmlTable.contains("onTableDatabaseChange"), "Table view must include onTableDatabaseChange function for state reset and loading overlay");
+        assertTrue(htmlTable.contains("id=\"tableExplorerContainer\""), "Table container must have tableExplorerContainer ID");
+
+        // 10. Verify Strict Database Isolation on switching to an Empty Database
+        io.jettra.flux.core.Widget uiEmpty = page.buildContent(null, java.util.Map.of("engine", "DOCUMENT", "target_db", "test_isolated_empty_db", "view_mode", "table"), "dark");
+        String htmlEmpty = uiEmpty.render(io.jettra.flux.theme.Themes.FlatTheme());
+        assertTrue(htmlEmpty.contains("No engines or components found for [test_isolated_empty_db]"), "Empty state must be displayed for empty target database");
+        assertTrue(htmlEmpty.contains("0 Total Records (0 Active Models)"), "Empty database must report 0 total records");
+        assertFalse(htmlEmpty.contains("order_master_7001"), "Empty database must not leak entities from ExampleDBReferences");
     }
 }
