@@ -120,8 +120,11 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 res.addProperty("version", resolved.version());
                 if (resolved.jsonPayload() != null) {
                     res.add("jsonPayload", resolved.jsonPayload());
-                } else if (resolved.rawPayload() != null) {
+                }
+                if (resolved.rawPayload() != null) {
                     res.addProperty("rawPayload", resolved.rawPayload());
+                } else if (resolved.jsonPayload() != null) {
+                    res.addProperty("rawPayload", jsonParser.toJson(resolved.jsonPayload()));
                 }
             } catch (Exception e) {
                 res.addProperty("error", e.getMessage());
@@ -4258,9 +4261,14 @@ public class StoreEnginesPage extends StoreTemplatePage {
     if (!uri || typeof uri !== 'string') return null;
     var clean = uri.trim();
     var idx = clean.indexOf('jref://');
-    if (idx < 0) return null;
+    var schemeLen = 7;
+    if (idx < 0) {
+      idx = clean.indexOf('jettra://');
+      schemeLen = 9;
+      if (idx < 0) return null;
+    }
     clean = clean.substring(idx);
-    var rest = clean.substring(7);
+    var rest = clean.substring(schemeLen);
     var node = 'Local Cluster (Primary)';
     var atIdx = rest.indexOf('@');
     if (atIdx > 0) {
@@ -4296,25 +4304,33 @@ public class StoreEnginesPage extends StoreTemplatePage {
     if (!obj) return;
     if (!seenUris) seenUris = {};
 
-    if (typeof obj === 'string') {
-      var startIdx = 0;
-      while ((startIdx = obj.indexOf('jref://', startIdx)) !== -1) {
-        var endIdx = startIdx + 7;
-        while (endIdx < obj.length) {
-          var code = obj.charCodeAt(endIdx);
-          if (code <= 32 || code === 34 || code === 39 || code === 44 || code === 93 || code === 125) {
-            break;
+    var extractUrisFromStr = function(str, fieldKey) {
+      var schemes = ['jref://', 'jettra://'];
+      for (var s = 0; s < schemes.length; s++) {
+        var scheme = schemes[s];
+        var startIdx = 0;
+        while ((startIdx = str.indexOf(scheme, startIdx)) !== -1) {
+          var endIdx = startIdx + scheme.length;
+          while (endIdx < str.length) {
+            var code = str.charCodeAt(endIdx);
+            if (code <= 32 || code === 34 || code === 39 || code === 44 || code === 93 || code === 125) {
+              break;
+            }
+            endIdx++;
           }
-          endIdx++;
+          var u = str.substring(startIdx, endIdx);
+          if (u && !seenUris[u]) {
+            seenUris[u] = true;
+            var parsed = parseJrefUri(u);
+            if (parsed) list.push({ fieldKey: fieldKey || 'inline', parsed: parsed });
+          }
+          startIdx = endIdx + 1;
         }
-        var u = obj.substring(startIdx, endIdx);
-        if (u && !seenUris[u]) {
-          seenUris[u] = true;
-          var parsed = parseJrefUri(u);
-          if (parsed) list.push({ fieldKey: 'inline', parsed: parsed });
-        }
-        startIdx = endIdx + 1;
       }
+    };
+
+    if (typeof obj === 'string') {
+      extractUrisFromStr(obj, 'inline');
       return;
     }
 
@@ -4339,24 +4355,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
         if (!obj.hasOwnProperty(k)) continue;
         var v = obj[k];
         if (typeof v === 'string') {
-          var startIdx = 0;
-          while ((startIdx = v.indexOf('jref://', startIdx)) !== -1) {
-            var endIdx = startIdx + 7;
-            while (endIdx < v.length) {
-              var code = v.charCodeAt(endIdx);
-              if (code <= 32 || code === 34 || code === 39 || code === 44 || code === 93 || code === 125) {
-                break;
-              }
-              endIdx++;
-            }
-            var u = v.substring(startIdx, endIdx);
-            if (u && !seenUris[u]) {
-              seenUris[u] = true;
-              var parsedItem = parseJrefUri(u);
-              if (parsedItem) list.push({ fieldKey: k, parsed: parsedItem });
-            }
-            startIdx = endIdx + 1;
-          }
+          extractUrisFromStr(v, k);
         } else if (v && typeof v === 'object') {
           findJrefsInObject(v, list, seenUris);
         }
@@ -4627,7 +4626,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
     var targetAddr = directAddr || '';
     var targetCluster = clusterNode || 'Local Cluster (Primary)';
 
-    if (typeof uriOrEngine === 'string' && uriOrEngine.indexOf('jref://') >= 0) {
+    if (typeof uriOrEngine === 'string' && (uriOrEngine.indexOf('jref://') >= 0 || uriOrEngine.indexOf('jettra://') >= 0)) {
       uri = uriOrEngine.trim();
       var p = parseJrefUri(uri);
       if (p) {

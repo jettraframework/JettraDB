@@ -226,14 +226,58 @@ public class StorageEnginesFeaturesTest {
         JsonObject expContract = (JsonObject) expanded.get("contractDocRef");
         assertEquals("obj:ExampleDBReferences:contract_enterprise_2026.pdf", expContract.getAsString("_primaryAddress"));
 
-        // Verify order_master_7002
+        // Verify order_master_7002 expanded references
         byte[] order7002Bytes = engine.getStorageCore().get("doc:ExampleDBReferences:order_master_7002");
-        assertNotNull(order7002Bytes);
+        assertNotNull(order7002Bytes, "order_master_7002 must exist in storage");
         JsonObject order7002Obj = jsonParser.fromJson(new String(order7002Bytes, java.nio.charset.StandardCharsets.UTF_8), JsonObject.class);
         JsonObject exp7002 = resolver.expandReferences(order7002Obj, 3);
         assertNotNull(exp7002);
         assertTrue(exp7002.has("leadArchitectRef"));
         assertTrue(exp7002.has("fulfillmentHubRef"));
+        assertTrue(exp7002.has("remoteSecondaryClusterRef"));
+
+        // Explicit individual resolution of all order_master_7002 references
+        var resLeadArch = resolver.resolve("jref://RECORDS:ExampleDBReferences/emp_202");
+        assertTrue(resLeadArch.exists(), "leadArchitectRef emp_202 must resolve");
+        assertEquals("rec:ExampleDBReferences:emp_202", resLeadArch.primaryStorageAddress());
+        assertNotNull(resLeadArch.jsonPayload());
+        assertEquals("emp_202", resLeadArch.jsonPayload().getAsString("id"));
+
+        var resHubColon = resolver.resolve("jref://GEOSPATIAL:ExampleDBReferences/hub_colon");
+        assertTrue(resHubColon.exists(), "fulfillmentHubRef hub_colon must resolve");
+        assertEquals("geo:ExampleDBReferences:hub_colon", resHubColon.primaryStorageAddress());
+        assertNotNull(resHubColon.jsonPayload());
+        assertEquals("hub_colon", resHubColon.jsonPayload().getAsString("id"));
+
+        var resClusterSec = resolver.resolve("jref://cluster-secondary-02@RECORDS:ExampleDBReferences/emp_202");
+        assertTrue(resClusterSec.exists(), "remoteSecondaryClusterRef emp_202 must resolve with cluster node routing");
+        assertEquals("cluster-secondary-02", resClusterSec.clusterNode());
+        assertEquals("rec:ExampleDBReferences:emp_202", resClusterSec.primaryStorageAddress());
+
+        var resCust102 = resolver.resolve("jref://DOCUMENT:ExampleDBReferences/cust_102");
+        assertTrue(resCust102.exists(), "cust_102 must resolve");
+        assertEquals("doc:ExampleDBReferences:cust_102", resCust102.primaryStorageAddress());
+
+        var resInvPdf = resolver.resolve("jref://OBJECT:ExampleDBReferences/invoice_ORD-7001.pdf");
+        assertTrue(resInvPdf.exists(), "invoice_ORD-7001.pdf must resolve");
+        assertEquals("obj:ExampleDBReferences:invoice_ORD-7001.pdf", resInvPdf.primaryStorageAddress());
+
+        // 8. Test flexible scheme (jettra://, JSON, slash paths, casing)
+        var resJettraScheme = resolver.resolve("jettra://DOCUMENT:exampledbreferences/cust_101");
+        assertTrue(resJettraScheme.exists(), "jettra:// scheme with lowercase DB should resolve");
+
+        var resJsonWrap = resolver.resolve("{\"$jref\": \"jref://DOCUMENT:ExampleDBReferences/cust_101\"}");
+        assertTrue(resJsonWrap.exists(), "JSON wrapped $jref should resolve");
+
+        var resQueryWrap = resolver.resolve("/engines?action=resolve_ref&uri=jref%3A%2F%2FDOCUMENT%3AExampleDBReferences%2Fcust_101");
+        assertTrue(resQueryWrap.exists(), "URL query wrapped uri should resolve");
+
+        // 9. Test auto-loading of other sample datasets (e.g. scrum_board_db, hr_enterprise_db)
+        var resScrum = resolver.resolve("jref://DOCUMENT:scrum_board_db/tasks/TASK-0101");
+        assertTrue(resScrum.exists(), "Scrum board task with sub-collection slash path should resolve and auto-load");
+
+        var resHr = resolver.resolve("jref://RECORDS:hr_enterprise_db/employees/emp_201");
+        assertTrue(resHr.exists(), "HR employee with table slash path should resolve and auto-load");
     }
 
     @Test

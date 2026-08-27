@@ -59,33 +59,84 @@ public class JettraReferenceResolver {
             default -> "doc:";
         };
 
-        String entId = ref.entityId();
+        String db = ref.database() != null ? ref.database() : "default";
+        String dbLower = db.toLowerCase();
+        String entId = ref.entityId() != null ? ref.entityId() : "";
         String entIdLower = entId.toLowerCase();
+        String entIdWithColons = entId.replace('/', ':');
+        String entIdWithColonsLower = entIdWithColons.toLowerCase();
+        
+        String lastSegment = entId.contains("/") ? entId.substring(entId.lastIndexOf('/') + 1) : (entId.contains(":") ? entId.substring(entId.lastIndexOf(':') + 1) : entId);
+        String lastSegmentLower = lastSegment.toLowerCase();
 
-        String[] candidateKeys = {
-            pfx + ref.database() + ":" + entId,
-            pfx + ref.database() + ":" + entIdLower,
-            ref.directStorageKey(),
-            pfx + ref.database() + ":default:" + entId,
-            pfx + ref.database() + ":default:" + entIdLower,
-            pfx + ref.database() + ":stores_layer:" + entId,
-            pfx + ref.database() + ":stores_layer:" + entIdLower,
-            "geo:" + ref.database() + ":" + entId,
-            "geo:" + ref.database() + ":" + entIdLower,
-            "geo:" + ref.database() + ":geo_" + entIdLower,
-            "geo:" + ref.database() + ":hub_" + entIdLower,
-            ref.database() + ":" + entId,
-            ref.database() + ":" + entIdLower,
-            ref.database() + ":default:" + entId,
-            "doc:" + ref.database() + ":" + entId,
-            "rec:" + ref.database() + ":" + entId,
-            "obj:" + ref.database() + ":" + entId,
-            "vec:" + ref.database() + ":" + entId,
-            "kv:" + ref.database() + ":" + entId,
-            "ts:" + ref.database() + ":" + entId,
-            "graph:" + ref.database() + ":" + entId,
-            "col:" + ref.database() + ":" + entId
-        };
+        String entIdHyphen = entId.replace('_', '-');
+        String entIdUnderscore = entId.replace('-', '_');
+        String lastSegmentHyphen = lastSegment.replace('_', '-');
+        String lastSegmentUnderscore = lastSegment.replace('-', '_');
+
+        // Canonical names for known sample and system databases
+        Map<String, String> knownDbs = Map.of(
+            "exampledbreferences", "ExampleDBReferences",
+            "scrum_board_db", "scrum_board_db",
+            "hr_enterprise_db", "hr_enterprise_db",
+            "smart_city_gis_db", "smart_city_gis_db",
+            "ai_knowledge_db", "ai_knowledge_db",
+            "social_network_db", "social_network_db",
+            "meteorology_iot_db", "meteorology_iot_db",
+            "ecommerce_olap_db", "ecommerce_olap_db",
+            "distributed_cache_db", "distributed_cache_db",
+            "digital_assets_db", "digital_assets_db"
+        );
+        String canonicalDb = knownDbs.getOrDefault(dbLower, db);
+
+        Set<String> candidateKeys = new LinkedHashSet<>();
+        
+        // 1. Direct and exact candidate keys
+        candidateKeys.add(ref.directStorageKey());
+        List<String> idVariants = List.of(
+            entId, entIdLower, entIdWithColons, entIdWithColonsLower,
+            lastSegment, lastSegmentLower, entIdHyphen, entIdHyphen.toLowerCase(),
+            entIdUnderscore, entIdUnderscore.toLowerCase(),
+            lastSegmentHyphen, lastSegmentHyphen.toLowerCase(),
+            lastSegmentUnderscore, lastSegmentUnderscore.toLowerCase()
+        );
+
+        for (String d : List.of(db, dbLower, canonicalDb)) {
+            for (String iv : idVariants) {
+                candidateKeys.add(pfx + d + ":" + iv);
+                candidateKeys.add(d + ":" + iv);
+            }
+
+            // 2. Namespaces / Sub-collections
+            String[] subNamespaces = {"default", "stores_layer", "tasks", "employees", "nodes", "edges", "sensors", "orders", "documents", "contracts", "invoices", "geo", "hub"};
+            for (String ns : subNamespaces) {
+                for (String iv : idVariants) {
+                    candidateKeys.add(pfx + d + ":" + ns + ":" + iv);
+                    candidateKeys.add(d + ":" + ns + ":" + iv);
+                }
+            }
+
+            // 3. Aliases for geospatial and hubs
+            candidateKeys.add("geo:" + d + ":" + entId);
+            candidateKeys.add("geo:" + d + ":" + entIdLower);
+            candidateKeys.add("geo:" + d + ":geo_" + entIdLower);
+            candidateKeys.add("geo:" + d + ":hub_" + entIdLower);
+            candidateKeys.add(d + ":geo_" + entIdLower);
+            candidateKeys.add(d + ":hub_" + entIdLower);
+        }
+
+        // 5. Cross-engine candidate keys
+        String[] allPrefixes = {"doc:", "rec:", "geo:", "vec:", "obj:", "kv:", "ts:", "graph:", "col:"};
+        for (String ap : allPrefixes) {
+            for (String d : List.of(db, dbLower, canonicalDb)) {
+                candidateKeys.add(ap + d + ":" + entId);
+                candidateKeys.add(ap + d + ":" + entIdLower);
+                candidateKeys.add(ap + d + ":" + entIdWithColons);
+                candidateKeys.add(ap + d + ":" + entIdWithColonsLower);
+                candidateKeys.add(ap + d + ":" + lastSegment);
+                candidateKeys.add(ap + d + ":" + lastSegmentLower);
+            }
+        }
 
         byte[] rawBytes = null;
         String foundKey = ref.directStorageKey();
@@ -97,75 +148,42 @@ public class JettraReferenceResolver {
             }
         }
 
+        // 6. Scan prefix fallback (scan by engine prefix, db prefix, or cross-engine)
         if (rawBytes == null || rawBytes.length == 0) {
-            Map<String, byte[]> scanned = storageEngine.getStorageCore().scanPrefix(pfx + ref.database() + ":");
-            for (Map.Entry<String, byte[]> e : scanned.entrySet()) {
-                String k = e.getKey();
-                String kLower = k.toLowerCase();
-                if (kLower.endsWith(":" + entIdLower) || kLower.equals(pfx + ref.database().toLowerCase() + ":" + entIdLower) || kLower.contains(":" + entIdLower + ":") || kLower.contains(":" + entIdLower + "_") || kLower.endsWith("/" + entIdLower)) {
-                    rawBytes = e.getValue();
-                    foundKey = k;
-                    break;
-                }
-            }
+            rawBytes = searchByPrefixScan(pfx, dbLower, entIdLower, lastSegmentLower);
+            if (rawBytes != null) foundKey = pfx + canonicalDb + ":" + entId;
         }
 
         if (rawBytes == null || rawBytes.length == 0) {
-            Map<String, byte[]> scanned = storageEngine.getStorageCore().scanPrefix(ref.database() + ":");
-            for (Map.Entry<String, byte[]> e : scanned.entrySet()) {
-                String k = e.getKey();
-                String kLower = k.toLowerCase();
-                if (kLower.endsWith(":" + entIdLower) || kLower.equals(ref.database().toLowerCase() + ":" + entIdLower) || kLower.contains(":" + entIdLower + ":") || kLower.contains(":" + entIdLower + "_") || kLower.endsWith("/" + entIdLower)) {
-                    rawBytes = e.getValue();
-                    foundKey = k;
-                    break;
-                }
-            }
+            rawBytes = searchByPrefixScan("", dbLower, entIdLower, lastSegmentLower);
+            if (rawBytes != null) foundKey = pfx + canonicalDb + ":" + entId;
         }
 
         if (rawBytes == null || rawBytes.length == 0) {
-            String[] allPrefixes = {"geo:", "rec:", "doc:", "vec:", "obj:", "kv:", "ts:", "graph:", "col:"};
             for (String ap : allPrefixes) {
-                byte[] b = storageEngine.getStorageCore().get(ap + ref.database() + ":" + entIdLower);
-                if (b != null && b.length > 0) {
-                    rawBytes = b;
-                    foundKey = ap + ref.database() + ":" + entIdLower;
+                rawBytes = searchByPrefixScan(ap, dbLower, entIdLower, lastSegmentLower);
+                if (rawBytes != null && rawBytes.length > 0) {
+                    foundKey = ap + canonicalDb + ":" + entId;
                     break;
                 }
-                b = storageEngine.getStorageCore().get(ap + ref.database() + ":default:" + entIdLower);
-                if (b != null && b.length > 0) {
-                    rawBytes = b;
-                    foundKey = ap + ref.database() + ":default:" + entIdLower;
-                    break;
-                }
-                b = storageEngine.getStorageCore().get(ap + ref.database() + ":stores_layer:" + entIdLower);
-                if (b != null && b.length > 0) {
-                    rawBytes = b;
-                    foundKey = ap + ref.database() + ":stores_layer:" + entIdLower;
-                    break;
-                }
-                Map<String, byte[]> pfxScanned = storageEngine.getStorageCore().scanPrefix(ap + ref.database() + ":");
-                for (Map.Entry<String, byte[]> e : pfxScanned.entrySet()) {
-                    String k = e.getKey();
-                    String kLower = k.toLowerCase();
-                    if (kLower.endsWith(":" + entIdLower) || kLower.contains(":" + entIdLower + ":") || kLower.endsWith("/" + entIdLower)) {
-                        rawBytes = e.getValue();
-                        foundKey = k;
-                        break;
-                    }
-                }
-                if (rawBytes != null && rawBytes.length > 0) break;
             }
         }
 
-        if ((rawBytes == null || rawBytes.length == 0) && "ExampleDBReferences".equalsIgnoreCase(ref.database())) {
+        // 7. Auto-load sample dataset if database matches any known sample dataset
+        if (rawBytes == null || rawBytes.length == 0) {
             try {
-                new com.jettra.store.engine.samples.SampleDatasetManager(storageEngine).loadExampleDBReferencesDataset();
-                for (String k : candidateKeys) {
-                    rawBytes = storageEngine.getStorageCore().get(k);
-                    if (rawBytes != null && rawBytes.length > 0) {
-                        foundKey = k;
-                        break;
+                com.jettra.store.engine.samples.SampleDatasetManager sampleMgr = new com.jettra.store.engine.samples.SampleDatasetManager(storageEngine);
+                int loaded = sampleMgr.loadDataset(canonicalDb);
+                if (loaded > 0) {
+                    for (String k : candidateKeys) {
+                        rawBytes = storageEngine.getStorageCore().get(k);
+                        if (rawBytes != null && rawBytes.length > 0) {
+                            foundKey = k;
+                            break;
+                        }
+                    }
+                    if (rawBytes == null || rawBytes.length == 0) {
+                        rawBytes = searchByPrefixScan(pfx, dbLower, entIdLower, lastSegmentLower);
                     }
                 }
             } catch (Exception ignored) {}
@@ -189,6 +207,34 @@ public class JettraReferenceResolver {
         } catch (Exception ignored) {}
 
         return new ResolvedEntity(ref, true, version, foundKey, cluster, rawStr, json, System.currentTimeMillis());
+    }
+
+    private byte[] searchByPrefixScan(String enginePrefix, String dbLower, String entIdLower, String lastSegmentLower) {
+        Map<String, byte[]> scanned = storageEngine.getStorageCore().scanPrefix(enginePrefix != null ? enginePrefix : "");
+        for (Map.Entry<String, byte[]> e : scanned.entrySet()) {
+            String k = e.getKey();
+            String kLower = k.toLowerCase();
+            
+            // Check if key is within this database/namespace
+            boolean matchDb = dbLower.isBlank() || kLower.contains(dbLower + ":") || kLower.contains(":" + dbLower) || kLower.startsWith(dbLower);
+            if (matchDb) {
+                if (kLower.endsWith(":" + entIdLower) 
+                    || kLower.endsWith(":" + lastSegmentLower)
+                    || kLower.endsWith("/" + entIdLower)
+                    || kLower.endsWith("/" + lastSegmentLower)
+                    || kLower.equals(enginePrefix + dbLower + ":" + entIdLower)
+                    || kLower.equals(enginePrefix + dbLower + ":" + lastSegmentLower)
+                    || kLower.equals(dbLower + ":" + entIdLower)
+                    || kLower.equals(dbLower + ":" + lastSegmentLower)
+                    || kLower.contains(":" + entIdLower + ":")
+                    || kLower.contains(":" + lastSegmentLower + ":")
+                    || kLower.contains(":" + entIdLower + "_")
+                    || kLower.contains(":" + lastSegmentLower + "_")) {
+                    return e.getValue();
+                }
+            }
+        }
+        return null;
     }
 
     /**
