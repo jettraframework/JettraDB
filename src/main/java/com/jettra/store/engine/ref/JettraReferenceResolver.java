@@ -79,27 +79,31 @@ public class JettraReferenceResolver {
         // 1. Dynamic Cluster Node Lookup & Health Check
         if (ref.node() != null && !ref.node().isBlank()) {
             String reqNode = ref.node().trim();
-            ClusterNodeRegistry.ClusterNodeInfo nodeInfo = clusterRegistry.getNode(reqNode);
-            if (nodeInfo != null && nodeInfo.status() == ClusterNodeRegistry.NodeStatus.UNREACHABLE) {
-                return new ResolvedEntity(ref, false, 0, ref.directStorageKey(), reqNode, null, null, System.currentTimeMillis(), "NODE_UNREACHABLE", "Cluster node " + reqNode + " is unreachable");
-            }
+            if (clusterRegistry.isLocalNode(reqNode) || reqNode.equalsIgnoreCase(localNodeId)) {
+                cluster = "Local Cluster (Primary)";
+            } else {
+                ClusterNodeRegistry.ClusterNodeInfo nodeInfo = clusterRegistry.getNode(reqNode);
+                if (nodeInfo != null && nodeInfo.status() == ClusterNodeRegistry.NodeStatus.UNREACHABLE) {
+                    return new ResolvedEntity(ref, false, 0, ref.directStorageKey(), reqNode, null, null, System.currentTimeMillis(), "NODE_UNREACHABLE", "Cluster node " + reqNode + " is unreachable");
+                }
 
-            // Attempt dynamic remote lookup if remote cluster query is active
-            String remoteResponse = clusterRegistry.queryRemoteReference(reqNode, ref.toUri(), 1200);
-            if (remoteResponse != null && !remoteResponse.isBlank()) {
-                try {
-                    JsonObject remoteJson = jsonParser.fromJson(remoteResponse, JsonObject.class);
-                    if (remoteJson != null && remoteJson.has("exists") && remoteJson.getAsBoolean("exists")) {
-                        int ver = remoteJson.has("version") ? remoteJson.getAsInt("version") : 1;
-                        String pAddr = remoteJson.has("primaryStorageAddress") ? remoteJson.getAsString("primaryStorageAddress") : ref.directStorageKey();
-                        String raw = remoteJson.has("rawPayload") ? remoteJson.getAsString("rawPayload") : null;
-                        JsonObject jPayload = remoteJson.has("jsonPayload") && remoteJson.get("jsonPayload") instanceof JsonObject jp ? jp : null;
-                        if (jPayload == null && raw != null) {
-                            try { jPayload = jsonParser.fromJson(raw, JsonObject.class); } catch (Exception ignored) {}
+                // Attempt dynamic remote lookup if remote cluster query is active
+                String remoteResponse = clusterRegistry.queryRemoteReference(reqNode, ref.toUri(), 1200);
+                if (remoteResponse != null && !remoteResponse.isBlank()) {
+                    try {
+                        JsonObject remoteJson = jsonParser.fromJson(remoteResponse, JsonObject.class);
+                        if (remoteJson != null && remoteJson.has("exists") && remoteJson.getAsBoolean("exists")) {
+                            int ver = remoteJson.has("version") ? remoteJson.getAsInt("version") : 1;
+                            String pAddr = remoteJson.has("primaryStorageAddress") ? remoteJson.getAsString("primaryStorageAddress") : ref.directStorageKey();
+                            String raw = remoteJson.has("rawPayload") ? remoteJson.getAsString("rawPayload") : null;
+                            JsonObject jPayload = remoteJson.has("jsonPayload") && remoteJson.get("jsonPayload") instanceof JsonObject jp ? jp : null;
+                            if (jPayload == null && raw != null) {
+                                try { jPayload = jsonParser.fromJson(raw, JsonObject.class); } catch (Exception ignored) {}
+                            }
+                            return new ResolvedEntity(ref, true, ver, pAddr, reqNode, raw, jPayload, System.currentTimeMillis(), "RESOLVED", "Resolved from remote node " + reqNode);
                         }
-                        return new ResolvedEntity(ref, true, ver, pAddr, reqNode, raw, jPayload, System.currentTimeMillis(), "RESOLVED", "Resolved from remote node " + reqNode);
-                    }
-                } catch (Exception ignored) {}
+                    } catch (Exception ignored) {}
+                }
             }
         }
 

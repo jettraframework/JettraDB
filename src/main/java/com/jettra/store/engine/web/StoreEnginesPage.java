@@ -1871,7 +1871,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
             boolean isActiveDb = db.equalsIgnoreCase(targetDb);
             String dbContainerId = "db_content_" + dbIdx;
 
-            Widget dbToggleIcon = Icon.of(isActiveDb ? "fas fa-chevron-down tree-toggle-icon" : "fas fa-chevron-right tree-toggle-icon")
+            Widget dbToggleIcon = Icon.of("fas fa-chevron-right tree-toggle-icon")
                 .id("icon_" + dbContainerId)
                 .modifier(new Modifier().style("margin-right:5px; color:#38bdf8; font-size:10px; cursor:pointer;"));
 
@@ -1884,9 +1884,13 @@ public class StoreEnginesPage extends StoreTemplatePage {
             List<Widget> dbRightWidgets = new ArrayList<>();
             if (isActiveDb) {
                 dbRightWidgets.add(Span.of("ACTIVE").modifier(new Modifier().cssClass("store-badge badge-active").style("font-size:8px; padding:1px 5px; margin-left:4px;")));
-            } else {
-                dbRightWidgets.add(Link.of(actionUrl + selectedEngine + "&target_db=" + db, "[Explore DB]").modifier(new Modifier().style("color:#38bdf8; font-size:9.5px; margin-left:4px; text-decoration:none; font-weight:600;")));
             }
+            dbRightWidgets.add(
+                Link.of(actionUrl + selectedEngine + "&target_db=" + db,
+                    Icon.of("fas fa-compass").modifier(new Modifier().style("margin-right:3px; font-size:9.5px;")),
+                    Text.of("[Explore DB]")
+                ).modifier(new Modifier().style("color:#38bdf8; font-size:9.5px; margin-left:4px; text-decoration:none; font-weight:600; display:inline-flex; align-items:center;"))
+            );
             Widget dbRight = Div.of(dbRightWidgets.toArray(new Widget[0]));
 
             Widget dbHeaderRow = Div.of(dbLeft, dbRight)
@@ -2219,7 +2223,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
                 Widget dbSubtreeContainer = Div.of(engineSubtreeWidgets.toArray(new Widget[0]))
                     .id(dbContainerId)
-                    .modifier(new Modifier().cssClass("tree-collapsible-content").style("margin-left:8px; border-left: 2px dashed rgba(56,189,248,0.3); padding-left:6px; margin-top:3px; display:block;"));
+                    .modifier(new Modifier().cssClass("tree-collapsible-content").style("margin-left:8px; border-left: 2px dashed rgba(56,189,248,0.3); padding-left:6px; margin-top:3px; display:none;"));
 
                 dbContentWidgets.add(dbSubtreeContainer);
             }
@@ -4612,10 +4616,26 @@ public class StoreEnginesPage extends StoreTemplatePage {
         statusBadge = '<span style="color:#ef4444;"><i class="fas fa-times-circle"></i> ' + (res.diagnostic || 'Not Resolved') + '</span>';
       }
 
+      var payloadSummary = '';
+      if (exists && res.jsonPayload) {
+        var jp = res.jsonPayload;
+        if (p.engine === 'GEOSPATIAL') {
+          if (jp.lat !== undefined && jp.lon !== undefined) {
+            payloadSummary = ' | <span style="color:#14b8a6;"><i class="fas fa-map-pin"></i> [' + jp.lat + ', ' + jp.lon + ']' + (jp.name ? ' ' + jp.name : '') + '</span>';
+          } else if (jp.coordinates && jp.coordinates.lat !== undefined) {
+            payloadSummary = ' | <span style="color:#14b8a6;"><i class="fas fa-map-pin"></i> [' + jp.coordinates.lat + ', ' + jp.coordinates.lon + ']</span>';
+          }
+        } else if (p.engine === 'RECORDS' && (jp.fullName || jp.role)) {
+          payloadSummary = ' | <span style="color:#f43f5e;"><i class="fas fa-user-tag"></i> ' + (jp.fullName || '') + (jp.role ? ' (' + jp.role + ')' : '') + '</span>';
+        } else if (p.engine === 'DOCUMENT' && (jp.companyName || jp.title || jp.description)) {
+          payloadSummary = ' | <span style="color:#38bdf8;"><i class="fas fa-file-lines"></i> ' + (jp.companyName || jp.title || jp.description) + '</span>';
+        }
+      }
+
       var addressText = document.createElement('div');
       addressText.style.fontSize = '10.5px';
       addressText.style.color = '#94a3b8';
-      addressText.innerHTML = '<span style="color:#4ade80;"><i class="fas fa-database"></i> ' + primaryAddr + '</span> | <span style="color:#c084fc;"><i class="fas fa-network-wired"></i> ' + cluster + '</span> | ' + statusBadge;
+      addressText.innerHTML = '<span style="color:#4ade80;"><i class="fas fa-database"></i> ' + primaryAddr + '</span> | <span style="color:#c084fc;"><i class="fas fa-network-wired"></i> ' + cluster + '</span> | ' + statusBadge + payloadSummary;
 
       textCol.appendChild(uriText);
       textCol.appendChild(addressText);

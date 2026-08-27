@@ -28,7 +28,7 @@ public record JettraReference(
 ) {
 
     private static final Pattern JREF_PATTERN = Pattern.compile(
-        "^(?:jref|jettra|ref)://(?:([a-zA-Z0-9_.-]+)@)?(?:([a-zA-Z0-9_]+):)?([a-zA-Z0-9_.-]+)/(.+)$"
+        "^(?:jref|jettra|ref)://(?:([^@/:]+)@)?(?:([a-zA-Z0-9_]+):)?([a-zA-Z0-9_.-]+)/(.+)$"
     );
 
     public static JettraReference of(String engine, String database, String entityId) {

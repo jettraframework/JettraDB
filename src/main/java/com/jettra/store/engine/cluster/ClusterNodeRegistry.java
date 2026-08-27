@@ -77,12 +77,22 @@ public class ClusterNodeRegistry {
             }
         }
 
-        // 2. Register standard virtual / distributed cluster topology seeds
+        // 2. Register standard virtual / distributed cluster topology seeds & local aliases
+        registerNode(new ClusterNodeInfo("node-local", "node-local", "127.0.0.1", 50051, 50050, NodeStatus.ACTIVE, System.currentTimeMillis(), Map.of("role", "primary")));
+        registerNode(new ClusterNodeInfo("local cluster (primary)", "node-local", "127.0.0.1", 50051, 50050, NodeStatus.ACTIVE, System.currentTimeMillis(), Map.of("role", "primary")));
+        registerNode(new ClusterNodeInfo("primary-node", "node-local", "127.0.0.1", 50051, 50050, NodeStatus.ACTIVE, System.currentTimeMillis(), Map.of("role", "primary")));
         registerNode(new ClusterNodeInfo("cluster-secondary-02", "cluster-secondary-02", "127.0.0.1", 50053, 50052, NodeStatus.ACTIVE, System.currentTimeMillis(), Map.of("region", "us-east", "tier", "secondary")));
         registerNode(new ClusterNodeInfo("cluster-east-01", "cluster-east-01", "127.0.0.1", 50051, 50050, NodeStatus.ACTIVE, System.currentTimeMillis(), Map.of("region", "us-east", "tier", "primary")));
         registerNode(new ClusterNodeInfo("node-cloud-west", "node-cloud-west", "127.0.0.1", 50055, 50054, NodeStatus.ACTIVE, System.currentTimeMillis(), Map.of("region", "us-west", "type", "vector-ai")));
         registerNode(new ClusterNodeInfo("cluster-europe-03", "cluster-europe-03", "127.0.0.1", 50057, 50056, NodeStatus.ACTIVE, System.currentTimeMillis(), Map.of("region", "eu-central", "tier", "audit")));
-        registerNode(new ClusterNodeInfo("node-local", "node-local", "127.0.0.1", 50051, 50050, NodeStatus.ACTIVE, System.currentTimeMillis(), Map.of("role", "primary")));
+    }
+
+    public boolean isLocalNode(String nodeIdOrClusterId) {
+        if (nodeIdOrClusterId == null || nodeIdOrClusterId.isBlank()) return true;
+        String clean = nodeIdOrClusterId.trim().toLowerCase();
+        return clean.equals("local") || clean.equals("node-local") || clean.equals("local-node")
+            || clean.equals("primary") || clean.equals("primary-node") || clean.equals("local cluster (primary)")
+            || clean.equals("cluster-primary") || clean.equals("localhost") || clean.equals("127.0.0.1");
     }
 
     public void registerNode(ClusterNodeInfo node) {
@@ -113,12 +123,19 @@ public class ClusterNodeRegistry {
 
     public ClusterNodeInfo getNode(String nodeIdOrClusterId) {
         if (nodeIdOrClusterId == null) return null;
-        return nodes.get(nodeIdOrClusterId.trim().toLowerCase());
+        String clean = nodeIdOrClusterId.trim().toLowerCase();
+        ClusterNodeInfo direct = nodes.get(clean);
+        if (direct != null) return direct;
+        if (isLocalNode(clean)) {
+            return nodes.get("node-local");
+        }
+        return null;
     }
 
     public boolean isNodeRegistered(String nodeIdOrClusterId) {
         if (nodeIdOrClusterId == null) return false;
-        return nodes.containsKey(nodeIdOrClusterId.trim().toLowerCase());
+        String clean = nodeIdOrClusterId.trim().toLowerCase();
+        return nodes.containsKey(clean) || isLocalNode(clean);
     }
 
     public List<ClusterNodeInfo> getAllNodes() {
@@ -130,6 +147,10 @@ public class ClusterNodeRegistry {
      * Returns the raw JSON response string or null if remote lookup could not be completed.
      */
     public String queryRemoteReference(String nodeIdOrClusterId, String refUri, int timeoutMs) {
+        if (isLocalNode(nodeIdOrClusterId)) {
+            return null; // Local node references are resolved directly in-process
+        }
+
         ClusterNodeInfo node = getNode(nodeIdOrClusterId);
         if (node == null) {
             return null;
