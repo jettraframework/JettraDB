@@ -28,7 +28,7 @@ public record JettraReference(
 ) {
 
     private static final Pattern JREF_PATTERN = Pattern.compile(
-        "^(?:jref|jettra)://(?:([a-zA-Z0-9_.-]+)@)?(?:([a-zA-Z0-9_]+):)?([a-zA-Z0-9_.-]+)/(.+)$"
+        "^(?:jref|jettra|ref)://(?:([a-zA-Z0-9_.-]+)@)?(?:([a-zA-Z0-9_]+):)?([a-zA-Z0-9_.-]+)/(.+)$"
     );
 
     public static JettraReference of(String engine, String database, String entityId) {
@@ -126,7 +126,7 @@ public record JettraReference(
     public static boolean isReference(String str) {
         if (str == null) return false;
         String s = str.trim();
-        return s.startsWith("jref://") || s.startsWith("jettra://") || s.startsWith("{\"$jref\"") || s.startsWith("{\"$ref\"") || (s.contains("\"$jref\"") && s.contains("://")) || (s.contains("\"$ref\"") && s.contains("://"));
+        return s.startsWith("jref://") || s.startsWith("jettra://") || s.startsWith("ref://") || s.startsWith("{\"$jref\"") || s.startsWith("{\"$ref\"") || (s.contains("\"$jref\"") && s.contains("://")) || (s.contains("\"$ref\"") && s.contains("://"));
     }
 
     public static String computeDirectStorageKey(String engine, String database, String entityId) {

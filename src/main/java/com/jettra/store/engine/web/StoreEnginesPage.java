@@ -111,6 +111,8 @@ public class StoreEnginesPage extends StoreTemplatePage {
             try {
                 JettraReferenceResolver.ResolvedEntity resolved = refResolver.resolve(uri);
                 res.addProperty("exists", resolved.exists());
+                res.addProperty("status", resolved.status());
+                res.addProperty("diagnostic", resolved.diagnosticMessage());
                 res.addProperty("uri", uri);
                 res.addProperty("engine", resolved.reference() != null ? resolved.reference().engine() : "DOCUMENT");
                 res.addProperty("database", resolved.reference() != null ? resolved.reference().database() : "");
@@ -128,6 +130,8 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 }
             } catch (Exception e) {
                 res.addProperty("error", e.getMessage());
+                res.addProperty("status", "ERROR");
+                res.addProperty("diagnostic", e.getMessage());
                 res.addProperty("exists", false);
             }
         }
@@ -4265,8 +4269,12 @@ public class StoreEnginesPage extends StoreTemplatePage {
     if (idx < 0) {
       idx = clean.indexOf('jettra://');
       schemeLen = 9;
-      if (idx < 0) return null;
     }
+    if (idx < 0) {
+      idx = clean.indexOf('ref://');
+      schemeLen = 6;
+    }
+    if (idx < 0) return null;
     clean = clean.substring(idx);
     var rest = clean.substring(schemeLen);
     var node = 'Local Cluster (Primary)';
@@ -4305,7 +4313,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
     if (!seenUris) seenUris = {};
 
     var extractUrisFromStr = function(str, fieldKey) {
-      var schemes = ['jref://', 'jettra://'];
+      var schemes = ['jref://', 'jettra://', 'ref://'];
       for (var s = 0; s < schemes.length; s++) {
         var scheme = schemes[s];
         var startIdx = 0;
@@ -4342,12 +4350,13 @@ public class StoreEnginesPage extends StoreTemplatePage {
     }
 
     if (typeof obj === 'object') {
-      if (obj['$jref'] && typeof obj['$jref'] === 'string') {
-        var u = obj['$jref'].trim();
+      var refVal = (obj['$jref'] && typeof obj['$jref'] === 'string') ? obj['$jref'] : ((obj['$ref'] && typeof obj['$ref'] === 'string') ? obj['$ref'] : null);
+      if (refVal) {
+        var u = refVal.trim();
         if (!seenUris[u]) {
           seenUris[u] = true;
           var parsedObj = parseJrefUri(u);
-          if (parsedObj) list.push({ fieldKey: '$jref', parsed: parsedObj });
+          if (parsedObj) list.push({ fieldKey: obj['$jref'] ? '$jref' : '$ref', parsed: parsedObj });
         }
       }
 
@@ -4457,7 +4466,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
             resolvedCache[u] = data;
             resolvedMap[u] = data;
           }).catch(function() {
-            resolvedMap[u] = { exists: false, uri: u, primaryStorageAddress: item.parsed.primaryStorageAddress, clusterNode: item.parsed.node };
+            resolvedMap[u] = { exists: false, status: 'NODE_UNREACHABLE', diagnostic: 'Network request failed', uri: u, primaryStorageAddress: item.parsed.primaryStorageAddress, clusterNode: item.parsed.node };
           });
         promises.push(p);
       }
@@ -4479,24 +4488,27 @@ public class StoreEnginesPage extends StoreTemplatePage {
       if (!obj.hasOwnProperty(k)) continue;
       if (k === '_resolved') continue;
       var v = obj[k];
-      if (typeof v === 'string' && v.indexOf('jref://') >= 0) {
+      if (typeof v === 'string' && (v.indexOf('jref://') >= 0 || v.indexOf('ref://') >= 0 || v.indexOf('jettra://') >= 0)) {
         var p = parseJrefUri(v);
         if (p && resolvedMap[p.uri] && (resolvedMap[p.uri].exists || resolvedMap[p.uri].jsonPayload || resolvedMap[p.uri].rawPayload)) {
           var res = resolvedMap[p.uri];
           obj[k] = {
             '$jref': p.uri,
+            '$ref': p.uri,
             '_primaryAddress': res.primaryStorageAddress || p.primaryStorageAddress,
             '_clusterNode': res.clusterNode || p.node,
             '_engine': res.engine || p.engine,
             '_database': res.database || p.database,
             '_version': res.version || 1,
+            '_status': res.status || (res.exists ? 'RESOLVED' : 'NOT_FOUND'),
             '_resolved': res.jsonPayload || res.rawPayload || {}
           };
         }
       } else if (v && typeof v === 'object') {
-        if (v['$jref'] && typeof v['$jref'] === 'string') {
-          var p2 = parseJrefUri(v['$jref']);
-          var lookupKey = p2 ? p2.uri : v['$jref'];
+        var refVal = (v['$jref'] && typeof v['$jref'] === 'string') ? v['$jref'] : ((v['$ref'] && typeof v['$ref'] === 'string') ? v['$ref'] : null);
+        if (refVal) {
+          var p2 = parseJrefUri(refVal);
+          var lookupKey = p2 ? p2.uri : refVal;
           if (resolvedMap[lookupKey] && (resolvedMap[lookupKey].exists || resolvedMap[lookupKey].jsonPayload || resolvedMap[lookupKey].rawPayload)) {
             var resObj = resolvedMap[lookupKey];
             v['_primaryAddress'] = resObj.primaryStorageAddress || (p2 ? p2.primaryStorageAddress : '');
@@ -4504,6 +4516,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
             v['_engine'] = resObj.engine || (p2 ? p2.engine : 'DOCUMENT');
             v['_database'] = resObj.database || (p2 ? p2.database : '');
             v['_version'] = resObj.version || 1;
+            v['_status'] = resObj.status || (resObj.exists ? 'RESOLVED' : 'NOT_FOUND');
             v['_resolved'] = resObj.jsonPayload || resObj.rawPayload || {};
           }
         } else {
@@ -4547,7 +4560,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
       var res = resolvedMap[p.uri] || {};
       var color = engColors[p.engine] || '#38bdf8';
       var icon = engIcons[p.engine] || 'fas fa-link';
-      var exists = res.exists !== false;
+      var exists = res.exists === true;
       var primaryAddr = res.primaryStorageAddress || p.primaryStorageAddress;
       var cluster = res.clusterNode || p.node;
 
@@ -4557,7 +4570,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
       card.style.justifyContent = 'space-between';
       card.style.padding = '8px 12px';
       card.style.background = 'rgba(15,23,42,0.85)';
-      card.style.border = '1px solid ' + (exists ? 'rgba(56,189,248,0.25)' : 'rgba(239,68,68,0.3)');
+      card.style.border = '1px solid ' + (exists ? 'rgba(74,222,128,0.3)' : (res.status === 'NODE_UNREACHABLE' ? 'rgba(245,158,11,0.4)' : 'rgba(239,68,68,0.3)'));
       card.style.borderRadius = '6px';
       card.style.gap = '8px';
 
@@ -4588,10 +4601,21 @@ public class StoreEnginesPage extends StoreTemplatePage {
       uriText.style.color = '#f8fafc';
       uriText.innerText = p.uri;
 
+      var statusBadge = '';
+      if (exists) {
+        statusBadge = '<span style="color:#4ade80;"><i class="fas fa-check-circle"></i> Resolved (v' + (res.version || 1) + ')</span>';
+      } else if (res.status === 'NODE_UNREACHABLE') {
+        statusBadge = '<span style="color:#f59e0b;"><i class="fas fa-exclamation-triangle"></i> Node Unreachable</span>';
+      } else if (res.status === 'NOT_FOUND') {
+        statusBadge = '<span style="color:#ef4444;"><i class="fas fa-times-circle"></i> Record Not Found</span>';
+      } else {
+        statusBadge = '<span style="color:#ef4444;"><i class="fas fa-times-circle"></i> ' + (res.diagnostic || 'Not Resolved') + '</span>';
+      }
+
       var addressText = document.createElement('div');
       addressText.style.fontSize = '10.5px';
       addressText.style.color = '#94a3b8';
-      addressText.innerHTML = '<span style="color:#4ade80;"><i class="fas fa-database"></i> ' + primaryAddr + '</span> | <span style="color:#c084fc;"><i class="fas fa-network-wired"></i> ' + cluster + '</span>' + (exists ? ' | <span style="color:#38bdf8;">v' + (res.version || 1) + '</span>' : ' | <span style="color:#ef4444;">Not Resolved</span>');
+      addressText.innerHTML = '<span style="color:#4ade80;"><i class="fas fa-database"></i> ' + primaryAddr + '</span> | <span style="color:#c084fc;"><i class="fas fa-network-wired"></i> ' + cluster + '</span> | ' + statusBadge;
 
       textCol.appendChild(uriText);
       textCol.appendChild(addressText);
@@ -4626,7 +4650,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
     var targetAddr = directAddr || '';
     var targetCluster = clusterNode || 'Local Cluster (Primary)';
 
-    if (typeof uriOrEngine === 'string' && (uriOrEngine.indexOf('jref://') >= 0 || uriOrEngine.indexOf('jettra://') >= 0)) {
+    if (typeof uriOrEngine === 'string' && (uriOrEngine.indexOf('jref://') >= 0 || uriOrEngine.indexOf('jettra://') >= 0 || uriOrEngine.indexOf('ref://') >= 0)) {
       uri = uriOrEngine.trim();
       var p = parseJrefUri(uri);
       if (p) {

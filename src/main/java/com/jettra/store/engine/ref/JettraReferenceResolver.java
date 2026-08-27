@@ -1,5 +1,6 @@
 package com.jettra.store.engine.ref;
 
+import com.jettra.store.engine.cluster.ClusterNodeRegistry;
 import com.jettra.store.engine.core.JettraStorageEngine;
 import io.jettra.json.JettraJson;
 import io.jettra.json.JsonObject;
@@ -10,13 +11,15 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * JettraReferenceResolver: High-performance, low-latency cross-engine reference resolver.
- * Executes direct O(1) memory/storage lookups, cluster routing, and deep JSON reference expansion.
+ * Executes direct O(1) memory/storage lookups, cluster routing, dynamic service discovery,
+ * and deep JSON reference expansion.
  */
 public class JettraReferenceResolver {
 
     private final JettraStorageEngine storageEngine;
     private final JettraJson jsonParser;
     private final String localNodeId;
+    private final ClusterNodeRegistry clusterRegistry;
 
     public record ResolvedEntity(
         JettraReference reference,
@@ -26,25 +29,78 @@ public class JettraReferenceResolver {
         String clusterNode,
         String rawPayload,
         JsonObject jsonPayload,
-        long resolvedAt
-    ) {}
+        long resolvedAt,
+        String status,
+        String diagnosticMessage
+    ) {
+        public ResolvedEntity(
+            JettraReference reference,
+            boolean exists,
+            int version,
+            String primaryStorageAddress,
+            String clusterNode,
+            String rawPayload,
+            JsonObject jsonPayload,
+            long resolvedAt
+        ) {
+            this(reference, exists, version, primaryStorageAddress, clusterNode, rawPayload, jsonPayload, resolvedAt, exists ? "RESOLVED" : "NOT_FOUND", exists ? "OK" : "Record Not Found");
+        }
+    }
 
     public JettraReferenceResolver(JettraStorageEngine storageEngine) {
-        this(storageEngine, "node-local");
+        this(storageEngine, "node-local", ClusterNodeRegistry.getInstance());
     }
 
     public JettraReferenceResolver(JettraStorageEngine storageEngine, String localNodeId) {
+        this(storageEngine, localNodeId, ClusterNodeRegistry.getInstance());
+    }
+
+    public JettraReferenceResolver(JettraStorageEngine storageEngine, String localNodeId, ClusterNodeRegistry clusterRegistry) {
         this.storageEngine = storageEngine;
         this.localNodeId = localNodeId != null ? localNodeId : "node-local";
+        this.clusterRegistry = clusterRegistry != null ? clusterRegistry : ClusterNodeRegistry.getInstance();
         this.jsonParser = new JettraJson();
     }
 
+    public ClusterNodeRegistry getClusterRegistry() {
+        return clusterRegistry;
+    }
+
     /**
-     * Resolves a JettraReference directly with O(1) storage access and candidate key fallback.
+     * Resolves a JettraReference directly with dynamic cluster node routing, O(1) storage access, and candidate key fallback.
      */
     public ResolvedEntity resolve(JettraReference ref) {
         if (ref == null) {
-            return new ResolvedEntity(null, false, 0, null, localNodeId, null, null, System.currentTimeMillis());
+            return new ResolvedEntity(null, false, 0, null, localNodeId, null, null, System.currentTimeMillis(), "ERROR", "Null reference");
+        }
+
+        String cluster = ref.node() != null ? ref.node().trim() : localNodeId;
+
+        // 1. Dynamic Cluster Node Lookup & Health Check
+        if (ref.node() != null && !ref.node().isBlank()) {
+            String reqNode = ref.node().trim();
+            ClusterNodeRegistry.ClusterNodeInfo nodeInfo = clusterRegistry.getNode(reqNode);
+            if (nodeInfo != null && nodeInfo.status() == ClusterNodeRegistry.NodeStatus.UNREACHABLE) {
+                return new ResolvedEntity(ref, false, 0, ref.directStorageKey(), reqNode, null, null, System.currentTimeMillis(), "NODE_UNREACHABLE", "Cluster node " + reqNode + " is unreachable");
+            }
+
+            // Attempt dynamic remote lookup if remote cluster query is active
+            String remoteResponse = clusterRegistry.queryRemoteReference(reqNode, ref.toUri(), 1200);
+            if (remoteResponse != null && !remoteResponse.isBlank()) {
+                try {
+                    JsonObject remoteJson = jsonParser.fromJson(remoteResponse, JsonObject.class);
+                    if (remoteJson != null && remoteJson.has("exists") && remoteJson.getAsBoolean("exists")) {
+                        int ver = remoteJson.has("version") ? remoteJson.getAsInt("version") : 1;
+                        String pAddr = remoteJson.has("primaryStorageAddress") ? remoteJson.getAsString("primaryStorageAddress") : ref.directStorageKey();
+                        String raw = remoteJson.has("rawPayload") ? remoteJson.getAsString("rawPayload") : null;
+                        JsonObject jPayload = remoteJson.has("jsonPayload") && remoteJson.get("jsonPayload") instanceof JsonObject jp ? jp : null;
+                        if (jPayload == null && raw != null) {
+                            try { jPayload = jsonParser.fromJson(raw, JsonObject.class); } catch (Exception ignored) {}
+                        }
+                        return new ResolvedEntity(ref, true, ver, pAddr, reqNode, raw, jPayload, System.currentTimeMillis(), "RESOLVED", "Resolved from remote node " + reqNode);
+                    }
+                } catch (Exception ignored) {}
+            }
         }
 
         String pfx = switch (ref.engine() != null ? ref.engine().toUpperCase() : "DOCUMENT") {
@@ -189,15 +245,13 @@ public class JettraReferenceResolver {
             } catch (Exception ignored) {}
         }
 
-        String cluster = ref.node() != null ? ref.node() : localNodeId;
-
         if (rawBytes == null || rawBytes.length == 0) {
-            return new ResolvedEntity(ref, false, 0, foundKey, cluster, null, null, System.currentTimeMillis());
+            return new ResolvedEntity(ref, false, 0, foundKey, cluster, null, null, System.currentTimeMillis(), "NOT_FOUND", "Record not found: " + entId);
         }
 
         String rawStr = new String(rawBytes, StandardCharsets.UTF_8);
         if (rawStr.isBlank() || "__TOMBSTONE__".equals(rawStr)) {
-            return new ResolvedEntity(ref, false, 0, foundKey, cluster, null, null, System.currentTimeMillis());
+            return new ResolvedEntity(ref, false, 0, foundKey, cluster, null, null, System.currentTimeMillis(), "NOT_FOUND", "Record tombstoned or empty");
         }
 
         int version = Math.max(1, storageEngine.getStorageCore().getVersionCount(foundKey));
@@ -206,7 +260,7 @@ public class JettraReferenceResolver {
             json = jsonParser.fromJson(rawStr, JsonObject.class);
         } catch (Exception ignored) {}
 
-        return new ResolvedEntity(ref, true, version, foundKey, cluster, rawStr, json, System.currentTimeMillis());
+        return new ResolvedEntity(ref, true, version, foundKey, cluster, rawStr, json, System.currentTimeMillis(), "RESOLVED", "OK");
     }
 
     private byte[] searchByPrefixScan(String enginePrefix, String dbLower, String entIdLower, String lastSegmentLower) {
@@ -260,8 +314,9 @@ public class JettraReferenceResolver {
             }
 
             if (val instanceof JsonObject childObj) {
-                if (childObj.has("$jref")) {
-                    String jrefUri = childObj.getAsString("$jref");
+                String refKey = childObj.has("$jref") ? "$jref" : (childObj.has("$ref") ? "$ref" : null);
+                if (refKey != null) {
+                    String jrefUri = childObj.getAsString(refKey);
                     ResolvedEntity resolved = resolve(jrefUri);
                     if (resolved.exists()) {
                         JsonObject deepResolved = resolved.jsonPayload() != null ? expandReferences(resolved.jsonPayload(), maxDepth - 1) : new JsonObject();
@@ -270,11 +325,13 @@ public class JettraReferenceResolver {
                         }
                         JsonObject enriched = new JsonObject();
                         enriched.addProperty("$jref", jrefUri);
+                        enriched.addProperty("$ref", jrefUri);
                         enriched.addProperty("_engine", resolved.reference().engine());
                         enriched.addProperty("_database", resolved.reference().database());
                         enriched.addProperty("_entityId", resolved.reference().entityId());
                         enriched.addProperty("_primaryAddress", resolved.primaryStorageAddress());
                         enriched.addProperty("_clusterNode", resolved.clusterNode());
+                        enriched.addProperty("_status", resolved.status());
                         enriched.addProperty("_version", resolved.version());
                         enriched.add("_resolved", deepResolved);
                         expanded.add(key, enriched);
@@ -292,11 +349,13 @@ public class JettraReferenceResolver {
                         }
                         JsonObject enriched = new JsonObject();
                         enriched.addProperty("$jref", strVal);
+                        enriched.addProperty("$ref", strVal);
                         enriched.addProperty("_engine", resolved.reference().engine());
                         enriched.addProperty("_database", resolved.reference().database());
                         enriched.addProperty("_entityId", resolved.reference().entityId());
                         enriched.addProperty("_primaryAddress", resolved.primaryStorageAddress());
                         enriched.addProperty("_clusterNode", resolved.clusterNode());
+                        enriched.addProperty("_status", resolved.status());
                         enriched.addProperty("_version", resolved.version());
                         enriched.add("_resolved", deepResolved);
                         expanded.add(key, enriched);
