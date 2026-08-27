@@ -76,31 +76,27 @@ public class JettraReferenceResolver {
 
         String cluster = ref.node() != null ? ref.node().trim() : localNodeId;
 
-        // 1. Dynamic Cluster Node Lookup & Health Check
+        // 1. Dynamic Cluster Node Lookup, Health Check & Failover Routing
         if (ref.node() != null && !ref.node().isBlank()) {
             String reqNode = ref.node().trim();
             if (clusterRegistry.isLocalNode(reqNode) || reqNode.equalsIgnoreCase(localNodeId)) {
                 cluster = "Local Cluster (Primary)";
             } else {
-                ClusterNodeRegistry.ClusterNodeInfo nodeInfo = clusterRegistry.getNode(reqNode);
-                if (nodeInfo != null && nodeInfo.status() == ClusterNodeRegistry.NodeStatus.UNREACHABLE) {
-                    return new ResolvedEntity(ref, false, 0, ref.directStorageKey(), reqNode, null, null, System.currentTimeMillis(), "NODE_UNREACHABLE", "Cluster node " + reqNode + " is unreachable");
-                }
-
-                // Attempt dynamic remote lookup if remote cluster query is active
-                String remoteResponse = clusterRegistry.queryRemoteReference(reqNode, ref.toUri(), 1200);
-                if (remoteResponse != null && !remoteResponse.isBlank()) {
+                ClusterNodeRegistry.FailoverQueryResult failoverResult = clusterRegistry.queryRemoteReferenceWithFailover(reqNode, ref.toUri(), 1200);
+                if (failoverResult != null && failoverResult.payload() != null && !failoverResult.payload().isBlank()) {
                     try {
-                        JsonObject remoteJson = jsonParser.fromJson(remoteResponse, JsonObject.class);
+                        JsonObject remoteJson = jsonParser.fromJson(failoverResult.payload(), JsonObject.class);
                         if (remoteJson != null && remoteJson.has("exists") && remoteJson.getAsBoolean("exists")) {
                             int ver = remoteJson.has("version") ? remoteJson.getAsInt("version") : 1;
-                            String pAddr = remoteJson.has("primaryStorageAddress") ? remoteJson.getAsString("primaryStorageAddress") : ref.directStorageKey();
                             String raw = remoteJson.has("rawPayload") ? remoteJson.getAsString("rawPayload") : null;
                             JsonObject jPayload = remoteJson.has("jsonPayload") && remoteJson.get("jsonPayload") instanceof JsonObject jp ? jp : null;
                             if (jPayload == null && raw != null) {
                                 try { jPayload = jsonParser.fromJson(raw, JsonObject.class); } catch (Exception ignored) {}
                             }
-                            return new ResolvedEntity(ref, true, ver, pAddr, reqNode, raw, jPayload, System.currentTimeMillis(), "RESOLVED", "Resolved from remote node " + reqNode);
+                            String diag = failoverResult.isFailover()
+                                ? "Resolved via failover from " + reqNode + " to " + failoverResult.respondingNode()
+                                : "Resolved from remote node " + reqNode;
+                            return new ResolvedEntity(ref, true, ver, ref.directStorageKey(), failoverResult.respondingNode(), raw, jPayload, System.currentTimeMillis(), "RESOLVED", diag);
                         }
                     } catch (Exception ignored) {}
                 }
@@ -250,6 +246,12 @@ public class JettraReferenceResolver {
         }
 
         if (rawBytes == null || rawBytes.length == 0) {
+            if (ref.node() != null && !ref.node().isBlank() && !clusterRegistry.isLocalNode(ref.node())) {
+                ClusterNodeRegistry.ClusterNodeInfo nInfo = clusterRegistry.getNode(ref.node());
+                if (nInfo != null && nInfo.status() == ClusterNodeRegistry.NodeStatus.UNREACHABLE) {
+                    return new ResolvedEntity(ref, false, 0, foundKey, ref.node().trim(), null, null, System.currentTimeMillis(), "NODE_UNREACHABLE", "Cluster node " + ref.node().trim() + " and all failovers unreachable");
+                }
+            }
             return new ResolvedEntity(ref, false, 0, foundKey, cluster, null, null, System.currentTimeMillis(), "NOT_FOUND", "Record not found: " + entId);
         }
 
@@ -264,7 +266,11 @@ public class JettraReferenceResolver {
             json = jsonParser.fromJson(rawStr, JsonObject.class);
         } catch (Exception ignored) {}
 
-        return new ResolvedEntity(ref, true, version, foundKey, cluster, rawStr, json, System.currentTimeMillis(), "RESOLVED", "OK");
+        String diagMessage = (ref.node() != null && !clusterRegistry.isLocalNode(ref.node()))
+            ? "Resolved via failover from " + ref.node().trim() + " to " + cluster
+            : "OK";
+
+        return new ResolvedEntity(ref, true, version, foundKey, cluster, rawStr, json, System.currentTimeMillis(), "RESOLVED", diagMessage);
     }
 
     private byte[] searchByPrefixScan(String enginePrefix, String dbLower, String entIdLower, String lastSegmentLower) {
@@ -329,14 +335,6 @@ public class JettraReferenceResolver {
                         }
                         JsonObject enriched = new JsonObject();
                         enriched.addProperty("$jref", jrefUri);
-                        enriched.addProperty("$ref", jrefUri);
-                        enriched.addProperty("_engine", resolved.reference().engine());
-                        enriched.addProperty("_database", resolved.reference().database());
-                        enriched.addProperty("_entityId", resolved.reference().entityId());
-                        enriched.addProperty("_primaryAddress", resolved.primaryStorageAddress());
-                        enriched.addProperty("_clusterNode", resolved.clusterNode());
-                        enriched.addProperty("_status", resolved.status());
-                        enriched.addProperty("_version", resolved.version());
                         enriched.add("_resolved", deepResolved);
                         expanded.add(key, enriched);
                         continue;
@@ -353,14 +351,6 @@ public class JettraReferenceResolver {
                         }
                         JsonObject enriched = new JsonObject();
                         enriched.addProperty("$jref", strVal);
-                        enriched.addProperty("$ref", strVal);
-                        enriched.addProperty("_engine", resolved.reference().engine());
-                        enriched.addProperty("_database", resolved.reference().database());
-                        enriched.addProperty("_entityId", resolved.reference().entityId());
-                        enriched.addProperty("_primaryAddress", resolved.primaryStorageAddress());
-                        enriched.addProperty("_clusterNode", resolved.clusterNode());
-                        enriched.addProperty("_status", resolved.status());
-                        enriched.addProperty("_version", resolved.version());
                         enriched.add("_resolved", deepResolved);
                         expanded.add(key, enriched);
                         continue;

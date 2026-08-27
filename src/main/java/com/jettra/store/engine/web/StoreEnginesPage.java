@@ -4498,13 +4498,6 @@ public class StoreEnginesPage extends StoreTemplatePage {
           var res = resolvedMap[p.uri];
           obj[k] = {
             '$jref': p.uri,
-            '$ref': p.uri,
-            '_primaryAddress': res.primaryStorageAddress || p.primaryStorageAddress,
-            '_clusterNode': res.clusterNode || p.node,
-            '_engine': res.engine || p.engine,
-            '_database': res.database || p.database,
-            '_version': res.version || 1,
-            '_status': res.status || (res.exists ? 'RESOLVED' : 'NOT_FOUND'),
             '_resolved': res.jsonPayload || res.rawPayload || {}
           };
         }
@@ -4515,12 +4508,14 @@ public class StoreEnginesPage extends StoreTemplatePage {
           var lookupKey = p2 ? p2.uri : refVal;
           if (resolvedMap[lookupKey] && (resolvedMap[lookupKey].exists || resolvedMap[lookupKey].jsonPayload || resolvedMap[lookupKey].rawPayload)) {
             var resObj = resolvedMap[lookupKey];
-            v['_primaryAddress'] = resObj.primaryStorageAddress || (p2 ? p2.primaryStorageAddress : '');
-            v['_clusterNode'] = resObj.clusterNode || (p2 ? p2.node : 'Local Cluster (Primary)');
-            v['_engine'] = resObj.engine || (p2 ? p2.engine : 'DOCUMENT');
-            v['_database'] = resObj.database || (p2 ? p2.database : '');
-            v['_version'] = resObj.version || 1;
-            v['_status'] = resObj.status || (resObj.exists ? 'RESOLVED' : 'NOT_FOUND');
+            delete v['$ref'];
+            delete v['_primaryAddress'];
+            delete v['_clusterNode'];
+            delete v['_engine'];
+            delete v['_database'];
+            delete v['_version'];
+            delete v['_status'];
+            v['$jref'] = lookupKey;
             v['_resolved'] = resObj.jsonPayload || resObj.rawPayload || {};
           }
         } else {
@@ -4559,13 +4554,18 @@ public class StoreEnginesPage extends StoreTemplatePage {
       'COLUMN': 'fas fa-table'
     };
 
+    var seenUrisInRender = {};
+
     refs.forEach(function(item) {
       var p = item.parsed;
+      if (!p || !p.uri) return;
+      if (seenUrisInRender[p.uri]) return; // Deduplicate per inspect session
+      seenUrisInRender[p.uri] = true;
+
       var res = resolvedMap[p.uri] || {};
       var color = engColors[p.engine] || '#38bdf8';
       var icon = engIcons[p.engine] || 'fas fa-link';
       var exists = res.exists === true;
-      var primaryAddr = res.primaryStorageAddress || p.primaryStorageAddress;
       var cluster = res.clusterNode || p.node;
 
       var card = document.createElement('div');
@@ -4606,8 +4606,10 @@ public class StoreEnginesPage extends StoreTemplatePage {
       uriText.innerText = p.uri;
 
       var statusBadge = '';
-      if (exists) {
-        statusBadge = '<span style="color:#4ade80;"><i class="fas fa-check-circle"></i> Resolved (v' + (res.version || 1) + ')</span>';
+      if (exists && res.diagnostic && res.diagnostic.toLowerCase().indexOf('failover') >= 0) {
+        statusBadge = '<span style="color:#38bdf8;"><i class="fas fa-arrows-rotate"></i> Resolved (Failover)</span>';
+      } else if (exists) {
+        statusBadge = '<span style="color:#4ade80;"><i class="fas fa-check-circle"></i> Resolved</span>';
       } else if (res.status === 'NODE_UNREACHABLE') {
         statusBadge = '<span style="color:#f59e0b;"><i class="fas fa-exclamation-triangle"></i> Node Unreachable</span>';
       } else if (res.status === 'NOT_FOUND') {
@@ -4635,7 +4637,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
       var addressText = document.createElement('div');
       addressText.style.fontSize = '10.5px';
       addressText.style.color = '#94a3b8';
-      addressText.innerHTML = '<span style="color:#4ade80;"><i class="fas fa-database"></i> ' + primaryAddr + '</span> | <span style="color:#c084fc;"><i class="fas fa-network-wired"></i> ' + cluster + '</span> | ' + statusBadge + payloadSummary;
+      addressText.innerHTML = '<span style="color:#c084fc;"><i class="fas fa-network-wired"></i> ' + cluster + '</span> | ' + statusBadge + payloadSummary;
 
       textCol.appendChild(uriText);
       textCol.appendChild(addressText);

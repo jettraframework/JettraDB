@@ -159,13 +159,6 @@ public record JettraReference(
     public JsonObject toJsonObject() {
         JsonObject obj = new JsonObject();
         obj.addProperty("$jref", toUri());
-        obj.addProperty("engine", engine);
-        obj.addProperty("db", database);
-        obj.addProperty("id", entityId);
-        obj.addProperty("key", directStorageKey);
-        if (node != null) {
-            obj.addProperty("node", node);
-        }
         return obj;
     }
 

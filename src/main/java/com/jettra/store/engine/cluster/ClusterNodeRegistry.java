@@ -14,8 +14,8 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Dynamic cluster node registry and service discovery for JettraStoreEngine.
- * Handles dynamic host/node network topologies, cluster re-targeting, and remote reference resolution.
+ * Dynamic cluster node registry, failover routing, and service discovery for JettraStoreEngine.
+ * Handles dynamic host/node network topologies, cluster re-targeting, and transparent failovers.
  */
 public class ClusterNodeRegistry {
 
@@ -37,8 +37,15 @@ public class ClusterNodeRegistry {
         Map<String, String> metadata
     ) {}
 
+    public record FailoverQueryResult(
+        String payload,
+        String respondingNode,
+        boolean isFailover
+    ) {}
+
     private static final ClusterNodeRegistry INSTANCE = new ClusterNodeRegistry();
     private final Map<String, ClusterNodeInfo> nodes = new ConcurrentHashMap<>();
+    private final Map<String, List<String>> failoverMap = new ConcurrentHashMap<>();
     private final JettraJson jsonParser = new JettraJson();
 
     public static ClusterNodeRegistry getInstance() {
@@ -85,6 +92,12 @@ public class ClusterNodeRegistry {
         registerNode(new ClusterNodeInfo("cluster-east-01", "cluster-east-01", "127.0.0.1", 50051, 50050, NodeStatus.ACTIVE, System.currentTimeMillis(), Map.of("region", "us-east", "tier", "primary")));
         registerNode(new ClusterNodeInfo("node-cloud-west", "node-cloud-west", "127.0.0.1", 50055, 50054, NodeStatus.ACTIVE, System.currentTimeMillis(), Map.of("region", "us-west", "type", "vector-ai")));
         registerNode(new ClusterNodeInfo("cluster-europe-03", "cluster-europe-03", "127.0.0.1", 50057, 50056, NodeStatus.ACTIVE, System.currentTimeMillis(), Map.of("region", "eu-central", "tier", "audit")));
+
+        // 3. Register default failover routes for high availability
+        registerFailover("cluster-secondary-02", "cluster-east-01", "node-local");
+        registerFailover("cluster-east-01", "cluster-secondary-02", "node-local");
+        registerFailover("node-cloud-west", "cluster-secondary-02", "node-local");
+        registerFailover("cluster-europe-03", "cluster-east-01", "node-local");
     }
 
     public boolean isLocalNode(String nodeIdOrClusterId) {
@@ -101,6 +114,22 @@ public class ClusterNodeRegistry {
         if (node.clusterId() != null && !node.clusterId().isBlank()) {
             nodes.put(node.clusterId().toLowerCase(), node);
         }
+    }
+
+    public void registerFailover(String primaryNodeId, String... replicaNodeIds) {
+        if (primaryNodeId == null || replicaNodeIds == null) return;
+        List<String> list = failoverMap.computeIfAbsent(primaryNodeId.trim().toLowerCase(), k -> new ArrayList<>());
+        for (String r : replicaNodeIds) {
+            if (r != null && !r.isBlank() && !list.contains(r.trim().toLowerCase())) {
+                list.add(r.trim().toLowerCase());
+            }
+        }
+    }
+
+    public List<String> getFailovers(String nodeIdOrClusterId) {
+        if (nodeIdOrClusterId == null) return Collections.emptyList();
+        List<String> list = failoverMap.get(nodeIdOrClusterId.trim().toLowerCase());
+        return list != null ? Collections.unmodifiableList(list) : Collections.emptyList();
     }
 
     public void updateNodeStatus(String nodeIdOrClusterId, NodeStatus status) {
@@ -186,6 +215,41 @@ public class ClusterNodeRegistry {
         } catch (Exception e) {
             // Connection failed or timed out
         }
+        return null;
+    }
+
+    /**
+     * Attempts remote lookup on the primary node, and if unreachable or failed, automatically
+     * transparently attempts failover to registered replica nodes.
+     */
+    public FailoverQueryResult queryRemoteReferenceWithFailover(String nodeIdOrClusterId, String refUri, int timeoutMs) {
+        if (isLocalNode(nodeIdOrClusterId)) {
+            return new FailoverQueryResult(null, "node-local", false);
+        }
+
+        ClusterNodeInfo primary = getNode(nodeIdOrClusterId);
+        if (primary != null && primary.status() != NodeStatus.UNREACHABLE) {
+            String res = queryRemoteReference(nodeIdOrClusterId, refUri, timeoutMs);
+            if (res != null && !res.isBlank()) {
+                return new FailoverQueryResult(res, nodeIdOrClusterId, false);
+            }
+        }
+
+        // Primary node unreachable or failed: attempt transparent failover
+        List<String> replicas = getFailovers(nodeIdOrClusterId);
+        for (String replica : replicas) {
+            if (isLocalNode(replica)) {
+                return new FailoverQueryResult(null, replica, true);
+            }
+            ClusterNodeInfo repInfo = getNode(replica);
+            if (repInfo != null && repInfo.status() != NodeStatus.UNREACHABLE) {
+                String repRes = queryRemoteReference(replica, refUri, timeoutMs);
+                if (repRes != null && !repRes.isBlank()) {
+                    return new FailoverQueryResult(repRes, replica, true);
+                }
+            }
+        }
+
         return null;
     }
 }

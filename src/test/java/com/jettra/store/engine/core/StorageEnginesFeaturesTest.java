@@ -217,14 +217,19 @@ public class StorageEnginesFeaturesTest {
         assertTrue(expanded.has("customerRef"));
         assertTrue(expanded.get("customerRef") instanceof JsonObject);
         JsonObject expCust = (JsonObject) expanded.get("customerRef");
-        assertTrue(expCust.has("_primaryAddress"));
-        assertEquals("doc:ExampleDBReferences:cust_101", expCust.getAsString("_primaryAddress"));
-        assertTrue(expCust.has("_resolved"));
+        assertTrue(expCust.has("$jref"), "Must contain canonical $jref");
+        assertFalse(expCust.has("$ref"), "Must not contain redundant $ref");
+        assertFalse(expCust.has("_primaryAddress"), "Must not leak internal _primaryAddress");
+        assertTrue(expCust.has("_resolved"), "Must contain _resolved");
+        assertTrue(((JsonObject) expCust.get("_resolved")).has("companyName"));
 
         assertTrue(expanded.has("contractDocRef"));
         assertTrue(expanded.get("contractDocRef") instanceof JsonObject);
         JsonObject expContract = (JsonObject) expanded.get("contractDocRef");
-        assertEquals("obj:ExampleDBReferences:contract_enterprise_2026.pdf", expContract.getAsString("_primaryAddress"));
+        assertTrue(expContract.has("$jref"));
+        assertFalse(expContract.has("$ref"));
+        assertFalse(expContract.has("_primaryAddress"));
+        assertTrue(expContract.has("_resolved"));
 
         // Verify order_master_7002 expanded references
         byte[] order7002Bytes = engine.getStorageCore().get("doc:ExampleDBReferences:order_master_7002");
@@ -504,22 +509,33 @@ public class StorageEnginesFeaturesTest {
         assertEquals("cluster-dynamic-cloud-99", resDynamicNode.clusterNode());
         assertEquals("doc:ExampleDBReferences:cust_101", resDynamicNode.primaryStorageAddress());
 
-        // 4. Test error handling & node unreachable status
+        // 4. Test error handling & node unreachable status without failovers
         registry.registerNode(new com.jettra.store.engine.cluster.ClusterNodeRegistry.ClusterNodeInfo(
-            "cluster-offline-node", "cluster-offline-node", "10.255.255.1", 50051, 50050,
+            "cluster-offline-isolated", "cluster-offline-isolated", "10.255.255.1", 50051, 50050,
             com.jettra.store.engine.cluster.ClusterNodeRegistry.NodeStatus.UNREACHABLE, System.currentTimeMillis(), java.util.Map.of()
         ));
-        var resOffline = resolver.resolve("ref://cluster-offline-node@RECORDS:ExampleDBReferences/emp_202");
-        assertFalse(resOffline.exists(), "Unreachable cluster node must not resolve as available");
+        var resOffline = resolver.resolve("ref://cluster-offline-isolated@RECORDS:ExampleDBReferences/missing_record_999");
+        assertFalse(resOffline.exists(), "Unreachable isolated cluster node without failover must not resolve");
         assertEquals("NODE_UNREACHABLE", resOffline.status());
         assertTrue(resOffline.diagnosticMessage().contains("unreachable"));
 
-        // 5. Test non-existent record status (NOT_FOUND)
+        // 5. Test Transparent Cluster Failover to Replica Nodes
+        registry.registerNode(new com.jettra.store.engine.cluster.ClusterNodeRegistry.ClusterNodeInfo(
+            "cluster-primary-down", "cluster-primary-down", "10.255.255.2", 50051, 50050,
+            com.jettra.store.engine.cluster.ClusterNodeRegistry.NodeStatus.UNREACHABLE, System.currentTimeMillis(), java.util.Map.of()
+        ));
+        registry.registerFailover("cluster-primary-down", "node-local");
+        var resFailover = resolver.resolve("ref://cluster-primary-down@RECORDS:ExampleDBReferences/emp_202");
+        assertTrue(resFailover.exists(), "Reference with failing primary must resolve transparently via failover replica");
+        assertEquals("RESOLVED", resFailover.status());
+        assertTrue(resFailover.diagnosticMessage().toLowerCase().contains("failover"), "Diagnostic must indicate failover resolution");
+
+        // 6. Test non-existent record status (NOT_FOUND)
         var resNotFound = resolver.resolve("ref://DOCUMENT:ExampleDBReferences/non_existent_record_xyz");
         assertFalse(resNotFound.exists(), "Missing record must not resolve");
         assertEquals("NOT_FOUND", resNotFound.status());
 
-        // 6. Test JSON reference parsing and expansion with mixed ref:// and jref://
+        // 7. Test JSON reference parsing and expansion with clean canonical $jref output
         io.jettra.json.JsonObject rootObj = new io.jettra.json.JsonObject();
         rootObj.addProperty("orderId", "ORD-TEST-999");
         rootObj.addProperty("leadEmpRef", "ref://RECORDS:ExampleDBReferences/emp_202");
@@ -532,17 +548,24 @@ public class StorageEnginesFeaturesTest {
         assertNotNull(expandedObj);
         assertTrue(expandedObj.get("leadEmpRef") instanceof io.jettra.json.JsonObject);
         io.jettra.json.JsonObject expLead = (io.jettra.json.JsonObject) expandedObj.get("leadEmpRef");
-        assertEquals("rec:ExampleDBReferences:emp_202", expLead.getAsString("_primaryAddress"));
-        assertEquals("RESOLVED", expLead.getAsString("_status"));
+        assertTrue(expLead.has("$jref"), "Must have canonical $jref");
+        assertFalse(expLead.has("$ref"), "Must not have redundant $ref");
+        assertFalse(expLead.has("_primaryAddress"), "Must not have _primaryAddress");
+        assertTrue(expLead.has("_resolved"), "Must have _resolved payload");
 
         assertTrue(expandedObj.get("clusterSecRef") instanceof io.jettra.json.JsonObject);
         io.jettra.json.JsonObject expCluster = (io.jettra.json.JsonObject) expandedObj.get("clusterSecRef");
-        assertEquals("cluster-secondary-02", expCluster.getAsString("_clusterNode"));
-        assertEquals("rec:ExampleDBReferences:emp_202", expCluster.getAsString("_primaryAddress"));
+        assertTrue(expCluster.has("$jref"));
+        assertFalse(expCluster.has("$ref"));
+        assertFalse(expCluster.has("_primaryAddress"));
+        assertTrue(expCluster.has("_resolved"));
 
         assertTrue(expandedObj.get("customerDoc") instanceof io.jettra.json.JsonObject);
         io.jettra.json.JsonObject expCustDoc = (io.jettra.json.JsonObject) expandedObj.get("customerDoc");
-        assertEquals("doc:ExampleDBReferences:cust_102", expCustDoc.getAsString("_primaryAddress"));
+        assertTrue(expCustDoc.has("$jref"));
+        assertFalse(expCustDoc.has("$ref"));
+        assertFalse(expCustDoc.has("_primaryAddress"));
+        assertTrue(expCustDoc.has("_resolved"));
 
         // 7. Test GEOSPATIAL reference resolution across local and remote cluster nodes
         var resGeoColon = resolver.resolve("jref://GEOSPATIAL:ExampleDBReferences/hub_colon");
