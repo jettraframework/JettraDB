@@ -76,7 +76,189 @@ public class StoreEnginesPage extends StoreTemplatePage {
             handleResolveReference(exchange, params);
             return true;
         }
+        if (params != null && ("load_hierarchy".equalsIgnoreCase(params.get("action")) || "expand_db".equalsIgnoreCase(params.get("action")))) {
+            handleLoadHierarchy(exchange, params);
+            return true;
+        }
         return false;
+    }
+
+    public void handleLoadHierarchy(HttpExchange exchange, Map<String, String> params) throws IOException {
+        String db = params != null ? params.get("target_db") : null;
+        if (db == null || db.isBlank()) {
+            db = params != null ? params.get("db") : null;
+        }
+        if (db == null || db.isBlank()) {
+            db = "customers_db";
+        }
+        db = db.trim();
+
+        JsonObject res;
+        try {
+            res = buildDatabaseHierarchyJson(db);
+        } catch (Exception e) {
+            res = new JsonObject();
+            res.addProperty("database", db);
+            res.addProperty("hasComponents", false);
+            res.addProperty("totalItems", 0);
+            res.addProperty("status", "ERROR");
+            res.addProperty("error", e.getMessage() != null ? e.getMessage() : "Unknown error");
+        }
+
+        byte[] b = jsonParser.toJson(res).getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
+        exchange.sendResponseHeaders(200, b.length);
+        try (OutputStream os = exchange.getResponseBody()) {
+            os.write(b);
+            os.flush();
+        }
+    }
+
+    public JsonObject buildDatabaseHierarchyJson(String dbName) {
+        String queryDb = resolveExistingDatabaseName(dbName);
+        JsonObject res = new JsonObject();
+        res.addProperty("database", dbName);
+
+        String[][] allEngSpecs = {
+            {"DOCUMENT", "#3b82f6", "fas fa-file-alt", "Collections", "Collection", "Document", "fas fa-file-code"},
+            {"KEYVALUE", "#10b981", "fas fa-key", "Namespaces", "Namespace", "Key-Value Pair", "fas fa-cube"},
+            {"VECTOR", "#8b5cf6", "fas fa-project-diagram", "Vector Indexes", "Vector Index", "Embedding", "fas fa-braille"},
+            {"GRAPH", "#ec4899", "fas fa-share-alt", "Labels", "Label", "Vertex / Edge", "fas fa-circle-nodes"},
+            {"TIMESERIES", "#06b6d4", "fas fa-chart-line", "Metrics", "Metric", "Time Point", "fas fa-stopwatch"},
+            {"COLUMN", "#f97316", "fas fa-table", "Column Families", "Column Family", "Dynamic Row", "fas fa-bars-staggered"},
+            {"GEOSPATIAL", "#14b8a6", "fas fa-globe-americas", "Spatial Layers", "Spatial Layer", "GIS Feature", "fas fa-location-dot"},
+            {"OBJECT", "#a855f7", "fas fa-archive", "Buckets", "Bucket", "BLOB Object", "fas fa-box-archive"},
+            {"RECORDS", "#f43f5e", "fas fa-id-card", "Record Tables", "Record Table", "Record", "fas fa-address-card"}
+        };
+
+        JsonArray enginesArr = new JsonArray();
+        int totalDbItems = 0;
+
+        for (String[] spec : allEngSpecs) {
+            String engName = spec[0];
+            String engColor = spec[1];
+            String engIcon = spec[2];
+            String unitPlural = spec[3];
+            String unitSingle = spec[4];
+            String itemLabel = spec[5];
+            String itemIcon = spec[6];
+
+            Map<String, List<String>> unitsAndItems = discoverUnitsAndItems(engName, queryDb);
+            int totalEngItems = unitsAndItems.values().stream().mapToInt(List::size).sum();
+            totalDbItems += totalEngItems;
+
+            JsonObject engObj = new JsonObject();
+            engObj.addProperty("name", engName);
+            engObj.addProperty("color", engColor);
+            engObj.addProperty("icon", engIcon);
+            engObj.addProperty("unitPlural", unitPlural);
+            engObj.addProperty("unitSingle", unitSingle);
+            engObj.addProperty("itemLabel", itemLabel);
+            engObj.addProperty("itemIcon", itemIcon);
+            engObj.addProperty("totalItems", totalEngItems);
+
+            JsonArray unitsArr = new JsonArray();
+            for (Map.Entry<String, List<String>> uEntry : unitsAndItems.entrySet()) {
+                String uName = uEntry.getKey();
+                List<String> items = uEntry.getValue();
+
+                JsonObject uObj = new JsonObject();
+                uObj.addProperty("name", uName);
+                uObj.addProperty("totalItems", items.size());
+
+                JsonArray itemsArr = new JsonArray();
+                for (String itemId : items) {
+                    int vCount = getItemVersionCount(engName, queryDb, uName, itemId);
+                    String itemPayload = getItemPayload(engName, queryDb, uName, itemId);
+                    String itemVersions = getVersionsJson(engName, queryDb, uName, itemId);
+                    String payloadB64 = Base64.getEncoder().encodeToString(itemPayload.getBytes(StandardCharsets.UTF_8));
+                    String versionsB64 = Base64.getEncoder().encodeToString(itemVersions.getBytes(StandardCharsets.UTF_8));
+
+                    JsonObject itemObj = new JsonObject();
+                    itemObj.addProperty("id", itemId);
+                    itemObj.addProperty("versionCount", vCount);
+                    itemObj.addProperty("payload", itemPayload);
+                    itemObj.addProperty("payloadB64", payloadB64);
+                    itemObj.addProperty("versionsB64", versionsB64);
+
+                    JsonObject parsed = parseJsonOrWrap(itemPayload);
+                    JsonObject summaryProps = new JsonObject();
+                    int pCount = 0;
+                    for (String pKey : parsed.keySet()) {
+                        if (pCount >= 8) break;
+                        Object pVal = parsed.get(pKey);
+                        if (pVal instanceof Number) {
+                            summaryProps.addProperty(pKey, (Number) pVal);
+                        } else if (pVal instanceof Boolean) {
+                            summaryProps.addProperty(pKey, (Boolean) pVal);
+                        } else if (pVal instanceof JsonObject) {
+                            summaryProps.add(pKey, (JsonObject) pVal);
+                        } else if (pVal instanceof JsonArray) {
+                            summaryProps.add(pKey, (JsonArray) pVal);
+                        } else {
+                            summaryProps.addProperty(pKey, pVal != null ? pVal.toString() : "null");
+                        }
+                        pCount++;
+                    }
+                    itemObj.add("summaryProps", summaryProps);
+                    itemsArr.add(itemObj);
+                }
+                uObj.add("items", itemsArr);
+                unitsArr.add(uObj);
+            }
+            engObj.add("units", unitsArr);
+            enginesArr.add(engObj);
+        }
+        res.add("engines", enginesArr);
+
+        // Secondary & Composite Indexes for this Database
+        Map<String, JsonObject> dbIndexes = discoverIndexes(queryDb);
+        JsonArray indexesArr = new JsonArray();
+        boolean hasCustomIndex = false;
+        for (Map.Entry<String, JsonObject> idxEntry : dbIndexes.entrySet()) {
+            JsonObject idx = idxEntry.getValue();
+            if (!"idx_primary_id".equals(idxEntry.getKey())) {
+                hasCustomIndex = true;
+            }
+            indexesArr.add(idx);
+        }
+        res.add("indexes", indexesArr);
+
+        // Schema Definitions for this Database
+        Map<String, JsonObject> dbSchemas = discoverSchemas(queryDb);
+        JsonArray schemasArr = new JsonArray();
+        for (Map.Entry<String, JsonObject> scEntry : dbSchemas.entrySet()) {
+            JsonObject sc = new JsonObject();
+            sc.addProperty("name", scEntry.getKey());
+            JsonObject scVal = scEntry.getValue();
+            String scJson = scVal.has("schema") ? scVal.get("schema").toString() : "{}";
+            sc.addProperty("schemaJson", scJson);
+            sc.addProperty("schemaB64", Base64.getEncoder().encodeToString(scJson.getBytes(StandardCharsets.UTF_8)));
+            schemasArr.add(sc);
+        }
+        res.add("schemas", schemasArr);
+
+        boolean hasComponents = (totalDbItems > 0) || !dbSchemas.isEmpty() || hasCustomIndex;
+        res.addProperty("hasComponents", hasComponents);
+        res.addProperty("totalItems", totalDbItems);
+        res.addProperty("status", "SUCCESS");
+
+        return res;
+    }
+
+    private String resolveExistingDatabaseName(String dbName) {
+        if (dbName == null || dbName.isBlank()) return "customers_db";
+        Set<String> allDbs = discoverAllDatabases();
+        if (allDbs.contains(dbName)) return dbName;
+        for (String d : allDbs) {
+            if (d.equalsIgnoreCase(dbName)) return d;
+        }
+        for (String d : allDbs) {
+            if (d.equalsIgnoreCase(dbName + "s") || (dbName.endsWith("s") && d.equalsIgnoreCase(dbName.substring(0, dbName.length() - 1)))) {
+                return d;
+            }
+        }
+        return dbName;
     }
 
     private void handleResolveReference(HttpExchange exchange, Map<String, String> params) throws IOException {
@@ -1955,27 +2137,48 @@ public class StoreEnginesPage extends StoreTemplatePage {
             dbIdx++;
             boolean isActiveDb = db.equalsIgnoreCase(targetDb);
             String dbContainerId = "db_content_" + dbIdx;
+            String dbHeaderId = "db_header_" + dbIdx;
+            String dbToggleBtnId = "btn_toggle_" + dbIdx;
 
-            Widget dbToggleIcon = Icon.of("fas fa-chevron-right tree-toggle-icon")
-                .id("icon_" + dbContainerId)
-                .modifier(new Modifier().style("margin-right:5px; color:#38bdf8; font-size:10px; cursor:pointer;"));
+            Widget dbToggleBtn = Button.of(
+                Icon.of("fas fa-chevron-right tree-toggle-icon")
+                    .id("icon_" + dbContainerId)
+                    .modifier(new Modifier().style("color:#38bdf8; font-size:10px; pointer-events:none;"))
+            ).id(dbToggleBtnId)
+             .modifier(new Modifier()
+                .attribute("type", "button")
+                .attribute("aria-label", "Toggle " + db + " database subtree")
+                .attribute("aria-controls", dbContainerId)
+                .attribute("aria-expanded", "false")
+                .attribute("data-db", db)
+                .attribute("data-container-id", dbContainerId)
+                .attribute("onclick", "toggleLazyDbSubtree(event, '" + dbContainerId + "', '" + escapeJs(db) + "', '" + escapeJs(selectedEngine) + "', '" + escapeJs(actionUrl) + "', " + dbIdx + ")")
+                .style("background:none; border:none; padding:2px 5px; margin-right:3px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center;"));
 
             Widget dbLeft = Div.of(
-                dbToggleIcon,
-                Icon.of("fas fa-database").modifier(new Modifier().style("margin-right:4px; color:#38bdf8; font-size:11px;")),
+                dbToggleBtn,
+                Icon.of("fas fa-database").modifier(new Modifier().style("margin-right:4px; color:#38bdf8; font-size:11px; pointer-events:none;")),
                 Span.of(db).modifier(new Modifier().style("color:" + (isActiveDb ? "#38bdf8" : "#cbd5e1") + "; font-weight:700; font-size:11px; cursor:pointer;"))
-            ).modifier(new Modifier()
-                .attribute("onclick", "toggleSubtree('" + dbContainerId + "')")
-                .attribute("tabindex", "0")
-                .attribute("role", "treeitem")
-                .attribute("aria-expanded", "false")
-                .attribute("onkeydown", "handleTreeKeyDown(event, '" + dbContainerId + "')")
-                .style("display:inline-flex; align-items:center; cursor:pointer; outline:none;"));
+            ).id(dbHeaderId)
+             .attribute("data-db", db)
+             .attribute("data-state", "collapsed")
+             .attribute("role", "treeitem")
+             .attribute("tabindex", "0")
+             .attribute("aria-expanded", "false")
+             .attribute("aria-controls", dbContainerId)
+             .modifier(new Modifier()
+                .attribute("onclick", "toggleLazyDbSubtree(event, '" + dbContainerId + "', '" + escapeJs(db) + "', '" + escapeJs(selectedEngine) + "', '" + escapeJs(actionUrl) + "', " + dbIdx + ")")
+                .attribute("onkeydown", "handleLazyTreeKeyDown(event, '" + dbContainerId + "', '" + escapeJs(db) + "', '" + escapeJs(selectedEngine) + "', '" + escapeJs(actionUrl) + "', " + dbIdx + ")")
+                .style("display:inline-flex; align-items:center; cursor:pointer; outline:none; user-select:none;"));
 
             List<Widget> dbRightWidgets = new ArrayList<>();
             if (isActiveDb) {
                 dbRightWidgets.add(Span.of("ACTIVE").modifier(new Modifier().cssClass("store-badge badge-active").style("font-size:8px; padding:1px 5px; margin-left:4px;")));
             }
+            dbRightWidgets.add(
+                Button.of(Icon.of("fas fa-sync-alt"))
+                    .modifier(new Modifier().attribute("type", "button").attribute("title", "Refresh database hierarchy").attribute("onclick", "event.stopPropagation(); refreshLazyDbSubtree(event, '" + dbContainerId + "', '" + escapeJs(db) + "', '" + escapeJs(selectedEngine) + "', '" + escapeJs(actionUrl) + "', " + dbIdx + ")").style("background:none; border:none; color:#94a3b8; font-size:9px; cursor:pointer; padding:1px 4px; margin-right:2px;"))
+            );
             dbRightWidgets.add(
                 Link.of(actionUrl + selectedEngine + "&target_db=" + db,
                     Icon.of("fas fa-compass").modifier(new Modifier().style("margin-right:3px; font-size:9.5px;")),
@@ -1987,337 +2190,16 @@ public class StoreEnginesPage extends StoreTemplatePage {
             Widget dbHeaderRow = Div.of(dbLeft, dbRight)
                 .modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; padding:3px 4px;"));
 
-            List<Widget> dbContentWidgets = new ArrayList<>();
-            dbContentWidgets.add(dbHeaderRow);
+            Widget dbSubtreeContainer = Div.of()
+                .id(dbContainerId)
+                .attribute("data-db", db)
+                .attribute("data-loaded", "false")
+                .attribute("data-state", "collapsed")
+                .attribute("data-db-idx", String.valueOf(dbIdx))
+                .attribute("aria-expanded", "false")
+                .modifier(new Modifier().cssClass("tree-collapsible-content db-subtree-container").style("margin-left:8px; border-left: 2px dashed rgba(56,189,248,0.3); padding-left:6px; margin-top:3px; display:none;"));
 
-            List<Widget> engineSubtreeWidgets = new ArrayList<>();
-            int engIdx = 0;
-
-                for (String[] spec : allEngSpecs) {
-                    engIdx++;
-                    String engName = spec[0];
-                    String engColor = spec[1];
-                    String engIcon = spec[2];
-                    String unitPlural = spec[3];
-                    String unitSingle = spec[4];
-                    String itemLabel = spec[5];
-                    String itemIcon = spec[6];
-                    boolean isEngActive = engName.equalsIgnoreCase(selectedEngine);
-                    String engContainerId = "eng_subtree_" + dbIdx + "_" + engIdx;
-
-                    Map<String, List<String>> unitsAndItems = discoverUnitsAndItems(engName, db);
-                    int totalItems = unitsAndItems.values().stream().mapToInt(List::size).sum();
-
-                    Widget engToggleIcon = Icon.of("fas fa-chevron-down tree-toggle-icon")
-                        .id("icon_" + engContainerId)
-                        .modifier(new Modifier().attribute("onclick", "toggleSubtree('" + engContainerId + "')").style("margin-right:4px; color:" + engColor + "; font-size:9px; cursor:pointer;"));
-
-                    Widget engHeaderLink = Div.of(
-                        engToggleIcon,
-                        Icon.of(engIcon).modifier(new Modifier().style("color:" + engColor + "; margin-right:3px; font-size:9.5px;")),
-                        Link.of(actionUrl + engName + "&target_db=" + db,
-                            Span.of(engName).modifier(new Modifier().style("font-weight:700; font-size:9.5px; text-transform:uppercase;")),
-                            Text.of(" → "),
-                            Span.of(unitPlural + " (" + unitsAndItems.size() + " " + (unitsAndItems.size() == 1 ? unitSingle : unitPlural) + ", " + totalItems + " items)").modifier(new Modifier().style("color:#cbd5e1; font-size:8.5px; font-weight:normal;"))
-                        ).modifier(new Modifier().style("text-decoration:none; font-size:9.5px; color:" + (isEngActive ? "#38bdf8; font-weight:700;" : "#94a3b8;") + ";"))
-                    ).modifier(new Modifier().style("display:inline-flex; align-items:center; font-size:9.5px;"));
-
-                    Widget engAddUnitBtn = Button.of("+ " + unitSingle)
-                        .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openAddUnitModal('" + escapeJs(engName) + "', '" + escapeJs(unitSingle) + "', '" + escapeJs(db) + "')").style("background:none; border:1px solid " + engColor + "55; color:" + engColor + "; font-size:8.5px; padding:1px 4px; border-radius:3px; cursor:pointer;"));
-
-                    Widget engHeaderRow = Div.of(engHeaderLink, engAddUnitBtn)
-                        .modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; padding:2px 2px;"));
-
-                    List<Widget> unitListWidgets = new ArrayList<>();
-                    int unitIdx = 0;
-
-                    for (Map.Entry<String, List<String>> unitEntry : unitsAndItems.entrySet()) {
-                        unitIdx++;
-                        String unitName = unitEntry.getKey();
-                        List<String> items = unitEntry.getValue();
-                        boolean isCurrColl = isEngActive && unitName.equalsIgnoreCase(currentColl);
-                        String unitContainerId = "unit_subtree_" + dbIdx + "_" + engIdx + "_" + unitIdx;
-
-                        Widget unitToggleIcon = Icon.of("fas fa-chevron-down tree-toggle-icon")
-                            .id("icon_" + unitContainerId)
-                            .modifier(new Modifier().attribute("onclick", "toggleSubtree('" + unitContainerId + "')").style("margin-right:3px; color:#cbd5e1; font-size:8.5px; cursor:pointer;"));
-
-                        Widget unitLeft = Div.of(
-                            unitToggleIcon,
-                            Text.of("📁 "),
-                            Link.of(actionUrl + engName + "&target_db=" + db + "&coll=" + unitName, unitName).modifier(new Modifier().style("color:inherit; text-decoration:none; font-size:9.5px; font-weight:600;")),
-                            Text.of(" "),
-                            Span.of("(" + items.size() + ")").modifier(new Modifier().style("font-size:8px; color:#94a3b8; font-weight:normal; margin-left:2px;"))
-                        ).modifier(new Modifier().style("display:inline-flex; align-items:center; color:" + (isCurrColl ? "#38bdf8" : "#cbd5e1") + "; font-size:9.5px; font-weight:600;"));
-
-                        Widget unitAddObjBtn = Button.of("[+ " + itemLabel + "]")
-                            .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openAddObjectModal('" + escapeJs(engName) + "', '" + escapeJs(unitName) + "', '" + escapeJs(db) + "')").style("background:none; border:none; color:" + engColor + "; font-size:8.5px; cursor:pointer; padding:0;"));
-
-                        Widget unitHeaderRow = Div.of(unitLeft, unitAddObjBtn)
-                            .modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; padding:1.5px 0;"));
-
-                        List<Widget> itemWidgets = new ArrayList<>();
-                        int pageSize = 10;
-                        int totalUnitItems = items.size();
-                        int totalPages = Math.max(1, (int) Math.ceil((double) totalUnitItems / pageSize));
-
-                        if (items.isEmpty()) {
-                            Widget emptyItem = Div.of(
-                                Span.of("└── "),
-                                Span.of("(Empty unit - click [+ " + itemLabel + "] to insert)").modifier(new Modifier().style("font-style:italic; font-size:9px;"))
-                            ).modifier(new Modifier().style("font-size:9px; color:#64748b; padding:1px 0;"));
-                            itemWidgets.add(emptyItem);
-                        } else {
-                            for (int itemI = 0; itemI < items.size(); itemI++) {
-                                String itemId = items.get(itemI);
-                                int pageNum = (itemI / pageSize) + 1;
-                                int vCount = getItemVersionCount(engName, db, unitName, itemId);
-                                String itemPayload = getItemPayload(engName, db, unitName, itemId);
-                                String itemVersions = getVersionsJson(engName, db, unitName, itemId);
-                                String payloadB64 = Base64.getEncoder().encodeToString(itemPayload.getBytes(StandardCharsets.UTF_8));
-                                String versionsB64 = Base64.getEncoder().encodeToString(itemVersions.getBytes(StandardCharsets.UTF_8));
-                                String itemDetailId = "item_detail_" + dbIdx + "_" + engIdx + "_" + unitIdx + "_" + itemI;
-
-                                Widget itemToggleCaret = Icon.of("fas fa-caret-right tree-toggle-icon")
-                                    .id("icon_" + itemDetailId)
-                                    .modifier(new Modifier().attribute("onclick", "toggleSubtree('" + itemDetailId + "')").style("margin-right:3px; color:#94a3b8; font-size:8px; cursor:pointer;"));
-
-                                Widget itemLeft = Span.of(
-                                    Text.of("└── "),
-                                    itemToggleCaret,
-                                    Icon.of(itemIcon).modifier(new Modifier().style("color:" + engColor + "; margin-right:3px; font-size:8.5px;")),
-                                    Span.of(itemId).modifier(new Modifier().attribute("onclick", "toggleSubtree('" + itemDetailId + "')").style("color:#f8fafc; font-weight:bold; font-size:9px; font-family:monospace; cursor:pointer;")),
-                                    Text.of(" "),
-                                    Span.of("v" + vCount).modifier(new Modifier().cssClass("store-badge").style("background:rgba(56,189,248,0.15); color:#38bdf8; font-size:7.5px; padding:0.5px 3px; line-height:1;"))
-                                );
-
-                                List<Widget> itemBtnWidgets = new ArrayList<>();
-                                itemBtnWidgets.add(
-                                    Button.of(Icon.of("fas fa-eye"))
-                                        .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openInspectRecordModal('" + escapeJs(engName) + "', '" + escapeJs(db) + "', '" + escapeJs(unitName) + "', '" + escapeJs(itemId) + "', '" + payloadB64 + "', " + vCount + ")").attribute("title", "Inspect record details").style("background:none; border:1px solid rgba(56,189,248,0.3); color:#38bdf8; font-size:8px; padding:1px 4px; border-radius:3px; cursor:pointer;"))
-                                );
-                                itemBtnWidgets.add(
-                                    Button.of(Icon.of("fas fa-edit"))
-                                        .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openUniversalEditModal('" + escapeJs(engName) + "', '" + escapeJs(db) + "', '" + escapeJs(unitName) + "', '" + escapeJs(itemId) + "', '" + payloadB64 + "')").attribute("title", "Edit record").style("background:none; border:1px solid rgba(56,189,248,0.3); color:#38bdf8; font-size:8px; padding:1px 4px; border-radius:3px; cursor:pointer;"))
-                                );
-                                itemBtnWidgets.add(
-                                    Button.of(Icon.of("fas fa-history"))
-                                        .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openUniversalRestoreModal('" + escapeJs(engName) + "', '" + escapeJs(db) + "', '" + escapeJs(unitName) + "', '" + escapeJs(itemId) + "', '" + versionsB64 + "')").attribute("title", "Version history v" + vCount).style("background:none; border:1px solid rgba(168,85,247,0.3); color:#a855f7; font-size:8px; padding:1px 4px; border-radius:3px; cursor:pointer;"))
-                                );
-                                itemBtnWidgets.add(
-                                    Button.of(Icon.of("fas fa-trash-alt"))
-                                        .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openUniversalDeleteModal('" + escapeJs(engName) + "', '" + escapeJs(db) + "', '" + escapeJs(unitName) + "', '" + escapeJs(itemId) + "')").attribute("title", "Delete record").style("background:none; border:1px solid rgba(239,68,68,0.3); color:#ef4444; font-size:8px; padding:1px 4px; border-radius:3px; cursor:pointer;"))
-                                );
-
-                                Widget itemRight = Div.of(itemBtnWidgets.toArray(new Widget[0]))
-                                    .modifier(new Modifier().style("display:flex; align-items:center; gap:2px;"));
-
-                                String itemDisplay = (pageNum == 1) ? "display:flex;" : "display:none;";
-                                Widget itemRow = Div.of(itemLeft, itemRight)
-                                    .modifier(new Modifier()
-                                        .cssClass("item-row-" + unitContainerId)
-                                        .attribute("data-page", String.valueOf(pageNum))
-                                        .style(itemDisplay + " font-size:9px; color:#94a3b8; justify-content:space-between; align-items:center; padding:1.5px 0; line-height:1.2;"));
-
-                                itemWidgets.add(itemRow);
-
-                                // Level 5: Collapsed Item Details Subtree Panel
-                                Widget itemDetailPanel = Div.of(
-                                    renderItemDetailSummary(engName, db, unitName, itemId, itemPayload, vCount, payloadB64, versionsB64)
-                                ).id(itemDetailId)
-                                 .modifier(new Modifier()
-                                    .cssClass("tree-collapsible-content item-detail-" + unitContainerId)
-                                    .attribute("data-page", String.valueOf(pageNum))
-                                    .style("display:none; margin-left:14px; margin-top:2px; margin-bottom:4px; padding:4px 8px; background:rgba(15,23,42,0.85); border:1px solid rgba(56,189,248,0.18); border-left:2px solid " + engColor + "; border-radius:4px; font-size:8.5px; line-height:1.35;"));
-
-                                itemWidgets.add(itemDetailPanel);
-                            }
-
-                            // Add Unit Pagination Controls if > 1 page
-                            if (totalPages > 1) {
-                                Widget prevBtn = Button.of(Text.of("‹ Prev"))
-                                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "changeSubtreePage('" + unitContainerId + "', -1, " + totalPages + ")").style("background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15); color:#cbd5e1; font-size:8.5px; padding:1px 4px; border-radius:3px; cursor:pointer; margin-right:3px;"));
-                                Widget pageLabel = Span.of("Pág 1 / " + totalPages + " (" + totalUnitItems + " total)")
-                                    .id("page_label_" + unitContainerId)
-                                    .modifier(new Modifier().style("font-size:8.5px; color:#38bdf8; font-weight:600; padding:0 3px;"));
-                                Widget nextBtn = Button.of(Text.of("Next ›"))
-                                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "changeSubtreePage('" + unitContainerId + "', 1, " + totalPages + ")").style("background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15); color:#cbd5e1; font-size:8.5px; padding:1px 4px; border-radius:3px; cursor:pointer; margin-left:3px;"));
-
-                                Widget unitPaginationBar = Div.of(prevBtn, pageLabel, nextBtn)
-                                    .modifier(new Modifier().style("display:flex; align-items:center; justify-content:flex-end; padding:2px 0; margin-top:2px; border-top:1px dashed rgba(255,255,255,0.06);"));
-                                itemWidgets.add(unitPaginationBar);
-                            }
-                        }
-
-                        Widget itemsContainer = Div.of(itemWidgets.toArray(new Widget[0]))
-                            .id(unitContainerId)
-                            .modifier(new Modifier().cssClass("tree-collapsible-content").style("margin-left:8px; border-left: 1px dashed rgba(255,255,255,0.08); padding-left:6px; margin-top:2px; display:block;"));
-
-                        Widget unitBlock = Div.of(unitHeaderRow, itemsContainer)
-                            .modifier(new Modifier().style("margin-bottom:3px; margin-top:2px;"));
-
-                        unitListWidgets.add(unitBlock);
-                    }
-
-                    Widget unitSubtreeContainer = Div.of(unitListWidgets.toArray(new Widget[0]))
-                        .id(engContainerId)
-                        .modifier(new Modifier().cssClass("tree-collapsible-content").style("margin-left:8px; border-left: 2px dotted rgba(255,255,255,0.12); padding-left:6px; margin-top:3px; display:block;"));
-
-                    Widget engineBlock = Div.of(engHeaderRow, unitSubtreeContainer)
-                        .modifier(new Modifier().style("margin-bottom:4px; background:" + (isEngActive ? "rgba(30,41,59,0.7)" : "rgba(15,23,42,0.3)") + "; padding:4px 6px; border-radius:4px; border:1px solid rgba(255,255,255,0.04);"));
-
-                    engineSubtreeWidgets.add(engineBlock);
-                }
-
-                // Render Indexes & Schemas Subtree for this Database
-                Map<String, JsonObject> dbIndexes = discoverIndexes(db);
-                Map<String, JsonObject> dbSchemas = discoverSchemas(db);
-                String idxSchemasContainerId = "idx_schemas_" + dbIdx;
-
-                Widget idxSchemasToggleIcon = Icon.of("fas fa-chevron-down tree-toggle-icon")
-                    .id("icon_" + idxSchemasContainerId)
-                    .modifier(new Modifier().attribute("onclick", "toggleSubtree('" + idxSchemasContainerId + "')").style("margin-right:4px; color:#eab308; font-size:9px; cursor:pointer;"));
-
-                Widget idxSchemasHeaderLeft = Div.of(
-                    idxSchemasToggleIcon,
-                    Icon.of("fas fa-bolt").modifier(new Modifier().style("color:#eab308; margin-right:3px; font-size:9.5px;")),
-                    Span.of("INDEXES & SCHEMAS").modifier(new Modifier().style("font-weight:bold; font-size:9.5px; color:#eab308;")),
-                    Text.of(" → "),
-                    Span.of("(" + dbIndexes.size() + " Indexes, " + dbSchemas.size() + " Schemas)").modifier(new Modifier().style("color:#cbd5e1; font-size:8.5px; font-weight:normal;"))
-                ).modifier(new Modifier().style("display:inline-flex; align-items:center; font-size:9.5px;"));
-
-                Widget idxSchemasHeaderRight = Div.of(
-                    Button.of(Icon.of("fas fa-plus"), Text.of(" Index"))
-                        .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openAddIndexModal('" + escapeJs(db) + "')").style("background:none; border:1px solid rgba(234,179,8,0.5); color:#eab308; font-size:8.5px; padding:1px 4px; border-radius:3px; cursor:pointer; margin-right:3px;")),
-                    Button.of(Icon.of("fas fa-shield-alt"), Text.of(" Schema"))
-                        .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openAddSchemaModal('" + escapeJs(db) + "')").style("background:none; border:1px solid rgba(56,189,248,0.5); color:#38bdf8; font-size:8.5px; padding:1px 4px; border-radius:3px; cursor:pointer;"))
-                ).modifier(new Modifier().style("display:flex; gap:2px;"));
-
-                Widget idxSchemasHeaderRow = Div.of(idxSchemasHeaderLeft, idxSchemasHeaderRight)
-                    .modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; padding:2px 2px;"));
-
-                // Secondary & Composite Indexes Unit
-                Widget indexesUnitLeft = Span.of(
-                    Text.of("📁 Secondary & Composite Indexes "),
-                    Span.of("(" + dbIndexes.size() + ")").modifier(new Modifier().style("font-size:8px; color:#94a3b8; font-weight:normal;"))
-                ).modifier(new Modifier().style("color:#fde047; font-size:9.5px; font-weight:600;"));
-
-                Widget indexesUnitAddBtn = Button.of("[+ Index]")
-                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openAddIndexModal('" + escapeJs(db) + "')").style("background:none; border:none; color:#eab308; font-size:8.5px; cursor:pointer; padding:0;"));
-
-                Widget indexesUnitHeaderRow = Div.of(indexesUnitLeft, indexesUnitAddBtn)
-                    .modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center;"));
-
-                List<Widget> indexItemWidgets = new ArrayList<>();
-                if (dbIndexes.isEmpty()) {
-                    indexItemWidgets.add(
-                        Div.of(
-                            Span.of("└── "),
-                            Span.of("(No secondary indexes)").modifier(new Modifier().style("font-style:italic; font-size:9px;"))
-                        ).modifier(new Modifier().style("font-size:9px; color:#64748b; padding:1px 0;"))
-                    );
-                } else {
-                    for (Map.Entry<String, JsonObject> idxEntry : dbIndexes.entrySet()) {
-                        String idxName = idxEntry.getKey();
-                        JsonObject idxObj = idxEntry.getValue();
-                        String idxType = idxObj.has("type") && idxObj.get("type") != null ? idxObj.get("type").toString().replace("\"", "") : "BTREE";
-                        String idxField = idxObj.has("field") && idxObj.get("field") != null ? idxObj.get("field").toString().replace("\"", "") : "id";
-                        String idxColl = idxObj.has("collection") && idxObj.get("collection") != null ? idxObj.get("collection").toString().replace("\"", "") : "default";
-
-                        Widget idxItemLeft = Span.of(
-                            Text.of("└── "),
-                            Icon.of("fas fa-bolt").modifier(new Modifier().style("color:#eab308; margin-right:3px; font-size:8.5px;")),
-                            Span.of(idxName).modifier(new Modifier().style("color:#f8fafc; font-weight:bold; font-size:9px; font-family:monospace;")),
-                            Text.of(" "),
-                            Span.of(idxType).modifier(new Modifier().cssClass("store-badge").style("background:rgba(234,179,8,0.15); color:#fde047; font-size:7.5px; padding:0.5px 3px;")),
-                            Text.of(" on '"),
-                            Span.of(idxField).modifier(new Modifier().style("color:#38bdf8; font-family:monospace; font-size:8.5px;")),
-                            Text.of("' (" + idxColl + ")")
-                        );
-
-                        Widget idxItemRight = Div.of(
-                            Button.of(Icon.of("fas fa-trash-alt"))
-                                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openDeleteIndexModal('" + escapeJs(db) + "', '" + escapeJs(idxName) + "')").style("background:none; border:1px solid rgba(239,68,68,0.3); color:#ef4444; font-size:8px; padding:1px 4px; border-radius:3px; cursor:pointer;"))
-                        );
-
-                        Widget idxRow = Div.of(idxItemLeft, idxItemRight)
-                            .modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; font-size:9px; padding:1.5px 0; color:#94a3b8;"));
-                        indexItemWidgets.add(idxRow);
-                    }
-                }
-
-                Widget indexesSubtree = Div.of(
-                    indexesUnitHeaderRow,
-                    Div.of(indexItemWidgets.toArray(new Widget[0])).modifier(new Modifier().style("margin-left:8px; border-left: 1px dashed rgba(255,255,255,0.08); padding-left:6px; margin-top:2px;"))
-                ).modifier(new Modifier().style("margin-bottom:3px; margin-top:2px;"));
-
-                // Schemas Unit
-                Widget schemasUnitLeft = Span.of(
-                    Text.of("📁 Schema Definitions "),
-                    Span.of("(" + dbSchemas.size() + ")").modifier(new Modifier().style("font-size:8px; color:#94a3b8; font-weight:normal;"))
-                ).modifier(new Modifier().style("color:#38bdf8; font-size:9.5px; font-weight:600;"));
-
-                Widget schemasUnitAddBtn = Button.of("[+ Schema]")
-                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openAddSchemaModal('" + escapeJs(db) + "')").style("background:none; border:none; color:#38bdf8; font-size:8.5px; cursor:pointer; padding:0;"));
-
-                Widget schemasUnitHeaderRow = Div.of(schemasUnitLeft, schemasUnitAddBtn)
-                    .modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center;"));
-
-                List<Widget> schemaItemWidgets = new ArrayList<>();
-                if (dbSchemas.isEmpty()) {
-                    schemaItemWidgets.add(
-                        Div.of(
-                            Span.of("└── "),
-                            Span.of("(No registered schemas)").modifier(new Modifier().style("font-style:italic; font-size:9px;"))
-                        ).modifier(new Modifier().style("font-size:9px; color:#64748b; padding:1px 0;"))
-                    );
-                } else {
-                    for (Map.Entry<String, JsonObject> scEntry : dbSchemas.entrySet()) {
-                        String scName = scEntry.getKey();
-                        JsonObject scObj = scEntry.getValue();
-                        String scJson = scObj.has("schema") ? scObj.get("schema").toString() : "{}";
-                        String scB64 = Base64.getEncoder().encodeToString(scJson.getBytes(StandardCharsets.UTF_8));
-
-                        Widget scItemLeft = Span.of(
-                            Text.of("└── "),
-                            Icon.of("fas fa-shield-alt").modifier(new Modifier().style("color:#38bdf8; margin-right:3px; font-size:8.5px;")),
-                            Span.of(scName).modifier(new Modifier().style("color:#f8fafc; font-weight:bold; font-size:9px; font-family:monospace;"))
-                        );
-
-                        Widget scItemRight = Div.of(
-                            Button.of(Icon.of("fas fa-eye"))
-                                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openInspectRecordModal('SCHEMA', '" + escapeJs(db) + "', 'schemas', '" + escapeJs(scName) + "', '" + scB64 + "', 1)").style("background:none; border:1px solid rgba(56,189,248,0.3); color:#38bdf8; font-size:8px; padding:1px 4px; border-radius:3px; cursor:pointer; margin-right:2px;")),
-                            Button.of(Icon.of("fas fa-trash-alt"))
-                                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openDeleteSchemaModal('" + escapeJs(db) + "', '" + escapeJs(scName) + "')").style("background:none; border:1px solid rgba(239,68,68,0.3); color:#ef4444; font-size:8px; padding:1px 4px; border-radius:3px; cursor:pointer;"))
-                        ).modifier(new Modifier().style("display:flex; gap:2px;"));
-
-                        Widget scRow = Div.of(scItemLeft, scItemRight)
-                            .modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; font-size:9px; padding:1.5px 0; color:#94a3b8;"));
-                        schemaItemWidgets.add(scRow);
-                    }
-                }
-
-                Widget schemasSubtree = Div.of(
-                    schemasUnitHeaderRow,
-                    Div.of(schemaItemWidgets.toArray(new Widget[0])).modifier(new Modifier().style("margin-left:8px; border-left: 1px dashed rgba(255,255,255,0.08); padding-left:6px; margin-top:2px;"))
-                ).modifier(new Modifier().style("margin-bottom:3px; margin-top:2px;"));
-
-                Widget idxSchemasSubtreeContainer = Div.of(indexesSubtree, schemasSubtree)
-                    .id(idxSchemasContainerId)
-                    .modifier(new Modifier().cssClass("tree-collapsible-content").style("margin-left:8px; border-left: 2px dotted rgba(234,179,8,0.3); padding-left:6px; margin-top:3px; display:block;"));
-
-                Widget idxSchemasBlock = Div.of(idxSchemasHeaderRow, idxSchemasSubtreeContainer)
-                    .modifier(new Modifier().style("margin-bottom:4px; background:rgba(30,41,59,0.7); padding:4px 6px; border-radius:4px; border:1px solid rgba(234,179,8,0.25);"));
-
-                engineSubtreeWidgets.add(idxSchemasBlock);
-
-                Widget dbSubtreeContainer = Div.of(engineSubtreeWidgets.toArray(new Widget[0]))
-                    .id(dbContainerId)
-                    .modifier(new Modifier().cssClass("tree-collapsible-content").style("margin-left:8px; border-left: 2px dashed rgba(56,189,248,0.3); padding-left:6px; margin-top:3px; display:none;"));
-
-                dbContentWidgets.add(dbSubtreeContainer);
-
-            Widget dbCard = Div.of(dbContentWidgets.toArray(new Widget[0]))
+            Widget dbCard = Div.of(dbHeaderRow, dbSubtreeContainer)
                 .modifier(new Modifier().style("margin-bottom:6px; padding:4px 8px; border-radius:6px; background:" + (isActiveDb ? "rgba(56,189,248,0.06)" : "rgba(255,255,255,0.015)") + "; border:" + (isActiveDb ? "1px solid rgba(56,189,248,0.2)" : "1px solid rgba(255,255,255,0.04)") + ";"));
 
             dbCardWidgets.add(dbCard);
@@ -2326,7 +2208,14 @@ public class StoreEnginesPage extends StoreTemplatePage {
         Widget treeBody = Div.of(dbCardWidgets.toArray(new Widget[0]))
             .modifier(new Modifier().style("max-height:600px; overflow-y:auto; padding-right:4px;"));
 
-        return Div.of(treeHeader, treeBody)
+        Widget treeInitScript = RawHtml.of(
+            "<script>\n" +
+            "  window.lastActionUrl = '" + escapeJs(actionUrl) + "';\n" +
+            "  window.lastSelectedEngine = '" + escapeJs(selectedEngine) + "';\n" +
+            "</script>\n"
+        );
+
+        return Div.of(treeHeader, treeBody, treeInitScript)
             .modifier(new Modifier().cssClass("store-card").style("margin-bottom:20px; border: 1px solid rgba(56,189,248,0.3); background:rgba(18,24,38,0.9); padding:16px;"));
     }
 
@@ -3960,7 +3849,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
     }
 
     private Widget buildModalsScript() {
-        String js = """
+        String js1 = """
   function showModal(id) {
     if (!id) return;
     var el = document.getElementById(id);
@@ -4256,14 +4145,475 @@ public class StoreEnginesPage extends StoreTemplatePage {
     });
     showModal('confirmDeleteModal');
   }
+""";
 
-  function toggleSubtree(elementId) {
+        String js2 = """
+  var dbHierarchyCache = {};
+
+  function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function escapeJsString(str) {
+    if (str === null || str === undefined) return '';
+    return String(str).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, "\\\\'").replace(/"/g, '\\\\"');
+  }
+
+  function buildHierarchyFetchUrl(actionUrl, selectedEngine, dbName) {
+    var base = actionUrl || window.lastActionUrl || '/engines';
+    var eng = selectedEngine || window.lastSelectedEngine || 'DOCUMENT';
+    var url;
+    if (base.indexOf('?') >= 0) {
+      if (base.indexOf('engine=') >= 0) {
+        url = base;
+      } else {
+        url = base + '&engine=' + encodeURIComponent(eng);
+      }
+    } else {
+      url = base + '?engine=' + encodeURIComponent(eng);
+    }
+    if (url.indexOf('action=') < 0) {
+      url += '&action=load_hierarchy';
+    }
+    if (url.indexOf('target_db=') < 0) {
+      url += '&target_db=' + encodeURIComponent(dbName);
+    }
+    return url;
+  }
+
+  function toggleLazyDbSubtree(evt, containerId, dbName, selectedEngine, actionUrl, dbIdx) {
+    if (evt) {
+      if (typeof evt.stopPropagation === 'function') evt.stopPropagation();
+      if (typeof evt.preventDefault === 'function' && evt.type === 'keydown') evt.preventDefault();
+    }
+    // Support polymorphic calls: toggleLazyDbSubtree(containerId, dbName, ...) or toggleLazyDbSubtree(evt, containerId, ...)
+    if (typeof evt === 'string' && !containerId) {
+      containerId = evt;
+    } else if (typeof evt === 'string' && typeof dbName === 'string') {
+      var origArgs = Array.prototype.slice.call(arguments);
+      dbIdx = origArgs[4];
+      actionUrl = origArgs[3];
+      selectedEngine = origArgs[2];
+      dbName = origArgs[1];
+      containerId = origArgs[0];
+    }
+
+    var el = document.getElementById(containerId);
+    var icon = document.getElementById('icon_' + containerId);
+    var btn = document.getElementById('btn_toggle_' + containerId) || document.getElementById('btn_toggle_' + dbIdx);
+    var header = document.getElementById('db_header_' + dbIdx);
+    if (!el) return;
+
+    if (!dbName) dbName = el.getAttribute('data-db') || 'default';
+    if (!dbIdx) dbIdx = el.getAttribute('data-db-idx') || 1;
+
+    var isHidden = (el.style.display === 'none' || el.style.display === '');
+    if (isHidden) {
+      el.style.display = 'block';
+      el.setAttribute('aria-expanded', 'true');
+      if (header) {
+        header.setAttribute('aria-expanded', 'true');
+      }
+      if (btn) {
+        btn.setAttribute('aria-expanded', 'true');
+      }
+
+      var isLoaded = el.getAttribute('data-loaded') === 'true';
+      if (!isLoaded) {
+        loadDbHierarchy(evt, containerId, dbName, selectedEngine, actionUrl, dbIdx, false);
+      } else {
+        if (icon) icon.className = 'fas fa-chevron-down tree-toggle-icon';
+        if (header) header.setAttribute('data-state', 'expanded');
+        el.setAttribute('data-state', 'expanded');
+      }
+    } else {
+      el.style.display = 'none';
+      el.setAttribute('aria-expanded', 'false');
+      el.setAttribute('data-state', 'collapsed');
+      if (header) {
+        header.setAttribute('aria-expanded', 'false');
+        header.setAttribute('data-state', 'collapsed');
+      }
+      if (btn) {
+        btn.setAttribute('aria-expanded', 'false');
+        btn.setAttribute('data-state', 'collapsed');
+      }
+      if (icon) icon.className = 'fas fa-chevron-right tree-toggle-icon';
+    }
+  }
+
+  function refreshLazyDbSubtree(evt, containerId, dbName, selectedEngine, actionUrl, dbIdx) {
+    if (evt && typeof evt.stopPropagation === 'function') evt.stopPropagation();
+    if (typeof evt === 'string' && !containerId) {
+      containerId = evt;
+    } else if (typeof evt === 'string' && typeof dbName === 'string') {
+      var origArgs = Array.prototype.slice.call(arguments);
+      dbIdx = origArgs[4];
+      actionUrl = origArgs[3];
+      selectedEngine = origArgs[2];
+      dbName = origArgs[1];
+      containerId = origArgs[0];
+    }
+    var el = document.getElementById(containerId);
+    var icon = document.getElementById('icon_' + containerId);
+    var header = document.getElementById('db_header_' + dbIdx);
+    var btn = document.getElementById('btn_toggle_' + containerId) || document.getElementById('btn_toggle_' + dbIdx);
+    if (el) {
+      el.style.display = 'block';
+      el.setAttribute('aria-expanded', 'true');
+      if (header) header.setAttribute('aria-expanded', 'true');
+      if (btn) btn.setAttribute('aria-expanded', 'true');
+      if (!dbName) dbName = el.getAttribute('data-db') || 'default';
+      delete dbHierarchyCache[dbName];
+      loadDbHierarchy(evt, containerId, dbName, selectedEngine, actionUrl, dbIdx, true);
+    }
+  }
+
+  function handleLazyTreeKeyDown(e, containerId, dbName, selectedEngine, actionUrl, dbIdx) {
+    if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+      e.preventDefault();
+      var el = document.getElementById(containerId);
+      if (!el) return;
+      var isHidden = (el.style.display === 'none' || el.style.display === '');
+      if ((e.key === 'ArrowRight' && isHidden) || (e.key === 'ArrowLeft' && !isHidden) || e.key === 'Enter' || e.key === ' ') {
+        toggleLazyDbSubtree(e, containerId, dbName, selectedEngine, actionUrl, dbIdx);
+      }
+    }
+  }
+
+  function loadDbHierarchy(evt, containerId, dbName, selectedEngine, actionUrl, dbIdx, forceRefresh, callback) {
+    // Support polymorphic arguments
+    if (typeof evt === 'string' && !containerId) {
+      containerId = evt;
+    } else if (typeof evt === 'string' && typeof dbName === 'string') {
+      var origArgs = Array.prototype.slice.call(arguments);
+      callback = origArgs[6];
+      forceRefresh = origArgs[5];
+      dbIdx = origArgs[4];
+      actionUrl = origArgs[3];
+      selectedEngine = origArgs[2];
+      dbName = origArgs[1];
+      containerId = origArgs[0];
+    }
+
+    var el = document.getElementById(containerId);
+    var icon = document.getElementById('icon_' + containerId);
+    var header = document.getElementById('db_header_' + dbIdx);
+    var btn = document.getElementById('btn_toggle_' + containerId) || document.getElementById('btn_toggle_' + dbIdx);
+    if (!el) return;
+
+    if (!dbName) dbName = el.getAttribute('data-db') || 'default';
+    if (!dbIdx) dbIdx = el.getAttribute('data-db-idx') || 1;
+
+    if (!forceRefresh && dbHierarchyCache[dbName]) {
+      renderDbHierarchyHtml(dbHierarchyCache[dbName], containerId, dbName, selectedEngine, actionUrl, dbIdx);
+      el.setAttribute('data-loaded', 'true');
+      el.setAttribute('data-state', 'expanded');
+      if (header) header.setAttribute('data-state', 'expanded');
+      if (btn) btn.setAttribute('data-state', 'expanded');
+      if (icon) icon.className = 'fas fa-chevron-down tree-toggle-icon';
+      if (callback) callback();
+      return;
+    }
+
+    // Set loading state
+    el.setAttribute('data-state', 'loading');
+    if (header) header.setAttribute('data-state', 'loading');
+    if (btn) btn.setAttribute('data-state', 'loading');
+    if (icon) icon.className = 'fas fa-circle-notch fa-spin tree-toggle-icon';
+
+    el.innerHTML = '<div class="tree-lazy-spinner" style="padding:10px 14px; margin:4px 0; background:rgba(15,23,42,0.6); border:1px solid rgba(56,189,248,0.2); border-radius:6px; color:#38bdf8; font-size:11px; display:flex; align-items:center; gap:8px;">' +
+      '<i class="fas fa-circle-notch fa-spin" style="font-size:13px; color:#38bdf8;"></i>' +
+      '<span>Resolving components for <b>' + escapeHtml(dbName) + '</b>...</span>' +
+      '</div>';
+
+    var fetchUrl = buildHierarchyFetchUrl(actionUrl, selectedEngine, dbName);
+    fetch(fetchUrl)
+      .then(function(res) {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.text();
+      })
+      .then(function(text) {
+        var data;
+        try {
+          data = JSON.parse(text);
+        } catch (parseErr) {
+          throw new Error('Invalid JSON payload (' + parseErr.message + ')');
+        }
+        if (data && data.status === 'ERROR') {
+          throw new Error(data.error || 'Server reported hierarchy resolution failure');
+        }
+        dbHierarchyCache[dbName] = data;
+        renderDbHierarchyHtml(data, containerId, dbName, selectedEngine, actionUrl, dbIdx);
+        el.setAttribute('data-loaded', 'true');
+        el.setAttribute('data-state', 'expanded');
+        if (header) header.setAttribute('data-state', 'expanded');
+        if (btn) btn.setAttribute('data-state', 'expanded');
+        if (icon) icon.className = 'fas fa-chevron-down tree-toggle-icon';
+        if (callback) callback();
+      })
+      .catch(function(err) {
+        delete dbHierarchyCache[dbName];
+        el.setAttribute('data-loaded', 'false');
+        el.setAttribute('data-state', 'error');
+        if (header) header.setAttribute('data-state', 'error');
+        if (btn) btn.setAttribute('data-state', 'error');
+        if (icon) icon.className = 'fas fa-chevron-right tree-toggle-icon';
+
+        el.innerHTML = '<div style="padding:10px 14px; margin:4px 0; background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.3); border-radius:6px; color:#ef4444; font-size:11px; display:flex; align-items:center; justify-content:space-between;">' +
+          '<span><i class="fas fa-exclamation-triangle" style="margin-right:6px;"></i>Failed to load hierarchy: ' + escapeHtml(err.message) + '</span>' +
+          '<button type="button" onclick="loadDbHierarchy(event, \\'' + containerId + '\\', \\'' + escapeJsString(dbName) + '\\', \\'' + escapeJsString(selectedEngine) + '\\', \\'' + escapeJsString(actionUrl) + '\\', ' + dbIdx + ', true)" class="btn-action btn-primary" style="padding:2px 8px; font-size:9px;">Retry</button>' +
+          '</div>';
+      });
+  }
+
+  function renderDbHierarchyHtml(data, containerId, dbName, selectedEngine, actionUrl, dbIdx) {
+    var el = document.getElementById(containerId);
+    if (!el) return;
+
+    if (!data || !data.hasComponents) {
+      el.innerHTML = '<div style="padding:8px 12px; margin:4px 0; background:rgba(15,23,42,0.5); border:1px dashed rgba(255,255,255,0.12); border-radius:6px; color:#94a3b8; font-size:10px; display:flex; align-items:center; gap:8px;">' +
+        '<i class="fas fa-folder-open" style="color:#64748b; font-size:12px;"></i>' +
+        '<span>No collections or engines registered</span>' +
+        '</div>';
+      return;
+    }
+
+    var html = '';
+    var engines = data.engines || [];
+    var actUrl = actionUrl || window.lastActionUrl || '/engines?engine=';
+
+    for (var engIdx = 0; engIdx < engines.length; engIdx++) {
+      var eng = engines[engIdx];
+      var engNum = engIdx + 1;
+      var isEngActive = (eng.name || '').toUpperCase() === (selectedEngine || window.lastSelectedEngine || '').toUpperCase();
+      var engContainerId = 'eng_subtree_' + dbIdx + '_' + engNum;
+      var totalUnits = eng.units ? eng.units.length : 0;
+      var totalItems = eng.totalItems || 0;
+
+      var unitSingle = eng.unitSingle || 'Collection';
+      var unitPlural = eng.unitPlural || 'Collections';
+      var itemLabel = eng.itemLabel || 'Item';
+
+      html += '<div style="margin-bottom:4px; background:' + (isEngActive ? 'rgba(30,41,59,0.7)' : 'rgba(15,23,42,0.3)') + '; padding:4px 6px; border-radius:4px; border:1px solid rgba(255,255,255,0.04);">';
+      
+      // Engine Header Row
+      html += '<div style="display:flex; justify-content:space-between; align-items:center; padding:2px 2px;">';
+      html += '<div style="display:inline-flex; align-items:center; font-size:9.5px;">';
+      html += '<i id="icon_' + engContainerId + '" class="fas fa-chevron-down tree-toggle-icon" onclick="toggleSubtree(\\'' + engContainerId + '\\', event)" style="margin-right:4px; color:' + eng.color + '; font-size:9px; cursor:pointer;"></i>';
+      html += '<i class="' + eng.icon + '" style="color:' + eng.color + '; margin-right:3px; font-size:9.5px;"></i>';
+      html += '<a href="' + actUrl + eng.name + '&target_db=' + encodeURIComponent(dbName) + '" style="text-decoration:none; font-size:9.5px; color:' + (isEngActive ? '#38bdf8; font-weight:700;' : '#94a3b8;') + '">';
+      html += '<span style="font-weight:700; font-size:9.5px; text-transform:uppercase;">' + escapeHtml(eng.name) + '</span>';
+      html += ' → <span style="color:#cbd5e1; font-size:8.5px; font-weight:normal;">' + escapeHtml(unitPlural) + ' (' + totalUnits + ' ' + (totalUnits === 1 ? escapeHtml(unitSingle) : escapeHtml(unitPlural)) + ', ' + totalItems + ' items)</span>';
+      html += '</a></div>';
+      
+      html += '<button type="button" onclick="openAddUnitModal(\\'' + escapeJsString(eng.name) + '\\', \\'' + escapeJsString(unitSingle) + '\\', \\'' + escapeJsString(dbName) + '\\')" style="background:none; border:1px solid ' + eng.color + '55; color:' + eng.color + '; font-size:8.5px; padding:1px 4px; border-radius:3px; cursor:pointer;">+ ' + escapeHtml(unitSingle) + '</button>';
+      html += '</div>';
+
+      // Units container
+      html += '<div id="' + engContainerId + '" class="tree-collapsible-content" style="margin-left:8px; border-left: 2px dotted rgba(255,255,255,0.12); padding-left:6px; margin-top:3px; display:block;">';
+      
+      var units = eng.units || [];
+      for (var uIdx = 0; uIdx < units.length; uIdx++) {
+        var u = units[uIdx];
+        var uNum = uIdx + 1;
+        var unitContainerId = 'unit_subtree_' + dbIdx + '_' + engNum + '_' + uNum;
+        var uItems = u.items || [];
+        var totalUnitItems = uItems.length;
+        var pageSize = 10;
+        var totalPages = Math.max(1, Math.ceil(totalUnitItems / pageSize));
+
+        html += '<div style="margin-bottom:3px; margin-top:2px;">';
+        
+        // Unit Header Row
+        html += '<div style="display:flex; justify-content:space-between; align-items:center; padding:1.5px 0;">';
+        html += '<div style="display:inline-flex; align-items:center; color:#cbd5e1; font-size:9.5px; font-weight:600;">';
+        html += '<i id="icon_' + unitContainerId + '" class="fas fa-chevron-down tree-toggle-icon" onclick="toggleSubtree(\\'' + unitContainerId + '\\', event)" style="margin-right:3px; color:#cbd5e1; font-size:8.5px; cursor:pointer;"></i>';
+        html += '📁 <a href="' + actUrl + eng.name + '&target_db=' + encodeURIComponent(dbName) + '&coll=' + encodeURIComponent(u.name) + '" style="color:inherit; text-decoration:none; font-size:9.5px; font-weight:600; margin-left:2px;">' + escapeHtml(u.name) + '</a>';
+        html += ' <span style="font-size:8px; color:#94a3b8; font-weight:normal; margin-left:2px;">(' + totalUnitItems + ')</span>';
+        html += '</div>';
+        
+        html += '<button type="button" onclick="openAddObjectModal(\\'' + escapeJsString(eng.name) + '\\', \\'' + escapeJsString(u.name) + '\\', \\'' + escapeJsString(dbName) + '\\')" style="background:none; border:none; color:' + eng.color + '; font-size:8.5px; cursor:pointer; padding:0;">[+ ' + escapeHtml(itemLabel) + ']</button>';
+        html += '</div>';
+
+        // Items container
+        html += '<div id="' + unitContainerId + '" class="tree-collapsible-content" style="margin-left:8px; border-left: 1px dashed rgba(255,255,255,0.08); padding-left:6px; margin-top:2px; display:block;">';
+        
+        if (uItems.length === 0) {
+          html += '<div style="font-size:9px; color:#64748b; padding:1px 0;"><span>└── </span><span style="font-style:italic; font-size:9px;">(Empty unit - click [+ ' + escapeHtml(itemLabel) + '] to insert)</span></div>';
+        } else {
+          for (var itmI = 0; itmI < uItems.length; itmI++) {
+            var itm = uItems[itmI];
+            var pageNum = Math.floor(itmI / pageSize) + 1;
+            var itemDetailId = 'item_detail_' + dbIdx + '_' + engNum + '_' + uNum + '_' + itmI;
+            var itemDisplay = (pageNum === 1) ? 'display:flex;' : 'display:none;';
+
+            html += '<div class="item-row-' + unitContainerId + '" data-page="' + pageNum + '" style="' + itemDisplay + ' font-size:9px; color:#94a3b8; justify-content:space-between; align-items:center; padding:1.5px 0; line-height:1.2;">';
+            html += '<span style="display:inline-flex; align-items:center;">';
+            html += '<span>└── </span>';
+            html += '<i id="icon_' + itemDetailId + '" class="fas fa-caret-right tree-toggle-icon" onclick="toggleSubtree(\\'' + itemDetailId + '\\', event)" style="margin-right:3px; color:#94a3b8; font-size:8px; cursor:pointer;"></i>';
+            html += '<i class="' + (eng.itemIcon || 'fas fa-file-code') + '" style="color:' + eng.color + '; margin-right:3px; font-size:8.5px;"></i>';
+            html += '<span onclick="toggleSubtree(\\'' + itemDetailId + '\\', event)" style="color:#f8fafc; font-weight:bold; font-size:9px; font-family:monospace; cursor:pointer;">' + escapeHtml(itm.id) + '</span> ';
+            html += '<span class="store-badge" style="background:rgba(56,189,248,0.15); color:#38bdf8; font-size:7.5px; padding:0.5px 3px; line-height:1;">v' + (itm.versionCount || 1) + '</span>';
+            html += '</span>';
+
+            html += '<div style="display:flex; align-items:center; gap:2px;">';
+            html += '<button type="button" onclick="openInspectRecordModal(\\'' + escapeJsString(eng.name) + '\\', \\'' + escapeJsString(dbName) + '\\', \\'' + escapeJsString(u.name) + '\\', \\'' + escapeJsString(itm.id) + '\\', \\'' + itm.payloadB64 + '\\', ' + (itm.versionCount || 1) + ')" title="Inspect record details" style="background:none; border:1px solid rgba(56,189,248,0.3); color:#38bdf8; font-size:8px; padding:1px 4px; border-radius:3px; cursor:pointer;"><i class="fas fa-eye"></i></button>';
+            html += '<button type="button" onclick="openUniversalEditModal(\\'' + escapeJsString(eng.name) + '\\', \\'' + escapeJsString(dbName) + '\\', \\'' + escapeJsString(u.name) + '\\', \\'' + escapeJsString(itm.id) + '\\', \\'' + itm.payloadB64 + '\\')" title="Edit record" style="background:none; border:1px solid rgba(56,189,248,0.3); color:#38bdf8; font-size:8px; padding:1px 4px; border-radius:3px; cursor:pointer;"><i class="fas fa-edit"></i></button>';
+            html += '<button type="button" onclick="openUniversalRestoreModal(\\'' + escapeJsString(eng.name) + '\\', \\'' + escapeJsString(dbName) + '\\', \\'' + escapeJsString(u.name) + '\\', \\'' + escapeJsString(itm.id) + '\\', \\'' + itm.versionsB64 + '\\')" title="Version history v' + (itm.versionCount || 1) + '" style="background:none; border:1px solid rgba(168,85,247,0.3); color:#a855f7; font-size:8px; padding:1px 4px; border-radius:3px; cursor:pointer;"><i class="fas fa-history"></i></button>';
+            html += '<button type="button" onclick="openUniversalDeleteModal(\\'' + escapeJsString(eng.name) + '\\', \\'' + escapeJsString(dbName) + '\\', \\'' + escapeJsString(u.name) + '\\', \\'' + escapeJsString(itm.id) + '\\')" title="Delete record" style="background:none; border:1px solid rgba(239,68,68,0.3); color:#ef4444; font-size:8px; padding:1px 4px; border-radius:3px; cursor:pointer;"><i class="fas fa-trash-alt"></i></button>';
+            html += '</div></div>';
+
+            // Collapsed Item Details Subtree Panel
+            html += '<div id="' + itemDetailId + '" class="tree-collapsible-content item-detail-' + unitContainerId + '" data-page="' + pageNum + '" style="display:none; margin-left:14px; margin-top:2px; margin-bottom:4px; padding:4px 8px; background:rgba(15,23,42,0.85); border:1px solid rgba(56,189,248,0.18); border-left:2px solid ' + eng.color + '; border-radius:4px; font-size:8.5px; line-height:1.35;">';
+            html += '<div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.06); padding-bottom:3px; margin-bottom:4px;">';
+            var pfxMap = { 'RECORDS': 'rec:', 'KEYVALUE': 'kv:', 'VECTOR': 'vec:', 'GRAPH': 'graph:', 'TIMESERIES': 'ts:', 'COLUMN': 'col:', 'GEOSPATIAL': 'geo:', 'OBJECT': 'obj:' };
+            var addrPfx = pfxMap[eng.name.toUpperCase()] || 'doc:';
+            var primaryAddr = addrPfx + dbName + ':' + (u.name === 'default' ? '' : u.name + ':') + itm.id;
+            html += '<span style="color:#4ade80; font-family:monospace; font-weight:600; font-size:8.5px;">📍 ' + escapeHtml(primaryAddr) + '</span>';
+            html += '<span style="color:#38bdf8; font-size:8px; font-weight:500;">Engine: ' + escapeHtml(eng.name) + ' | v' + (itm.versionCount || 1) + '</span>';
+            html += '</div>';
+
+            // Props
+            html += '<div style="display:flex; flex-direction:column; gap:1px; background:rgba(0,0,0,0.25); padding:4px 6px; border-radius:3px;">';
+            var sp = itm.summaryProps || {};
+            var hasProps = false;
+            for (var pKey in sp) {
+              hasProps = true;
+              var pVal = sp[pKey];
+              var isJref = pVal && String(pVal).indexOf('jref://') >= 0;
+              html += '<div style="padding:1px 0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">';
+              html += '<span style="color:#94a3b8; font-weight:600; font-size:8px; margin-right:4px;">' + escapeHtml(pKey) + ': </span>';
+              html += '<span style="color:' + (isJref ? '#38bdf8' : '#f1f5f9') + '; font-family:monospace; font-size:8px;">' + escapeHtml(pVal) + '</span>';
+              html += '</div>';
+            }
+            if (!hasProps) {
+              html += '<span style="color:#64748b; font-style:italic; font-size:8px;">(No structured properties or empty payload)</span>';
+            }
+            html += '</div>';
+
+            // Quick actions
+            html += '<div style="display:flex; gap:8px; align-items:center; margin-top:4px; border-top:1px dashed rgba(255,255,255,0.06); padding-top:3px;">';
+            html += '<button type="button" onclick="openInspectRecordModal(\\'' + escapeJsString(eng.name) + '\\', \\'' + escapeJsString(dbName) + '\\', \\'' + escapeJsString(u.name) + '\\', \\'' + escapeJsString(itm.id) + '\\', \\'' + itm.payloadB64 + '\\', ' + (itm.versionCount || 1) + ')" style="background:none; border:none; color:#38bdf8; font-size:8px; cursor:pointer; padding:1px 4px; display:inline-flex; align-items:center; gap:2px;"><i class="fas fa-search-plus"></i> Inspeccionar</button>';
+            html += '<button type="button" onclick="openUniversalEditModal(\\'' + escapeJsString(eng.name) + '\\', \\'' + escapeJsString(dbName) + '\\', \\'' + escapeJsString(u.name) + '\\', \\'' + escapeJsString(itm.id) + '\\', \\'' + itm.payloadB64 + '\\')" style="background:none; border:none; color:#fbbf24; font-size:8px; cursor:pointer; padding:1px 4px; display:inline-flex; align-items:center; gap:2px;"><i class="fas fa-edit"></i> Editar</button>';
+            html += '<button type="button" onclick="openUniversalRestoreModal(\\'' + escapeJsString(eng.name) + '\\', \\'' + escapeJsString(dbName) + '\\', \\'' + escapeJsString(u.name) + '\\', \\'' + escapeJsString(itm.id) + '\\', \\'' + itm.versionsB64 + '\\')" style="background:none; border:none; color:#c084fc; font-size:8px; cursor:pointer; padding:1px 4px; display:inline-flex; align-items:center; gap:2px;"><i class="fas fa-history"></i> Historial (v' + (itm.versionCount || 1) + ')</button>';
+            html += '</div>';
+
+            html += '</div>';
+          }
+
+          if (totalPages > 1) {
+            html += '<div style="display:flex; align-items:center; justify-content:flex-end; padding:2px 0; margin-top:2px; border-top:1px dashed rgba(255,255,255,0.06);">';
+            html += '<button type="button" onclick="changeSubtreePage(\\'' + unitContainerId + '\\', -1, ' + totalPages + ')" style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15); color:#cbd5e1; font-size:8.5px; padding:1px 4px; border-radius:3px; cursor:pointer; margin-right:3px;">‹ Prev</button>';
+            html += '<span id="page_label_' + unitContainerId + '" style="font-size:8.5px; color:#38bdf8; font-weight:600; padding:0 3px;">Pág 1 / ' + totalPages + ' (' + totalUnitItems + ' total)</span>';
+            html += '<button type="button" onclick="changeSubtreePage(\\'' + unitContainerId + '\\', 1, ' + totalPages + ')" style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15); color:#cbd5e1; font-size:8.5px; padding:1px 4px; border-radius:3px; cursor:pointer; margin-left:3px;">Next ›</button>';
+            html += '</div>';
+          }
+        }
+
+        html += '</div>'; // end unit items container
+        html += '</div>'; // end unit block
+      }
+
+      html += '</div>'; // end eng units container
+      html += '</div>'; // end eng block
+    }
+
+    // Indexes and Schemas
+    var idxSchemasContainerId = 'idx_schemas_' + dbIdx;
+    var indexes = data.indexes || [];
+    var schemas = data.schemas || [];
+
+    html += '<div style="margin-bottom:4px; background:rgba(30,41,59,0.7); padding:4px 6px; border-radius:4px; border:1px solid rgba(234,179,8,0.25);">';
+    html += '<div style="display:flex; justify-content:space-between; align-items:center; padding:2px 2px;">';
+    html += '<div style="display:inline-flex; align-items:center; font-size:9.5px;">';
+    html += '<i id="icon_' + idxSchemasContainerId + '" class="fas fa-chevron-down tree-toggle-icon" onclick="toggleSubtree(\\'' + idxSchemasContainerId + '\\', event)" style="margin-right:4px; color:#eab308; font-size:9px; cursor:pointer;"></i>';
+    html += '<i class="fas fa-bolt" style="color:#eab308; margin-right:3px; font-size:9.5px;"></i>';
+    html += '<span style="font-weight:bold; font-size:9.5px; color:#eab308;">INDEXES & SCHEMAS</span>';
+    html += ' → <span style="color:#cbd5e1; font-size:8.5px; font-weight:normal;">(' + indexes.length + ' Indexes, ' + schemas.length + ' Schemas)</span>';
+    html += '</div>';
+    html += '<div style="display:flex; gap:2px;">';
+    html += '<button type="button" onclick="openAddIndexModal(\\'' + escapeJsString(dbName) + '\\')" style="background:none; border:1px solid rgba(234,179,8,0.5); color:#eab308; font-size:8.5px; padding:1px 4px; border-radius:3px; cursor:pointer; margin-right:3px;"><i class="fas fa-plus"></i> Index</button>';
+    html += '<button type="button" onclick="openAddSchemaModal(\\'' + escapeJsString(dbName) + '\\')" style="background:none; border:1px solid rgba(56,189,248,0.5); color:#38bdf8; font-size:8.5px; padding:1px 4px; border-radius:3px; cursor:pointer;"><i class="fas fa-shield-alt"></i> Schema</button>';
+    html += '</div>';
+    html += '</div>';
+
+    html += '<div id="' + idxSchemasContainerId + '" class="tree-collapsible-content" style="margin-left:8px; border-left: 2px dotted rgba(234,179,8,0.3); padding-left:6px; margin-top:3px; display:block;">';
+    
+    // Indexes
+    html += '<div style="margin-bottom:3px; margin-top:2px;">';
+    html += '<div style="display:flex; justify-content:space-between; align-items:center;">';
+    html += '<span style="color:#fde047; font-size:9.5px; font-weight:600;">📁 Secondary & Composite Indexes <span style="font-size:8px; color:#94a3b8; font-weight:normal;">(' + indexes.length + ')</span></span>';
+    html += '<button type="button" onclick="openAddIndexModal(\\'' + escapeJsString(dbName) + '\\')" style="background:none; border:none; color:#eab308; font-size:8.5px; cursor:pointer; padding:0;">[+ Index]</button>';
+    html += '</div>';
+    html += '<div style="margin-left:8px; border-left: 1px dashed rgba(255,255,255,0.08); padding-left:6px; margin-top:2px;">';
+    if (indexes.length === 0) {
+      html += '<div style="font-size:9px; color:#64748b; padding:1px 0;"><span>└── </span><span style="font-style:italic; font-size:9px;">(No secondary indexes)</span></div>';
+    } else {
+      for (var idxI = 0; idxI < indexes.length; idxI++) {
+        var idxObj = indexes[idxI];
+        var idxName = idxObj.name ? String(idxObj.name).replace(/"/g, '') : ('idx_' + idxI);
+        var idxType = idxObj.type ? String(idxObj.type).replace(/"/g, '') : 'BTREE';
+        var idxField = idxObj.field ? String(idxObj.field).replace(/"/g, '') : '_id';
+        var idxColl = idxObj.collection ? String(idxObj.collection).replace(/"/g, '') : 'default';
+
+        html += '<div style="display:flex; justify-content:space-between; align-items:center; font-size:9px; padding:1.5px 0; color:#94a3b8;">';
+        html += '<span>';
+        html += '<span>└── </span>';
+        html += '<i class="fas fa-bolt" style="color:#eab308; margin-right:3px; font-size:8.5px;"></i>';
+        html += '<span style="color:#f8fafc; font-weight:bold; font-size:9px; font-family:monospace;">' + escapeHtml(idxName) + '</span> ';
+        html += '<span class="store-badge" style="background:rgba(234,179,8,0.15); color:#fde047; font-size:7.5px; padding:0.5px 3px;">' + escapeHtml(idxType) + '</span> ';
+        html += 'on \\'<span style="color:#38bdf8; font-family:monospace; font-size:8.5px;">' + escapeHtml(idxField) + '</span>\\' (' + escapeHtml(idxColl) + ')';
+        html += '</span>';
+        html += '<button type="button" onclick="openDeleteIndexModal(\\'' + escapeJsString(dbName) + '\\', \\'' + escapeJsString(idxName) + '\\')" style="background:none; border:1px solid rgba(239,68,68,0.3); color:#ef4444; font-size:8px; padding:1px 4px; border-radius:3px; cursor:pointer;"><i class="fas fa-trash-alt"></i></button>';
+        html += '</div>';
+      }
+    }
+    html += '</div></div>';
+
+    // Schemas
+    html += '<div style="margin-bottom:3px; margin-top:2px;">';
+    html += '<div style="display:flex; justify-content:space-between; align-items:center;">';
+    html += '<span style="color:#38bdf8; font-size:9.5px; font-weight:600;">📁 Schema Definitions <span style="font-size:8px; color:#94a3b8; font-weight:normal;">(' + schemas.length + ')</span></span>';
+    html += '<button type="button" onclick="openAddSchemaModal(\\'' + escapeJsString(dbName) + '\\')" style="background:none; border:none; color:#38bdf8; font-size:8.5px; cursor:pointer; padding:0;">[+ Schema]</button>';
+    html += '</div>';
+    html += '<div style="margin-left:8px; border-left: 1px dashed rgba(255,255,255,0.08); padding-left:6px; margin-top:2px;">';
+    if (schemas.length === 0) {
+      html += '<div style="font-size:9px; color:#64748b; padding:1px 0;"><span>└── </span><span style="font-style:italic; font-size:9px;">(No registered schemas)</span></div>';
+    } else {
+      for (var scI = 0; scI < schemas.length; scI++) {
+        var scObj = schemas[scI];
+        var scName = scObj.name || ('schema_' + scI);
+        var scB64 = scObj.schemaB64 || '';
+        html += '<div style="display:flex; justify-content:space-between; align-items:center; font-size:9px; padding:1.5px 0; color:#94a3b8;">';
+        html += '<span>';
+        html += '<span>└── </span>';
+        html += '<i class="fas fa-shield-alt" style="color:#38bdf8; margin-right:3px; font-size:8.5px;"></i>';
+        html += '<span style="color:#f8fafc; font-weight:bold; font-size:9px; font-family:monospace;">' + escapeHtml(scName) + '</span>';
+        html += '</span>';
+        html += '<div style="display:flex; gap:2px;">';
+        html += '<button type="button" onclick="openInspectRecordModal(\\'SCHEMA\\', \\'' + escapeJsString(dbName) + '\\', \\'schemas\\', \\'' + escapeJsString(scName) + '\\', \\'' + scB64 + '\\', 1)" style="background:none; border:1px solid rgba(56,189,248,0.3); color:#38bdf8; font-size:8px; padding:1px 4px; border-radius:3px; cursor:pointer; margin-right:2px;"><i class="fas fa-eye"></i></button>';
+        html += '<button type="button" onclick="openDeleteSchemaModal(\\'' + escapeJsString(dbName) + '\\', \\'' + escapeJsString(scName) + '\\')" style="background:none; border:1px solid rgba(239,68,68,0.3); color:#ef4444; font-size:8px; padding:1px 4px; border-radius:3px; cursor:pointer;"><i class="fas fa-trash-alt"></i></button>';
+        html += '</div></div>';
+      }
+    }
+    html += '</div></div>';
+
+    html += '</div></div>'; // end indexes & schemas
+
+    el.innerHTML = html;
+  }
+
+  function toggleSubtree(elementId, evt) {
+    if (evt && typeof evt.stopPropagation === 'function') evt.stopPropagation();
     var el = document.getElementById(elementId);
     var icon = document.getElementById('icon_' + elementId);
     if (!el) return;
     var isHidden = (el.style.display === 'none' || el.style.display === '');
     if (isHidden) {
       el.style.display = 'block';
+      el.setAttribute('aria-expanded', 'true');
       if (icon) {
         if (icon.className.indexOf('fa-caret-') >= 0) {
           icon.className = 'fas fa-caret-down tree-toggle-icon';
@@ -4273,6 +4623,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
       }
     } else {
       el.style.display = 'none';
+      el.setAttribute('aria-expanded', 'false');
       if (icon) {
         if (icon.className.indexOf('fa-caret-') >= 0) {
           icon.className = 'fas fa-caret-right tree-toggle-icon';
@@ -4284,23 +4635,61 @@ public class StoreEnginesPage extends StoreTemplatePage {
   }
 
   function expandAllTreeNodes() {
-    var nodes = document.querySelectorAll('.tree-collapsible-content');
-    for (var i = 0; i < nodes.length; i++) {
-      if (!nodes[i].id || !nodes[i].id.startsWith('item_detail_')) {
-        nodes[i].style.display = 'block';
+    var dbContainers = document.querySelectorAll('.db-subtree-container');
+    for (var i = 0; i < dbContainers.length; i++) {
+      var c = dbContainers[i];
+      var db = c.getAttribute('data-db');
+      var dbIdx = c.getAttribute('data-db-idx') || (i + 1);
+      c.style.display = 'block';
+      c.setAttribute('aria-expanded', 'true');
+      var icon = document.getElementById('icon_' + c.id);
+      var header = document.getElementById('db_header_' + dbIdx);
+      var btn = document.getElementById('btn_toggle_' + c.id) || document.getElementById('btn_toggle_' + dbIdx);
+      if (header) header.setAttribute('aria-expanded', 'true');
+      if (btn) btn.setAttribute('aria-expanded', 'true');
+      if (icon) icon.className = 'fas fa-chevron-down tree-toggle-icon';
+      if (c.getAttribute('data-loaded') !== 'true') {
+        var actionUrl = window.lastActionUrl || '/engines?engine=';
+        var selectedEngine = window.lastSelectedEngine || 'DOCUMENT';
+        loadDbHierarchy(null, c.id, db, selectedEngine, actionUrl, dbIdx, false);
+      }
+    }
+    var nodes = document.querySelectorAll('.tree-collapsible-content:not(.db-subtree-container)');
+    for (var j = 0; j < nodes.length; j++) {
+      if (!nodes[j].id || !nodes[j].id.startsWith('item_detail_')) {
+        nodes[j].style.display = 'block';
+        nodes[j].setAttribute('aria-expanded', 'true');
       }
     }
     var icons = document.querySelectorAll('.tree-toggle-icon');
-    for (var j = 0; j < icons.length; j++) {
-      if (icons[j].id && icons[j].id.startsWith('icon_item_detail_')) continue;
-      icons[j].className = 'fas fa-chevron-down tree-toggle-icon';
+    for (var k = 0; k < icons.length; k++) {
+      if (icons[k].id && icons[k].id.startsWith('icon_item_detail_')) continue;
+      icons[k].className = 'fas fa-chevron-down tree-toggle-icon';
     }
   }
 
   function collapseAllTreeNodes() {
+    var dbContainers = document.querySelectorAll('.db-subtree-container');
+    for (var cIdx = 0; cIdx < dbContainers.length; cIdx++) {
+      var dc = dbContainers[cIdx];
+      var dIdx = dc.getAttribute('data-db-idx') || (cIdx + 1);
+      var dHeader = document.getElementById('db_header_' + dIdx);
+      var dBtn = document.getElementById('btn_toggle_' + dc.id) || document.getElementById('btn_toggle_' + dIdx);
+      dc.setAttribute('aria-expanded', 'false');
+      dc.setAttribute('data-state', 'collapsed');
+      if (dHeader) {
+        dHeader.setAttribute('aria-expanded', 'false');
+        dHeader.setAttribute('data-state', 'collapsed');
+      }
+      if (dBtn) {
+        dBtn.setAttribute('aria-expanded', 'false');
+        dBtn.setAttribute('data-state', 'collapsed');
+      }
+    }
     var nodes = document.querySelectorAll('.tree-collapsible-content');
     for (var i = 0; i < nodes.length; i++) {
       nodes[i].style.display = 'none';
+      nodes[i].setAttribute('aria-expanded', 'false');
     }
     var icons = document.querySelectorAll('.tree-toggle-icon');
     for (var j = 0; j < icons.length; j++) {
@@ -4311,7 +4700,9 @@ public class StoreEnginesPage extends StoreTemplatePage {
       }
     }
   }
+""";
 
+        String js3 = """
   var subtreePaginationState = {};
   function changeSubtreePage(unitId, delta, totalPages) {
     if (!subtreePaginationState[unitId]) subtreePaginationState[unitId] = 1;
@@ -5222,6 +5613,6 @@ public class StoreEnginesPage extends StoreTemplatePage {
     });
   });
 """;
-        return RawScript.of(js);
+        return RawScript.of(js1 + js2 + js3);
     }
 }
