@@ -3229,7 +3229,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
             Label.of(
                 RawHtml.of("<input type=\"checkbox\" id=\"chkInspectResolveRefs\" checked onchange=\"toggleInspectReferenceResolution(this.checked)\" style=\"accent-color:#38bdf8; width:15px; height:15px; cursor:pointer; margin-right:6px;\" />"),
                 Icon.of("fas fa-link").modifier(new Modifier().style("color:#38bdf8; margin-right:6px; font-size:12px;")),
-                Span.of("Cargar Objetos Referenciados (Auto-Resolve Jref & Dirección Primaria)").modifier(new Modifier().style("color:#38bdf8; font-weight:600; font-size:11.5px;"))
+                Span.of("Cargar Objetos Referenciados (Auto-Resolve Jref)").modifier(new Modifier().style("color:#38bdf8; font-weight:600; font-size:11.5px;"))
             ).modifier(new Modifier().style("display:inline-flex; align-items:center; cursor:pointer;")),
             Span.of("").id("inspectReferencesCountBadge").modifier(new Modifier().cssClass("store-badge badge-active").style("font-size:10.5px; display:none;"))
         ).modifier(new Modifier().style("display:flex; align-items:center; justify-content:space-between; background:rgba(56,189,248,0.12); border:1px solid rgba(56,189,248,0.3); padding:7px 12px; border-radius:6px; margin-bottom:12px;"));
@@ -3243,7 +3243,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
         Widget refObjectsTitle = Div.of(
             Icon.of("fas fa-project-diagram").modifier(new Modifier().style("color:#38bdf8; margin-right:6px; font-size:12px;")),
-            Span.of("Objetos Referenciados Detectados (Direct Storage Address & Cluster Nodes):").modifier(new Modifier().style("color:#cbd5e1; font-size:11.5px; font-weight:700;"))
+            Span.of("Objetos Referenciados Detectados (Jref Operator):").modifier(new Modifier().style("color:#cbd5e1; font-size:11.5px; font-weight:700;"))
         ).modifier(new Modifier().style("display:flex; align-items:center; margin-bottom:8px;"));
 
         Widget refObjectsList = Div.of()
@@ -4797,7 +4797,10 @@ public class StoreEnginesPage extends StoreTemplatePage {
     if (!seenUris) seenUris = {};
 
     var extractUrisFromStr = function(str, fieldKey) {
-      var schemes = ['jref://', 'jettra://', 'ref://'];
+      if (!str) return;
+      var fk = (fieldKey || '').toLowerCase();
+      if (fk === 'primarystorageaddress' || fk === '_primaryaddress' || fk === '_storageaddress' || fk.indexOf('remote') >= 0 || fk.indexOf('cluster') >= 0) return;
+      var schemes = ['jref://'];
       for (var s = 0; s < schemes.length; s++) {
         var scheme = schemes[s];
         var startIdx = 0;
@@ -4811,6 +4814,11 @@ public class StoreEnginesPage extends StoreTemplatePage {
             endIdx++;
           }
           var u = str.substring(startIdx, endIdx);
+          // Omit remote node/cluster routing URIs (e.g. node@...) to avoid overload
+          if (u && u.indexOf('@') >= 0) {
+            startIdx = endIdx + 1;
+            continue;
+          }
           if (u && !seenUris[u]) {
             seenUris[u] = true;
             var parsed = parseJrefUri(u);
@@ -4834,18 +4842,20 @@ public class StoreEnginesPage extends StoreTemplatePage {
     }
 
     if (typeof obj === 'object') {
-      var refVal = (obj['$jref'] && typeof obj['$jref'] === 'string') ? obj['$jref'] : ((obj['$ref'] && typeof obj['$ref'] === 'string') ? obj['$ref'] : null);
-      if (refVal) {
+      var refVal = (obj['$jref'] && typeof obj['$jref'] === 'string') ? obj['$jref'] : null;
+      if (refVal && refVal.indexOf('@') < 0) {
         var u = refVal.trim();
         if (!seenUris[u]) {
           seenUris[u] = true;
           var parsedObj = parseJrefUri(u);
-          if (parsedObj) list.push({ fieldKey: obj['$jref'] ? '$jref' : '$ref', parsed: parsedObj });
+          if (parsedObj) list.push({ fieldKey: '$jref', parsed: parsedObj });
         }
       }
 
       for (var k in obj) {
         if (!obj.hasOwnProperty(k)) continue;
+        var kLower = k.toLowerCase();
+        if (kLower === 'primarystorageaddress' || kLower === '_primaryaddress' || kLower === '_storageaddress' || kLower.indexOf('remote') >= 0 || kLower.indexOf('cluster') >= 0) continue;
         var v = obj[k];
         if (typeof v === 'string') {
           extractUrisFromStr(v, k);
@@ -4995,9 +5005,10 @@ public class StoreEnginesPage extends StoreTemplatePage {
     if (!obj || typeof obj !== 'object') return obj;
     for (var k in obj) {
       if (!obj.hasOwnProperty(k)) continue;
-      if (k === '_resolved') continue;
+      var kLower = k.toLowerCase();
+      if (k === '_resolved' || kLower === 'primarystorageaddress' || kLower === '_primaryaddress' || kLower === '_storageaddress' || kLower.indexOf('remote') >= 0 || kLower.indexOf('cluster') >= 0) continue;
       var v = obj[k];
-      if (typeof v === 'string' && (v.indexOf('jref://') >= 0 || v.indexOf('ref://') >= 0 || v.indexOf('jettra://') >= 0)) {
+      if (typeof v === 'string' && v.indexOf('jref://') >= 0 && v.indexOf('@') < 0) {
         var p = parseJrefUri(v);
         if (p && resolvedMap[p.uri] && (resolvedMap[p.uri].exists || resolvedMap[p.uri].jsonPayload || resolvedMap[p.uri].rawPayload)) {
           var res = resolvedMap[p.uri];
@@ -5007,8 +5018,8 @@ public class StoreEnginesPage extends StoreTemplatePage {
           };
         }
       } else if (v && typeof v === 'object') {
-        var refVal = (v['$jref'] && typeof v['$jref'] === 'string') ? v['$jref'] : ((v['$ref'] && typeof v['$ref'] === 'string') ? v['$ref'] : null);
-        if (refVal) {
+        var refVal = (v['$jref'] && typeof v['$jref'] === 'string') ? v['$jref'] : null;
+        if (refVal && refVal.indexOf('@') < 0) {
           var p2 = parseJrefUri(refVal);
           var lookupKey = p2 ? p2.uri : refVal;
           if (resolvedMap[lookupKey] && (resolvedMap[lookupKey].exists || resolvedMap[lookupKey].jsonPayload || resolvedMap[lookupKey].rawPayload)) {
@@ -5161,7 +5172,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
         return function() {
           inspectReferencedEntity(uriToInspect, eng, dbName, entId, pAddr, clNode);
         };
-      })(p.uri, p.engine, p.database, p.entityId, primaryAddr, cluster);
+      })(p.uri, p.engine, p.database, p.entityId, p.primaryStorageAddress, cluster);
 
       card.appendChild(leftInfo);
       card.appendChild(btnInspect);

@@ -170,8 +170,8 @@ public class SampleDatasetManager {
             String custId = "cust_" + (100 + i);
             String docKey = "doc:" + db + ":" + custId;
             String payload = String.format(
-                "{\"id\":\"%s\",\"companyName\":\"%s\",\"taxId\":\"PA-%d-2026\",\"tier\":\"ENTERPRISE\",\"email\":\"billing@%s.com\",\"phone\":\"+507 833-%04d\",\"status\":\"ACTIVE\",\"primaryStorageAddress\":\"%s\"}",
-                custId, custNames[i - 1], 8000 + i, custNames[i - 1].toLowerCase().replace(" ", ""), i * 111, docKey
+                "{\"id\":\"%s\",\"companyName\":\"%s\",\"taxId\":\"PA-%d-2026\",\"tier\":\"ENTERPRISE\",\"email\":\"billing@%s.com\",\"phone\":\"+507 833-%04d\",\"status\":\"ACTIVE\"}",
+                custId, custNames[i - 1], 8000 + i, custNames[i - 1].toLowerCase().replace(" ", ""), i * 111
             );
             engine.getStorageCore().put(docKey, payload.getBytes(StandardCharsets.UTF_8), now);
             engine.getStorageCore().put(db + ":" + custId, payload.getBytes(StandardCharsets.UTF_8), now);
@@ -185,8 +185,8 @@ public class SampleDatasetManager {
             String empId = "emp_" + (200 + i);
             String recKey = "rec:" + db + ":" + empId;
             String payload = String.format(
-                "{\"_recordClass\":\"com.enterprise.model.EmployeeProfileRecord\",\"id\":\"%s\",\"fullName\":\"%s\",\"role\":\"%s\",\"department\":\"Core Architecture\",\"salary\":%.2f,\"active\":true,\"primaryStorageAddress\":\"%s\"}",
-                empId, empNames[i - 1], empRoles[i - 1], 95000.0 + (i * 8000.0), recKey
+                "{\"_recordClass\":\"com.enterprise.model.EmployeeProfileRecord\",\"id\":\"%s\",\"fullName\":\"%s\",\"role\":\"%s\",\"department\":\"Core Architecture\",\"salary\":%.2f,\"active\":true}",
+                empId, empNames[i - 1], empRoles[i - 1], 95000.0 + (i * 8000.0)
             );
             engine.getStorageCore().put(recKey, payload.getBytes(StandardCharsets.UTF_8), now);
             engine.getStorageCore().put(db + ":" + empId, payload.getBytes(StandardCharsets.UTF_8), now);
@@ -200,8 +200,8 @@ public class SampleDatasetManager {
             String hubId = "hub_" + (i == 1 ? "panama" : (i == 2 ? "colon" : (i == 3 ? "david" : "santiago")));
             String geoKey = "geo:" + db + ":" + hubId;
             String payload = String.format(
-                "{\"id\":\"%s\",\"name\":\"%s\",\"lat\":%.4f,\"lon\":%.4f,\"type\":\"REGIONAL_DISTRIBUTION_CENTER\",\"capacityTons\":%d,\"primaryStorageAddress\":\"%s\"}",
-                hubId, hubNames[i - 1], coords[i - 1][0], coords[i - 1][1], 25000 * i, geoKey
+                "{\"id\":\"%s\",\"name\":\"%s\",\"lat\":%.4f,\"lon\":%.4f,\"type\":\"REGIONAL_DISTRIBUTION_CENTER\",\"capacityTons\":%d}",
+                hubId, hubNames[i - 1], coords[i - 1][0], coords[i - 1][1], 25000 * i
             );
             engine.getStorageCore().put(geoKey, payload.getBytes(StandardCharsets.UTF_8), now);
             engine.getStorageCore().put("geo:" + db + ":stores_layer:" + hubId, payload.getBytes(StandardCharsets.UTF_8), now);
@@ -225,8 +225,8 @@ public class SampleDatasetManager {
             String vecId = "vec_" + (i == 1 ? "face_carlos" : (i == 2 ? "prod_embed_01" : "signature_contract"));
             String vecKey = "vec:" + db + ":" + vecId;
             String payload = String.format(
-                "{\"id\":\"%s\",\"label\":\"%s\",\"coordinates\":[%s],\"dimensions\":4,\"metric\":\"COSINE\",\"primaryStorageAddress\":\"%s\"}",
-                vecId, vecLabels[i - 1], String.format(Locale.US, "%.2f, %.2f, %.2f, %.2f", vectors[i - 1][0], vectors[i - 1][1], vectors[i - 1][2], vectors[i - 1][3]), vecKey
+                "{\"id\":\"%s\",\"label\":\"%s\",\"coordinates\":[%s],\"dimensions\":4,\"metric\":\"COSINE\"}",
+                vecId, vecLabels[i - 1], String.format(Locale.US, "%.2f, %.2f, %.2f, %.2f", vectors[i - 1][0], vectors[i - 1][1], vectors[i - 1][2], vectors[i - 1][3])
             );
             engine.getStorageCore().put(vecKey, payload.getBytes(StandardCharsets.UTF_8), now);
             engine.getStorageCore().put(db + ":" + vecId, payload.getBytes(StandardCharsets.UTF_8), now);
@@ -238,8 +238,8 @@ public class SampleDatasetManager {
         for (int i = 1; i <= 3; i++) {
             String objKey = "obj:" + db + ":" + objFiles[i - 1];
             String payload = String.format(
-                "{\"bucket\":\"contracts\",\"fileName\":\"%s\",\"mimeType\":\"application/pdf\",\"sizeBytes\":%d,\"sha256\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852%04d\",\"primaryStorageAddress\":\"%s\"}",
-                objFiles[i - 1], 102400 * i, i * 77, objKey
+                "{\"bucket\":\"contracts\",\"fileName\":\"%s\",\"mimeType\":\"application/pdf\",\"sizeBytes\":%d,\"sha256\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852%04d\"}",
+                objFiles[i - 1], 102400 * i, i * 77
             );
             engine.getStorageCore().put(objKey, payload.getBytes(StandardCharsets.UTF_8), now);
             engine.getStorageCore().put(db + ":" + objFiles[i - 1], payload.getBytes(StandardCharsets.UTF_8), now);
@@ -248,23 +248,23 @@ public class SampleDatasetManager {
 
         // 6. Referenced Target: KEYVALUE Dynamic Session & Config
         String kvKey1 = "kv:" + db + ":session_token_carlos";
-        String kvPayload1 = "{\"token\":\"JWT_SECURE_TOKEN_2026_CARLOS\",\"userId\":\"emp_201\",\"active\":true,\"expiresIn\":86400,\"primaryStorageAddress\":\"kv:ExampleDBReferences:session_token_carlos\"}";
+        String kvPayload1 = "{\"token\":\"JWT_SECURE_TOKEN_2026_CARLOS\",\"userId\":\"emp_201\",\"active\":true,\"expiresIn\":86400}";
         engine.getStorageCore().put(kvKey1, kvPayload1.getBytes(StandardCharsets.UTF_8), now);
         engine.getStorageCore().put(db + ":session_token_carlos", kvPayload1.getBytes(StandardCharsets.UTF_8), now);
         count += 2;
 
         // 7. Referenced Target: TIMESERIES IoT Power Reading
         String tsKey1 = "ts:" + db + ":iot_hub_power_01";
-        String tsPayload1 = String.format("{\"metric\":\"power_consumption_kwh\",\"stationRef\":\"jref://GEOSPATIAL:ExampleDBReferences/hub_panama\",\"value\":48.6,\"unit\":\"kWh\",\"status\":\"OPTIMAL\",\"timestamp\":%d,\"primaryStorageAddress\":\"ts:ExampleDBReferences:iot_hub_power_01\"}", now);
+        String tsPayload1 = String.format("{\"metric\":\"power_consumption_kwh\",\"stationRef\":\"jref://GEOSPATIAL:ExampleDBReferences/hub_panama\",\"value\":48.6,\"unit\":\"kWh\",\"status\":\"OPTIMAL\",\"timestamp\":%d}", now);
         engine.getStorageCore().put(tsKey1, tsPayload1.getBytes(StandardCharsets.UTF_8), now);
         engine.getStorageCore().put(db + ":iot_hub_power_01", tsPayload1.getBytes(StandardCharsets.UTF_8), now);
         count += 2;
 
-        // 8. MASTER ENTITY 1 (DOCUMENT): Order Master with Local & Multi-Cluster References
+        // 8. MASTER ENTITY 1 (DOCUMENT): Order Master with Clean Cross-Engine Jref References
         String orderDocKey = "doc:" + db + ":order_master_7001";
         String orderPayload = String.format(
             "{\"orderId\":\"ORD-2026-7001\",\"description\":\"Enterprise Cloud Server & Logistics Contract Deployment\"," +
-            "\"totalAmount\":24500.00,\"currency\":\"USD\",\"status\":\"CONFIRMED\",\"primaryStorageAddress\":\"%s\"," +
+            "\"totalAmount\":24500.00,\"currency\":\"USD\",\"status\":\"CONFIRMED\"," +
             "\"customerRef\":\"jref://DOCUMENT:ExampleDBReferences/cust_101\"," +
             "\"leadArchitectRef\":\"jref://RECORDS:ExampleDBReferences/emp_201\"," +
             "\"fulfillmentHubRef\":\"jref://GEOSPATIAL:ExampleDBReferences/hub_panama\"," +
@@ -272,43 +272,38 @@ public class SampleDatasetManager {
             "\"biometricsAuditRef\":\"jref://VECTOR:ExampleDBReferences/vec_face_carlos\"," +
             "\"activeSessionRef\":\"jref://KEYVALUE:ExampleDBReferences/session_token_carlos\"," +
             "\"powerMonitoringRef\":\"jref://TIMESERIES:ExampleDBReferences/iot_hub_power_01\"," +
-            "\"multiClusterBackupRef\":\"jref://cluster-east-01@DOCUMENT:ExampleDBReferences/cust_101\"," +
-            "\"remoteAiNeuralNodeRef\":\"jref://node-cloud-west@VECTOR:ExampleDBReferences/vec_prod_embed_01\"," +
             "\"createdAt\":%d}",
-            orderDocKey, now
+            now
         );
         engine.getStorageCore().put(orderDocKey, orderPayload.getBytes(StandardCharsets.UTF_8), now);
         engine.getStorageCore().put(db + ":order_master_7001", orderPayload.getBytes(StandardCharsets.UTF_8), now);
         count += 2;
 
-        // 9. MASTER ENTITY 2 (DOCUMENT): Order Master 7002
+        // 9. MASTER ENTITY 2 (DOCUMENT): Order Master 7002 (Clean Single Jref References)
         String order2DocKey = "doc:" + db + ":order_master_7002";
         String order2Payload = String.format(
             "{\"orderId\":\"ORD-2026-7002\",\"description\":\"Port Operations Freight & Telemetry Monitoring\"," +
-            "\"totalAmount\":18900.00,\"currency\":\"USD\",\"status\":\"IN_TRANSIT\",\"primaryStorageAddress\":\"%s\"," +
+            "\"totalAmount\":18900.00,\"currency\":\"USD\",\"status\":\"IN_TRANSIT\"," +
             "\"customerRef\":\"jref://DOCUMENT:ExampleDBReferences/cust_102\"," +
             "\"leadArchitectRef\":\"jref://RECORDS:ExampleDBReferences/emp_202\"," +
             "\"fulfillmentHubRef\":\"jref://GEOSPATIAL:ExampleDBReferences/hub_colon\"," +
             "\"contractDocRef\":\"jref://OBJECT:ExampleDBReferences/invoice_ORD-7001.pdf\"," +
-            "\"remoteSecondaryClusterRef\":\"jref://cluster-secondary-02@RECORDS:ExampleDBReferences/emp_202\"," +
             "\"createdAt\":%d}",
-            order2DocKey, now
+            now
         );
         engine.getStorageCore().put(order2DocKey, order2Payload.getBytes(StandardCharsets.UTF_8), now);
         engine.getStorageCore().put(db + ":order_master_7002", order2Payload.getBytes(StandardCharsets.UTF_8), now);
         count += 2;
 
-        // 10. MASTER ENTITY 3 (RECORDS): Invoice Transaction Record
+        // 10. MASTER ENTITY 3 (RECORDS): Invoice Transaction Record (Clean Single Jref References)
         String invRecKey = "rec:" + db + ":rec_invoice_9001";
         String invPayload = String.format(
             "{\"_recordClass\":\"com.enterprise.model.InvoiceTransactionRecord\",\"invoiceId\":\"INV-2026-9001\",\"billingDate\":\"2026-08-25\"," +
-            "\"subtotal\":22897.20,\"tax\":1602.80,\"total\":24500.00,\"primaryStorageAddress\":\"%s\"," +
+            "\"subtotal\":22897.20,\"tax\":1602.80,\"total\":24500.00," +
             "\"billedCustomer\":\"jref://DOCUMENT:ExampleDBReferences/cust_101\"," +
             "\"salesExecutive\":\"jref://RECORDS:ExampleDBReferences/emp_201\"," +
             "\"dispatchHub\":\"jref://GEOSPATIAL:ExampleDBReferences/hub_panama\"," +
-            "\"associatedOrderDoc\":\"jref://DOCUMENT:ExampleDBReferences/order_master_7001\"," +
-            "\"remoteAuditStore\":\"jref://cluster-europe-03@KEYVALUE:ExampleDBReferences/session_token_carlos\"}",
-            invRecKey
+            "\"associatedOrderDoc\":\"jref://DOCUMENT:ExampleDBReferences/order_master_7001\"}"
         );
         engine.getStorageCore().put(invRecKey, invPayload.getBytes(StandardCharsets.UTF_8), now);
         count++;
