@@ -676,6 +676,7 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                 count++;
             }
         }
+        engine.getStorageCore().dropDatabase(targetDb);
         return count;
     }
 
