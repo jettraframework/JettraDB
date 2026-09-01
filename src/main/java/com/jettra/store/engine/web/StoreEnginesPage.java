@@ -8,7 +8,16 @@ import com.jettra.store.engine.core.LsmBTreeHybrid;
 import com.jettra.store.engine.models.*;
 import com.jettra.store.engine.ref.JettraReference;
 import com.jettra.store.engine.ref.JettraReferenceResolver;
+import com.jettra.store.engine.hierarchy.HierarchyExplorerService;
+import com.jettra.store.engine.hierarchy.HierarchyJsonStreamer;
+import com.jettra.store.engine.hierarchy.HierarchyNode;
+import com.jettra.store.engine.hierarchy.HierarchyResult;
+import com.jettra.store.engine.hierarchy.MultiModelSubtreeFactory;
+import com.jettra.store.engine.hierarchy.StorageEngineType;
 import com.jettra.store.engine.samples.SampleDatasetManager;
+import com.jettra.store.engine.samples.lifecycle.InstallState;
+import com.jettra.store.engine.samples.lifecycle.SampleDatabaseDefinition;
+import com.jettra.store.engine.samples.lifecycle.SampleDatabaseService;
 import com.sun.net.httpserver.HttpExchange;
 import io.jettra.flux.core.Modifier;
 import io.jettra.flux.core.Widget;
@@ -49,16 +58,14 @@ public class StoreEnginesPage extends StoreTemplatePage {
     private final JettraStorageEngine engine;
     private final JettraJson jsonParser = new JettraJson();
     private final JettraReferenceResolver refResolver;
+    private final HierarchyExplorerService hierarchyService;
+    private final SampleDatabaseService sampleDbService;
 
     public StoreEnginesPage(JettraStorageEngine engine) {
         this.engine = engine;
         this.refResolver = new JettraReferenceResolver(engine);
-        if (engine != null && engine.getStorageCore() != null && 
-            (engine.getStorageCore().scanPrefix("doc:ExampleDBReferences:").isEmpty() ||
-             engine.getStorageCore().scanPrefix("rec:ExampleDBReferences:").isEmpty() ||
-             engine.getStorageCore().scanPrefix("geo:ExampleDBReferences:").isEmpty())) {
-            new SampleDatasetManager(engine).loadExampleDBReferencesDataset();
-        }
+        this.hierarchyService = new HierarchyExplorerService(engine);
+        this.sampleDbService = new SampleDatabaseService(engine);
     }
 
     @Override
@@ -80,7 +87,217 @@ public class StoreEnginesPage extends StoreTemplatePage {
             handleLoadHierarchy(exchange, params);
             return true;
         }
+        if (params != null && "list_sample_dbs".equalsIgnoreCase(params.get("action"))) {
+            handleListSampleDatabases(exchange, params);
+            return true;
+        }
+        if (params != null && "install_sample_db".equalsIgnoreCase(params.get("action"))) {
+            handleInstallSampleDatabase(exchange, params);
+            return true;
+        }
+        if (params != null && "uninstall_sample_db".equalsIgnoreCase(params.get("action"))) {
+            handleUninstallSampleDatabase(exchange, params);
+            return true;
+        }
         return false;
+    }
+
+    @Override
+    protected boolean onPost(HttpExchange exchange, Map<String, String> params) throws IOException {
+        String action = params != null ? params.get("action") : null;
+        String reqWith = exchange.getRequestHeaders() != null ? exchange.getRequestHeaders().getFirst("X-Requested-With") : null;
+        if (action != null && (action.endsWith("_ajax") || "true".equalsIgnoreCase(params.get("is_ajax")) || "XMLHttpRequest".equalsIgnoreCase(reqWith)
+            || "install_sample_db".equalsIgnoreCase(action) || "uninstall_sample_db".equalsIgnoreCase(action) || "list_sample_dbs".equalsIgnoreCase(action))) {
+            handleAjaxPost(exchange, params);
+            return true;
+        }
+        return false;
+    }
+
+    public void handleAjaxPost(HttpExchange exchange, Map<String, String> params) throws IOException {
+        String action = params != null ? params.get("action") : "";
+        String selectedEngine = params != null && params.containsKey("engine") ? params.get("engine").toUpperCase() : "DOCUMENT";
+        String targetDb = params != null && params.containsKey("target_db") ? params.get("target_db") : getDefaultDbForEngine(selectedEngine);
+
+        try {
+            if ("insert_object".equalsIgnoreCase(action) || "insert_object_ajax".equalsIgnoreCase(action)) {
+                InsertResult res = executeTypeSpecificInsert(selectedEngine, targetDb, params);
+                JsonObject resp = new JsonObject();
+                resp.addProperty("status", "SUCCESS");
+                resp.addProperty("database", res.database());
+                resp.addProperty("engine", res.engineName());
+                resp.addProperty("collection", res.targetColl());
+                resp.addProperty("itemId", res.targetId());
+                resp.addProperty("message", "Object '" + res.targetId() + "' successfully created in " + res.engineName() + " [" + res.database() + ":" + res.targetColl() + "]!");
+                sendJsonResponse(exchange, resp, 200);
+            } else if ("install_sample_db".equalsIgnoreCase(action) || "install_sample_db_ajax".equalsIgnoreCase(action)) {
+                handleInstallSampleDatabase(exchange, params);
+            } else if ("uninstall_sample_db".equalsIgnoreCase(action) || "uninstall_sample_db_ajax".equalsIgnoreCase(action)) {
+                handleUninstallSampleDatabase(exchange, params);
+            } else if ("list_sample_dbs".equalsIgnoreCase(action)) {
+                handleListSampleDatabases(exchange, params);
+            } else if ("create_unit".equalsIgnoreCase(action) || "create_unit_ajax".equalsIgnoreCase(action)) {
+                String unitName = params.get("unit_name");
+                String engType = params.getOrDefault("engine_type", selectedEngine);
+                if (unitName != null && !unitName.isBlank()) {
+                    String cleanUnit = unitName.trim().toLowerCase().replaceAll("[^a-z0-9_]", "_");
+                    String prefix = getPrefixForEngine(engType);
+                    String internalKey = prefix + targetDb + ":" + cleanUnit + ":init_01";
+                    JsonObject initDoc = new JsonObject();
+                    initDoc.addProperty("_database", targetDb);
+                    initDoc.addProperty("_engine", engType);
+                    initDoc.addProperty("_unit", cleanUnit);
+                    initDoc.addProperty("status", "INITIALIZED");
+                    initDoc.addProperty("createdAt", System.currentTimeMillis());
+                    engine.getStorageCore().put(internalKey, initDoc.toString().getBytes(StandardCharsets.UTF_8), System.currentTimeMillis());
+                    JsonObject resp = new JsonObject();
+                    resp.addProperty("status", "SUCCESS");
+                    resp.addProperty("database", targetDb);
+                    resp.addProperty("engine", engType);
+                    resp.addProperty("collection", cleanUnit);
+                    resp.addProperty("itemId", "init_01");
+                    resp.addProperty("message", "Subtree Unit '" + cleanUnit + "' created in " + engType + "!");
+                    sendJsonResponse(exchange, resp, 200);
+                } else {
+                    sendJsonError(exchange, "Unit name cannot be empty");
+                }
+            } else if ("create_db".equalsIgnoreCase(action) || "create_db_ajax".equalsIgnoreCase(action)) {
+                String newDb = params.get("new_db_name");
+                if (newDb == null || newDb.isBlank()) newDb = params.get("target_db");
+                String initEngine = params.getOrDefault("initial_engine", "DOCUMENT");
+                String initUnit = params.getOrDefault("initial_unit", "default");
+                if (newDb != null && !newDb.isBlank()) {
+                    String cleanDb = newDb.trim().toLowerCase().replaceAll("[^a-z0-9_]", "_");
+                    initializeDatabaseEngineSubtrees(cleanDb, initEngine, initUnit);
+                    JsonObject resp = new JsonObject();
+                    resp.addProperty("status", "SUCCESS");
+                    resp.addProperty("database", cleanDb);
+                    resp.addProperty("engine", initEngine);
+                    resp.addProperty("collection", initUnit);
+                    resp.addProperty("itemId", "init_01");
+                    resp.addProperty("message", "Database '" + cleanDb + "' created with all 9 multi-model engine subtrees ready!");
+                    sendJsonResponse(exchange, resp, 200);
+                } else {
+                    sendJsonError(exchange, "Database name cannot be empty");
+                }
+            } else if ("edit_document".equalsIgnoreCase(action) || "edit_object".equalsIgnoreCase(action) || "edit_record".equalsIgnoreCase(action)) {
+                String id = params.get("target_id");
+                String coll = params.getOrDefault("target_coll", "default");
+                String payload = params.get("doc_payload");
+                if (payload == null) payload = params.get("raw_payload");
+                if (payload == null) payload = params.get("kv_value");
+                if (payload == null) payload = params.get("rec_payload");
+                executeTypeSpecificEdit(selectedEngine, targetDb, id, coll, payload, params);
+                JsonObject resp = new JsonObject();
+                resp.addProperty("status", "SUCCESS");
+                resp.addProperty("database", targetDb);
+                resp.addProperty("engine", selectedEngine);
+                resp.addProperty("collection", coll);
+                resp.addProperty("itemId", id);
+                resp.addProperty("message", "Entity '" + id + "' updated successfully in " + selectedEngine + "!");
+                sendJsonResponse(exchange, resp, 200);
+            } else if ("delete_object".equalsIgnoreCase(action) || "delete_record".equalsIgnoreCase(action)) {
+                String id = params.get("target_id");
+                String coll = params.getOrDefault("target_coll", "default");
+                executeTypeSpecificDelete(selectedEngine, targetDb, id, coll, params);
+                JsonObject resp = new JsonObject();
+                resp.addProperty("status", "SUCCESS");
+                resp.addProperty("database", targetDb);
+                resp.addProperty("engine", selectedEngine);
+                resp.addProperty("collection", coll);
+                resp.addProperty("itemId", id);
+                resp.addProperty("message", "Entity '" + id + "' deleted successfully from " + selectedEngine + "!");
+                sendJsonResponse(exchange, resp, 200);
+            } else {
+                JsonObject resp = new JsonObject();
+                resp.addProperty("status", "SUCCESS");
+                resp.addProperty("action", action);
+                sendJsonResponse(exchange, resp, 200);
+            }
+        } catch (Exception e) {
+            sendJsonError(exchange, "Operation failed: " + (e.getMessage() != null ? e.getMessage() : "Unknown error"));
+        }
+    }
+
+    public void handleListSampleDatabases(HttpExchange exchange, Map<String, String> params) throws IOException {
+        JsonArray arr = new JsonArray();
+        for (SampleDatabaseDefinition def : sampleDbService.getCatalog()) {
+            JsonObject obj = new JsonObject();
+            obj.addProperty("id", def.id());
+            obj.addProperty("engineType", def.engineType());
+            obj.addProperty("databaseName", def.databaseName());
+            obj.addProperty("displayName", def.displayName());
+            obj.addProperty("description", def.description());
+            obj.addProperty("estimatedRecords", def.estimatedRecords());
+            obj.addProperty("icon", def.icon());
+            InstallState state = sampleDbService.getInstallState(def.databaseName());
+            obj.addProperty("installState", state.name());
+            obj.addProperty("badgeCss", state.getBadgeCss());
+            obj.addProperty("badgeLabel", state.getLabel());
+            obj.addProperty("badgeIcon", state.getIcon());
+            obj.addProperty("isInstalled", state == InstallState.INSTALLED);
+            obj.addProperty("recordCount", sampleDbService.getInstalledRecordCount(def.databaseName()));
+            arr.add(obj);
+        }
+        JsonObject res = new JsonObject();
+        res.addProperty("status", "SUCCESS");
+        res.add("databases", arr);
+        sendJsonResponse(exchange, res, 200);
+    }
+
+    public void handleInstallSampleDatabase(HttpExchange exchange, Map<String, String> params) throws IOException {
+        String dbName = params != null ? (params.containsKey("target_db") ? params.get("target_db") : params.get("db_name")) : null;
+        if (dbName == null || dbName.isBlank()) {
+            sendJsonError(exchange, "Missing target_db parameter");
+            return;
+        }
+        HierarchyResult<Integer> res = sampleDbService.install(dbName.trim());
+        if (res.isSuccess()) {
+            JsonObject resp = new JsonObject();
+            resp.addProperty("status", "SUCCESS");
+            resp.addProperty("database", dbName);
+            resp.addProperty("installedRecords", res.getOrNull());
+            resp.addProperty("message", "Sample database '" + dbName + "' installed successfully (" + res.getOrNull() + " records created)!");
+            sendJsonResponse(exchange, resp, 200);
+        } else {
+            sendJsonError(exchange, res.errorMessage());
+        }
+    }
+
+    public void handleUninstallSampleDatabase(HttpExchange exchange, Map<String, String> params) throws IOException {
+        String dbName = params != null ? (params.containsKey("target_db") ? params.get("target_db") : params.get("db_name")) : null;
+        if (dbName == null || dbName.isBlank()) {
+            sendJsonError(exchange, "Missing target_db parameter");
+            return;
+        }
+        HierarchyResult<Integer> res = sampleDbService.uninstall(dbName.trim());
+        if (res.isSuccess()) {
+            JsonObject resp = new JsonObject();
+            resp.addProperty("status", "SUCCESS");
+            resp.addProperty("database", dbName);
+            resp.addProperty("deletedRecords", res.getOrNull());
+            resp.addProperty("message", "Sample database '" + dbName + "' uninstalled successfully (" + res.getOrNull() + " records purged)!");
+            sendJsonResponse(exchange, resp, 200);
+        } else {
+            sendJsonError(exchange, res.errorMessage());
+        }
+    }
+
+    private void sendJsonResponse(HttpExchange exchange, JsonObject obj, int status) throws IOException {
+        byte[] b = jsonParser.toJson(obj).getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
+        exchange.sendResponseHeaders(status, b.length);
+        try (OutputStream os = exchange.getResponseBody()) {
+            os.write(b);
+            os.flush();
+        }
+    }
+
+    private void sendJsonError(HttpExchange exchange, String errorMsg) throws IOException {
+        JsonObject err = new JsonObject();
+        err.addProperty("status", "ERROR");
+        err.addProperty("message", errorMsg);
+        sendJsonResponse(exchange, err, 400);
     }
 
     public void handleLoadHierarchy(HttpExchange exchange, Map<String, String> params) throws IOException {
@@ -93,19 +310,22 @@ public class StoreEnginesPage extends StoreTemplatePage {
         }
         db = db.trim();
 
-        JsonObject res;
-        try {
-            res = buildDatabaseHierarchyJson(db);
-        } catch (Exception e) {
-            res = new JsonObject();
-            res.addProperty("database", db);
-            res.addProperty("hasComponents", false);
-            res.addProperty("totalItems", 0);
-            res.addProperty("status", "ERROR");
-            res.addProperty("error", e.getMessage() != null ? e.getMessage() : "Unknown error");
+        HierarchyResult<HierarchyNode.DatabaseNode> res = hierarchyService.resolveDatabaseHierarchy(db);
+        byte[] b;
+        if (res instanceof HierarchyResult.Success<HierarchyNode.DatabaseNode>(var dbNode)) {
+            String json = HierarchyJsonStreamer.toJson(dbNode);
+            b = json.getBytes(StandardCharsets.UTF_8);
+        } else {
+            String err = res.errorMessage() != null ? res.errorMessage() : "Unknown error";
+            JsonObject errObj = new JsonObject();
+            errObj.addProperty("database", db);
+            errObj.addProperty("hasComponents", false);
+            errObj.addProperty("totalItems", 0);
+            errObj.addProperty("status", "ERROR");
+            errObj.addProperty("error", err);
+            b = jsonParser.toJson(errObj).getBytes(StandardCharsets.UTF_8);
         }
 
-        byte[] b = jsonParser.toJson(res).getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
         exchange.sendResponseHeaders(200, b.length);
         try (OutputStream os = exchange.getResponseBody()) {
@@ -115,150 +335,56 @@ public class StoreEnginesPage extends StoreTemplatePage {
     }
 
     public JsonObject buildDatabaseHierarchyJson(String dbName) {
-        String queryDb = resolveExistingDatabaseName(dbName);
-        JsonObject res = new JsonObject();
-        res.addProperty("database", dbName);
-
-        String[][] allEngSpecs = {
-            {"DOCUMENT", "#3b82f6", "fas fa-file-alt", "Collections", "Collection", "Document", "fas fa-file-code"},
-            {"KEYVALUE", "#10b981", "fas fa-key", "Namespaces", "Namespace", "Key-Value Pair", "fas fa-cube"},
-            {"VECTOR", "#8b5cf6", "fas fa-project-diagram", "Vector Indexes", "Vector Index", "Embedding", "fas fa-braille"},
-            {"GRAPH", "#ec4899", "fas fa-share-alt", "Labels", "Label", "Vertex / Edge", "fas fa-circle-nodes"},
-            {"TIMESERIES", "#06b6d4", "fas fa-chart-line", "Metrics", "Metric", "Time Point", "fas fa-stopwatch"},
-            {"COLUMN", "#f97316", "fas fa-table", "Column Families", "Column Family", "Dynamic Row", "fas fa-bars-staggered"},
-            {"GEOSPATIAL", "#14b8a6", "fas fa-globe-americas", "Spatial Layers", "Spatial Layer", "GIS Feature", "fas fa-location-dot"},
-            {"OBJECT", "#a855f7", "fas fa-archive", "Buckets", "Bucket", "BLOB Object", "fas fa-box-archive"},
-            {"RECORDS", "#f43f5e", "fas fa-id-card", "Record Tables", "Record Table", "Record", "fas fa-address-card"}
-        };
-
-        JsonArray enginesArr = new JsonArray();
-        int totalDbItems = 0;
-
-        for (String[] spec : allEngSpecs) {
-            String engName = spec[0];
-            String engColor = spec[1];
-            String engIcon = spec[2];
-            String unitPlural = spec[3];
-            String unitSingle = spec[4];
-            String itemLabel = spec[5];
-            String itemIcon = spec[6];
-
-            Map<String, List<String>> unitsAndItems = discoverUnitsAndItems(engName, queryDb);
-            int totalEngItems = unitsAndItems.values().stream().mapToInt(List::size).sum();
-            totalDbItems += totalEngItems;
-
-            JsonObject engObj = new JsonObject();
-            engObj.addProperty("name", engName);
-            engObj.addProperty("color", engColor);
-            engObj.addProperty("icon", engIcon);
-            engObj.addProperty("unitPlural", unitPlural);
-            engObj.addProperty("unitSingle", unitSingle);
-            engObj.addProperty("itemLabel", itemLabel);
-            engObj.addProperty("itemIcon", itemIcon);
-            engObj.addProperty("totalItems", totalEngItems);
-
-            JsonArray unitsArr = new JsonArray();
-            for (Map.Entry<String, List<String>> uEntry : unitsAndItems.entrySet()) {
-                String uName = uEntry.getKey();
-                List<String> items = uEntry.getValue();
-
-                JsonObject uObj = new JsonObject();
-                uObj.addProperty("name", uName);
-                uObj.addProperty("totalItems", items.size());
-
-                JsonArray itemsArr = new JsonArray();
-                for (String itemId : items) {
-                    int vCount = getItemVersionCount(engName, queryDb, uName, itemId);
-                    String itemPayload = getItemPayload(engName, queryDb, uName, itemId);
-                    String itemVersions = getVersionsJson(engName, queryDb, uName, itemId);
-                    String payloadB64 = Base64.getEncoder().encodeToString(itemPayload.getBytes(StandardCharsets.UTF_8));
-                    String versionsB64 = Base64.getEncoder().encodeToString(itemVersions.getBytes(StandardCharsets.UTF_8));
-
-                    JsonObject itemObj = new JsonObject();
-                    itemObj.addProperty("id", itemId);
-                    itemObj.addProperty("versionCount", vCount);
-                    itemObj.addProperty("payload", itemPayload);
-                    itemObj.addProperty("payloadB64", payloadB64);
-                    itemObj.addProperty("versionsB64", versionsB64);
-
-                    JsonObject parsed = parseJsonOrWrap(itemPayload);
-                    JsonObject summaryProps = new JsonObject();
-                    int pCount = 0;
-                    for (String pKey : parsed.keySet()) {
-                        if (pCount >= 8) break;
-                        Object pVal = parsed.get(pKey);
-                        if (pVal instanceof Number) {
-                            summaryProps.addProperty(pKey, (Number) pVal);
-                        } else if (pVal instanceof Boolean) {
-                            summaryProps.addProperty(pKey, (Boolean) pVal);
-                        } else if (pVal instanceof JsonObject) {
-                            summaryProps.add(pKey, (JsonObject) pVal);
-                        } else if (pVal instanceof JsonArray) {
-                            summaryProps.add(pKey, (JsonArray) pVal);
-                        } else {
-                            summaryProps.addProperty(pKey, pVal != null ? pVal.toString() : "null");
-                        }
-                        pCount++;
-                    }
-                    itemObj.add("summaryProps", summaryProps);
-                    itemsArr.add(itemObj);
-                }
-                uObj.add("items", itemsArr);
-                unitsArr.add(uObj);
-            }
-            engObj.add("units", unitsArr);
-            enginesArr.add(engObj);
+        HierarchyResult<HierarchyNode.DatabaseNode> res = hierarchyService.resolveDatabaseHierarchy(dbName);
+        if (res instanceof HierarchyResult.Success<HierarchyNode.DatabaseNode>(var dbNode)) {
+            String json = HierarchyJsonStreamer.toJson(dbNode);
+            JsonObject obj = jsonParser.fromJson(json, JsonObject.class);
+            return obj != null ? obj : new JsonObject();
         }
-        res.add("engines", enginesArr);
-
-        // Secondary & Composite Indexes for this Database
-        Map<String, JsonObject> dbIndexes = discoverIndexes(queryDb);
-        JsonArray indexesArr = new JsonArray();
-        boolean hasCustomIndex = false;
-        for (Map.Entry<String, JsonObject> idxEntry : dbIndexes.entrySet()) {
-            JsonObject idx = idxEntry.getValue();
-            if (!"idx_primary_id".equals(idxEntry.getKey())) {
-                hasCustomIndex = true;
-            }
-            indexesArr.add(idx);
-        }
-        res.add("indexes", indexesArr);
-
-        // Schema Definitions for this Database
-        Map<String, JsonObject> dbSchemas = discoverSchemas(queryDb);
-        JsonArray schemasArr = new JsonArray();
-        for (Map.Entry<String, JsonObject> scEntry : dbSchemas.entrySet()) {
-            JsonObject sc = new JsonObject();
-            sc.addProperty("name", scEntry.getKey());
-            JsonObject scVal = scEntry.getValue();
-            String scJson = scVal.has("schema") ? scVal.get("schema").toString() : "{}";
-            sc.addProperty("schemaJson", scJson);
-            sc.addProperty("schemaB64", Base64.getEncoder().encodeToString(scJson.getBytes(StandardCharsets.UTF_8)));
-            schemasArr.add(sc);
-        }
-        res.add("schemas", schemasArr);
-
-        boolean hasComponents = (totalDbItems > 0) || !dbSchemas.isEmpty() || hasCustomIndex;
-        res.addProperty("hasComponents", hasComponents);
-        res.addProperty("totalItems", totalDbItems);
-        res.addProperty("status", "SUCCESS");
-
-        return res;
+        JsonObject errObj = new JsonObject();
+        errObj.addProperty("database", dbName);
+        errObj.addProperty("hasComponents", false);
+        errObj.addProperty("totalItems", 0);
+        errObj.addProperty("status", "ERROR");
+        errObj.addProperty("error", res.errorMessage());
+        return errObj;
     }
 
-    private String resolveExistingDatabaseName(String dbName) {
-        if (dbName == null || dbName.isBlank()) return "customers_db";
-        Set<String> allDbs = discoverAllDatabases();
-        if (allDbs.contains(dbName)) return dbName;
-        for (String d : allDbs) {
-            if (d.equalsIgnoreCase(dbName)) return d;
-        }
-        for (String d : allDbs) {
-            if (d.equalsIgnoreCase(dbName + "s") || (dbName.endsWith("s") && d.equalsIgnoreCase(dbName.substring(0, dbName.length() - 1)))) {
-                return d;
-            }
-        }
-        return dbName;
+    public Map<String, List<String>> discoverUnitsAndItems(String engineKey, String db) {
+        return hierarchyService.discoverUnitsAndItems(engineKey, db);
+    }
+
+    public String getItemPayload(String engineKey, String db, String coll, String id) {
+        return hierarchyService.getItemPayload(engineKey, db, coll, id);
+    }
+
+    public int getItemVersionCount(String engineKey, String db, String coll, String id) {
+        return hierarchyService.getItemVersionCount(engineKey, db, coll, id);
+    }
+
+    public String getVersionsJson(String engineKey, String db, String coll, String id) {
+        return hierarchyService.getVersionsJson(engineKey, db, coll, id);
+    }
+
+    public String resolveExistingDatabaseName(String dbName) {
+        return hierarchyService.resolveExistingDatabaseName(dbName);
+    }
+
+    @Override
+    protected Set<String> getAvailableDatabases() {
+        return discoverAllDatabases();
+    }
+
+    public Set<String> discoverAllDatabases() {
+        return hierarchyService.discoverAllDatabases();
+    }
+
+    public String getPrefixForEngine(String engineKey) {
+        return hierarchyService.getPrefixForEngine(engineKey);
+    }
+
+    public void initializeDatabaseEngineSubtrees(String cleanDb, String initEngine, String initUnit) {
+        MultiModelSubtreeFactory.initializeDatabaseStorage(engine.getStorageCore(), cleanDb, initEngine, initUnit);
     }
 
     private void handleResolveReference(HttpExchange exchange, Map<String, String> params) throws IOException {
@@ -444,19 +570,10 @@ public class StoreEnginesPage extends StoreTemplatePage {
                         String cleanDb = newDb.trim().toLowerCase().replaceAll("[^a-z0-9_]", "_");
                         String initEngine = params.getOrDefault("initial_engine", selectedEngine);
                         String initUnit = params.getOrDefault("initial_unit", "default");
-                        String initId = params.getOrDefault("initial_id", "init_01");
-                        String prefix = getPrefixForEngine(initEngine);
-                        String internalKey = prefix + cleanDb + ":" + initUnit + ":" + initId;
-                        JsonObject initDoc = new JsonObject();
-                        initDoc.addProperty("_database", cleanDb);
-                        initDoc.addProperty("_engine", initEngine);
-                        initDoc.addProperty("_unit", initUnit);
-                        initDoc.addProperty("status", "ACTIVE");
-                        initDoc.addProperty("createdAt", System.currentTimeMillis());
-                        engine.getStorageCore().put(internalKey, initDoc.toString().getBytes(StandardCharsets.UTF_8), System.currentTimeMillis());
+                        initializeDatabaseEngineSubtrees(cleanDb, initEngine, initUnit);
                         targetDb = cleanDb;
                         selectedEngine = initEngine;
-                        alertMessage = "Database '" + cleanDb + "' successfully created with initial [" + initEngine + "] unit '" + initUnit + "'!";
+                        alertMessage = "Database '" + cleanDb + "' successfully created with all 9 multi-model engine subtrees!";
                         alertType = "badge-active";
                     }
                 } else if ("create_unit".equalsIgnoreCase(action)) {
@@ -662,29 +779,222 @@ public class StoreEnginesPage extends StoreTemplatePage {
             .modifier(new Modifier().style("margin-bottom: 20px;"));
 
         // Status Alert / Flash message
-        Widget alertWidget = Row.of(
+        Widget alertWidget = !alertMessage.isBlank() ? Row.of(
             Div.of(
-                Icon.of("fas fa-info-circle").modifier(new Modifier().style("color:#38bdf8; font-size:18px;")),
-                Span.of(alertMessage).modifier(new Modifier().style("font-size:14px; color:#f8fafc; font-weight:500;"))
-            ).modifier(new Modifier().style("display:flex; align-items:center; gap:10px;")),
+                Icon.of("fas fa-info-circle").modifier(new Modifier().style("color:#38bdf8; font-size:14px;")),
+                Span.of(alertMessage).modifier(new Modifier().style("font-size:12px; color:var(--j-text-primary); font-weight:500;"))
+            ).modifier(new Modifier().style("display:flex; align-items:center; gap:8px;")),
             Span.of("STATUS").modifier(new Modifier().cssClass("store-badge " + alertType))
-        ).modifier(new Modifier().style("background: rgba(30, 41, 59, 0.9); border: 1px solid rgba(59,130,246,0.4); padding: 14px 20px; border-radius: 10px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between;"));
+        ).modifier(new Modifier().style("background: var(--j-bg-surface); border: 1px solid var(--j-border); padding: 8px 16px; border-radius: 8px; margin: 8px 16px 0 16px; display: flex; align-items: center; justify-content: space-between;")) : RawHtml.of("");
 
-        // Document Collections Management Section (if DOCUMENT engine selected)
         String currentCollection = params != null && params.containsKey("coll") ? params.get("coll") : "default";
 
-        // Hierarchical Multi-Model Explorer (Tree or Table View Mode)
-        Widget hierarchyTreeCard = createHierarchyTreeCard(selectedEngine, targetDb, currentCollection, params);
+        // Two-Column Studio Layout: Left TYPES sidebar + Right workspace canvas matching screenshot
+        Widget studioLayout = createStudioWorkspaceLayout(selectedEngine, targetDb, currentCollection, alertWidget, params);
 
-        // Modals for Advanced Search, Document Edit, Version Recovery, Indexes and Schemas
         Widget modalsWidget = createEngineModals(selectedEngine, targetDb, currentCollection);
 
-        return Column.of(
-            titleBlock,
-            alertWidget,
-            hierarchyTreeCard,
+        return Div.of(
+            studioLayout,
             modalsWidget
+        ).modifier(new Modifier().style("width:100%; height:100%; display:flex; flex-direction:column; overflow:hidden;"));
+    }
+
+    private Widget createStudioWorkspaceLayout(String selectedEngine, String targetDb, String currentColl, Widget alertWidget, Map<String, String> params) {
+        String actionUrl = JettraServer.resolvePath("/engines?engine=");
+        String currentTab = params != null ? params.getOrDefault("tab", "schema").toLowerCase() : "schema";
+        boolean hasExplicitSelection = params != null && (params.containsKey("coll") || params.containsKey("view_mode") || params.containsKey("engine"));
+
+        // Count metrics for each type
+        Map<String, List<String>> verticesMap = discoverUnitsAndItems("GRAPH", targetDb);
+        int verticesCount = verticesMap.values().stream().mapToInt(List::size).sum();
+
+        Map<String, List<String>> edgesMap = discoverUnitsAndItems("GRAPH", targetDb);
+        int edgesCount = edgesMap.values().stream().mapToInt(List::size).sum();
+
+        Map<String, List<String>> docMap = discoverUnitsAndItems("DOCUMENT", targetDb);
+        int docCount = docMap.values().stream().mapToInt(List::size).sum();
+
+        Map<String, List<String>> tsMap = discoverUnitsAndItems("TIMESERIES", targetDb);
+        int tsCount = tsMap.values().stream().mapToInt(List::size).sum();
+
+        Map<String, JsonObject> schemasMap = discoverSchemas(targetDb);
+        int matViewsCount = schemasMap.size();
+        int graphViewsCount = 0;
+
+        Map<String, List<String>> kvMap = discoverUnitsAndItems("KEYVALUE", targetDb);
+        int kvCount = kvMap.values().stream().mapToInt(List::size).sum();
+
+        Map<String, List<String>> vecMap = discoverUnitsAndItems("VECTOR", targetDb);
+        int vecCount = vecMap.values().stream().mapToInt(List::size).sum();
+
+        Map<String, List<String>> colMap = discoverUnitsAndItems("COLUMN", targetDb);
+        int colCount = colMap.values().stream().mapToInt(List::size).sum();
+
+        Map<String, List<String>> geoMap = discoverUnitsAndItems("GEOSPATIAL", targetDb);
+        int geoCount = geoMap.values().stream().mapToInt(List::size).sum();
+
+        Map<String, List<String>> objMap = discoverUnitsAndItems("OBJECT", targetDb);
+        int objCount = objMap.values().stream().mapToInt(List::size).sum();
+
+        Map<String, List<String>> recMap = discoverUnitsAndItems("RECORDS", targetDb);
+        int recCount = recMap.values().stream().mapToInt(List::size).sum();
+
+        // TYPES Sidebar (matching the screenshot)
+        Widget typesSidebar = Div.of(
+            Div.of(
+                Span.of("TYPES").modifier(new Modifier().style("font-size:11px; font-weight:700; color:var(--j-text-secondary); letter-spacing:0.8px; text-transform:uppercase;")),
+                Button.of(Icon.of("fas fa-sync-alt")).modifier(new Modifier().attribute("type", "button").attribute("title", "Refresh Types").attribute("onclick", "location.reload()").style("background:none; border:none; color:var(--j-text-muted); cursor:pointer; font-size:11px; padding:2px;"))
+            ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; padding:12px 14px; border-bottom:1px solid var(--j-border);")),
+
+            Div.of(
+                createTypeRow("DOCUMENT", "fas fa-file-alt", docCount, "#38bdf8", "DOCUMENT", targetDb, actionUrl, "DOCUMENT".equalsIgnoreCase(selectedEngine)),
+                createTypeRow("KEY-VALUE", "fas fa-key", kvCount, "#10b981", "KEYVALUE", targetDb, actionUrl, "KEYVALUE".equalsIgnoreCase(selectedEngine)),
+                createTypeRow("VECTOR", "fas fa-brain", vecCount, "#8b5cf6", "VECTOR", targetDb, actionUrl, "VECTOR".equalsIgnoreCase(selectedEngine)),
+                createTypeRow("GRAPH", "fas fa-share-alt", verticesCount + edgesCount, "#ec4899", "GRAPH", targetDb, actionUrl, "GRAPH".equalsIgnoreCase(selectedEngine)),
+                createTypeRow("TIMESERIES", "fas fa-chart-line", tsCount, "#06b6d4", "TIMESERIES", targetDb, actionUrl, "TIMESERIES".equalsIgnoreCase(selectedEngine)),
+                createTypeRow("COLUMN", "fas fa-table-columns", colCount, "#f97316", "COLUMN", targetDb, actionUrl, "COLUMN".equalsIgnoreCase(selectedEngine)),
+                createTypeRow("GEOSPATIAL", "fas fa-globe-americas", geoCount, "#14b8a6", "GEOSPATIAL", targetDb, actionUrl, "GEOSPATIAL".equalsIgnoreCase(selectedEngine)),
+                createTypeRow("OBJECT", "fas fa-box-archive", objCount, "#a855f7", "OBJECT", targetDb, actionUrl, "OBJECT".equalsIgnoreCase(selectedEngine)),
+                createTypeRow("RECORDS", "fas fa-id-card", recCount, "#f43f5e", "RECORDS", targetDb, actionUrl, "RECORDS".equalsIgnoreCase(selectedEngine))
+            ).modifier(new Modifier().style("padding:6px 0; display:flex; flex-direction:column; overflow-y:auto; flex:1;"))
+        ).modifier(new Modifier().style("width:240px; min-width:240px; background:var(--j-bg-surface); border-right:1px solid var(--j-border); display:flex; flex-direction:column; height:100%;"));
+
+        // Main Right Canvas
+        Widget canvasContent;
+        if ("schema".equals(currentTab) && !hasExplicitSelection) {
+            canvasContent = createMainDashboardView(selectedEngine, targetDb, actionUrl,
+                docCount, kvCount, vecCount, verticesCount + edgesCount,
+                tsCount, colCount, geoCount, objCount, recCount);
+        } else {
+            canvasContent = createHierarchyTreeCard(selectedEngine, targetDb, currentColl, params);
+        }
+
+        Widget rightCanvas = Div.of(
+            alertWidget,
+            Div.of(canvasContent).modifier(new Modifier().style("flex:1; overflow-y:auto; padding:16px 20px;"))
+        ).modifier(new Modifier().style("flex:1; display:flex; flex-direction:column; height:100%; overflow:hidden; background:var(--j-bg-body);"));
+
+        return Div.of(
+            typesSidebar,
+            rightCanvas
+        ).modifier(new Modifier().style("display:flex; width:100%; height:100%; overflow:hidden;"));
+    }
+
+    private Widget createTypeRow(String label, String icon, int count, String color, String engineName, String targetDb, String actionUrl, boolean isActive) {
+        return Div.of(
+            Link.of(actionUrl + engineName + "&target_db=" + targetDb + "&view_mode=table",
+                Icon.of(icon).modifier(new Modifier().style("margin-right:8px; font-size:11px; color:" + color + "; width:14px; text-align:center;")),
+                Span.of(label + "(" + count + ")").modifier(new Modifier().style("font-size:11.5px; font-weight:" + (isActive ? "700" : "500") + "; color:" + (isActive ? "var(--j-primary)" : "var(--j-text-secondary)") + "; text-transform:uppercase; letter-spacing:0.3px;"))
+            ).modifier(new Modifier().style("display:flex; align-items:center; text-decoration:none; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;")),
+            Button.of(Icon.of("fas fa-plus"))
+                .modifier(new Modifier().attribute("type", "button").attribute("title", "Add " + label).attribute("onclick", "openAddObjectModal('" + engineName + "', 'default', '" + targetDb + "')").style("background:none; border:none; color:var(--j-text-muted); cursor:pointer; font-size:11px; padding:2px 6px; opacity:0.7;"))
+        ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; padding:7px 14px; transition:background 0.15s; background:" + (isActive ? "var(--j-primary-light)" : "transparent") + "; border-left:" + (isActive ? "3px solid var(--j-primary)" : "3px solid transparent") + ";"));
+    }
+
+    private Widget createMainDashboardView(String selectedEngine, String targetDb, String actionUrl,
+                                           int docCount, int kvCount, int vecCount, int graphCount,
+                                           int tsCount, int colCount, int geoCount, int objCount, int recCount) {
+        int totalRecords = docCount + kvCount + vecCount + graphCount + tsCount + colCount + geoCount + objCount + recCount;
+
+        // 1. Metric Stat Cards Row
+        Widget statCard1 = StatCard.of("Active Engines", "Multi-Model", "9 / 9 Online", true);
+        Widget statCard2 = StatCard.of("Aggregated Records", "Total Scoped", String.valueOf(totalRecords), true);
+        Widget statCard3 = StatCard.of("Target Database", "Active Scope", targetDb, true);
+        Widget statCard4 = StatCard.of("Engine Performance", "< 0.8ms", "Ultra-Low Latency", true);
+
+        Widget statsRow = Div.of(statCard1, statCard2, statCard3, statCard4)
+            .modifier(new Modifier().style("display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:14px; margin-bottom:20px;"));
+
+        // 2. Charts & Analytics Row (Storage Distribution & Engine Record Volumes)
+        Widget pieChartWidget = CharsPie.of();
+        Widget pieCard = Panel.of("Storage Distribution by Model",
+            Div.of(
+                pieChartWidget,
+                Div.of(
+                    Span.of("DOCUMENT (" + docCount + ")").modifier(new Modifier().cssClass("store-badge badge-active").style("font-size:9px; margin:2px;")),
+                    Span.of("KEY-VALUE (" + kvCount + ")").modifier(new Modifier().cssClass("store-badge badge-keyvalue").style("font-size:9px; margin:2px;")),
+                    Span.of("VECTOR (" + vecCount + ")").modifier(new Modifier().cssClass("store-badge badge-vector").style("font-size:9px; margin:2px;")),
+                    Span.of("GRAPH (" + graphCount + ")").modifier(new Modifier().cssClass("store-badge badge-graph").style("font-size:9px; margin:2px;")),
+                    Span.of("TIMESERIES (" + tsCount + ")").modifier(new Modifier().cssClass("store-badge badge-timeseries").style("font-size:9px; margin:2px;")),
+                    Span.of("COLUMN (" + colCount + ")").modifier(new Modifier().cssClass("store-badge badge-column").style("font-size:9px; margin:2px;")),
+                    Span.of("GEOSPATIAL (" + geoCount + ")").modifier(new Modifier().cssClass("store-badge badge-geospatial").style("font-size:9px; margin:2px;")),
+                    Span.of("OBJECT (" + objCount + ")").modifier(new Modifier().cssClass("store-badge badge-object").style("font-size:9px; margin:2px;")),
+                    Span.of("RECORDS (" + recCount + ")").modifier(new Modifier().cssClass("store-badge badge-records").style("font-size:9px; margin:2px;"))
+                ).modifier(new Modifier().style("display:flex; flex-wrap:wrap; justify-content:center; gap:4px; margin-top:10px;"))
+            )
         );
+
+        Widget barChartWidget = CharsBar.of();
+        Widget barCard = Panel.of("Engine Activity & Record Volumes",
+            Div.of(
+                barChartWidget,
+                Div.of(
+                    Span.of("Aggregated Multi-Model Throughput across memory & disk").modifier(new Modifier().style("font-size:11px; color:var(--j-text-muted); text-align:center; display:block; margin-top:8px;"))
+                )
+            )
+        );
+
+        Widget chartsRow = Div.of(pieCard, barCard)
+            .modifier(new Modifier().style("display:grid; grid-template-columns:repeat(auto-fit, minmax(360px, 1fr)); gap:16px; margin-bottom:20px;"));
+
+        // 3. Multi-Model Storage Engines Quick Access Grid
+        String[][] engineCardsData = {
+            {"DOCUMENT", "fas fa-file-alt", "#38bdf8", "JSON Document Storage with ACID indexing & schema validation", String.valueOf(docCount), "Collections"},
+            {"KEYVALUE", "fas fa-key", "#10b981", "In-memory Key-Value caching & high-speed key persistence", String.valueOf(kvCount), "Namespaces"},
+            {"VECTOR", "fas fa-brain", "#8b5cf6", "AI Vector Embeddings & similarity search (Cosine/Euclidean)", String.valueOf(vecCount), "Indexes"},
+            {"GRAPH", "fas fa-share-alt", "#ec4899", "Graph Vertices, Directed Edges & relation traversal engine", String.valueOf(graphCount), "Labels"},
+            {"TIMESERIES", "fas fa-chart-line", "#06b6d4", "High-frequency timestamp metrics & IoT telemetry points", String.valueOf(tsCount), "Metrics"},
+            {"COLUMN", "fas fa-table-columns", "#f97316", "Wide-column families for analytical OLAP & sparse tables", String.valueOf(colCount), "Families"},
+            {"GEOSPATIAL", "fas fa-globe-americas", "#14b8a6", "Spatial layers, coordinates & Haversine geo-indexing", String.valueOf(geoCount), "Layers"},
+            {"OBJECT", "fas fa-box-archive", "#a855f7", "BLOB Object & media binary storage with MIME detection", String.valueOf(objCount), "Buckets"},
+            {"RECORDS", "fas fa-id-card", "#f43f5e", "Java 25 Immutable Record & structured relational tables", String.valueOf(recCount), "Tables"}
+        };
+
+        List<Widget> engineCardWidgets = new ArrayList<>();
+        for (String[] ec : engineCardsData) {
+            String eName = ec[0];
+            String eIcon = ec[1];
+            String eColor = ec[2];
+            String eDesc = ec[3];
+            String eCount = ec[4];
+            String eUnit = ec[5];
+
+            Widget card = Card.of(
+                Div.of(
+                    Div.of(
+                        Icon.of(eIcon).modifier(new Modifier().style("font-size:18px; color:" + eColor + "; margin-right:10px;")),
+                        Div.of(
+                            Span.of(eName).modifier(new Modifier().style("font-weight:700; font-size:13px; color:var(--j-text-primary); display:block;")),
+                            Span.of(eUnit + " (" + eCount + " items)").modifier(new Modifier().style("font-size:11px; color:" + eColor + "; font-weight:600;"))
+                        )
+                    ).modifier(new Modifier().style("display:flex; align-items:center; margin-bottom:8px;")),
+                    Paragraph.of(eDesc).modifier(new Modifier().style("font-size:11px; color:var(--j-text-secondary); line-height:1.4; margin-bottom:12px; min-height:32px;")),
+                    Div.of(
+                        Link.of(actionUrl + eName + "&target_db=" + targetDb + "&view_mode=table",
+                            Icon.of("fas fa-table").modifier(new Modifier().style("margin-right:4px;")),
+                            Text.of("Explore Table")
+                        ).modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:3px 8px; font-size:10px; text-decoration:none; display:inline-flex; align-items:center; margin-right:6px;")),
+                        Link.of(actionUrl + eName + "&target_db=" + targetDb + "&view_mode=tree",
+                            Icon.of("fas fa-sitemap").modifier(new Modifier().style("margin-right:4px;")),
+                            Text.of("Tree View")
+                        ).modifier(new Modifier().cssClass("btn-action btn-primary").style("padding:3px 8px; font-size:10px; text-decoration:none; display:inline-flex; align-items:center;"))
+                    ).modifier(new Modifier().style("display:flex; align-items:center;"))
+                )
+            ).modifier(new Modifier().style("padding:14px; background:var(--j-bg-surface); border:1px solid var(--j-border); border-radius:8px;"));
+            engineCardWidgets.add(card);
+        }
+
+        Widget enginesGrid = Div.of(engineCardWidgets.toArray(new Widget[0]))
+            .modifier(new Modifier().style("display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:14px;"));
+
+        Widget enginesPanel = Panel.of("Multi-Model Storage Engines (" + targetDb + ")", enginesGrid);
+
+        return Div.of(
+            statsRow,
+            chartsRow,
+            enginesPanel
+        ).modifier(new Modifier().style("display:flex; flex-direction:column; gap:8px; width:100%;"));
     }
 
     private String getDefaultDbForEngine(String engineKey) {
@@ -702,7 +1012,9 @@ public class StoreEnginesPage extends StoreTemplatePage {
         };
     }
 
-    private void executeTypeSpecificInsert(String engineName, String db, Map<String, String> params) {
+    public record InsertResult(String database, String engineName, String targetColl, String targetId) {}
+
+    private InsertResult executeTypeSpecificInsert(String engineName, String db, Map<String, String> params) {
         String rawMode = params.getOrDefault("id_gen_mode", "UUID");
         IdGenerator.IdMode idMode = IdGenerator.IdMode.fromString(rawMode);
         String manualId = params.get("target_id");
@@ -824,6 +1136,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 }
             }
         }
+        return new InsertResult(db, engineName, targetColl, targetId);
     }
 
     private void executeTypeSpecificEdit(String engineName, String db, String id, String coll, String payload, Map<String, String> params) {
@@ -1000,72 +1313,6 @@ public class StoreEnginesPage extends StoreTemplatePage {
         detailElements.add(quickActions);
 
         return Div.of(detailElements.toArray(new Widget[0]));
-    }
-
-    private String getVersionsJson(String engineKey, String db, String coll, String id) {
-        String prefix = getPrefixForEngine(engineKey);
-        String[] candidateKeys = {
-            prefix + db + ":" + coll + ":" + id,
-            prefix + db + ":" + id,
-            db + ":" + coll + ":" + id,
-            db + ":" + id
-        };
-
-        List<LsmBTreeHybrid.RecordVersion> history = new ArrayList<>();
-        for (String k : candidateKeys) {
-            history = engine.getStorageCore().getVersionHistory(k);
-            if (!history.isEmpty()) break;
-        }
-
-        JsonArray vArr = new JsonArray();
-        for (LsmBTreeHybrid.RecordVersion v : history) {
-            JsonObject vo = new JsonObject();
-            vo.addProperty("versionNumber", "v" + v.versionNumber());
-            vo.addProperty("timestamp", v.timestamp());
-            vo.addProperty("formattedDate", v.formattedDate());
-            vo.addProperty("isCurrent", v.isCurrent());
-            String pShort = v.payload();
-            if (pShort != null && pShort.length() > 80) pShort = pShort.substring(0, 80) + "...";
-            vo.addProperty("preview", pShort != null ? pShort : "{}");
-            vArr.add(vo);
-        }
-        return vArr.toString();
-    }
-
-    private String getItemPayload(String engineKey, String db, String coll, String id) {
-        String prefix = getPrefixForEngine(engineKey);
-        String[] candidateKeys = {
-            prefix + db + ":" + coll + ":" + id,
-            prefix + db + ":" + id,
-            db + ":" + coll + ":" + id,
-            db + ":" + id
-        };
-
-        for (String k : candidateKeys) {
-            byte[] b = engine.getStorageCore().get(k);
-            if (b != null && b.length > 0) {
-                return new String(b, StandardCharsets.UTF_8);
-            }
-        }
-        return "{}";
-    }
-
-    private int getItemVersionCount(String engineKey, String db, String coll, String id) {
-        String prefix = getPrefixForEngine(engineKey);
-        String directKey = prefix + db + ":" + id;
-        String collKey = prefix + db + ":" + coll + ":" + id;
-        String simpleKey = db + ":" + id;
-
-        if (engine.getStorageCore().get(directKey) != null) {
-            return engine.getStorageCore().getVersionCount(directKey);
-        }
-        if (engine.getStorageCore().get(collKey) != null) {
-            return engine.getStorageCore().getVersionCount(collKey);
-        }
-        if (engine.getStorageCore().get(simpleKey) != null) {
-            return engine.getStorageCore().getVersionCount(simpleKey);
-        }
-        return 1;
     }
 
     private String executeTypeSpecificQuery(String engineName, String db, String id, Map<String, String> params) {
@@ -1678,41 +1925,6 @@ public class StoreEnginesPage extends StoreTemplatePage {
         return obj;
     }
 
-    private String getPrefixForEngine(String engineKey) {
-        if (engineKey == null) return "doc:";
-        return switch (engineKey.toUpperCase()) {
-            case "RECORDS" -> "rec:";
-            case "VECTOR" -> "vec:";
-            case "GRAPH" -> "graph:";
-            case "TIMESERIES" -> "ts:";
-            case "COLUMN" -> "col:";
-            case "KEYVALUE" -> "kv:";
-            case "GEOSPATIAL" -> "geo:";
-            case "OBJECT" -> "obj:";
-            default -> "doc:";
-        };
-    }
-
-    private Set<String> discoverAllDatabases() {
-        Set<String> discovered = new TreeSet<>();
-        discovered.add("ecommerce_db");
-        discovered.add("customers_db");
-        discovered.add("records_db");
-        discovered.add("ai_search_db");
-        String[] prefixes = {"rec:", "doc:", "vec:", "graph:", "ts:", "col:", "kv:", "geo:", "obj:"};
-        for (String p : prefixes) {
-            Map<String, byte[]> keys = engine.getStorageCore().scanPrefix(p);
-            for (String k : keys.keySet()) {
-                String rest = k.substring(p.length());
-                int idx = rest.indexOf(':');
-                if (idx > 0) {
-                    discovered.add(rest.substring(0, idx));
-                }
-            }
-        }
-        return discovered;
-    }
-
     private Map<String, JsonObject> discoverIndexes(String dbName) {
         Map<String, JsonObject> indexes = new TreeMap<>();
         String prefix = "idx:" + dbName + ":";
@@ -1755,68 +1967,6 @@ public class StoreEnginesPage extends StoreTemplatePage {
         return schemas;
     }
 
-    private Map<String, List<String>> discoverUnitsAndItems(String engineKey, String dbName) {
-        Map<String, List<String>> unitMap = new TreeMap<>();
-        if (dbName == null || dbName.isBlank()) return unitMap;
-        String prefix = getPrefixForEngine(engineKey) + dbName + ":";
-        Map<String, byte[]> keys = engine.getStorageCore().scanPrefix(prefix);
-        
-        for (Map.Entry<String, byte[]> e : keys.entrySet()) {
-            String k = e.getKey();
-            if (e.getValue() == null || e.getValue().length == 0) continue;
-            String valStr = new String(e.getValue(), StandardCharsets.UTF_8).trim();
-            if (valStr.isEmpty() || "__TOMBSTONE__".equals(valStr)) continue;
-
-            if (!k.contains("@") && k.startsWith(prefix)) {
-                String rest = k.substring(prefix.length());
-                int idx = rest.indexOf(':');
-                if (idx > 0) {
-                    String unit = rest.substring(0, idx);
-                    String itemId = rest.substring(idx + 1);
-                    if (!itemId.isBlank() && !itemId.equals("init_01")) {
-                        unitMap.computeIfAbsent(unit, u -> new ArrayList<>()).add(itemId);
-                    } else if (itemId.equals("init_01")) {
-                        unitMap.computeIfAbsent(unit, u -> new ArrayList<>());
-                    }
-                } else if (!rest.isBlank() && !rest.equals("init_01")) {
-                    unitMap.computeIfAbsent("default", u -> new ArrayList<>()).add(rest);
-                }
-            }
-        }
-
-        if ("DOCUMENT".equalsIgnoreCase(engineKey)) {
-            String docPrefix = dbName + ":";
-            Map<String, byte[]> docKeys = engine.getStorageCore().scanPrefix(docPrefix);
-            for (Map.Entry<String, byte[]> e : docKeys.entrySet()) {
-                String k = e.getKey();
-                if (e.getValue() == null || e.getValue().length == 0) continue;
-                String valStr = new String(e.getValue(), StandardCharsets.UTF_8).trim();
-                if (valStr.isEmpty() || "__TOMBSTONE__".equals(valStr)) continue;
-
-                if (!k.contains("@") && k.startsWith(docPrefix)) {
-                    String rest = k.substring(docPrefix.length());
-                    int idx = rest.indexOf(':');
-                    if (idx > 0) {
-                        String unit = rest.substring(0, idx);
-                        String itemId = rest.substring(idx + 1);
-                        if (!itemId.isBlank() && !itemId.equals("init_01")) {
-                            List<String> list = unitMap.computeIfAbsent(unit, u -> new ArrayList<>());
-                            if (!list.contains(itemId)) list.add(itemId);
-                        }
-                    } else if (!rest.isBlank() && !rest.equals("init_01")) {
-                        List<String> list = unitMap.computeIfAbsent("default", u -> new ArrayList<>());
-                        if (!list.contains(rest)) list.add(rest);
-                    }
-                }
-            }
-        }
-
-        if (unitMap.isEmpty()) {
-            unitMap.put("default", new ArrayList<>());
-        }
-        return unitMap;
-    }
-
     private Widget createHierarchyTreeCard(String selectedEngine, String targetDb, String currentColl, Map<String, String> params) {
         String actionUrl = JettraServer.resolvePath("/engines?engine=");
         Set<String> allDbs = discoverAllDatabases();
@@ -1843,35 +1993,21 @@ public class StoreEnginesPage extends StoreTemplatePage {
         Widget treeHeader = Row.of(
             Row.of(
                 Header.of(3,
-                    Icon.of(isTableView ? "fas fa-table" : "fas fa-sitemap").modifier(new Modifier().style("color:#38bdf8; margin-right:6px; font-size:13px;")),
+                    Icon.of(isTableView ? "fas fa-table" : "fas fa-sitemap").modifier(new Modifier().style("color:var(--j-primary); margin-right:6px; font-size:13px;")),
                     Text.of("Multi-Model Storage Hierarchy Explorer")
-                ).modifier(new Modifier().style("margin:0; font-size:13px; font-weight:600;")),
+                ).modifier(new Modifier().style("margin:0; font-size:13px; font-weight:600; color:var(--j-text-primary);")),
                 Row.of(
                     Button.of(Icon.of("fas fa-sitemap"), Text.of(" Tree View"))
                         .modifier(new Modifier().attribute("type", "button").attribute("onclick", "location.href='" + actionUrl + selectedEngine + "&target_db=" + escapeJs(targetDb) + "&coll=" + escapeJs(currentColl) + "&view_mode=tree'").cssClass(!isTableView ? "btn-action btn-primary" : "btn-action btn-secondary").style("padding:3px 8px; font-size:9.5px; margin-left:12px; margin-right:4px;")),
                     Button.of(Icon.of("fas fa-table"), Text.of(" Table View"))
                         .modifier(new Modifier().attribute("type", "button").attribute("onclick", "location.href='" + actionUrl + selectedEngine + "&target_db=" + escapeJs(targetDb) + "&coll=" + escapeJs(currentColl) + "&view_mode=table'").cssClass(isTableView ? "btn-action btn-primary" : "btn-action btn-secondary").style("padding:3px 8px; font-size:9.5px; margin-right:4px;")),
                     Button.of(Icon.of("fas fa-expand-alt"), Text.of(" Expand All"))
-                        .modifier(new Modifier().attribute("type", "button").attribute("onclick", "expandAllTreeNodes()").cssClass("btn-action btn-secondary").style("padding:3px 6px; font-size:9px; margin-right:3px; background:rgba(56,189,248,0.1); border-color:rgba(56,189,248,0.3); color:#38bdf8;")),
+                        .modifier(new Modifier().attribute("type", "button").attribute("onclick", "expandAllTreeNodes()").cssClass("btn-action btn-secondary").style("padding:3px 6px; font-size:9px; margin-right:3px; background:var(--j-primary-light); border-color:var(--j-primary); color:var(--j-primary);")),
                     Button.of(Icon.of("fas fa-compress-alt"), Text.of(" Collapse All"))
-                        .modifier(new Modifier().attribute("type", "button").attribute("onclick", "collapseAllTreeNodes()").cssClass("btn-action btn-secondary").style("padding:3px 6px; font-size:9px; margin-right:4px; background:rgba(148,163,184,0.1); border-color:rgba(148,163,184,0.3); color:#94a3b8;"))
+                        .modifier(new Modifier().attribute("type", "button").attribute("onclick", "collapseAllTreeNodes()").cssClass("btn-action btn-secondary").style("padding:3px 6px; font-size:9px; margin-right:4px; background:var(--j-bg-subsurface); border-color:var(--j-border); color:var(--j-text-muted);"))
                 ).modifier(new Modifier().style("display:flex; align-items:center;"))
-            ).modifier(new Modifier().style("display:flex; align-items:center; flex-wrap:wrap; gap:4px;")),
-            Row.of(
-                Button.of(Icon.of("fas fa-database"), Text.of(" + DB"))
-                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "showModal('createDbModal')").cssClass("btn-action btn-primary").style("padding:3px 6px; font-size:9px; margin-right:3px;")),
-                Button.of(Icon.of("fas fa-folder-plus"), Text.of(" + Unit"))
-                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "showModal('createUnitModal')").cssClass("btn-action btn-secondary").style("padding:3px 6px; font-size:9px; margin-right:3px;")),
-                Button.of(Icon.of("fas fa-download"), Text.of(" Backup"))
-                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openBackupDbModal('" + escapeJs(targetDb) + "')").cssClass("btn-action btn-secondary").style("padding:3px 6px; font-size:9px; margin-right:3px; background:rgba(34,197,94,0.15); border-color:rgba(34,197,94,0.3); color:#4ade80;")),
-                Button.of(Icon.of("fas fa-upload"), Text.of(" Restore"))
-                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openRestoreDbModal('" + escapeJs(targetDb) + "')").cssClass("btn-action btn-secondary").style("padding:3px 6px; font-size:9px; margin-right:3px; background:rgba(168,85,247,0.15); border-color:rgba(168,85,247,0.3); color:#c084fc;")),
-                Button.of(Icon.of("fas fa-file-export"), Text.of(" Export"))
-                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openExportDataModal('" + escapeJs(selectedEngine) + "', '" + escapeJs(targetDb) + "', '" + escapeJs(currentColl) + "')").cssClass("btn-action btn-secondary").style("padding:3px 6px; font-size:9px; margin-right:3px; background:rgba(234,179,8,0.15); border-color:rgba(234,179,8,0.3); color:#fde047;")),
-                Button.of(Icon.of("fas fa-search-plus"), Text.of(" Búsqueda Avanzada"))
-                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openAdvancedSearchModal('" + escapeJs(selectedEngine) + "', '" + escapeJs(targetDb) + "', '" + escapeJs(currentColl) + "')").cssClass("btn-action btn-secondary").style("padding:3px 6px; font-size:9px; background:rgba(56,189,248,0.15); border-color:rgba(56,189,248,0.3); color:#38bdf8;"))
-            ).modifier(new Modifier().style("display:flex; align-items:center; flex-wrap:wrap; gap:3px;"))
-        ).modifier(new Modifier().style("justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:6px;"));
+            ).modifier(new Modifier().style("display:flex; align-items:center; flex-wrap:wrap; gap:4px;"))
+        ).modifier(new Modifier().style("justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:6px;"));
 
         if (isTableView) {
             record FlatRecordItem(String engine, String color, String icon, String db, String unit, String id, int vCount, String payload, String payloadB64, String versionsB64) {}
@@ -1917,82 +2053,26 @@ public class StoreEnginesPage extends StoreTemplatePage {
             int endIndex = Math.min(startIndex + pageSize, totalItems);
             List<FlatRecordItem> pageItems = totalItems > 0 ? flatItems.subList(startIndex, endIndex) : Collections.emptyList();
 
-            // Multi-Engine Counts & Filter Chips Toolbar
-            Map<String, Integer> engineCounts = new LinkedHashMap<>();
-            for (FlatRecordItem itm : flatItems) {
-                engineCounts.put(itm.engine(), engineCounts.getOrDefault(itm.engine(), 0) + 1);
-            }
-
-            List<Widget> filterChips = new ArrayList<>();
-            filterChips.add(
-                Button.of(Icon.of("fas fa-layer-group").modifier(new Modifier().style("margin-right:4px; font-size:10px;")), Text.of("All Models (" + totalItems + ")"))
-                    .modifier(new Modifier()
-                        .attribute("type", "button")
-                        .attribute("onclick", "filterByEngineType('ALL')")
-                        .attribute("data-engine-target", "ALL")
-                        .cssClass("engine-filter-chip active")
-                        .style("padding:3px 10px; font-size:11px; font-weight:600; background:rgba(56,189,248,0.25); border:1px solid #38bdf8; color:#38bdf8; border-radius:16px; cursor:pointer; transition:all 0.15s ease; display:inline-flex; align-items:center;"))
-            );
-
-            for (String[] spec : allEngSpecs) {
-                String engName = spec[0];
-                String engColor = spec[1];
-                String engIcon = spec[2];
-                int cnt = engineCounts.getOrDefault(engName, 0);
-                if (cnt > 0) {
-                    filterChips.add(
-                        Button.of(Icon.of(engIcon).modifier(new Modifier().style("margin-right:4px; font-size:10px; color:" + engColor + ";")), Text.of(engName + " (" + cnt + ")"))
-                            .modifier(new Modifier()
-                                .attribute("type", "button")
-                                .attribute("onclick", "filterByEngineType('" + engName + "')")
-                                .attribute("data-engine-target", engName)
-                                .cssClass("engine-filter-chip")
-                                .style("padding:3px 10px; font-size:11px; font-weight:600; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); color:#94a3b8; border-radius:16px; cursor:pointer; transition:all 0.15s ease; display:inline-flex; align-items:center;"))
-                    );
-                }
-            }
-
-            Widget engineFilterChipsBar = Div.of(filterChips.toArray(new Widget[0]))
-                .modifier(new Modifier().style("display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:10px; padding:2px 0;"));
-
-            // Table Filter Bar with Database SelectOne Dropdown
-            Map<String, String> dbSelectOptions = new LinkedHashMap<>();
-            for (String d : allDbs) {
-                dbSelectOptions.put(d, "📦 " + d + (d.equalsIgnoreCase(targetDb) ? " (Active)" : ""));
-            }
-
-            String onDbChangeScript = "onTableDatabaseChange(this.value, '" + actionUrl + selectedEngine + "', " + pageSize + ")";
-
-            Widget dbSelectDropdown = createSelectOne("table_db_selector", "tableDbSelector", "#38bdf8", onDbChangeScript, dbSelectOptions, targetDb);
-
-            Widget dbPickerGroup = Div.of(
-                Span.of(Icon.of("fas fa-database").modifier(new Modifier().style("color:#38bdf8; margin-right:4px;")), Text.of("DB:")).modifier(new Modifier().style("font-size:11px; font-weight:700; color:#38bdf8; margin-right:6px; white-space:nowrap; display:flex; align-items:center;")),
-                dbSelectDropdown
-            ).modifier(new Modifier().style("display:inline-flex; align-items:center; min-width:200px; max-width:260px; background:rgba(56,189,248,0.08); border:1px solid rgba(56,189,248,0.25); padding:3px 8px; border-radius:6px;"));
-
             Widget quickFilterInput = TextField.of("table_quick_filter", "Quick filter by Record ID, unit, engine, or payload content...")
                 .id("tableExplorerQuickFilter")
                 .modifier(new Modifier()
                     .attribute("onkeyup", "filterExplorerTable()")
-                    .style("flex:1; min-width:220px; padding:6px 12px; background:#0f172a; border:1px solid rgba(56,189,248,0.3); border-radius:6px; color:#f8fafc; font-size:12px;"));
+                    .style("flex:1; min-width:220px; padding:6px 12px; background:var(--j-bg-surface); border:1px solid var(--j-border); border-radius:6px; color:var(--j-text-primary); font-size:12px;"));
 
             Widget resolveRefCheckbox = Label.of(
-                RawHtml.of("<input type=\"checkbox\" id=\"chkAutoResolveRefsGlobal\" checked onchange=\"toggleGlobalReferenceResolution(this.checked)\" style=\"accent-color:#38bdf8; width:14px; height:14px; cursor:pointer; margin-right:4px;\" />"),
-                Icon.of("fas fa-link").modifier(new Modifier().style("color:#38bdf8; margin-right:4px; font-size:11px;")),
-                Span.of("Cargar Objetos Referenciados (Auto-Resolve Jref)").modifier(new Modifier().style("color:#cbd5e1; font-size:11px; font-weight:600;"))
-            ).modifier(new Modifier().style("display:inline-flex; align-items:center; cursor:pointer; background:rgba(56,189,248,0.1); border:1px solid rgba(56,189,248,0.25); padding:4px 8px; border-radius:6px;"));
+                RawHtml.of("<input type=\"checkbox\" id=\"chkAutoResolveRefsGlobal\" checked onchange=\"toggleGlobalReferenceResolution(this.checked)\" style=\"accent-color:var(--j-primary); width:14px; height:14px; cursor:pointer; margin-right:4px;\" />"),
+                Icon.of("fas fa-link").modifier(new Modifier().style("color:var(--j-primary); margin-right:4px; font-size:11px;")),
+                Span.of("Cargar Objetos Referenciados (Auto-Resolve Jref)").modifier(new Modifier().style("color:var(--j-text-secondary); font-size:11px; font-weight:600;"))
+            ).modifier(new Modifier().style("display:inline-flex; align-items:center; cursor:pointer; background:var(--j-primary-light); border:1px solid var(--j-border); padding:4px 8px; border-radius:6px;"));
 
-            int activeWithData = (int) java.util.Arrays.stream(allEngSpecs).filter(s -> engineCounts.getOrDefault(s[0], 0) > 0).count();
-
-            Widget totalCountBadge = Span.of(totalItems + " Total Records (" + activeWithData + " Active Models)").id("tableFilterVisibleCount")
+            Widget totalCountBadge = Span.of(totalItems + " Total Records").id("tableFilterVisibleCount")
                 .modifier(new Modifier().cssClass("store-badge badge-active").style("font-size:11px; padding:4px 8px;"));
 
             Widget tableFilterBar = Div.of(
-                dbPickerGroup,
                 resolveRefCheckbox,
                 quickFilterInput,
                 totalCountBadge
-            ).modifier(new Modifier().style("display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px; background:rgba(15,23,42,0.6); padding:8px 12px; border-radius:6px; border:1px solid rgba(255,255,255,0.05);"));
+            ).modifier(new Modifier().style("display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px; background:var(--j-bg-subsurface); padding:8px 12px; border-radius:6px; border:1px solid var(--j-border);"));
 
             // Table Headers & Rows
             List<Widget> tableRows = new ArrayList<>();
@@ -2000,35 +2080,37 @@ public class StoreEnginesPage extends StoreTemplatePage {
             // Header Row
             Widget tableHeaderRow = Div.of(
                 Span.of("").modifier(new Modifier().style("width:28px; text-align:center;")),
-                Span.of("ENGINE").modifier(new Modifier().style("width:125px; font-weight:700; color:#94a3b8; font-size:11px;")),
-                Span.of("UNIT / COLLECTION").modifier(new Modifier().style("width:150px; font-weight:700; color:#94a3b8; font-size:11px;")),
-                Span.of("RECORD ID").modifier(new Modifier().style("width:160px; font-weight:700; color:#94a3b8; font-size:11px;")),
-                Span.of("VERSION").modifier(new Modifier().style("width:70px; font-weight:700; color:#94a3b8; font-size:11px;")),
-                Span.of("PAYLOAD PREVIEW").modifier(new Modifier().style("flex:1; min-width:180px; font-weight:700; color:#94a3b8; font-size:11px;")),
-                Span.of("ACTIONS").modifier(new Modifier().style("width:130px; text-align:right; font-weight:700; color:#94a3b8; font-size:11px;"))
-            ).modifier(new Modifier().style("display:flex; align-items:center; padding:8px 12px; background:rgba(30,41,59,0.8); border-bottom:2px solid rgba(255,255,255,0.1); border-radius:6px 6px 0 0; gap:8px;"));
+                Span.of("ENGINE").modifier(new Modifier().style("width:125px; font-weight:700; color:var(--j-text-secondary); font-size:11px;")),
+                Span.of("UNIT / COLLECTION").modifier(new Modifier().style("width:150px; font-weight:700; color:var(--j-text-secondary); font-size:11px;")),
+                Span.of("RECORD ID").modifier(new Modifier().style("width:160px; font-weight:700; color:var(--j-text-secondary); font-size:11px;")),
+                Span.of("VERSION").modifier(new Modifier().style("width:70px; font-weight:700; color:var(--j-text-secondary); font-size:11px;")),
+                Span.of("PAYLOAD PREVIEW").modifier(new Modifier().style("flex:1; min-width:180px; font-weight:700; color:var(--j-text-secondary); font-size:11px;")),
+                Span.of("ACTIONS").modifier(new Modifier().style("width:130px; text-align:right; font-weight:700; color:var(--j-text-secondary); font-size:11px;"))
+            ).modifier(new Modifier().style("display:flex; align-items:center; padding:8px 12px; background:var(--j-bg-subsurface); border-bottom:2px solid var(--j-border); border-radius:6px 6px 0 0; gap:8px;"));
 
             tableRows.add(tableHeaderRow);
 
             if (pageItems.isEmpty()) {
                 tableRows.add(
                     Div.of(
-                        Icon.of("fas fa-database").modifier(new Modifier().style("color:#64748b; font-size:28px; margin-bottom:8px; display:block;")),
+                        Icon.of("fas fa-database").modifier(new Modifier().style("color:var(--j-text-muted); font-size:28px; margin-bottom:8px; display:block;")),
                         Header.of(4, Text.of("No engines or components found for [" + targetDb + "]"))
-                            .modifier(new Modifier().style("margin:0; font-size:14px; font-weight:700; color:#f8fafc; margin-bottom:4px;")),
+                            .modifier(new Modifier().style("margin:0; font-size:14px; font-weight:700; color:var(--j-text-primary); margin-bottom:4px;")),
                         Span.of("This database currently contains no active units or stored entities across the multi-model engines.")
-                            .modifier(new Modifier().style("color:#94a3b8; font-size:12px; display:block; margin-bottom:12px;")),
+                            .modifier(new Modifier().style("color:var(--j-text-muted); font-size:12px; display:block; margin-bottom:12px;")),
                         Div.of(
                             Button.of(Icon.of("fas fa-plus"), Text.of(" Add Unit / Collection"))
                                 .modifier(new Modifier().attribute("type", "button").attribute("onclick", "showModal('createUnitModal')").cssClass("btn-action btn-primary").style("padding:5px 12px; font-size:11px; margin-right:6px;")),
                             Button.of(Icon.of("fas fa-file-code"), Text.of(" Insert Document"))
                                 .modifier(new Modifier().attribute("type", "button").attribute("onclick", "showModal('addDocumentModal')").cssClass("btn-action btn-secondary").style("padding:5px 12px; font-size:11px;"))
                         ).modifier(new Modifier().style("display:flex; justify-content:center; gap:6px;"))
-                    ).modifier(new Modifier().style("padding:36px 20px; text-align:center; background:#0f172a; border-bottom:1px solid rgba(255,255,255,0.05);"))
+                    ).modifier(new Modifier().style("padding:36px 20px; text-align:center; background:var(--j-bg-surface); border-bottom:1px solid var(--j-border);"))
                 );
             } else {
+                int rowIdx = 0;
                 for (FlatRecordItem item : pageItems) {
-                    String rowDetailId = "tbl_row_detail_" + Math.abs((item.engine() + "_" + item.db() + "_" + item.unit() + "_" + item.id()).hashCode());
+                    rowIdx++;
+                    String rowDetailId = "tbl_row_detail_" + rowIdx;
                     String rowIconId = "icon_" + rowDetailId;
 
                     Widget expandBtn = Button.of(Icon.of("fas fa-chevron-right tree-toggle-icon").id(rowIconId))
@@ -2036,7 +2118,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
                             .attribute("type", "button")
                             .attribute("onclick", "toggleTableRowDetail('" + rowDetailId + "')")
                             .attribute("title", "Expand record details")
-                            .style("background:none; border:none; color:#38bdf8; font-size:10px; cursor:pointer; width:28px; height:28px; display:inline-flex; align-items:center; justify-content:center; border-radius:4px; transition:all 0.15s ease;"));
+                            .style("background:none; border:none; color:var(--j-primary); font-size:11px; cursor:pointer; width:28px; height:28px; display:inline-flex; align-items:center; justify-content:center; border-radius:4px; transition:all 0.15s ease;"));
 
                     Widget engCell = Span.of(
                         Icon.of(item.icon()).modifier(new Modifier().style("color:" + item.color() + "; margin-right:4px; font-size:11px;")),
@@ -2045,39 +2127,58 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
                     Widget unitCell = Span.of(
                         Text.of("📁 "),
-                        Span.of(item.unit()).modifier(new Modifier().style("color:#cbd5e1; font-size:11px; font-weight:500;"))
+                        Span.of(item.unit()).modifier(new Modifier().style("color:var(--j-text-secondary); font-size:11px; font-weight:500;"))
                     ).modifier(new Modifier().style("width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"));
 
                     Widget idCell = Span.of(item.id())
-                        .modifier(new Modifier().style("width:160px; color:#f8fafc; font-family:monospace; font-weight:700; font-size:11.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"));
+                        .modifier(new Modifier().style("width:160px; color:var(--j-text-primary); font-family:monospace; font-weight:700; font-size:11.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer;"))
+                        .attribute("onclick", "toggleTableRowDetail('" + rowDetailId + "')")
+                        .attribute("title", "Click to toggle details");
 
                     Widget versionCell = Span.of("v" + item.vCount())
-                        .modifier(new Modifier().cssClass("store-badge").style("width:70px; background:rgba(56,189,248,0.15); color:#38bdf8; font-size:10px; padding:2px 6px; text-align:center;"));
+                        .modifier(new Modifier().cssClass("store-badge").style("width:70px; background:var(--j-primary-light); color:var(--j-primary); font-size:10px; padding:2px 6px; text-align:center;"));
 
                     String preview = item.payload().length() > 75 ? item.payload().substring(0, 75) + "..." : item.payload();
                     Widget previewCell = Span.of(preview)
-                        .modifier(new Modifier().style("flex:1; min-width:180px; color:#94a3b8; font-family:monospace; font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"));
+                        .modifier(new Modifier().style("flex:1; min-width:180px; color:var(--j-text-muted); font-family:monospace; font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer;"))
+                        .attribute("onclick", "toggleTableRowDetail('" + rowDetailId + "')");
 
                     List<Widget> actionBtns = new ArrayList<>();
                     actionBtns.add(
                         Button.of(Icon.of("fas fa-eye"))
-                            .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openInspectRecordModal('" + escapeJs(item.engine()) + "', '" + escapeJs(item.db()) + "', '" + escapeJs(item.unit()) + "', '" + escapeJs(item.id()) + "', '" + item.payloadB64() + "', " + item.vCount() + ")").attribute("title", "Inspect record details").style("background:none; border:1px solid rgba(56,189,248,0.4); color:#38bdf8; font-size:10px; padding:3px 6px; border-radius:3px; cursor:pointer;"))
+                            .modifier(new Modifier()
+                                .attribute("type", "button")
+                                .attribute("title", "Ver detalles del registro")
+                                .attribute("onclick", "openInspectRecordModal('" + escapeJs(item.engine()) + "', '" + escapeJs(item.db()) + "', '" + escapeJs(item.unit()) + "', '" + escapeJs(item.id()) + "', '" + item.payloadB64() + "', " + item.vCount() + ")")
+                                .style("background:rgba(56,189,248,0.1); border:1px solid rgba(56,189,248,0.3); color:#38bdf8; font-size:11px; padding:4px 8px; border-radius:4px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center;"))
                     );
                     actionBtns.add(
                         Button.of(Icon.of("fas fa-edit"))
-                            .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openUniversalEditModal('" + escapeJs(item.engine()) + "', '" + escapeJs(item.db()) + "', '" + escapeJs(item.unit()) + "', '" + escapeJs(item.id()) + "', '" + item.payloadB64() + "')").attribute("title", "Edit record").style("background:none; border:1px solid rgba(56,189,248,0.4); color:#38bdf8; font-size:10px; padding:3px 6px; border-radius:3px; cursor:pointer;"))
+                            .modifier(new Modifier()
+                                .attribute("type", "button")
+                                .attribute("title", "Editar registro")
+                                .attribute("onclick", "openUniversalEditModal('" + escapeJs(item.engine()) + "', '" + escapeJs(item.db()) + "', '" + escapeJs(item.unit()) + "', '" + escapeJs(item.id()) + "', '" + item.payloadB64() + "')")
+                                .style("background:rgba(251,191,36,0.1); border:1px solid rgba(251,191,36,0.3); color:#fbbf24; font-size:11px; padding:4px 8px; border-radius:4px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center;"))
                     );
                     actionBtns.add(
                         Button.of(Icon.of("fas fa-history"))
-                            .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openUniversalRestoreModal('" + escapeJs(item.engine()) + "', '" + escapeJs(item.db()) + "', '" + escapeJs(item.unit()) + "', '" + escapeJs(item.id()) + "', '" + item.versionsB64() + "')").attribute("title", "Version history v" + item.vCount()).style("background:none; border:1px solid rgba(168,85,247,0.4); color:#a855f7; font-size:10px; padding:3px 6px; border-radius:3px; cursor:pointer;"))
+                            .modifier(new Modifier()
+                                .attribute("type", "button")
+                                .attribute("title", "Historial de versiones (v" + item.vCount() + ")")
+                                .attribute("onclick", "openUniversalRestoreModal('" + escapeJs(item.engine()) + "', '" + escapeJs(item.db()) + "', '" + escapeJs(item.unit()) + "', '" + escapeJs(item.id()) + "', '" + item.versionsB64() + "')")
+                                .style("background:rgba(168,85,247,0.1); border:1px solid rgba(168,85,247,0.3); color:#a855f7; font-size:11px; padding:4px 8px; border-radius:4px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center;"))
                     );
                     actionBtns.add(
                         Button.of(Icon.of("fas fa-trash-alt"))
-                            .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openUniversalDeleteModal('" + escapeJs(item.engine()) + "', '" + escapeJs(item.db()) + "', '" + escapeJs(item.unit()) + "', '" + escapeJs(item.id()) + "')").attribute("title", "Delete record").style("background:none; border:1px solid rgba(239,68,68,0.4); color:#ef4444; font-size:10px; padding:3px 6px; border-radius:3px; cursor:pointer;"))
+                            .modifier(new Modifier()
+                                .attribute("type", "button")
+                                .attribute("title", "Eliminar registro")
+                                .attribute("onclick", "openUniversalDeleteModal('" + escapeJs(item.engine()) + "', '" + escapeJs(item.db()) + "', '" + escapeJs(item.unit()) + "', '" + escapeJs(item.id()) + "')")
+                                .style("background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.3); color:#ef4444; font-size:11px; padding:4px 8px; border-radius:4px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center;"))
                     );
 
                     Widget actionsCell = Div.of(actionBtns.toArray(new Widget[0]))
-                        .modifier(new Modifier().style("width:130px; display:flex; justify-content:flex-end; align-items:center; gap:3px;"));
+                        .modifier(new Modifier().style("width:130px; display:flex; justify-content:flex-end; align-items:center; gap:4px;"));
 
                     Widget row = Div.of(expandBtn, engCell, unitCell, idCell, versionCell, previewCell, actionsCell)
                         .modifier(new Modifier()
@@ -2085,13 +2186,13 @@ public class StoreEnginesPage extends StoreTemplatePage {
                             .attribute("data-detail-id", rowDetailId)
                             .attribute("data-db-name", item.db())
                             .attribute("data-engine-type", item.engine())
-                            .style("display:flex; align-items:center; padding:8px 12px; border-bottom:1px solid rgba(255,255,255,0.05); background:#0f172a; gap:8px;"));
+                            .style("display:flex; align-items:center; padding:8px 12px; border-bottom:1px solid var(--j-border); background:var(--j-bg-surface); gap:8px;"));
 
                     Widget detailContent = renderItemDetailSummary(item.engine(), item.db(), item.unit(), item.id(), item.payload(), item.vCount(), item.payloadB64(), item.versionsB64());
 
                     Widget detailRow = Div.of(detailContent)
                         .id(rowDetailId)
-                        .modifier(new Modifier().cssClass("explorer-table-detail-row").style("display:none; padding:10px 16px; background:rgba(15,23,42,0.95); border-bottom:1px solid rgba(56,189,248,0.2); border-left:3px solid " + item.color() + "; margin-left:32px; border-radius:0 0 6px 6px; box-shadow:inset 0 2px 8px rgba(0,0,0,0.5); margin-bottom:4px;"));
+                        .modifier(new Modifier().cssClass("explorer-table-detail-row").style("display:none; padding:10px 16px; background:var(--j-bg-subsurface); border-bottom:1px solid var(--j-border); border-left:3px solid " + item.color() + "; margin-left:32px; border-radius:0 0 6px 6px; box-shadow:inset 0 2px 8px rgba(0,0,0,0.05); margin-bottom:4px;"));
 
                     tableRows.add(row);
                     tableRows.add(detailRow);
@@ -2100,9 +2201,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
             Widget tableContainer = Div.of(tableRows.toArray(new Widget[0]))
                 .id("tableExplorerContainer")
-                .modifier(new Modifier().style("border:1px solid rgba(255,255,255,0.1); border-radius:6px; overflow-x:auto; margin-bottom:12px; position:relative;"));
-
-            Widget completeTableView = Div.of(tableFilterBar, engineFilterChipsBar, tableContainer);
+                .modifier(new Modifier().style("border:1px solid var(--j-border); border-radius:6px; overflow-x:auto; margin-bottom:12px; position:relative;"));
 
             // Pagination Controls
             String baseTableUrl = actionUrl + selectedEngine + "&target_db=" + targetDb + "&coll=" + currentColl + "&view_mode=table&table_size=" + pageSize;
@@ -2113,7 +2212,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 pageButtons.add(Link.of(baseTableUrl + "&table_page=" + (currentPage - 1), "‹ Prev").modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:3px 8px; font-size:11px; margin-right:3px;")));
             }
             pageButtons.add(
-                Span.of("Page " + currentPage + " / " + totalPages).modifier(new Modifier().style("color:#38bdf8; font-weight:bold; font-size:11.5px; padding:3px 8px;"))
+                Span.of("Page " + currentPage + " / " + totalPages).modifier(new Modifier().style("color:var(--j-primary); font-weight:bold; font-size:11.5px; padding:3px 8px;"))
             );
             if (currentPage < totalPages) {
                 pageButtons.add(Link.of(baseTableUrl + "&table_page=" + (currentPage + 1), "Next ›").modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:3px 8px; font-size:11px; margin-left:3px;")));
@@ -2122,20 +2221,23 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
             Widget paginationFooter = Div.of(
                 Span.of("Showing " + (totalItems == 0 ? 0 : startIndex + 1) + " - " + endIndex + " of " + totalItems + " records (Page " + currentPage + " of " + totalPages + ")")
-                    .modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:500;")),
+                    .modifier(new Modifier().style("font-size:12px; color:var(--j-text-muted); font-weight:500;")),
                 Div.of(pageButtons.toArray(new Widget[0])).modifier(new Modifier().style("display:flex; align-items:center; gap:2px;"))
             ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; padding:6px 4px;"));
 
-            return Div.of(treeHeader, tableFilterBar, engineFilterChipsBar, tableContainer, paginationFooter)
-                .modifier(new Modifier().cssClass("store-card").style("margin-bottom:20px; border: 1px solid rgba(56,189,248,0.3); background:rgba(18,24,38,0.9); padding:16px;"));
+            return Div.of(treeHeader, tableFilterBar, tableContainer, paginationFooter)
+                .modifier(new Modifier().cssClass("store-card").style("margin-bottom:20px; border: 1px solid var(--j-border); background:var(--j-bg-surface); color:var(--j-text-primary); padding:16px; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.05);"));
         }
 
         List<Widget> dbCardWidgets = new ArrayList<>();
         int dbIdx = 0;
 
-        for (String db : allDbs) {
+        // Render exclusively the active selected database root node
+        List<String> dbsToRender = List.of(targetDb);
+
+        for (String db : dbsToRender) {
             dbIdx++;
-            boolean isActiveDb = db.equalsIgnoreCase(targetDb);
+            boolean isActiveDb = true;
             String dbContainerId = "db_content_" + dbIdx;
             String dbHeaderId = "db_header_" + dbIdx;
             String dbToggleBtnId = "btn_toggle_" + dbIdx;
@@ -2143,7 +2245,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
             Widget dbToggleBtn = Button.of(
                 Icon.of("fas fa-chevron-right tree-toggle-icon")
                     .id("icon_" + dbContainerId)
-                    .modifier(new Modifier().style("color:#38bdf8; font-size:10px; pointer-events:none;"))
+                    .modifier(new Modifier().style("color:var(--j-primary); font-size:10px; pointer-events:none;"))
             ).id(dbToggleBtnId)
              .modifier(new Modifier()
                 .attribute("type", "button")
@@ -2152,13 +2254,12 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 .attribute("aria-expanded", "false")
                 .attribute("data-db", db)
                 .attribute("data-container-id", dbContainerId)
-                .attribute("onclick", "toggleLazyDbSubtree(event, '" + dbContainerId + "', '" + escapeJs(db) + "', '" + escapeJs(selectedEngine) + "', '" + escapeJs(actionUrl) + "', " + dbIdx + ")")
                 .style("background:none; border:none; padding:2px 5px; margin-right:3px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center;"));
 
             Widget dbLeft = Div.of(
                 dbToggleBtn,
-                Icon.of("fas fa-database").modifier(new Modifier().style("margin-right:4px; color:#38bdf8; font-size:11px; pointer-events:none;")),
-                Span.of(db).modifier(new Modifier().style("color:" + (isActiveDb ? "#38bdf8" : "#cbd5e1") + "; font-weight:700; font-size:11px; cursor:pointer;"))
+                Icon.of("fas fa-database").modifier(new Modifier().style("margin-right:4px; color:var(--j-primary); font-size:11px; pointer-events:none;")),
+                Span.of(db).modifier(new Modifier().style("color:var(--j-primary); font-weight:700; font-size:11px; cursor:pointer;"))
             ).id(dbHeaderId)
              .attribute("data-db", db)
              .attribute("data-state", "collapsed")
@@ -2172,18 +2273,10 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 .style("display:inline-flex; align-items:center; cursor:pointer; outline:none; user-select:none;"));
 
             List<Widget> dbRightWidgets = new ArrayList<>();
-            if (isActiveDb) {
-                dbRightWidgets.add(Span.of("ACTIVE").modifier(new Modifier().cssClass("store-badge badge-active").style("font-size:8px; padding:1px 5px; margin-left:4px;")));
-            }
+            dbRightWidgets.add(Span.of("ACTIVE").modifier(new Modifier().cssClass("store-badge badge-active").style("font-size:8px; padding:1px 5px; margin-left:4px;")));
             dbRightWidgets.add(
                 Button.of(Icon.of("fas fa-sync-alt"))
-                    .modifier(new Modifier().attribute("type", "button").attribute("title", "Refresh database hierarchy").attribute("onclick", "event.stopPropagation(); refreshLazyDbSubtree(event, '" + dbContainerId + "', '" + escapeJs(db) + "', '" + escapeJs(selectedEngine) + "', '" + escapeJs(actionUrl) + "', " + dbIdx + ")").style("background:none; border:none; color:#94a3b8; font-size:9px; cursor:pointer; padding:1px 4px; margin-right:2px;"))
-            );
-            dbRightWidgets.add(
-                Link.of(actionUrl + selectedEngine + "&target_db=" + db,
-                    Icon.of("fas fa-compass").modifier(new Modifier().style("margin-right:3px; font-size:9.5px;")),
-                    Text.of("[Explore DB]")
-                ).modifier(new Modifier().style("color:#38bdf8; font-size:9.5px; margin-left:4px; text-decoration:none; font-weight:600; display:inline-flex; align-items:center;"))
+                    .modifier(new Modifier().attribute("type", "button").attribute("title", "Refresh database hierarchy").attribute("onclick", "event.stopPropagation(); refreshLazyDbSubtree(event, '" + dbContainerId + "', '" + escapeJs(db) + "', '" + escapeJs(selectedEngine) + "', '" + escapeJs(actionUrl) + "', " + dbIdx + ")").style("background:none; border:none; color:var(--j-text-muted); font-size:9px; cursor:pointer; padding:1px 4px; margin-right:2px;"))
             );
             Widget dbRight = Div.of(dbRightWidgets.toArray(new Widget[0]));
 
@@ -2200,7 +2293,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 .modifier(new Modifier().cssClass("tree-collapsible-content db-subtree-container").style("margin-left:8px; border-left: 2px dashed rgba(56,189,248,0.3); padding-left:6px; margin-top:3px; display:none;"));
 
             Widget dbCard = Div.of(dbHeaderRow, dbSubtreeContainer)
-                .modifier(new Modifier().style("margin-bottom:6px; padding:4px 8px; border-radius:6px; background:" + (isActiveDb ? "rgba(56,189,248,0.06)" : "rgba(255,255,255,0.015)") + "; border:" + (isActiveDb ? "1px solid rgba(56,189,248,0.2)" : "1px solid rgba(255,255,255,0.04)") + ";"));
+                .modifier(new Modifier().style("margin-bottom:6px; padding:4px 8px; border-radius:6px; background:" + (isActiveDb ? "var(--j-primary-light)" : "var(--j-bg-subsurface)") + "; border:" + (isActiveDb ? "1px solid var(--j-primary)" : "1px solid var(--j-border)") + ";"));
 
             dbCardWidgets.add(dbCard);
         }
@@ -2212,11 +2305,20 @@ public class StoreEnginesPage extends StoreTemplatePage {
             "<script>\n" +
             "  window.lastActionUrl = '" + escapeJs(actionUrl) + "';\n" +
             "  window.lastSelectedEngine = '" + escapeJs(selectedEngine) + "';\n" +
+            "  setTimeout(function() {\n" +
+            "    var activeContainer = document.querySelector('.db-subtree-container[data-db=\"" + escapeJs(targetDb) + "\"]');\n" +
+            "    if (activeContainer && activeContainer.getAttribute('data-loaded') !== 'true') {\n" +
+            "      var cId = activeContainer.id;\n" +
+            "      var db = activeContainer.getAttribute('data-db');\n" +
+            "      var idx = activeContainer.getAttribute('data-db-idx') || 1;\n" +
+            "      toggleLazyDbSubtree(null, cId, db, '" + escapeJs(selectedEngine) + "', '" + escapeJs(actionUrl) + "', idx);\n" +
+            "    }\n" +
+            "  }, 60);\n" +
             "</script>\n"
         );
 
         return Div.of(treeHeader, treeBody, treeInitScript)
-            .modifier(new Modifier().cssClass("store-card").style("margin-bottom:20px; border: 1px solid rgba(56,189,248,0.3); background:rgba(18,24,38,0.9); padding:16px;"));
+            .modifier(new Modifier().cssClass("store-card").style("margin-bottom:20px; border: 1px solid var(--j-border); background:var(--j-bg-surface); color:var(--j-text-primary); padding:16px; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.05);"));
     }
 
     private Widget createEngineModals(String engineKey, String targetDb, String currentColl) {
@@ -2256,9 +2358,58 @@ public class StoreEnginesPage extends StoreTemplatePage {
         modals.add(buildReferenceWarningModal());
         modals.add(buildCreateIndexModal(actionUrl));
         modals.add(buildCreateSchemaModal(actionUrl));
+        modals.add(buildSampleDatabasesModal(actionUrl));
+        modals.add(buildDatabaseSwitchModal(actionUrl, targetDb));
         modals.add(buildModalsScript());
 
         return Div.of(modals.toArray(new Widget[0]));
+    }
+
+    private Widget buildDatabaseSwitchModal(String actionUrl, String currentTargetDb) {
+        Set<String> allDbs = discoverAllDatabases();
+        if (!allDbs.contains(currentTargetDb)) {
+            allDbs.add(currentTargetDb);
+        }
+
+        List<Widget> dbRowWidgets = new ArrayList<>();
+        for (String dbName : allDbs) {
+            boolean isActive = dbName.equalsIgnoreCase(currentTargetDb);
+            String switchUrl = JettraServer.resolvePath("/engines?target_db=" + dbName + "&tab=schema");
+
+            dbRowWidgets.add(
+                Div.of(
+                    Row.of(
+                        Icon.of("fas fa-database").modifier(new Modifier().style("color:" + (isActive ? "#38bdf8" : "#94a3b8") + "; font-size:16px; margin-right:12px;")),
+                        Column.of(
+                            Span.of(dbName).modifier(new Modifier().style("font-size:14px; font-weight:" + (isActive ? "700" : "600") + "; color:" + (isActive ? "#38bdf8" : "#f8fafc") + ";")),
+                            Span.of(isActive ? "Active Database • 9 Multi-Model Engines Provisioned" : "9 Engines Available • Ready to Explore")
+                                .modifier(new Modifier().style("font-size:11px; color:#94a3b8; margin-top:2px;"))
+                        )
+                    ).modifier(new Modifier().style("align-items:center;")),
+                    isActive
+                        ? Span.of(Span.of("").modifier(new Modifier().style("width:6px; height:6px; border-radius:50%; background:#22c55e; display:inline-block; margin-right:4px;")), Text.of("CURRENT"))
+                            .modifier(new Modifier().cssClass("store-badge badge-active"))
+                        : Button.of(Icon.of("fas fa-arrow-right"), Text.of(" Switch"))
+                            .modifier(new Modifier().attribute("type", "button").attribute("onclick", "location.href='" + switchUrl + "'").cssClass("btn-studio-primary").style("padding:4px 10px; font-size:11px;"))
+                ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; padding:12px 14px; border-radius:8px; margin-bottom:8px; background:" + (isActive ? "rgba(56,189,248,0.12)" : "rgba(255,255,255,0.03)") + "; border:" + (isActive ? "1px solid rgba(56,189,248,0.4)" : "1px solid rgba(255,255,255,0.06)") + ";"))
+            );
+        }
+
+        Widget header = createModalHeader("Switch Active Database", "fas fa-database", "#38bdf8", "switchDbModal");
+
+        Widget quickFooter = Row.of(
+            Button.of(Icon.of("fas fa-plus"), Text.of(" Create New DB"))
+                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "hideModal('switchDbModal'); showModal('createDbModal');").cssClass("btn-studio-secondary")),
+            Button.of(Icon.of("fas fa-cubes"), Text.of(" Sample Catalog"))
+                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "hideModal('switchDbModal'); openSampleDatabasesModal();").cssClass("btn-studio-secondary").style("color:#ec4899;"))
+        ).modifier(new Modifier().style("display:flex; justify-content:flex-end; gap:8px; margin-top:16px; border-top:1px solid rgba(255,255,255,0.08); padding-top:14px;"));
+
+        Widget body = Column.of(
+            Div.of(dbRowWidgets.toArray(new Widget[0])).modifier(new Modifier().style("max-height:360px; overflow-y:auto; padding-right:4px;")),
+            quickFooter
+        );
+
+        return createModalOverlay("switchDbModal", "560px", "rgba(56,189,248,0.4)", header, body);
     }
 
     private Widget createLabel(String text) {
@@ -2266,14 +2417,14 @@ public class StoreEnginesPage extends StoreTemplatePage {
     }
 
     private Widget createLabel(String text, String id) {
-        return Label.of(text).id(id).modifier(new Modifier().style("display:block; font-size:12px; font-weight:600; color:#cbd5e1; margin-bottom:4px;"));
+        return Label.of(text).id(id).modifier(new Modifier().style("display:block; font-size:12px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px;"));
     }
 
     private TextField createTextInput(String name, String placeholder, String value, String color) {
         TextField tf = TextField.of(name, placeholder != null ? placeholder : "");
         if (value != null && !value.isEmpty()) tf.value(value);
-        String textColor = (color != null && !color.isEmpty()) ? color : "#f8fafc";
-        tf.modifier(new Modifier().style("width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:" + textColor + "; font-size:13px; box-sizing:border-box;"));
+        String textColor = (color != null && !color.isEmpty()) ? color : "var(--j-text-primary)";
+        tf.modifier(new Modifier().style("width:100%; padding:8px 12px; background:var(--j-bg-subsurface); border:1px solid var(--j-border); border-radius:6px; color:" + textColor + "; font-size:13px; box-sizing:border-box;"));
         return tf;
     }
 
@@ -2281,7 +2432,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
         TextArea ta = TextArea.create().name(name).rows(rows);
         if (placeholder != null && !placeholder.isEmpty()) ta.placeholder(placeholder);
         if (value != null && !value.isEmpty()) ta.value(value);
-        ta.modifier(new Modifier().style("width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; font-size:12px; font-family:monospace; box-sizing:border-box;"));
+        ta.modifier(new Modifier().style("width:100%; padding:10px 12px; background:var(--j-bg-subsurface); border:1px solid var(--j-border); border-radius:6px; color:var(--j-text-primary); font-size:12px; font-family:monospace; box-sizing:border-box;"));
         return ta;
     }
 
@@ -2290,8 +2441,8 @@ public class StoreEnginesPage extends StoreTemplatePage {
         sb.append("<select name='").append(name).append("' ");
         if (id != null && !id.isEmpty()) sb.append("id='").append(id).append("' ");
         if (onChange != null && !onChange.isEmpty()) sb.append("onchange='").append(onChange).append("' ");
-        String textColor = (color != null && !color.isEmpty()) ? color : "#f8fafc";
-        sb.append("style='width:100%; padding:8px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:").append(textColor).append("; font-size:13px; box-sizing:border-box;'>\n");
+        String textColor = (color != null && !color.isEmpty()) ? color : "var(--j-text-primary)";
+        sb.append("style='width:100%; padding:8px 12px; background:var(--j-bg-subsurface); border:1px solid var(--j-border); border-radius:6px; color:").append(textColor).append("; font-size:13px; box-sizing:border-box;'>\n");
         for (Map.Entry<String, String> opt : options.entrySet()) {
             String sel = opt.getKey().equalsIgnoreCase(selectedValue) ? " selected" : "";
             sb.append("  <option value='").append(opt.getKey()).append("'").append(sel).append(">").append(opt.getValue()).append("</option>\n");
@@ -2303,15 +2454,15 @@ public class StoreEnginesPage extends StoreTemplatePage {
     private Widget createModalOverlay(String modalId, String width, String borderColor, Widget header, Widget content) {
         return Div.of(
             Div.of(header, content).modifier(new Modifier().cssClass("store-card")
-                .style("width:" + width + "; max-width:94%; max-height:90vh; overflow-y:auto; background:#1e293b; border:1px solid " + borderColor + "; box-shadow:0 20px 50px rgba(0,0,0,0.85); padding:24px; border-radius:12px; position:relative; z-index:100000;"))
-        ).id(modalId).modifier(new Modifier().style("display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.8); backdrop-filter:blur(6px); z-index:99999; align-items:center; justify-content:center;"));
+                .style("width:" + width + "; max-width:94%; max-height:90vh; overflow-y:auto; background:var(--j-bg-surface); border:1px solid " + borderColor + "; box-shadow:0 20px 50px rgba(0,0,0,0.5); padding:24px; border-radius:12px; position:relative; z-index:100000;"))
+        ).id(modalId).modifier(new Modifier().style("display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.7); backdrop-filter:blur(6px); z-index:99999; align-items:center; justify-content:center;"));
     }
 
     private Widget createConfirmationModalOverlay(String modalId, String width, String borderColor, Widget header, Widget content) {
         return Div.of(
             Div.of(header, content).modifier(new Modifier().cssClass("store-card")
-                .style("width:" + width + "; max-width:94%; max-height:90vh; overflow-y:auto; background:#1e293b; border:1px solid " + borderColor + "; box-shadow:0 20px 50px rgba(0,0,0,0.85); padding:24px; border-radius:12px; position:relative; z-index:100001;"))
-        ).id(modalId).modifier(new Modifier().style("display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.8); backdrop-filter:blur(6px); z-index:100000; align-items:center; justify-content:center;"));
+                .style("width:" + width + "; max-width:94%; max-height:90vh; overflow-y:auto; background:var(--j-bg-surface); border:1px solid " + borderColor + "; box-shadow:0 20px 50px rgba(0,0,0,0.5); padding:24px; border-radius:12px; position:relative; z-index:100001;"))
+        ).id(modalId).modifier(new Modifier().style("display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.7); backdrop-filter:blur(6px); z-index:100000; align-items:center; justify-content:center;"));
     }
 
     private Widget createModalHeader(String title, String iconClass, String iconColor, String modalId) {
@@ -2319,11 +2470,11 @@ public class StoreEnginesPage extends StoreTemplatePage {
             Header.of(3,
                 Icon.of(iconClass).modifier(new Modifier().style("color:" + iconColor + "; margin-right:8px;")),
                 Text.of(" " + title)
-            ).modifier(new Modifier().style("margin:0; font-size:18px; font-weight:700; color:#f8fafc;")),
+            ).modifier(new Modifier().style("margin:0; font-size:18px; font-weight:700; color:var(--j-text-primary);")),
             Button.of(Icon.of("fas fa-times"))
                 .attribute("type", "button")
                 .attribute("onclick", "hideModal('" + modalId + "')")
-                .modifier(new Modifier().style("background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;"))
+                .modifier(new Modifier().style("background:none; border:none; color:var(--j-text-muted); font-size:18px; cursor:pointer;"))
         ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;"));
     }
 
@@ -2333,11 +2484,11 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 Icon.of(iconClass).modifier(new Modifier().style("color:" + iconColor + "; margin-right:8px;")),
                 Text.of(" " + prefixTitle + " "),
                 Span.of("").id(spanId).modifier(new Modifier().style("color:" + spanColor + ";"))
-            ).modifier(new Modifier().style("margin:0; font-size:18px; font-weight:700; color:#f8fafc;")),
+            ).modifier(new Modifier().style("margin:0; font-size:18px; font-weight:700; color:var(--j-text-primary);")),
             Button.of(Icon.of("fas fa-times"))
                 .attribute("type", "button")
                 .attribute("onclick", "hideModal('" + modalId + "')")
-                .modifier(new Modifier().style("background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;"))
+                .modifier(new Modifier().style("background:none; border:none; color:var(--j-text-muted); font-size:18px; cursor:pointer;"))
         ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;"));
     }
 
@@ -2381,7 +2532,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
             Button.of(Text.of("Cancel"))
                 .modifier(new Modifier().attribute("type", "button").attribute("onclick", "hideModal('" + modalId + "')").cssClass("btn-action btn-secondary")),
             Button.of(Icon.of(submitIcon), Text.of(" " + submitText))
-                .modifier(new Modifier().attribute("type", "submit").cssClass("btn-action btn-primary").style(submitColor.isEmpty() ? "" : "background:" + submitColor + ";"))
+                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "handleModalFormSubmit(event, '" + modalId + "')").cssClass("btn-action btn-primary").style(submitColor.isEmpty() ? "" : "background:" + submitColor + ";"))
         ).modifier(new Modifier().style("display:flex; justify-content:flex-end; gap:8px;"));
     }
 
@@ -2412,7 +2563,12 @@ public class StoreEnginesPage extends StoreTemplatePage {
             Inputs.of(
                 createLabel("Initial Subtree Unit (Collection / Bucket / Table):"),
                 createTextInput("initial_unit", "", "default", "#f8fafc")
-            ).modifier(new Modifier().style("margin-bottom:16px;")),
+            ).modifier(new Modifier().style("margin-bottom:14px;")),
+            Div.of(
+                Icon.of("fas fa-info-circle").modifier(new Modifier().style("color:#38bdf8; margin-right:6px; font-size:11px; margin-top:2px;")),
+                Span.of("Configuración automática: Al crear la base de datos se configuran de manera predeterminada todos los motores multi-modelo (Document, KeyValue, Vector, Graph, TimeSeries, Column, Geospatial, Object, Records) dentro de su Tree para procesar elementos de inmediato.")
+                    .modifier(new Modifier().style("color:#94a3b8; font-size:9.5px; line-height:1.35;"))
+            ).modifier(new Modifier().style("display:flex; align-items:flex-start; background:rgba(56,189,248,0.08); border:1px solid rgba(56,189,248,0.2); border-radius:4px; padding:6px 8px; margin-bottom:16px;")),
             createModalFormActions("createDbModal", "Initialize Database", "fas fa-plus", "")
         ).method("POST").action(actionUrl);
 
@@ -3848,6 +4004,33 @@ public class StoreEnginesPage extends StoreTemplatePage {
         return createModalOverlay("createSchemaModal", "560px", "rgba(56,189,248,0.4)", header, form);
     }
 
+    private Widget buildSampleDatabasesModal(String actionUrl) {
+        Widget header = createModalHeader("Sample Databases & Datasets Catalog", "fas fa-cubes", "#ec4899", "sampleDatabasesModal");
+
+        Widget subtitle = Paragraph.of("Explore, install, and uninstall on-demand sample datasets across all 9 Multi-Model Storage Engines with atomic lifecycle operations.")
+            .modifier(new Modifier().style("font-size:12px; color:#94a3b8; margin:0 0 16px 0; line-height:1.4;"));
+
+        Widget loadingIndicator = Div.of(
+            Icon.of("fas fa-spinner fa-spin").modifier(new Modifier().style("font-size:24px; color:#ec4899; margin-bottom:8px;")),
+            Paragraph.of("Loading sample database catalog...").modifier(new Modifier().style("font-size:12px; color:#cbd5e1; margin:0;"))
+        ).id("sampleDbsLoadingContainer").modifier(new Modifier().style("display:flex; flex-direction:column; align-items:center; justify-content:center; padding:30px;"));
+
+        Widget gridContainer = Div.of()
+            .id("sampleDbsCatalogContainer")
+            .modifier(new Modifier().style("display:none; flex-direction:column; gap:12px; max-height:480px; overflow-y:auto; padding-right:4px;"));
+
+        Widget actions = Div.of(
+            Button.of(Icon.of("fas fa-sync-alt"), Text.of(" Refresh Catalog"))
+                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "refreshSampleDatabasesList()").cssClass("btn-action btn-secondary").style("padding:6px 14px; font-size:12px; margin-right:8px; background:rgba(56,189,248,0.1); border-color:rgba(56,189,248,0.3); color:#38bdf8;")),
+            Button.of(Icon.of("fas fa-times"), Text.of(" Close"))
+                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "hideModal('sampleDatabasesModal')").cssClass("btn-action btn-secondary").style("padding:6px 14px; font-size:12px; background:rgba(148,163,184,0.15); color:#cbd5e1;"))
+        ).modifier(new Modifier().style("display:flex; justify-content:flex-end; align-items:center; margin-top:16px; border-top:1px solid rgba(255,255,255,0.08); padding-top:12px;"));
+
+        Widget body = Div.of(subtitle, loadingIndicator, gridContainer, actions);
+
+        return createModalOverlay("sampleDatabasesModal", "780px", "rgba(236,72,153,0.4)", header, body);
+    }
+
     private Widget buildModalsScript() {
         String js1 = """
   function showModal(id) {
@@ -3914,6 +4097,10 @@ public class StoreEnginesPage extends StoreTemplatePage {
     }
     setElementValues(vals);
     showModal('createUnitModal');
+  }
+
+  function openDatabaseSwitchModal() {
+    showModal('switchDbModal');
   }
 
   function openAddObjectModal(engine, unit, db) {
@@ -4037,8 +4224,14 @@ public class StoreEnginesPage extends StoreTemplatePage {
     var payload = decodeUtf8Base64(payloadB64);
     var parsed = null;
     try { if (typeof payload === 'string' && (payload.trim().startsWith('{') || payload.trim().startsWith('['))) parsed = JSON.parse(payload); } catch (e) {}
-    var pretty = parsed ? JSON.stringify(parsed, null, 2) : payload;
+    var pretty = parsed ? JSON.stringify(parsed, null, 2) : (payload || '{}');
     var p = parsed || {};
+
+    var normEngine = (engine || 'DOCUMENT').toUpperCase();
+    if (normEngine === 'RECORD') normEngine = 'RECORDS';
+    if (normEngine === 'KEY_VALUE' || normEngine === 'KEY-VALUE') normEngine = 'KEYVALUE';
+    if (normEngine === 'TIME_SERIES' || normEngine === 'TIMESERIE') normEngine = 'TIMESERIES';
+    if (normEngine === 'GEO') normEngine = 'GEOSPATIAL';
 
     var vecCoords = '0.12, 0.45, 0.88, 0.31';
     if (Array.isArray(p.coordinates)) vecCoords = p.coordinates.join(', ');
@@ -4046,17 +4239,18 @@ public class StoreEnginesPage extends StoreTemplatePage {
     else if (Array.isArray(p.vector)) vecCoords = p.vector.join(', ');
     else if (p.coordinates || p.embedding || p.vector) vecCoords = String(p.coordinates || p.embedding || p.vector);
 
-    var cfg = {
+    var cfgMap = {
       DOCUMENT:   { id: 'editDocumentModal',   vals: { editDocDbInput: db, editDocDbDisplay: db, editDocCollInput: unit || 'default', editDocIdInput: id, editDocIdDisplay: id, editDocClassInput: p._class || '', editDocPayloadInput: pretty } },
-      KEYVALUE:   { id: 'editKeyValueModal',   vals: { editKvDbInput: db, editKvDbDisplay: db, editKvCollInput: unit || 'default', editKvIdInput: id, editKvIdDisplay: id, editKvValueInput: payload } },
+      KEYVALUE:   { id: 'editKeyValueModal',   vals: { editKvDbInput: db, editKvDbDisplay: db, editKvCollInput: unit || 'default', editKvIdInput: id, editKvIdDisplay: id, editKvValueInput: payload || pretty } },
       VECTOR:     { id: 'editVectorModal',     vals: { editVecDbInput: db, editVecDbDisplay: db, editVecCollInput: unit || 'default', editVecIdInput: id, editVecIdDisplay: id, editVecCoordsInput: vecCoords, editVecMetaInput: pretty } },
       GRAPH:      { id: 'editGraphModal',      vals: { editGraphDbInput: db, editGraphDbDisplay: db, editGraphCollInput: p.label || unit || 'Vertex', editGraphIdInput: id, editGraphIdDisplay: id, editGraphPropsInput: pretty } },
       TIMESERIES: { id: 'editTimeSeriesModal', vals: { editTsDbInput: db, editTsDbDisplay: db, editTsCollInput: p.metric || unit || 'telemetry', editTsIdInput: id, editTsIdDisplay: id, editTsTimestampInput: p.timestamp || id, editTsValueInput: p.value !== undefined ? p.value : '25.4', editTsUnitInput: p.unit || 'celsius', editTsTagsInput: pretty } },
       COLUMN:     { id: 'editColumnModal',     vals: { editColDbInput: db, editColDbDisplay: db, editColCollInput: p._family || unit || 'analytics', editColIdInput: id, editColIdDisplay: id, editColDataInput: pretty } },
       GEOSPATIAL: { id: 'editGeoModal',        vals: { editGeoDbInput: db, editGeoDbDisplay: db, editGeoCollInput: p._layer || unit || 'stores_layer', editGeoIdInput: id, editGeoIdDisplay: id, editGeoLatInput: p.lat !== undefined ? p.lat : (p.latitude !== undefined ? p.latitude : '8.9824'), editGeoLonInput: p.lon !== undefined ? p.lon : (p.longitude !== undefined ? p.longitude : '-79.5199'), editGeoNameInput: p.name || id } },
-      OBJECT:     { id: 'editObjectModal',     vals: { editObjDbInput: db, editObjDbDisplay: db, editObjCollInput: p.bucket || unit || 'media_bucket', editObjIdInput: id, editObjIdDisplay: id, editObjMimeInput: p.mimeType || 'application/json', editObjPayloadInput: p.content || payload } },
+      OBJECT:     { id: 'editObjectModal',     vals: { editObjDbInput: db, editObjDbDisplay: db, editObjCollInput: p.bucket || unit || 'media_bucket', editObjIdInput: id, editObjIdDisplay: id, editObjMimeInput: p.mimeType || 'application/json', editObjPayloadInput: p.content || payload || pretty } },
       RECORDS:    { id: 'editRecordsModal',    vals: { editRecDbInput: db, editRecDbDisplay: db, editRecCollInput: p._table || unit || 'default', editRecIdInput: id, editRecIdDisplay: id, editRecClassInput: p._class || 'com.jettra.model.PersonRecord', editRecPayloadInput: pretty } }
-    }[(engine || 'DOCUMENT').toUpperCase()];
+    };
+    var cfg = cfgMap[normEngine] || cfgMap.DOCUMENT;
 
     if (cfg) {
       setElementValues(cfg.vals);
@@ -4065,10 +4259,16 @@ public class StoreEnginesPage extends StoreTemplatePage {
   }
 
   function openUniversalRestoreModal(engine, db, unit, id, versionsJsonB64) {
+    var normEngine = (engine || 'DOCUMENT').toUpperCase();
+    if (normEngine === 'RECORD') normEngine = 'RECORDS';
+    if (normEngine === 'KEY_VALUE' || normEngine === 'KEY-VALUE') normEngine = 'KEYVALUE';
+    if (normEngine === 'TIME_SERIES' || normEngine === 'TIMESERIE') normEngine = 'TIMESERIES';
+    if (normEngine === 'GEO') normEngine = 'GEOSPATIAL';
+
     var versionsJsonStr = decodeUtf8Base64(versionsJsonB64);
     setElementValues({
-      restoreEngineLabel: engine,
-      restoreEngineTypeInput: engine,
+      restoreEngineLabel: normEngine,
+      restoreEngineTypeInput: normEngine,
       restoreRecordDbInput: db,
       restoreRecordCollInput: unit || 'default',
       restoreRecordIdInput: id,
@@ -4077,40 +4277,43 @@ public class StoreEnginesPage extends StoreTemplatePage {
     var container = document.getElementById('universalVersionsContainer');
     if (container) {
       container.innerHTML = '';
-      try {
-        var versions = JSON.parse(versionsJsonStr);
-        if (!versions || versions.length === 0) {
-          container.innerHTML = '<div style="padding:16px; color:#94a3b8; text-align:center;">No historical snapshot versions recorded for this item yet. Edit the item to create new versions.</div>';
-        } else {
-          var html = '<table style="width:100%; border-collapse:collapse; font-size:12px;">';
-          html += '<tr style="background:rgba(255,255,255,0.04); color:#94a3b8; text-align:left;"><th style="padding:8px 12px;">Version</th><th style="padding:8px 12px;">Timestamp / Date</th><th style="padding:8px 12px;">Snapshot Preview</th><th style="padding:8px 12px; text-align:right;">Action</th></tr>';
-          for (var i = 0; i < versions.length; i++) {
-            var v = versions[i];
-            var badge = v.isCurrent ? '<span class="store-badge badge-active" style="font-size:10px;">' + v.versionNumber + ' (CURRENT)</span>' : '<span class="store-badge badge-records" style="font-size:10px;">' + v.versionNumber + '</span>';
-            var safeDate = (v.formattedDate || v.timestamp || '').toString().replace(/['"\\\\]/g, ' ');
-            html += '<tr style="border-bottom:1px solid rgba(255,255,255,0.05);">';
-            html += '<td style="padding:8px 12px; font-weight:bold;">' + badge + '</td>';
-            html += '<td style="padding:8px 12px; color:#cbd5e1;">' + safeDate + '</td>';
-            html += '<td style="padding:8px 12px; color:#94a3b8; font-family:monospace;">' + (v.preview || '{}') + '</td>';
-            html += '<td style="padding:8px 12px; text-align:right;">';
-            if (!v.isCurrent) {
-              html += '<button type="button" class="btn-action btn-primary btn-restore-version" data-ts="' + v.timestamp + '" data-date="' + safeDate + '" style="background:#a855f7; padding:3px 10px; font-size:11px;"><i class="fas fa-undo"></i> Restore</button>';
-            } else {
-              html += '<span style="color:#10b981; font-size:11px;">Active</span>';
-            }
-            html += '</td></tr>';
-          }
-          html += '</table>';
-          container.innerHTML = html;
-          container.onclick = function(e) {
-            var btn = e.target.closest('.btn-restore-version');
-            if (btn) {
-              openConfirmRestoreModal(btn.getAttribute('data-ts'), btn.getAttribute('data-date'));
-            }
-          };
+      var versions = [];
+      if (versionsJsonStr && versionsJsonStr.trim().length > 0) {
+        try {
+          versions = JSON.parse(versionsJsonStr);
+        } catch(e) {
+          versions = [];
         }
-      } catch(e) {
-        container.innerHTML = '<div style="padding:16px; color:#ef4444;">Error parsing version list: ' + e.message + '</div>';
+      }
+      if (!versions || versions.length === 0) {
+        container.innerHTML = '<div style="padding:16px; color:var(--j-text-muted); text-align:center;">No historical snapshot versions recorded for this item yet. Edit the item to create new versions.</div>';
+      } else {
+        var html = '<table style="width:100%; border-collapse:collapse; font-size:12px;">';
+        html += '<tr style="background:var(--j-bg-subsurface); color:var(--j-text-secondary); text-align:left;"><th style="padding:8px 12px;">Version</th><th style="padding:8px 12px;">Timestamp / Date</th><th style="padding:8px 12px;">Snapshot Preview</th><th style="padding:8px 12px; text-align:right;">Action</th></tr>';
+        for (var i = 0; i < versions.length; i++) {
+          var v = versions[i];
+          var badge = v.isCurrent ? '<span class="store-badge badge-active" style="font-size:10px;">' + v.versionNumber + ' (CURRENT)</span>' : '<span class="store-badge badge-records" style="font-size:10px;">' + v.versionNumber + '</span>';
+          var safeDate = (v.formattedDate || v.timestamp || '').toString().replace(/[\'\"\\\\]/g, ' ');
+          html += '<tr style="border-bottom:1px solid var(--j-border);">';
+          html += '<td style="padding:8px 12px; font-weight:bold;">' + badge + '</td>';
+          html += '<td style="padding:8px 12px; color:var(--j-text-primary);">' + safeDate + '</td>';
+          html += '<td style="padding:8px 12px; color:var(--j-text-muted); font-family:monospace;">' + (v.preview || '{}') + '</td>';
+          html += '<td style="padding:8px 12px; text-align:right;">';
+          if (!v.isCurrent) {
+            html += '<button type="button" class="btn-action btn-primary btn-restore-version" data-ts="' + v.timestamp + '" data-date="' + safeDate + '" style="background:#a855f7; padding:3px 10px; font-size:11px;"><i class="fas fa-undo"></i> Restore</button>';
+          } else {
+            html += '<span style="color:#10b981; font-size:11px;">Active</span>';
+          }
+          html += '</td></tr>';
+        }
+        html += '</table>';
+        container.innerHTML = html;
+        container.onclick = function(e) {
+          var btn = e.target.closest('.btn-restore-version');
+          if (btn) {
+            openConfirmRestoreModal(btn.getAttribute('data-ts'), btn.getAttribute('data-date'));
+          }
+        };
       }
     }
     showModal('universalRestoreModal');
@@ -4133,9 +4336,15 @@ public class StoreEnginesPage extends StoreTemplatePage {
   }
 
   function openUniversalDeleteModal(engine, db, unit, id) {
+    var normEngine = (engine || 'DOCUMENT').toUpperCase();
+    if (normEngine === 'RECORD') normEngine = 'RECORDS';
+    if (normEngine === 'KEY_VALUE' || normEngine === 'KEY-VALUE') normEngine = 'KEYVALUE';
+    if (normEngine === 'TIME_SERIES' || normEngine === 'TIMESERIE') normEngine = 'TIMESERIES';
+    if (normEngine === 'GEO') normEngine = 'GEOSPATIAL';
+
     setElementValues({
-      confirmDeleteEngineInput: engine,
-      confirmDeleteEngineDisplay: engine,
+      confirmDeleteEngineInput: normEngine,
+      confirmDeleteEngineDisplay: normEngine,
       confirmDeleteDbInput: db,
       confirmDeleteDbDisplay: db,
       confirmDeleteCollInput: unit || 'default',
@@ -4150,6 +4359,378 @@ public class StoreEnginesPage extends StoreTemplatePage {
         String js2 = """
   var dbHierarchyCache = {};
 
+  // Reactive Tree State Manager using sessionStorage
+  var TreeStateManager = function() {
+    this.storageKey = 'jettra_tree_explorer_state';
+    this.defaultState = {
+      expandedNodeIds: [],
+      selectedNodeId: null,
+      targetDatabase: null,
+      focusedUnitId: null,
+      scrollTop: 0
+    };
+  };
+
+  TreeStateManager.prototype.getState = function() {
+    try {
+      var raw = sessionStorage.getItem(this.storageKey);
+      if (raw) {
+        var parsed = JSON.parse(raw);
+        if (!parsed.expandedNodeIds) parsed.expandedNodeIds = [];
+        return parsed;
+      }
+    } catch(e) {
+      console.warn('Failed to parse tree state from sessionStorage:', e);
+    }
+    return JSON.parse(JSON.stringify(this.defaultState));
+  };
+
+  TreeStateManager.prototype.saveState = function(state) {
+    try {
+      sessionStorage.setItem(this.storageKey, JSON.stringify(state));
+    } catch(e) {
+      console.warn('Failed to save tree state to sessionStorage:', e);
+    }
+  };
+
+  TreeStateManager.prototype.expandNode = function(nodeId) {
+    if (!nodeId) return;
+    var state = this.getState();
+    if (state.expandedNodeIds.indexOf(nodeId) === -1) {
+      state.expandedNodeIds.push(nodeId);
+      this.saveState(state);
+    }
+  };
+
+  TreeStateManager.prototype.collapseNode = function(nodeId) {
+    if (!nodeId) return;
+    var state = this.getState();
+    var idx = state.expandedNodeIds.indexOf(nodeId);
+    if (idx !== -1) {
+      state.expandedNodeIds.splice(idx, 1);
+      this.saveState(state);
+    }
+  };
+
+  TreeStateManager.prototype.isNodeExpanded = function(nodeId) {
+    if (!nodeId) return false;
+    var state = this.getState();
+    return state.expandedNodeIds.indexOf(nodeId) !== -1;
+  };
+
+  TreeStateManager.prototype.setTargetContext = function(db, engine, unit, itemId) {
+    var state = this.getState();
+    state.targetDatabase = db;
+    state.focusedUnitId = unit;
+    state.selectedNodeId = itemId;
+    this.saveState(state);
+  };
+
+  TreeStateManager.prototype.restoreState = function() {
+    var state = this.getState();
+    var treeBody = document.getElementById('treeHierarchyContainer');
+    if (treeBody && state.scrollTop > 0) {
+      treeBody.scrollTop = state.scrollTop;
+    }
+    if (state.expandedNodeIds && state.expandedNodeIds.length > 0) {
+      var dbContainers = document.querySelectorAll('.db-subtree-container');
+      for (var i = 0; i < dbContainers.length; i++) {
+        var dc = dbContainers[i];
+        if (state.expandedNodeIds.indexOf(dc.id) !== -1) {
+          var db = dc.getAttribute('data-db');
+          var dbIdx = dc.getAttribute('data-db-idx') || (i + 1);
+          var actionUrl = window.lastActionUrl || '/engines?engine=';
+          var selectedEngine = window.lastSelectedEngine || 'DOCUMENT';
+          dc.style.display = 'block';
+          dc.setAttribute('aria-expanded', 'true');
+          var icon = document.getElementById('icon_' + dc.id);
+          var header = document.getElementById('db_header_' + dbIdx);
+          var btn = document.getElementById('btn_toggle_' + dc.id) || document.getElementById('btn_toggle_' + dbIdx);
+          if (header) header.setAttribute('aria-expanded', 'true');
+          if (btn) btn.setAttribute('aria-expanded', 'true');
+          if (icon) icon.className = 'fas fa-chevron-down tree-toggle-icon';
+          loadDbHierarchy(null, dc.id, db, selectedEngine, actionUrl, dbIdx, false);
+        }
+      }
+    }
+  };
+
+  var treeStateManager = new TreeStateManager();
+
+  function showTreeToast(message, type) {
+    var toastId = 'tree_toast_' + Date.now();
+    var bg = type === 'error' ? 'rgba(239, 68, 68, 0.95)' : 'rgba(16, 185, 129, 0.95)';
+    var icon = type === 'error' ? 'fas fa-exclamation-triangle' : 'fas fa-check-circle';
+    var toastContainer = document.getElementById('treeExplorerToastContainer');
+    if (!toastContainer) {
+      toastContainer = document.createElement('div');
+      toastContainer.id = 'treeExplorerToastContainer';
+      toastContainer.style.cssText = 'position:fixed; bottom:24px; right:24px; z-index:999999; display:flex; flex-direction:column; gap:8px; pointer-events:none;';
+      document.body.appendChild(toastContainer);
+    }
+    var toast = document.createElement('div');
+    toast.id = toastId;
+    toast.style.cssText = 'background:' + bg + '; color:#fff; padding:10px 16px; border-radius:8px; font-size:12px; font-weight:600; box-shadow:0 10px 25px rgba(0,0,0,0.5); display:flex; align-items:center; gap:8px; pointer-events:auto; transition:all 0.3s ease; opacity:0; transform:translateY(10px);';
+    toast.innerHTML = '<i class="' + icon + '" style="font-size:14px;"></i> <span>' + escapeHtml(message) + '</span>';
+    toastContainer.appendChild(toast);
+    setTimeout(function() {
+      toast.style.opacity = '1';
+      toast.style.transform = 'translateY(0)';
+    }, 20);
+    setTimeout(function() {
+      toast.style.opacity = '0';
+      toast.style.transform = 'translateY(10px)';
+      setTimeout(function() {
+        if (toast.parentElement) toast.parentElement.removeChild(toast);
+      }, 300);
+    }, 3500);
+  }
+
+  function highlightAndFocusTreeItem(itemId, unitContainerId) {
+    if (!itemId) return;
+    if (unitContainerId) {
+      var unitEl = document.getElementById(unitContainerId);
+      if (unitEl) {
+        unitEl.style.display = 'block';
+        unitEl.setAttribute('aria-expanded', 'true');
+        var uIcon = document.getElementById('icon_' + unitContainerId);
+        if (uIcon) uIcon.className = 'fas fa-chevron-down tree-toggle-icon';
+        treeStateManager.expandNode(unitContainerId);
+      }
+    }
+
+    var candidateRows = document.querySelectorAll('.tree-collapsible-content div[class*="item-row-"]');
+    var targetRow = null;
+    for (var r = 0; r < candidateRows.length; r++) {
+      var rowText = candidateRows[r].innerText || '';
+      if (rowText.indexOf(itemId) !== -1) {
+        targetRow = candidateRows[r];
+        break;
+      }
+    }
+
+    if (targetRow) {
+      var parentUnit = targetRow.closest('.tree-collapsible-content');
+      if (parentUnit && parentUnit.id && parentUnit.id.startsWith('unit_subtree_')) {
+        var unitId = parentUnit.id;
+        var itemPage = parseInt(targetRow.getAttribute('data-page') || '1');
+        if (typeof changeSubtreePage === 'function' && itemPage > 1) {
+          var totalPages = 10;
+          changeSubtreePage(unitId, itemPage - 1, totalPages);
+        }
+        parentUnit.style.display = 'block';
+        parentUnit.setAttribute('aria-expanded', 'true');
+        var pIcon = document.getElementById('icon_' + unitId);
+        if (pIcon) pIcon.className = 'fas fa-chevron-down tree-toggle-icon';
+        treeStateManager.expandNode(unitId);
+
+        var engParent = parentUnit.parentElement ? parentUnit.parentElement.closest('.tree-collapsible-content') : null;
+        if (engParent && engParent.id && engParent.id.startsWith('eng_subtree_')) {
+          engParent.style.display = 'block';
+          engParent.setAttribute('aria-expanded', 'true');
+          var engIcon = document.getElementById('icon_' + engParent.id);
+          if (engIcon) engIcon.className = 'fas fa-chevron-down tree-toggle-icon';
+          treeStateManager.expandNode(engParent.id);
+        }
+      }
+
+      targetRow.classList.add('pulse-highlight-node');
+      setTimeout(function() {
+        try {
+          targetRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        } catch(e) {
+          targetRow.scrollIntoView();
+        }
+      }, 50);
+
+      setTimeout(function() {
+        targetRow.classList.remove('pulse-highlight-node');
+      }, 4000);
+    }
+  }
+
+  function handleModalFormSubmit(event, modalId) {
+    if (event) {
+      if (typeof event.preventDefault === 'function') event.preventDefault();
+      if (typeof event.stopPropagation === 'function') event.stopPropagation();
+    }
+
+    var modal = document.getElementById(modalId);
+    if (!modal) return false;
+    var form = modal.querySelector('form');
+    if (!form) {
+      if (event && event.target) {
+        form = event.target.closest('form');
+      }
+    }
+    if (!form) return false;
+
+    var submitBtn = modal.querySelector('button[type="submit"], button.btn-primary');
+    var origBtnHtml = submitBtn ? submitBtn.innerHTML : '';
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Saving...';
+    }
+
+    var treeBodyContainer = document.getElementById('treeHierarchyContainer');
+    var savedScrollTop = treeBodyContainer ? treeBodyContainer.scrollTop : 0;
+    var state = treeStateManager.getState();
+    state.scrollTop = savedScrollTop;
+    treeStateManager.saveState(state);
+
+    var formData = new FormData(form);
+    var params = new URLSearchParams();
+    formData.forEach(function(val, key) {
+      params.append(key, val);
+    });
+    if (!params.has('is_ajax')) {
+      params.append('is_ajax', 'true');
+    }
+
+    var targetDb = params.get('target_db') || params.get('db') || 'customers_db';
+    var targetEngine = params.get('engine_type') || params.get('engine') || 'DOCUMENT';
+    var targetUnit = params.get('target_coll') || params.get('coll') || params.get('unit_name') || 'default';
+    var targetId = params.get('target_id') || params.get('id') || params.get('custom_id') || '';
+
+    var actionUrl = form.getAttribute('action') || window.lastActionUrl || '/engines';
+
+    fetch(actionUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      body: params.toString()
+    })
+    .then(function(res) {
+      if (!res.ok) throw new Error('HTTP ' + res.status + ' - ' + res.statusText);
+      return res.json();
+    })
+    .then(function(data) {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = origBtnHtml;
+      }
+
+      if (data.status === 'ERROR') {
+        showTreeToast(data.message || 'Failed to save record', 'error');
+        return;
+      }
+
+      // Hide modal and reset form
+      hideModal(modalId);
+      form.reset();
+
+      var successMsg = data.message || ('Successfully saved record to ' + (data.database || targetDb));
+      showTreeToast(successMsg, 'success');
+
+      var finalDb = data.database || targetDb;
+      var finalEngine = data.engine || targetEngine;
+      var finalUnit = data.collection || targetUnit;
+      var finalId = data.itemId || targetId;
+
+      treeStateManager.setTargetContext(finalDb, finalEngine, finalUnit, finalId);
+
+      var dbContainers = document.querySelectorAll('.db-subtree-container');
+      var matchedContainer = null;
+      var matchedDbIdx = 1;
+      for (var i = 0; i < dbContainers.length; i++) {
+        var dc = dbContainers[i];
+        if ((dc.getAttribute('data-db') || '').toLowerCase() === finalDb.toLowerCase()) {
+          matchedContainer = dc;
+          matchedDbIdx = dc.getAttribute('data-db-idx') || (i + 1);
+          break;
+        }
+      }
+
+      if (!matchedContainer) {
+        var treeContainer = document.getElementById('treeHierarchyContainer');
+        if (treeContainer) {
+          var newDbIdx = document.querySelectorAll('.db-subtree-container').length + 1;
+          var newContainerId = 'db_content_' + newDbIdx;
+          var newHeaderId = 'db_header_' + newDbIdx;
+          var newToggleBtnId = 'btn_toggle_' + newDbIdx;
+
+          var dbCardDiv = document.createElement('div');
+          dbCardDiv.style.cssText = 'margin-bottom:6px; padding:4px 8px; border-radius:6px; background:rgba(56,189,248,0.06); border:1px solid rgba(56,189,248,0.2);';
+          
+          dbCardDiv.innerHTML = '<div style="display:flex; justify-content:space-between; align-items:center; padding:3px 4px;">' +
+            '<div id="' + newHeaderId + '" data-db="' + escapeHtml(finalDb) + '" data-state="collapsed" role="treeitem" tabindex="0" aria-expanded="false" aria-controls="' + newContainerId + '" style="display:inline-flex; align-items:center; cursor:pointer; outline:none; user-select:none;" onclick="toggleLazyDbSubtree(event, \'' + newContainerId + '\', \'' + escapeJsString(finalDb) + '\', \'' + escapeJsString(finalEngine) + '\', \'' + escapeJsString(actionUrl) + '\', ' + newDbIdx + ')">' +
+              '<button type="button" id="' + newToggleBtnId + '" aria-label="Toggle ' + escapeHtml(finalDb) + ' database subtree" aria-controls="' + newContainerId + '" aria-expanded="false" data-db="' + escapeHtml(finalDb) + '" data-container-id="' + newContainerId + '" onclick="toggleLazyDbSubtree(event, \'' + newContainerId + '\', \'' + escapeJsString(finalDb) + '\', \'' + escapeJsString(finalEngine) + '\', \'' + escapeJsString(actionUrl) + '\', ' + newDbIdx + ')" style="background:none; border:none; padding:2px 5px; margin-right:3px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center;">' +
+                '<i id="icon_' + newContainerId + '" class="fas fa-chevron-right tree-toggle-icon" style="color:#38bdf8; font-size:10px; pointer-events:none;"></i>' +
+              '</button>' +
+              '<i class="fas fa-database" style="margin-right:4px; color:#38bdf8; font-size:11px; pointer-events:none;"></i>' +
+              '<span style="color:#38bdf8; font-weight:700; font-size:11px; cursor:pointer;">' + escapeHtml(finalDb) + '</span>' +
+            '</div>' +
+            '<div style="display:inline-flex; align-items:center;">' +
+              '<span class="store-badge badge-active" style="font-size:8px; padding:1px 5px; margin-left:4px;">NEW</span>' +
+              '<button type="button" title="Refresh database hierarchy" onclick="event.stopPropagation(); refreshLazyDbSubtree(event, \'' + newContainerId + '\', \'' + escapeJsString(finalDb) + '\', \'' + escapeJsString(finalEngine) + '\', \'' + escapeJsString(actionUrl) + '\', ' + newDbIdx + ')" style="background:none; border:none; color:#94a3b8; font-size:9px; cursor:pointer; padding:1px 4px; margin-right:2px;"><i class="fas fa-sync-alt"></i></button>' +
+            '</div>' +
+          '</div>' +
+          '<div id="' + newContainerId + '" data-db="' + escapeHtml(finalDb) + '" data-loaded="false" data-state="collapsed" data-db-idx="' + newDbIdx + '" aria-expanded="false" class="tree-collapsible-content db-subtree-container" style="margin-left:8px; border-left: 2px dashed rgba(56,189,248,0.3); padding-left:6px; margin-top:3px; display:none;"></div>';
+
+          treeContainer.appendChild(dbCardDiv);
+          matchedContainer = document.getElementById(newContainerId);
+          matchedDbIdx = newDbIdx;
+        }
+      }
+
+      if (matchedContainer) {
+        matchedContainer.style.display = 'block';
+        matchedContainer.setAttribute('aria-expanded', 'true');
+        treeStateManager.expandNode(matchedContainer.id);
+        var icon = document.getElementById('icon_' + matchedContainer.id);
+        var header = document.getElementById('db_header_' + matchedDbIdx);
+        var btn = document.getElementById('btn_toggle_' + matchedContainer.id) || document.getElementById('btn_toggle_' + matchedDbIdx);
+        if (header) header.setAttribute('aria-expanded', 'true');
+        if (btn) btn.setAttribute('aria-expanded', 'true');
+        if (icon) icon.className = 'fas fa-chevron-down tree-toggle-icon';
+
+        delete dbHierarchyCache[finalDb];
+
+        window.targetMutatedEngine = finalEngine;
+        window.targetMutatedUnit = finalUnit;
+        window.targetMutatedItemId = finalId;
+
+        loadDbHierarchy(null, matchedContainer.id, finalDb, finalEngine, actionUrl, matchedDbIdx, true, function() {
+          setTimeout(function() {
+            highlightAndFocusTreeItem(finalId);
+            if (treeBodyContainer && savedScrollTop > 0) {
+              treeBodyContainer.scrollTop = savedScrollTop;
+            }
+          }, 60);
+        });
+      } else {
+        var baseAct = actionUrl.indexOf('?') > -1 ? actionUrl.substring(0, actionUrl.indexOf('?')) : actionUrl;
+        window.location.href = baseAct + '?engine=' + encodeURIComponent(finalEngine) + '&target_db=' + encodeURIComponent(finalDb);
+      }
+    })
+    .catch(function(err) {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = origBtnHtml;
+      }
+      showTreeToast('Server communication error: ' + err.message, 'error');
+    });
+
+    return false;
+  }
+
+  function bindModalFormInterceptors() {
+    var modals = document.querySelectorAll('.store-card');
+    for (var m = 0; m < modals.length; m++) {
+      var form = modals[m].querySelector('form');
+      if (form && !form.getAttribute('data-ajax-bound')) {
+        form.setAttribute('data-ajax-bound', 'true');
+        form.onsubmit = function(e) {
+          var modalParent = this.closest('[id]');
+          var mId = modalParent ? modalParent.id : '';
+          return handleModalFormSubmit(e, mId);
+        };
+      }
+    }
+  }
+
   function escapeHtml(str) {
     if (str === null || str === undefined) return '';
     return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -4163,23 +4744,8 @@ public class StoreEnginesPage extends StoreTemplatePage {
   function buildHierarchyFetchUrl(actionUrl, selectedEngine, dbName) {
     var base = actionUrl || window.lastActionUrl || '/engines';
     var eng = selectedEngine || window.lastSelectedEngine || 'DOCUMENT';
-    var url;
-    if (base.indexOf('?') >= 0) {
-      if (base.indexOf('engine=') >= 0) {
-        url = base;
-      } else {
-        url = base + '&engine=' + encodeURIComponent(eng);
-      }
-    } else {
-      url = base + '?engine=' + encodeURIComponent(eng);
-    }
-    if (url.indexOf('action=') < 0) {
-      url += '&action=load_hierarchy';
-    }
-    if (url.indexOf('target_db=') < 0) {
-      url += '&target_db=' + encodeURIComponent(dbName);
-    }
-    return url;
+    var cleanBase = base.indexOf('?') >= 0 ? base.split('?')[0] : base;
+    return cleanBase + '?action=load_hierarchy&engine=' + encodeURIComponent(eng) + '&target_db=' + encodeURIComponent(dbName);
   }
 
   function toggleLazyDbSubtree(evt, containerId, dbName, selectedEngine, actionUrl, dbIdx) {
@@ -4212,25 +4778,31 @@ public class StoreEnginesPage extends StoreTemplatePage {
     if (isHidden) {
       el.style.display = 'block';
       el.setAttribute('aria-expanded', 'true');
+      el.setAttribute('data-state', 'expanded');
+      if (typeof treeStateManager !== 'undefined' && treeStateManager.expandNode) {
+        treeStateManager.expandNode(containerId);
+      }
       if (header) {
         header.setAttribute('aria-expanded', 'true');
+        header.setAttribute('data-state', 'expanded');
       }
       if (btn) {
         btn.setAttribute('aria-expanded', 'true');
+        btn.setAttribute('data-state', 'expanded');
       }
+      if (icon) icon.className = 'fas fa-chevron-down tree-toggle-icon';
 
       var isLoaded = el.getAttribute('data-loaded') === 'true';
       if (!isLoaded) {
         loadDbHierarchy(evt, containerId, dbName, selectedEngine, actionUrl, dbIdx, false);
-      } else {
-        if (icon) icon.className = 'fas fa-chevron-down tree-toggle-icon';
-        if (header) header.setAttribute('data-state', 'expanded');
-        el.setAttribute('data-state', 'expanded');
       }
     } else {
       el.style.display = 'none';
       el.setAttribute('aria-expanded', 'false');
       el.setAttribute('data-state', 'collapsed');
+      if (typeof treeStateManager !== 'undefined' && treeStateManager.collapseNode) {
+        treeStateManager.collapseNode(containerId);
+      }
       if (header) {
         header.setAttribute('aria-expanded', 'false');
         header.setAttribute('data-state', 'collapsed');
@@ -4262,6 +4834,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
     if (el) {
       el.style.display = 'block';
       el.setAttribute('aria-expanded', 'true');
+      treeStateManager.expandNode(containerId);
       if (header) header.setAttribute('aria-expanded', 'true');
       if (btn) btn.setAttribute('aria-expanded', 'true');
       if (!dbName) dbName = el.getAttribute('data-db') || 'default';
@@ -4396,12 +4969,17 @@ public class StoreEnginesPage extends StoreTemplatePage {
       var unitPlural = eng.unitPlural || 'Collections';
       var itemLabel = eng.itemLabel || 'Item';
 
+      var isEngExpanded = treeStateManager.isNodeExpanded(engContainerId) || isEngActive || (window.targetMutatedEngine && window.targetMutatedEngine.toUpperCase() === (eng.name || '').toUpperCase());
+      if (isEngExpanded) {
+        treeStateManager.expandNode(engContainerId);
+      }
+
       html += '<div style="margin-bottom:4px; background:' + (isEngActive ? 'rgba(30,41,59,0.7)' : 'rgba(15,23,42,0.3)') + '; padding:4px 6px; border-radius:4px; border:1px solid rgba(255,255,255,0.04);">';
       
       // Engine Header Row
       html += '<div style="display:flex; justify-content:space-between; align-items:center; padding:2px 2px;">';
       html += '<div style="display:inline-flex; align-items:center; font-size:9.5px;">';
-      html += '<i id="icon_' + engContainerId + '" class="fas fa-chevron-down tree-toggle-icon" onclick="toggleSubtree(\\'' + engContainerId + '\\', event)" style="margin-right:4px; color:' + eng.color + '; font-size:9px; cursor:pointer;"></i>';
+      html += '<i id="icon_' + engContainerId + '" class="fas ' + (isEngExpanded ? 'fa-chevron-down' : 'fa-chevron-right') + ' tree-toggle-icon" onclick="toggleSubtree(\\'' + engContainerId + '\\', event)" style="margin-right:4px; color:' + eng.color + '; font-size:9px; cursor:pointer;"></i>';
       html += '<i class="' + eng.icon + '" style="color:' + eng.color + '; margin-right:3px; font-size:9.5px;"></i>';
       html += '<a href="' + actUrl + eng.name + '&target_db=' + encodeURIComponent(dbName) + '" style="text-decoration:none; font-size:9.5px; color:' + (isEngActive ? '#38bdf8; font-weight:700;' : '#94a3b8;') + '">';
       html += '<span style="font-weight:700; font-size:9.5px; text-transform:uppercase;">' + escapeHtml(eng.name) + '</span>';
@@ -4412,7 +4990,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
       html += '</div>';
 
       // Units container
-      html += '<div id="' + engContainerId + '" class="tree-collapsible-content" style="margin-left:8px; border-left: 2px dotted rgba(255,255,255,0.12); padding-left:6px; margin-top:3px; display:block;">';
+      html += '<div id="' + engContainerId + '" class="tree-collapsible-content" style="margin-left:8px; border-left: 2px dotted rgba(255,255,255,0.12); padding-left:6px; margin-top:3px; display:' + (isEngExpanded ? 'block' : 'none') + ';">';
       
       var units = eng.units || [];
       for (var uIdx = 0; uIdx < units.length; uIdx++) {
@@ -4424,12 +5002,18 @@ public class StoreEnginesPage extends StoreTemplatePage {
         var pageSize = 10;
         var totalPages = Math.max(1, Math.ceil(totalUnitItems / pageSize));
 
+        var isUnitTargeted = (window.targetMutatedUnit && window.targetMutatedUnit.toLowerCase() === (u.name || '').toLowerCase());
+        var isUnitExpanded = treeStateManager.isNodeExpanded(unitContainerId) || isUnitTargeted || true;
+        if (isUnitExpanded) {
+          treeStateManager.expandNode(unitContainerId);
+        }
+
         html += '<div style="margin-bottom:3px; margin-top:2px;">';
         
         // Unit Header Row
         html += '<div style="display:flex; justify-content:space-between; align-items:center; padding:1.5px 0;">';
         html += '<div style="display:inline-flex; align-items:center; color:#cbd5e1; font-size:9.5px; font-weight:600;">';
-        html += '<i id="icon_' + unitContainerId + '" class="fas fa-chevron-down tree-toggle-icon" onclick="toggleSubtree(\\'' + unitContainerId + '\\', event)" style="margin-right:3px; color:#cbd5e1; font-size:8.5px; cursor:pointer;"></i>';
+        html += '<i id="icon_' + unitContainerId + '" class="fas ' + (isUnitExpanded ? 'fa-chevron-down' : 'fa-chevron-right') + ' tree-toggle-icon" onclick="toggleSubtree(\\'' + unitContainerId + '\\', event)" style="margin-right:3px; color:#cbd5e1; font-size:8.5px; cursor:pointer;"></i>';
         html += '📁 <a href="' + actUrl + eng.name + '&target_db=' + encodeURIComponent(dbName) + '&coll=' + encodeURIComponent(u.name) + '" style="color:inherit; text-decoration:none; font-size:9.5px; font-weight:600; margin-left:2px;">' + escapeHtml(u.name) + '</a>';
         html += ' <span style="font-size:8px; color:#94a3b8; font-weight:normal; margin-left:2px;">(' + totalUnitItems + ')</span>';
         html += '</div>';
@@ -4438,7 +5022,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
         html += '</div>';
 
         // Items container
-        html += '<div id="' + unitContainerId + '" class="tree-collapsible-content" style="margin-left:8px; border-left: 1px dashed rgba(255,255,255,0.08); padding-left:6px; margin-top:2px; display:block;">';
+        html += '<div id="' + unitContainerId + '" data-unit="' + escapeHtml(u.name) + '" class="tree-collapsible-content" style="margin-left:8px; border-left: 1px dashed rgba(255,255,255,0.08); padding-left:6px; margin-top:2px; display:' + (isUnitExpanded ? 'block' : 'none') + ';">';
         
         if (uItems.length === 0) {
           html += '<div style="font-size:9px; color:#64748b; padding:1px 0;"><span>└── </span><span style="font-style:italic; font-size:9px;">(Empty unit - click [+ ' + escapeHtml(itemLabel) + '] to insert)</span></div>';
@@ -4448,11 +5032,12 @@ public class StoreEnginesPage extends StoreTemplatePage {
             var pageNum = Math.floor(itmI / pageSize) + 1;
             var itemDetailId = 'item_detail_' + dbIdx + '_' + engNum + '_' + uNum + '_' + itmI;
             var itemDisplay = (pageNum === 1) ? 'display:flex;' : 'display:none;';
+            var isDetailExpanded = treeStateManager.isNodeExpanded(itemDetailId);
 
-            html += '<div class="item-row-' + unitContainerId + '" data-page="' + pageNum + '" style="' + itemDisplay + ' font-size:9px; color:#94a3b8; justify-content:space-between; align-items:center; padding:1.5px 0; line-height:1.2;">';
+            html += '<div class="item-row-' + unitContainerId + '" data-page="' + pageNum + '" data-item-id="' + escapeHtml(itm.id) + '" style="' + itemDisplay + ' font-size:9px; color:#94a3b8; justify-content:space-between; align-items:center; padding:1.5px 0; line-height:1.2;">';
             html += '<span style="display:inline-flex; align-items:center;">';
             html += '<span>└── </span>';
-            html += '<i id="icon_' + itemDetailId + '" class="fas fa-caret-right tree-toggle-icon" onclick="toggleSubtree(\\'' + itemDetailId + '\\', event)" style="margin-right:3px; color:#94a3b8; font-size:8px; cursor:pointer;"></i>';
+            html += '<i id="icon_' + itemDetailId + '" class="fas ' + (isDetailExpanded ? 'fa-caret-down' : 'fa-caret-right') + ' tree-toggle-icon" onclick="toggleSubtree(\\'' + itemDetailId + '\\', event)" style="margin-right:3px; color:#94a3b8; font-size:8px; cursor:pointer;"></i>';
             html += '<i class="' + (eng.itemIcon || 'fas fa-file-code') + '" style="color:' + eng.color + '; margin-right:3px; font-size:8.5px;"></i>';
             html += '<span onclick="toggleSubtree(\\'' + itemDetailId + '\\', event)" style="color:#f8fafc; font-weight:bold; font-size:9px; font-family:monospace; cursor:pointer;">' + escapeHtml(itm.id) + '</span> ';
             html += '<span class="store-badge" style="background:rgba(56,189,248,0.15); color:#38bdf8; font-size:7.5px; padding:0.5px 3px; line-height:1;">v' + (itm.versionCount || 1) + '</span>';
@@ -4466,7 +5051,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
             html += '</div></div>';
 
             // Collapsed Item Details Subtree Panel
-            html += '<div id="' + itemDetailId + '" class="tree-collapsible-content item-detail-' + unitContainerId + '" data-page="' + pageNum + '" style="display:none; margin-left:14px; margin-top:2px; margin-bottom:4px; padding:4px 8px; background:rgba(15,23,42,0.85); border:1px solid rgba(56,189,248,0.18); border-left:2px solid ' + eng.color + '; border-radius:4px; font-size:8.5px; line-height:1.35;">';
+            html += '<div id="' + itemDetailId + '" class="tree-collapsible-content item-detail-' + unitContainerId + '" data-page="' + pageNum + '" style="display:' + (isDetailExpanded ? 'block' : 'none') + '; margin-left:14px; margin-top:2px; margin-bottom:4px; padding:4px 8px; background:rgba(15,23,42,0.85); border:1px solid rgba(56,189,248,0.18); border-left:2px solid ' + eng.color + '; border-radius:4px; font-size:8.5px; line-height:1.35;">';
             html += '<div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.06); padding-bottom:3px; margin-bottom:4px;">';
             var pfxMap = { 'RECORDS': 'rec:', 'KEYVALUE': 'kv:', 'VECTOR': 'vec:', 'GRAPH': 'graph:', 'TIMESERIES': 'ts:', 'COLUMN': 'col:', 'GEOSPATIAL': 'geo:', 'OBJECT': 'obj:' };
             var addrPfx = pfxMap[eng.name.toUpperCase()] || 'doc:';
@@ -4524,11 +5109,12 @@ public class StoreEnginesPage extends StoreTemplatePage {
     var idxSchemasContainerId = 'idx_schemas_' + dbIdx;
     var indexes = data.indexes || [];
     var schemas = data.schemas || [];
+    var isIdxSchemasExpanded = treeStateManager.isNodeExpanded(idxSchemasContainerId);
 
     html += '<div style="margin-bottom:4px; background:rgba(30,41,59,0.7); padding:4px 6px; border-radius:4px; border:1px solid rgba(234,179,8,0.25);">';
     html += '<div style="display:flex; justify-content:space-between; align-items:center; padding:2px 2px;">';
     html += '<div style="display:inline-flex; align-items:center; font-size:9.5px;">';
-    html += '<i id="icon_' + idxSchemasContainerId + '" class="fas fa-chevron-down tree-toggle-icon" onclick="toggleSubtree(\\'' + idxSchemasContainerId + '\\', event)" style="margin-right:4px; color:#eab308; font-size:9px; cursor:pointer;"></i>';
+    html += '<i id="icon_' + idxSchemasContainerId + '" class="fas ' + (isIdxSchemasExpanded ? 'fa-chevron-down' : 'fa-chevron-right') + ' tree-toggle-icon" onclick="toggleSubtree(\\'' + idxSchemasContainerId + '\\', event)" style="margin-right:4px; color:#eab308; font-size:9px; cursor:pointer;"></i>';
     html += '<i class="fas fa-bolt" style="color:#eab308; margin-right:3px; font-size:9.5px;"></i>';
     html += '<span style="font-weight:bold; font-size:9.5px; color:#eab308;">INDEXES & SCHEMAS</span>';
     html += ' → <span style="color:#cbd5e1; font-size:8.5px; font-weight:normal;">(' + indexes.length + ' Indexes, ' + schemas.length + ' Schemas)</span>';
@@ -4539,7 +5125,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
     html += '</div>';
     html += '</div>';
 
-    html += '<div id="' + idxSchemasContainerId + '" class="tree-collapsible-content" style="margin-left:8px; border-left: 2px dotted rgba(234,179,8,0.3); padding-left:6px; margin-top:3px; display:block;">';
+    html += '<div id="' + idxSchemasContainerId + '" class="tree-collapsible-content" style="margin-left:8px; border-left: 2px dotted rgba(234,179,8,0.3); padding-left:6px; margin-top:3px; display:' + (isIdxSchemasExpanded ? 'block' : 'none') + ';">';
     
     // Indexes
     html += '<div style="margin-bottom:3px; margin-top:2px;">';
@@ -4614,6 +5200,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
     if (isHidden) {
       el.style.display = 'block';
       el.setAttribute('aria-expanded', 'true');
+      treeStateManager.expandNode(elementId);
       if (icon) {
         if (icon.className.indexOf('fa-caret-') >= 0) {
           icon.className = 'fas fa-caret-down tree-toggle-icon';
@@ -4624,6 +5211,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
     } else {
       el.style.display = 'none';
       el.setAttribute('aria-expanded', 'false');
+      treeStateManager.collapseNode(elementId);
       if (icon) {
         if (icon.className.indexOf('fa-caret-') >= 0) {
           icon.className = 'fas fa-caret-right tree-toggle-icon';
@@ -4642,6 +5230,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
       var dbIdx = c.getAttribute('data-db-idx') || (i + 1);
       c.style.display = 'block';
       c.setAttribute('aria-expanded', 'true');
+      treeStateManager.expandNode(c.id);
       var icon = document.getElementById('icon_' + c.id);
       var header = document.getElementById('db_header_' + dbIdx);
       var btn = document.getElementById('btn_toggle_' + c.id) || document.getElementById('btn_toggle_' + dbIdx);
@@ -4659,6 +5248,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
       if (!nodes[j].id || !nodes[j].id.startsWith('item_detail_')) {
         nodes[j].style.display = 'block';
         nodes[j].setAttribute('aria-expanded', 'true');
+        if (nodes[j].id) treeStateManager.expandNode(nodes[j].id);
       }
     }
     var icons = document.querySelectorAll('.tree-toggle-icon');
@@ -4677,6 +5267,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
       var dBtn = document.getElementById('btn_toggle_' + dc.id) || document.getElementById('btn_toggle_' + dIdx);
       dc.setAttribute('aria-expanded', 'false');
       dc.setAttribute('data-state', 'collapsed');
+      treeStateManager.collapseNode(dc.id);
       if (dHeader) {
         dHeader.setAttribute('aria-expanded', 'false');
         dHeader.setAttribute('data-state', 'collapsed');
@@ -4690,6 +5281,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
     for (var i = 0; i < nodes.length; i++) {
       nodes[i].style.display = 'none';
       nodes[i].setAttribute('aria-expanded', 'false');
+      if (nodes[i].id) treeStateManager.collapseNode(nodes[i].id);
     }
     var icons = document.querySelectorAll('.tree-toggle-icon');
     for (var j = 0; j < icons.length; j++) {
@@ -5481,32 +6073,9 @@ public class StoreEnginesPage extends StoreTemplatePage {
     for (var i = 0; i < details.length; i++) {
       details[i].style.display = 'none';
     }
-    currentEngineFilter = 'ALL';
     var qf = document.getElementById('tableExplorerQuickFilter');
     if (qf) qf.value = '';
     location.href = baseUrl + '&view_mode=table&target_db=' + encodeURIComponent(newDb) + '&coll=default&table_page=1&table_size=' + pageSize;
-  }
-
-  var currentEngineFilter = 'ALL';
-
-  function filterByEngineType(engineType) {
-    currentEngineFilter = engineType || 'ALL';
-    var chips = document.querySelectorAll('.engine-filter-chip');
-    for (var i = 0; i < chips.length; i++) {
-      var t = chips[i].getAttribute('data-engine-target');
-      if (t === currentEngineFilter) {
-        chips[i].classList.add('active');
-        chips[i].style.background = 'rgba(56,189,248,0.25)';
-        chips[i].style.borderColor = '#38bdf8';
-        chips[i].style.color = '#38bdf8';
-      } else {
-        chips[i].classList.remove('active');
-        chips[i].style.background = 'rgba(255,255,255,0.04)';
-        chips[i].style.borderColor = 'rgba(255,255,255,0.1)';
-        chips[i].style.color = '#94a3b8';
-      }
-    }
-    filterExplorerTable();
   }
 
   function filterExplorerTable() {
@@ -5516,12 +6085,10 @@ public class StoreEnginesPage extends StoreTemplatePage {
     var visibleCount = 0;
     for (var i = 0; i < rows.length; i++) {
       var text = rows[i].innerText.toLowerCase();
-      var rowEngine = rows[i].getAttribute('data-engine-type') || '';
-      var engineMatch = (currentEngineFilter === 'ALL' || rowEngine === currentEngineFilter);
       var textMatch = (!filter || text.indexOf(filter) > -1);
       var detailId = rows[i].getAttribute('data-detail-id');
       var detailEl = detailId ? document.getElementById(detailId) : null;
-      if (engineMatch && textMatch) {
+      if (textMatch) {
         rows[i].style.display = 'flex';
         visibleCount++;
       } else {
@@ -5534,7 +6101,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
       }
     }
     var counter = document.getElementById('tableFilterVisibleCount');
-    if (counter) counter.innerText = visibleCount + ' Records Visible';
+    if (counter) counter.innerText = visibleCount + ' Total Records';
   }
 
   function onSearchModeChange(mode) {
@@ -5603,6 +6170,197 @@ public class StoreEnginesPage extends StoreTemplatePage {
     showModal('advancedSearchModal');
   }
 
+  function openSampleDatabasesModal() {
+    showModal('sampleDatabasesModal');
+    refreshSampleDatabasesList();
+  }
+
+  function refreshSampleDatabasesList() {
+    var loadEl = document.getElementById('sampleDbsLoadingContainer');
+    var listEl = document.getElementById('sampleDbsCatalogContainer');
+    if (loadEl) loadEl.style.display = 'flex';
+    if (listEl) listEl.style.display = 'none';
+
+    fetch('/engines?action=list_sample_dbs', {
+      headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      if (loadEl) loadEl.style.display = 'none';
+      if (!listEl) return;
+      listEl.innerHTML = '';
+      listEl.style.display = 'flex';
+
+      if (data && data.databases && data.databases.length > 0) {
+        data.databases.forEach(function(db) {
+          var isInst = db.isInstalled;
+          var card = document.createElement('div');
+          card.style.cssText = 'background:#1e293b; border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:12px 16px; display:flex; justify-content:space-between; align-items:center; gap:16px; transition:border-color 0.2s;';
+          card.id = 'sample-db-card-' + db.databaseName;
+
+          var left = document.createElement('div');
+          left.style.cssText = 'flex:1; min-width:0;';
+
+          var titleRow = document.createElement('div');
+          titleRow.style.cssText = 'display:flex; align-items:center; gap:8px; margin-bottom:4px; flex-wrap:wrap;';
+
+          var iconEl = document.createElement('i');
+          iconEl.className = db.icon || 'fas fa-database';
+          iconEl.style.cssText = 'color:#ec4899; font-size:14px;';
+
+          var nameEl = document.createElement('span');
+          nameEl.style.cssText = 'font-weight:700; color:#f8fafc; font-size:13px;';
+          nameEl.innerText = db.databaseName;
+
+          var engBadge = document.createElement('span');
+          engBadge.style.cssText = 'font-size:10px; font-weight:700; padding:2px 6px; border-radius:4px; background:rgba(56,189,248,0.15); color:#38bdf8; border:1px solid rgba(56,189,248,0.3);';
+          engBadge.innerText = db.engineType;
+
+          var statusBadge = document.createElement('span');
+          statusBadge.id = 'sample-status-' + db.databaseName;
+          if (isInst) {
+            statusBadge.style.cssText = 'font-size:10px; font-weight:700; padding:2px 8px; border-radius:12px; background:rgba(34,197,94,0.15); color:#4ade80; border:1px solid rgba(34,197,94,0.3); display:inline-flex; align-items:center; gap:4px;';
+            statusBadge.innerHTML = '<i class="fas fa-check-circle"></i> Installed (' + (db.recordCount || db.estimatedRecords) + ' records)';
+          } else {
+            statusBadge.style.cssText = 'font-size:10px; font-weight:600; padding:2px 8px; border-radius:12px; background:rgba(148,163,184,0.1); color:#94a3b8; border:1px solid rgba(148,163,184,0.25); display:inline-flex; align-items:center; gap:4px;';
+            statusBadge.innerHTML = '<i class="fas fa-download"></i> Available (~' + db.estimatedRecords + ' records)';
+          }
+
+          titleRow.appendChild(iconEl);
+          titleRow.appendChild(nameEl);
+          titleRow.appendChild(engBadge);
+          titleRow.appendChild(statusBadge);
+
+          var descEl = document.createElement('div');
+          descEl.style.cssText = 'font-size:11px; color:#cbd5e1; line-height:1.4; margin-bottom:2px;';
+          descEl.innerText = db.description;
+
+          left.appendChild(titleRow);
+          left.appendChild(descEl);
+
+          var right = document.createElement('div');
+          right.style.cssText = 'display:flex; align-items:center; gap:8px; flex-shrink:0;';
+          right.id = 'sample-actions-' + db.databaseName;
+
+          if (isInst) {
+            var uninstBtn = document.createElement('button');
+            uninstBtn.type = 'button';
+            uninstBtn.className = 'btn-action btn-secondary';
+            uninstBtn.style.cssText = 'padding:5px 12px; font-size:11px; background:rgba(239,68,68,0.15); border-color:rgba(239,68,68,0.3); color:#f87171; cursor:pointer;';
+            uninstBtn.innerHTML = '<i class="fas fa-trash-alt" style="margin-right:4px;"></i> Uninstall';
+            uninstBtn.onclick = function() { uninstallSampleDb(db.databaseName); };
+            right.appendChild(uninstBtn);
+          } else {
+            var instBtn = document.createElement('button');
+            instBtn.type = 'button';
+            instBtn.className = 'btn-action btn-primary';
+            instBtn.style.cssText = 'padding:5px 12px; font-size:11px; background:#ec4899; border-color:#ec4899; color:#fff; cursor:pointer;';
+            instBtn.innerHTML = '<i class="fas fa-download" style="margin-right:4px;"></i> Install Dataset';
+            instBtn.onclick = function() { installSampleDb(db.databaseName); };
+            right.appendChild(instBtn);
+          }
+
+          card.appendChild(left);
+          card.appendChild(right);
+          listEl.appendChild(card);
+        });
+      }
+    })
+    .catch(function(err) {
+      if (loadEl) loadEl.style.display = 'none';
+      if (listEl) {
+        listEl.style.display = 'block';
+        listEl.innerHTML = '<div style="color:#f87171; font-size:12px; padding:16px;">Failed to load catalog: ' + (err.message || err) + '</div>';
+      }
+    });
+  }
+
+  function installSampleDb(dbName) {
+    var actionsEl = document.getElementById('sample-actions-' + dbName);
+    var statusEl = document.getElementById('sample-status-' + dbName);
+    if (actionsEl) actionsEl.innerHTML = '<span style="color:#ec4899; font-size:11px; display:inline-flex; align-items:center; gap:6px;"><i class="fas fa-spinner fa-spin"></i> Installing...</span>';
+    if (statusEl) {
+      statusEl.style.cssText = 'font-size:10px; font-weight:700; padding:2px 8px; border-radius:12px; background:rgba(234,179,8,0.15); color:#facc15; border:1px solid rgba(234,179,8,0.3); display:inline-flex; align-items:center; gap:4px;';
+      statusEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Seeding database...';
+    }
+
+    fetch('/engines', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      body: 'action=install_sample_db_ajax&target_db=' + encodeURIComponent(dbName)
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      if (data && data.status === 'SUCCESS') {
+        if (typeof showTransientToast === 'function') {
+          showTransientToast(data.message || ('Dataset ' + dbName + ' installed!'), 'success');
+        }
+        if (typeof treeStateManager !== 'undefined' && treeStateManager.invalidateTreeCache) {
+          treeStateManager.invalidateTreeCache(dbName);
+        }
+        refreshSampleDatabasesList();
+        if (typeof reloadExplorerHierarchy === 'function') {
+          reloadExplorerHierarchy(dbName);
+        }
+      } else {
+        alert('Installation failed: ' + (data ? data.message : 'Unknown error'));
+        refreshSampleDatabasesList();
+      }
+    })
+    .catch(function(err) {
+      alert('Installation failed: ' + (err.message || err));
+      refreshSampleDatabasesList();
+    });
+  }
+
+  function uninstallSampleDb(dbName) {
+    if (!confirm('Are you sure you want to uninstall and purge sample database "' + dbName + '"? All stored records and components will be permanently deleted.')) {
+      return;
+    }
+
+    var actionsEl = document.getElementById('sample-actions-' + dbName);
+    var statusEl = document.getElementById('sample-status-' + dbName);
+    if (actionsEl) actionsEl.innerHTML = '<span style="color:#f87171; font-size:11px; display:inline-flex; align-items:center; gap:6px;"><i class="fas fa-spinner fa-spin"></i> Removing...</span>';
+    if (statusEl) {
+      statusEl.style.cssText = 'font-size:10px; font-weight:700; padding:2px 8px; border-radius:12px; background:rgba(239,68,68,0.15); color:#f87171; border:1px solid rgba(239,68,68,0.3); display:inline-flex; align-items:center; gap:4px;';
+      statusEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Purging keys...';
+    }
+
+    fetch('/engines', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      body: 'action=uninstall_sample_db_ajax&target_db=' + encodeURIComponent(dbName)
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      if (data && data.status === 'SUCCESS') {
+        if (typeof showTransientToast === 'function') {
+          showTransientToast(data.message || ('Dataset ' + dbName + ' uninstalled!'), 'success');
+        }
+        if (typeof treeStateManager !== 'undefined' && treeStateManager.invalidateTreeCache) {
+          treeStateManager.invalidateTreeCache(dbName);
+        }
+        refreshSampleDatabasesList();
+        if (typeof reloadExplorerHierarchy === 'function') {
+          reloadExplorerHierarchy(dbName);
+        }
+      } else {
+        alert('Uninstallation failed: ' + (data ? data.message : 'Unknown error'));
+        refreshSampleDatabasesList();
+      }
+    })
+    .catch(function(err) {
+      alert('Uninstallation failed: ' + (err.message || err));
+      refreshSampleDatabasesList();
+    });
+  }
+
   // Teleport all modals to document.body on load so they escape any CSS containing blocks
   document.addEventListener('DOMContentLoaded', function() {
     var modalIds = [
@@ -5614,7 +6372,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
       'universalRestoreModal', 'confirmRestoreModal', 'confirmDeleteModal',
       'inspectRecordModal', 'referenceWarningModal', 'advancedSearchModal',
       'advSearchHelpModal', 'backupDbModal', 'restoreDbModal', 'confirmDbRestoreModal',
-      'exportDataModal', 'createIndexModal', 'createSchemaModal'
+      'exportDataModal', 'createIndexModal', 'createSchemaModal', 'sampleDatabasesModal'
     ];
     modalIds.forEach(function(mid) {
       var el = document.getElementById(mid);
@@ -5622,6 +6380,12 @@ public class StoreEnginesPage extends StoreTemplatePage {
         document.body.appendChild(el);
       }
     });
+    if (typeof bindModalFormInterceptors === 'function') {
+      bindModalFormInterceptors();
+    }
+    if (typeof treeStateManager !== 'undefined' && treeStateManager.restoreState) {
+      treeStateManager.restoreState();
+    }
   });
 """;
         return RawScript.of(js1 + js2 + js3);

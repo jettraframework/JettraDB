@@ -225,7 +225,7 @@ public class JettraReferenceResolver {
             }
         }
 
-        // 7. Auto-load sample dataset if database matches any known sample dataset
+        // 7. Lazy-load sample dataset if reference points to a known sample dataset
         if (rawBytes == null || rawBytes.length == 0) {
             try {
                 com.jettra.store.engine.samples.SampleDatasetManager sampleMgr = new com.jettra.store.engine.samples.SampleDatasetManager(storageEngine);
