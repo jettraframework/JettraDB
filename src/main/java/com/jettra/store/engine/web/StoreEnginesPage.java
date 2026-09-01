@@ -180,14 +180,16 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 } else {
                     sendJsonError(exchange, "Database name cannot be empty");
                 }
-            } else if ("edit_document".equalsIgnoreCase(action) || "edit_object".equalsIgnoreCase(action) || "edit_record".equalsIgnoreCase(action)) {
+            } else if ("edit_document".equalsIgnoreCase(action) || "edit_object".equalsIgnoreCase(action) || "edit_record".equalsIgnoreCase(action) || "update_object".equalsIgnoreCase(action)) {
                 String id = params.get("target_id");
                 String coll = params.getOrDefault("target_coll", "default");
-                String payload = params.get("doc_payload");
+                String engType = params.getOrDefault("engine_type", selectedEngine);
+                String payload = params.get("record_payload");
+                if (payload == null) payload = params.get("doc_payload");
                 if (payload == null) payload = params.get("raw_payload");
                 if (payload == null) payload = params.get("kv_value");
                 if (payload == null) payload = params.get("rec_payload");
-                executeTypeSpecificEdit(selectedEngine, targetDb, id, coll, payload, params);
+                executeTypeSpecificEdit(engType, targetDb, id, coll, payload, params);
                 JsonObject resp = new JsonObject();
                 resp.addProperty("status", "SUCCESS");
                 resp.addProperty("database", targetDb);
@@ -632,7 +634,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     queryResultDisplay = executeGeoDistance(params);
                     alertMessage = "Geospatial distance calculated successfully!";
                     alertType = "badge-engine";
-                } else if ("edit_document".equalsIgnoreCase(action) || "edit_object".equalsIgnoreCase(action) || "edit_record".equalsIgnoreCase(action)) {
+                } else if ("edit_document".equalsIgnoreCase(action) || "edit_object".equalsIgnoreCase(action) || "edit_record".equalsIgnoreCase(action) || "update_object".equalsIgnoreCase(action)) {
                     String engType = params.getOrDefault("engine_type", selectedEngine);
                     String coll = params.getOrDefault("target_coll", params.getOrDefault("coll", "default"));
                     String rawPayload = params.getOrDefault("record_payload", params.getOrDefault("doc_payload", "{}"));
@@ -1974,6 +1976,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
         modals.add(buildEditGeoModal(actionUrl));
         modals.add(buildEditObjectModal(actionUrl));
         modals.add(buildEditRecordsModal(actionUrl));
+        modals.add(StorageModalCommands.buildUniversalEditModal(actionUrl));
         modals.add(buildUniversalRestoreModal(actionUrl));
         modals.add(buildConfirmRestoreModal(actionUrl));
         modals.add(buildConfirmDeleteModal(actionUrl));

@@ -152,6 +152,62 @@ public final class StorageModalCommands {
     }
 
     /**
+     * Builds the EDITAR (Universal / Multi-Model Edit) Modal with reactive attributes form and schema validation.
+     */
+    public static Widget buildUniversalEditModal(String actionUrl) {
+        Widget header = Div.of(
+            Div.of(
+                Icon.of("fas fa-edit").modifier(new Modifier().style("color:#fbbf24; font-size:16px; margin-right:8px;")),
+                Header.of(3, Text.of("Editar Registro Multi-Modelo (EDITAR)"))
+                    .modifier(new Modifier().style("margin:0; font-size:15px; font-weight:700; color:var(--j-text-primary);")),
+                Span.of("DOCUMENT").id("universalEditEngineDisplay").modifier(new Modifier().cssClass("store-badge").style("font-size:10px; margin-left:8px; background:rgba(251,191,36,0.15); color:#fbbf24; border:1px solid rgba(251,191,36,0.3);"))
+            ).modifier(new Modifier().style("display:flex; align-items:center;")),
+            Button.of(Icon.of("fas fa-times"))
+                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "hideModal('universalEditModal')").style("background:none; border:none; color:var(--j-text-muted); font-size:16px; cursor:pointer; padding:4px;"))
+        ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; padding:14px 18px; border-bottom:1px solid var(--j-border); background:var(--j-bg-subsurface); border-radius:10px 10px 0 0;"));
+
+        Widget form = Form.of(
+            InputHidden.of("action", "update_object"),
+            InputHidden.of("engine_type", "DOCUMENT").id("universalEditEngineInput"),
+            InputHidden.of("target_db", "default").id("universalEditDbInput"),
+            InputHidden.of("target_coll", "default").id("universalEditCollInput"),
+            InputHidden.of("target_id", "").id("universalEditIdInput"),
+
+            Div.of(
+                Div.of(
+                    Span.of("Database: ").modifier(new Modifier().style("font-weight:bold; color:var(--j-text-muted); font-size:11px;")),
+                    Span.of("default").id("universalEditDbDisplay").modifier(new Modifier().style("color:var(--j-text-primary); font-weight:600; font-size:11px; margin-right:12px;")),
+                    Span.of("Unit / Coll: ").modifier(new Modifier().style("font-weight:bold; color:var(--j-text-muted); font-size:11px;")),
+                    Span.of("default").id("universalEditCollDisplay").modifier(new Modifier().style("color:var(--j-text-primary); font-weight:600; font-size:11px; margin-right:12px;")),
+                    Span.of("Record ID: ").modifier(new Modifier().style("font-weight:bold; color:var(--j-text-muted); font-size:11px;")),
+                    Span.of("").id("universalEditIdDisplay").modifier(new Modifier().style("color:#4ade80; font-family:monospace; font-weight:700; font-size:11.5px;"))
+                ).modifier(new Modifier().style("display:flex; align-items:center; flex-wrap:wrap; gap:4px;"))
+            ).modifier(new Modifier().style("padding:8px 12px; background:var(--j-bg-body); border-radius:6px; border:1px solid var(--j-border); margin-bottom:12px;")),
+
+            Div.of(
+                Div.of(
+                    Label.of(Text.of("Record Payload (JSON / Key-Value / Attributes):")).modifier(new Modifier().style("font-size:12px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
+                    Span.of("Editing creates a zero-loss new version in the storage hierarchy.").modifier(new Modifier().style("font-size:10.5px; color:var(--j-text-muted);"))
+                ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;")),
+                TextArea.create()
+                    .name("record_payload")
+                    .rows(12)
+                    .id("universalEditPayloadInput")
+                    .modifier(new Modifier().style("width:100%; box-sizing:border-box; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:var(--j-text-primary); font-family:monospace; font-size:12px; padding:10px; line-height:1.4; resize:vertical;"))
+            ).modifier(new Modifier().style("margin-bottom:12px;")),
+
+            Div.of(
+                Button.of(Icon.of("fas fa-times"), Text.of(" Cancelar"))
+                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "hideModal('universalEditModal')").cssClass("btn-action btn-secondary").style("padding:6px 14px; font-size:12px; margin-right:8px;")),
+                Button.of(Icon.of("fas fa-save"), Text.of(" Guardar Cambios (v+1)"))
+                    .modifier(new Modifier().attribute("type", "submit").cssClass("btn-action btn-primary").style("padding:6px 18px; font-size:12px; font-weight:700; background:#0284c7;"))
+            ).modifier(new Modifier().style("display:flex; justify-content:flex-end; align-items:center; margin-top:8px;"))
+        ).action(actionUrl).method("POST").modifier(new Modifier().style("padding:16px 18px;"));
+
+        return createModalOverlay("universalEditModal", "700px", "rgba(251,191,36,0.4)", header, form);
+    }
+
+    /**
      * Builds the ELIMINAR (Confirm Delete) Modal with confirmation prompt and destructive action feedback.
      */
     public static Widget buildDeleteModal(String actionUrl) {
@@ -239,6 +295,210 @@ public final class StorageModalCommands {
             .modifier(new Modifier().style("padding:16px 18px;"));
 
         return createModalOverlay("universalRestoreModal", "680px", "rgba(168,85,247,0.4)", header, body);
+    }
+
+    /**
+     * Builds the Version Rollback Confirmation Modal.
+     */
+    public static Widget buildConfirmRestoreModal(String actionUrl) {
+        Widget header = Div.of(
+            Div.of(
+                Icon.of("fas fa-undo-alt").modifier(new Modifier().style("color:#a855f7; font-size:16px; margin-right:8px;")),
+                Header.of(3, Text.of("Confirmar Rollback de Versión"))
+                    .modifier(new Modifier().style("margin:0; font-size:15px; font-weight:700; color:var(--j-text-primary);"))
+            ).modifier(new Modifier().style("display:flex; align-items:center;")),
+            Button.of(Icon.of("fas fa-times"))
+                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "hideModal('confirmRestoreModal')").style("background:none; border:none; color:var(--j-text-muted); font-size:16px; cursor:pointer; padding:4px;"))
+        ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; padding:14px 18px; border-bottom:1px solid var(--j-border); background:var(--j-bg-subsurface); border-radius:10px 10px 0 0;"));
+
+        Widget form = Form.of(
+            InputHidden.of("action", "restore_version"),
+            InputHidden.of("engine_type", "DOCUMENT").id("confirmRestoreEngineInput"),
+            InputHidden.of("target_db", "default").id("confirmRestoreDbInput"),
+            InputHidden.of("target_coll", "default").id("confirmRestoreCollInput"),
+            InputHidden.of("target_id", "").id("confirmRestoreIdInput"),
+            InputHidden.of("version_ts", "0").id("confirmRestoreTsInput"),
+
+            Div.of(
+                Icon.of("fas fa-history").modifier(new Modifier().style("color:#a855f7; font-size:32px; margin-bottom:10px; display:block; text-align:center;")),
+                Paragraph.of(Text.of("¿Está seguro de que desea restaurar este registro al snapshot de la versión seleccionada?"))
+                    .modifier(new Modifier().style("font-weight:600; color:var(--j-text-primary); font-size:13px; text-align:center; margin:0 0 12px 0;")),
+                Div.of(
+                    Span.of("Snapshot Timestamp: ").modifier(new Modifier().style("font-weight:bold; color:var(--j-text-muted); font-size:11px; margin-right:4px;")),
+                    Span.of("").id("confirmRestoreDateDisplay").modifier(new Modifier().style("color:#a855f7; font-weight:700; font-size:12px;"))
+                ).modifier(new Modifier().style("background:var(--j-bg-body); border:1px solid var(--j-border); padding:10px 14px; border-radius:6px; margin-bottom:16px; text-align:center;"))
+            ),
+
+            Div.of(
+                Button.of(Icon.of("fas fa-times"), Text.of(" Cancelar"))
+                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "hideModal('confirmRestoreModal')").cssClass("btn-action btn-secondary").style("padding:6px 14px; font-size:12px; margin-right:8px;")),
+                Button.of(Icon.of("fas fa-undo"), Text.of(" Sí, Restaurar Versión"))
+                    .modifier(new Modifier().attribute("type", "submit").cssClass("btn-action btn-primary").style("padding:6px 16px; font-size:12px; font-weight:700; background:#a855f7; border-color:#a855f7;"))
+            ).modifier(new Modifier().style("display:flex; justify-content:flex-end; align-items:center; margin-top:8px;"))
+        ).action(actionUrl).method("POST").modifier(new Modifier().style("padding:18px 20px;"));
+
+        return createModalOverlay("confirmRestoreModal", "480px", "rgba(168,85,247,0.4)", header, form);
+    }
+
+    /**
+     * Self-contained client-side script registering modal open/close functions globally in window scope.
+     */
+    public static Widget buildModalActionHandlersScript() {
+        return RawHtml.of(
+            "<script>\n" +
+            "  if (typeof window.showModal !== 'function') {\n" +
+            "    window.showModal = function(id) {\n" +
+            "      if (!id) return;\n" +
+            "      var el = document.getElementById(id);\n" +
+            "      if (el) {\n" +
+            "        if (el.parentElement !== document.body) {\n" +
+            "          document.body.appendChild(el);\n" +
+            "        }\n" +
+            "        el.style.display = 'flex';\n" +
+            "        el.style.visibility = 'visible';\n" +
+            "        el.style.opacity = '1';\n" +
+            "      }\n" +
+            "    };\n" +
+            "  }\n" +
+            "  if (typeof window.hideModal !== 'function') {\n" +
+            "    window.hideModal = function(id) {\n" +
+            "      if (!id) return;\n" +
+            "      var el = document.getElementById(id);\n" +
+            "      if (el) el.style.display = 'none';\n" +
+            "    };\n" +
+            "  }\n" +
+            "  if (typeof window.setElementValues !== 'function') {\n" +
+            "    window.setElementValues = function(map) {\n" +
+            "      for (var id in map) {\n" +
+            "        var el = document.getElementById(id);\n" +
+            "        if (el) {\n" +
+            "          if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') {\n" +
+            "            el.value = map[id];\n" +
+            "          } else {\n" +
+            "            el.innerText = map[id];\n" +
+            "          }\n" +
+            "        }\n" +
+            "      }\n" +
+            "    };\n" +
+            "  }\n" +
+            "  if (typeof window.decodeUtf8Base64 !== 'function') {\n" +
+            "    window.decodeUtf8Base64 = function(b64) {\n" +
+            "      if (!b64) return '';\n" +
+            "      try {\n" +
+            "        var bin = atob(b64);\n" +
+            "        var bytes = new Uint8Array(bin.length);\n" +
+            "        for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);\n" +
+            "        return new TextDecoder('utf-8').decode(bytes);\n" +
+            "      } catch (e) {\n" +
+            "        try { return atob(b64); } catch (e2) { return b64; }\n" +
+            "      }\n" +
+            "    };\n" +
+            "  }\n" +
+            "  window.openInspectRecordModal = function(engine, db, unit, id, payloadB64, vCount) {\n" +
+            "    var payload = window.decodeUtf8Base64(payloadB64);\n" +
+            "    var parsed = null;\n" +
+            "    try { parsed = JSON.parse(payload); } catch(e) {}\n" +
+            "    var pretty = parsed ? JSON.stringify(parsed, null, 2) : (payload || '{}');\n" +
+            "    window.setElementValues({\n" +
+            "      inspectRecordEngineDisplay: engine,\n" +
+            "      inspectRecordDbDisplay: db,\n" +
+            "      inspectRecordCollDisplay: unit || 'default',\n" +
+            "      inspectRecordIdDisplay: id,\n" +
+            "      inspectRecordVersionDisplay: 'v' + (vCount || 1),\n" +
+            "      inspectRecordPayloadDisplay: pretty\n" +
+            "    });\n" +
+            "    window.showModal('inspectRecordModal');\n" +
+            "  };\n" +
+            "  window.openUniversalEditModal = function(engine, db, unit, id, payloadB64) {\n" +
+            "    var payload = window.decodeUtf8Base64(payloadB64);\n" +
+            "    var parsed = null;\n" +
+            "    try { parsed = JSON.parse(payload); } catch(e) {}\n" +
+            "    var pretty = parsed ? JSON.stringify(parsed, null, 2) : (payload || '{}');\n" +
+            "    window.setElementValues({\n" +
+            "      universalEditEngineInput: engine,\n" +
+            "      universalEditEngineDisplay: engine,\n" +
+            "      universalEditDbInput: db,\n" +
+            "      universalEditDbDisplay: db,\n" +
+            "      universalEditCollInput: unit || 'default',\n" +
+            "      universalEditCollDisplay: unit || 'default',\n" +
+            "      universalEditIdInput: id,\n" +
+            "      universalEditIdDisplay: id,\n" +
+            "      universalEditPayloadInput: pretty\n" +
+            "    });\n" +
+            "    window.showModal('universalEditModal');\n" +
+            "  };\n" +
+            "  window.openUniversalDeleteModal = function(engine, db, unit, id) {\n" +
+            "    window.setElementValues({\n" +
+            "      confirmDeleteEngineInput: engine,\n" +
+            "      confirmDeleteEngineDisplay: engine,\n" +
+            "      confirmDeleteDbInput: db,\n" +
+            "      confirmDeleteDbDisplay: db,\n" +
+            "      confirmDeleteCollInput: unit || 'default',\n" +
+            "      confirmDeleteCollDisplay: unit || 'default',\n" +
+            "      confirmDeleteIdInput: id,\n" +
+            "      confirmDeleteIdDisplay: id\n" +
+            "    });\n" +
+            "    window.showModal('confirmDeleteModal');\n" +
+            "  };\n" +
+            "  window.openUniversalRestoreModal = function(engine, db, unit, id, versionsJsonB64) {\n" +
+            "    var versionsJsonStr = window.decodeUtf8Base64(versionsJsonB64);\n" +
+            "    window.setElementValues({\n" +
+            "      restoreEngineLabel: engine,\n" +
+            "      restoreEngineTypeInput: engine,\n" +
+            "      restoreRecordDbInput: db,\n" +
+            "      restoreRecordCollInput: unit || 'default',\n" +
+            "      restoreRecordIdInput: id,\n" +
+            "      restoreRecordIdLabel: id,\n" +
+            "      confirmRestoreEngineInput: engine,\n" +
+            "      confirmRestoreDbInput: db,\n" +
+            "      confirmRestoreCollInput: unit || 'default',\n" +
+            "      confirmRestoreIdInput: id\n" +
+            "    });\n" +
+            "    var container = document.getElementById('universalVersionsContainer');\n" +
+            "    if (container) {\n" +
+            "      container.innerHTML = '';\n" +
+            "      var versions = [];\n" +
+            "      if (versionsJsonStr && versionsJsonStr.trim().length > 0) {\n" +
+            "        try { versions = JSON.parse(versionsJsonStr); } catch(e) { versions = []; }\n" +
+            "      }\n" +
+            "      if (!versions || versions.length === 0) {\n" +
+            "        container.innerHTML = '<div style=\"padding:16px; color:var(--j-text-muted); text-align:center;\">No historical snapshot versions recorded for this item yet. Edit the item to create new versions.</div>';\n" +
+            "      } else {\n" +
+            "        var html = '<table style=\"width:100%; border-collapse:collapse; font-size:12px;\">';\n" +
+            "        html += '<tr style=\"background:var(--j-bg-subsurface); color:var(--j-text-secondary); text-align:left;\"><th style=\"padding:8px 12px;\">Version</th><th style=\"padding:8px 12px;\">Timestamp / Date</th><th style=\"padding:8px 12px;\">Snapshot Preview</th><th style=\"padding:8px 12px; text-align:right;\">Action</th></tr>';\n" +
+            "        for (var i = 0; i < versions.length; i++) {\n" +
+            "          var v = versions[i];\n" +
+            "          var badge = v.isCurrent ? '<span class=\"store-badge badge-active\" style=\"font-size:10px;\">' + v.versionNumber + ' (CURRENT)</span>' : '<span class=\"store-badge badge-records\" style=\"font-size:10px;\">' + v.versionNumber + '</span>';\n" +
+            "          var safeDate = (v.formattedDate || v.timestamp || '').toString().replace(/[\\\'\\\"\\\\\\\\]/g, ' ');\n" +
+            "          var preview = (v.payloadPreview || '').toString();\n" +
+            "          if (preview.length > 50) preview = preview.substring(0, 50) + '...';\n" +
+            "          html += '<tr style=\"border-bottom:1px solid var(--j-border);\">';\n" +
+            "          html += '<td style=\"padding:8px 12px;\">' + badge + '</td>';\n" +
+            "          html += '<td style=\"padding:8px 12px; color:var(--j-text-muted); font-size:11px;\">' + safeDate + '</td>';\n" +
+            "          html += '<td style=\"padding:8px 12px; font-family:monospace; color:var(--j-text-secondary); font-size:11px;\">' + preview + '</td>';\n" +
+            "          html += '<td style=\"padding:8px 12px; text-align:right;\">';\n" +
+            "          if (!v.isCurrent) {\n" +
+            "            html += '<button type=\"button\" onclick=\"openConfirmRestoreModal(\\'' + v.timestamp + '\\', \\'' + safeDate + '\\')\" style=\"background:rgba(168,85,247,0.15); border:1px solid rgba(168,85,247,0.3); color:#a855f7; font-size:10.5px; padding:3px 8px; border-radius:4px; cursor:pointer;\">Restaurar</button>';\n" +
+            "          } else {\n" +
+            "            html += '<span style=\"color:var(--j-text-muted); font-size:11px;\">Active</span>';\n" +
+            "          }\n" +
+            "          html += '</td></tr>';\n" +
+            "        }\n" +
+            "        html += '</table>';\n" +
+            "        container.innerHTML = html;\n" +
+            "      }\n" +
+            "    }\n" +
+            "    window.showModal('universalRestoreModal');\n" +
+            "  };\n" +
+            "  window.openConfirmRestoreModal = function(ts, formattedDate) {\n" +
+            "    window.setElementValues({\n" +
+            "      confirmRestoreTsInput: ts,\n" +
+            "      confirmRestoreDateDisplay: formattedDate || ts\n" +
+            "    });\n" +
+            "    window.showModal('confirmRestoreModal');\n" +
+            "  };\n" +
+            "</script>\n"
+        );
     }
 
     private static Widget createModalOverlay(String modalId, String width, String borderColor, Widget header, Widget content) {

@@ -6,16 +6,19 @@ import io.jettra.flux.widgets.*;
 import io.jettra.json.JsonObject;
 import io.jettra.json.JettraJson;
 
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
 /**
- * Modular Table View component for JettraDB Multi-Model Storage Hierarchy Explorer.
- * Features row expansion (>), 4 decoupled modal action commands (VER, EDITAR, VERSIONES, ELIMINAR),
- * real-time filtering, auto-resolve jref controls, and pagination.
+ * Storage Table View for Multi-Model Storage Hierarchy Explorer.
+ * Features:
+ * - Direct row-level action buttons (VER, EDITAR, VERSIONES, ELIMINAR).
+ * - Expandable child detail panel with primary address, engine badge, preview fields, and action shortcuts.
+ * - Quick text search & filter across all attributes and payloads.
+ * - Jref ($jref) reference auto-resolution toggle.
+ * - Responsive pagination.
  */
 public final class StorageTableView {
 
@@ -76,7 +79,7 @@ public final class StorageTableView {
             RawHtml.of("<input type=\"checkbox\" id=\"chkAutoResolveRefsGlobal\" checked onchange=\"toggleGlobalReferenceResolution(this.checked)\" style=\"accent-color:var(--j-primary); width:14px; height:14px; cursor:pointer; margin-right:4px;\" />"),
             Icon.of("fas fa-link").modifier(new Modifier().style("color:var(--j-primary); margin-right:4px; font-size:11px;")),
             Span.of("Cargar Objetos Referenciados (Auto-Resolve Jref)").modifier(new Modifier().style("color:var(--j-text-secondary); font-size:11px; font-weight:600;"))
-        ).modifier(new Modifier().style("display:inline-flex; align-items:center; cursor:pointer; background:var(--j-primary-light); border:1px solid var(--j-border); padding:4px 8px; border-radius:6px;"));
+        ).modifier(new Modifier().style("display:inline-flex; align-items:cursor:pointer; background:var(--j-primary-light); border:1px solid var(--j-border); padding:4px 8px; border-radius:6px;"));
 
         Widget totalCountBadge = Span.of(totalItems + " Total Records").id("tableFilterVisibleCount")
             .modifier(new Modifier().cssClass("store-badge badge-active").style("font-size:11px; padding:4px 8px;"));
@@ -108,45 +111,33 @@ public final class StorageTableView {
                 Div.of(
                     Icon.of("fas fa-database").modifier(new Modifier().style("color:var(--j-text-muted); font-size:28px; margin-bottom:8px; display:block;")),
                     Header.of(4, Text.of("No engines or components found for [" + targetDb + "]"))
-                        .modifier(new Modifier().style("margin:0; font-size:14px; font-weight:700; color:var(--j-text-primary); margin-bottom:4px;")),
-                    Span.of("This database currently contains no active units or stored entities across the multi-model engines.")
-                        .modifier(new Modifier().style("color:var(--j-text-muted); font-size:12px; display:block; margin-bottom:12px;")),
-                    Div.of(
-                        Button.of(Icon.of("fas fa-plus"), Text.of(" Add Unit / Collection"))
-                            .modifier(new Modifier().attribute("type", "button").attribute("onclick", "showModal('createUnitModal')").cssClass("btn-action btn-primary").style("padding:5px 12px; font-size:11px; margin-right:6px;")),
-                        Button.of(Icon.of("fas fa-file-code"), Text.of(" Insert Document"))
-                            .modifier(new Modifier().attribute("type", "button").attribute("onclick", "showModal('addDocumentModal')").cssClass("btn-action btn-secondary").style("padding:5px 12px; font-size:11px;"))
-                    ).modifier(new Modifier().style("display:flex; justify-content:center; gap:6px;"))
-                ).modifier(new Modifier().style("padding:36px 20px; text-align:center; background:var(--j-bg-surface); border-bottom:1px solid var(--j-border);"))
+                        .modifier(new Modifier().style("color:var(--j-text-muted); font-size:13px; font-weight:600; margin:0 0 6px 0;")),
+                    Paragraph.of(Text.of("Select another database or use the '+ Unit' / '+ Object' action to initialize multi-model entities."))
+                        .modifier(new Modifier().style("color:var(--j-text-muted); font-size:11.5px; margin:0;"))
+                ).modifier(new Modifier().style("padding:32px 16px; text-align:center; background:var(--j-bg-surface);"))
             );
         } else {
-            int rowIdx = 0;
-            for (FlatRecordItem item : pageItems) {
-                rowIdx++;
-                String rowDetailId = "tbl_row_detail_" + rowIdx;
-                String rowIconId = "icon_" + rowDetailId;
+            for (int i = 0; i < pageItems.size(); i++) {
+                FlatRecordItem item = pageItems.get(i);
+                String rowDetailId = "tbl_row_detail_" + (i + 1);
 
-                Widget expandBtn = Button.of(Icon.of("fas fa-chevron-right tree-toggle-icon").id(rowIconId))
-                    .modifier(new Modifier()
-                        .attribute("type", "button")
-                        .attribute("onclick", "toggleTableRowDetail('" + rowDetailId + "')")
-                        .attribute("title", "Expand record details")
-                        .style("background:none; border:none; color:var(--j-primary); font-size:11px; cursor:pointer; width:28px; height:28px; display:inline-flex; align-items:center; justify-content:center; border-radius:4px; transition:all 0.15s ease;"));
+                Widget expandBtn = Button.of(
+                    Icon.of("fas fa-chevron-right").id("icon_" + rowDetailId).modifier(new Modifier().cssClass("tree-toggle-icon"))
+                ).modifier(new Modifier()
+                    .attribute("type", "button")
+                    .attribute("title", "Desplegar/Ocultar detalles del registro")
+                    .attribute("onclick", "toggleTableRowDetail('" + rowDetailId + "')")
+                    .style("background:none; border:none; color:var(--j-text-muted); width:28px; height:28px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; padding:0;"));
 
-                Widget engCell = Span.of(
-                    Icon.of(item.icon()).modifier(new Modifier().style("color:" + item.color() + "; margin-right:4px; font-size:11px;")),
-                    Span.of(item.engine()).modifier(new Modifier().style("font-weight:700; font-size:10.5px; color:" + item.color() + ";"))
-                ).modifier(new Modifier().style("width:125px; display:flex; align-items:center;"));
+                Widget engCell = Span.of(item.engine())
+                    .modifier(new Modifier().cssClass("store-badge").style("width:125px; background:rgba(0,0,0,0.06); color:" + item.color() + "; border:1px solid " + item.color() + "; font-size:10px; padding:2px 6px; font-weight:700;"));
 
-                Widget unitCell = Span.of(
-                    Text.of("📁 "),
-                    Span.of(item.unit()).modifier(new Modifier().style("color:var(--j-text-secondary); font-size:11px; font-weight:500;"))
-                ).modifier(new Modifier().style("width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"));
+                Widget unitCell = Span.of(item.unit())
+                    .modifier(new Modifier().style("width:150px; font-weight:600; color:var(--j-text-primary); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"));
 
                 Widget idCell = Span.of(item.id())
-                    .modifier(new Modifier().style("width:160px; color:var(--j-text-primary); font-family:monospace; font-weight:700; font-size:11.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer;"))
-                    .attribute("onclick", "toggleTableRowDetail('" + rowDetailId + "')")
-                    .attribute("title", "Click to toggle details");
+                    .modifier(new Modifier().style("width:160px; font-family:monospace; color:#4ade80; font-size:11.5px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer;"))
+                    .attribute("onclick", "toggleTableRowDetail('" + rowDetailId + "')");
 
                 Widget versionCell = Span.of("v" + item.vCount())
                     .modifier(new Modifier().cssClass("store-badge").style("width:70px; background:var(--j-primary-light); color:var(--j-primary); font-size:10px; padding:2px 6px; text-align:center;"));
@@ -289,7 +280,13 @@ public final class StorageTableView {
             "</script>\n"
         );
 
-        return Div.of(tableFilterBar, tableContainer, paginationFooter, tableInitScript);
+        return Div.of(
+            tableFilterBar,
+            tableContainer,
+            paginationFooter,
+            tableInitScript,
+            StorageModalCommands.buildModalActionHandlersScript()
+        );
     }
 
     private static Widget renderItemDetailSummary(FlatRecordItem item, JettraJson jsonParser) {
