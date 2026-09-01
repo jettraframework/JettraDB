@@ -60,12 +60,14 @@ public class StoreEnginesPage extends StoreTemplatePage {
     private final JettraReferenceResolver refResolver;
     private final HierarchyExplorerService hierarchyService;
     private final SampleDatabaseService sampleDbService;
+    private final RestoreActionHandler restoreHandler;
 
     public StoreEnginesPage(JettraStorageEngine engine) {
         this.engine = engine;
         this.refResolver = new JettraReferenceResolver(engine);
         this.hierarchyService = new HierarchyExplorerService(engine);
         this.sampleDbService = new SampleDatabaseService(engine);
+        this.restoreHandler = new RestoreActionHandler(engine);
     }
 
     @Override
@@ -202,32 +204,15 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 String engType = params.getOrDefault("engine_type", selectedEngine);
                 String coll = params.getOrDefault("target_coll", "default");
                 String id = params.getOrDefault("target_id", "");
-                boolean restored = false;
-                if (targetTs > 0 && !id.isBlank()) {
-                    String prefix = getPrefixForEngine(engType);
-                    String[] candidateKeys = {
-                        prefix + targetDb + ":" + coll + ":" + id,
-                        prefix + targetDb + ":" + id,
-                        targetDb + ":" + coll + ":" + id,
-                        targetDb + ":" + id
-                    };
-                    for (String k : candidateKeys) {
-                        if (engine.getStorageCore().restoreVersion(k, targetTs)) {
-                            restored = true;
-                            break;
-                        }
-                    }
-                }
+                RestoreActionHandler.RestoreResult result = restoreHandler.executeRestore(engType, targetDb, coll, id, targetTs);
                 JsonObject resp = new JsonObject();
-                resp.addProperty("status", restored ? "SUCCESS" : "WARNING");
-                resp.addProperty("database", targetDb);
-                resp.addProperty("engine", engType);
-                resp.addProperty("collection", coll);
-                resp.addProperty("itemId", id);
-                resp.addProperty("timestamp", targetTs);
-                resp.addProperty("message", restored
-                    ? "Record '" + id + "' successfully restored to version snapshot from timestamp " + targetTs + "!"
-                    : "Restore operation executed for '" + id + "' with timestamp " + targetTs);
+                resp.addProperty("status", result.success() ? "SUCCESS" : "WARNING");
+                resp.addProperty("database", result.database());
+                resp.addProperty("engine", result.engineType());
+                resp.addProperty("collection", result.collection());
+                resp.addProperty("itemId", result.recordId());
+                resp.addProperty("timestamp", result.timestamp());
+                resp.addProperty("message", result.message());
                 sendJsonResponse(exchange, resp, 200);
             } else if ("delete_object".equalsIgnoreCase(action) || "delete_record".equalsIgnoreCase(action)) {
                 String id = params.get("target_id");
@@ -676,28 +661,12 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     long targetTs = Long.parseLong(params.getOrDefault("version_ts", "0"));
                     String engType = params.getOrDefault("engine_type", selectedEngine);
                     String coll = params.getOrDefault("target_coll", params.getOrDefault("coll", "default"));
-                    boolean restored = false;
-                    if (targetTs > 0) {
-                        String prefix = getPrefixForEngine(engType);
-                        String[] candidateKeys = {
-                            prefix + targetDb + ":" + coll + ":" + targetId,
-                            prefix + targetDb + ":" + targetId,
-                            targetDb + ":" + coll + ":" + targetId,
-                            targetDb + ":" + targetId
-                        };
-                        for (String k : candidateKeys) {
-                            if (engine.getStorageCore().restoreVersion(k, targetTs)) {
-                                restored = true;
-                                break;
-                            }
-                        }
-                    }
-                    if (restored) {
-                        alertMessage = "[" + engType + "] Record '" + targetId + "' successfully restored to version snapshot from timestamp " + targetTs + "!";
-                    } else {
-                        alertMessage = "Restored [" + engType + "] record '" + targetId + "' with timestamp " + targetTs;
-                    }
-                    alertType = "badge-active";
+                    String restoreDb = params.getOrDefault("target_db", targetDb);
+                    RestoreActionHandler.RestoreResult result = restoreHandler.executeRestore(engType, restoreDb, coll, targetId, targetTs);
+                    targetDb = result.database();
+                    selectedEngine = result.engineType();
+                    alertMessage = result.message();
+                    alertType = result.success() ? "badge-active" : "badge-raft";
                 } else if ("create_collection".equalsIgnoreCase(action)) {
                     String newColl = params.get("collection_name");
                     if (newColl != null && !newColl.isBlank()) {

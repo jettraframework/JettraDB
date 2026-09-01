@@ -13,6 +13,7 @@ import com.jettra.store.engine.models.VectorEngine;
 import io.jettra.json.JsonArray;
 import io.jettra.json.JettraJson;
 import io.jettra.json.JsonObject;
+import com.jettra.store.engine.models.RecordVersionSnapshot;
 import com.jettra.store.engine.models.VersionSnapshotRecord;
 
 import java.nio.charset.StandardCharsets;
@@ -385,7 +386,7 @@ public class HierarchyExplorerService {
         }
 
         List<com.jettra.store.engine.core.LsmBTreeHybrid.RecordVersion> rawVersions = engine.getStorageCore().getVersionHistory(primaryKey);
-        List<VersionSnapshotRecord> snapshots = new ArrayList<>();
+        List<RecordVersionSnapshot> snapshots = new ArrayList<>();
 
         if (rawVersions != null && !rawVersions.isEmpty()) {
             for (com.jettra.store.engine.core.LsmBTreeHybrid.RecordVersion rv : rawVersions) {
@@ -394,7 +395,7 @@ public class HierarchyExplorerService {
                     data = rv.payload().getBytes(StandardCharsets.UTF_8);
                 }
                 if (data != null && data.length > 0) {
-                    snapshots.add(VersionSnapshotRecord.of(
+                    snapshots.add(RecordVersionSnapshot.of(
                         rv.versionNumber(),
                         rv.timestamp(),
                         data,
@@ -407,7 +408,7 @@ public class HierarchyExplorerService {
         if (snapshots.isEmpty()) {
             byte[] cur = engine.getStorageCore().get(primaryKey);
             if (cur != null && cur.length > 0) {
-                snapshots.add(VersionSnapshotRecord.of(
+                snapshots.add(RecordVersionSnapshot.of(
                     1,
                     System.currentTimeMillis(),
                     cur,
@@ -417,7 +418,7 @@ public class HierarchyExplorerService {
         }
 
         JsonArray arr = new JsonArray();
-        for (VersionSnapshotRecord snap : snapshots) {
+        for (RecordVersionSnapshot snap : snapshots) {
             arr.add(snap.toJsonObject(jsonParser));
         }
         return jsonParser.toJson(arr);

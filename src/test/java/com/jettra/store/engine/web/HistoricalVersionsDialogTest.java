@@ -5,6 +5,7 @@ import com.jettra.store.engine.hierarchy.HierarchyExplorerService;
 import com.jettra.store.engine.models.DocumentEngine;
 import com.jettra.store.engine.models.KeyValueEngine;
 import com.jettra.store.engine.models.RecordsEngine;
+import com.jettra.store.engine.models.RecordVersionSnapshot;
 import com.jettra.store.engine.models.VersionSnapshotRecord;
 import com.jettra.store.engine.web.StorageModalCommands.HierarchyRowCommand;
 import com.jettra.store.engine.web.StorageModalCommands.RestoreCommand;
@@ -68,11 +69,11 @@ public class HistoricalVersionsDialogTest {
     }
 
     @Test
-    @DisplayName("Test 1: VersionSnapshotRecord DTO attributes, default values, and JSON representation")
-    void testVersionSnapshotRecordDTO() {
+    @DisplayName("Test 1: RecordVersionSnapshot DTO attributes, default values, and JSON representation")
+    void testRecordVersionSnapshotDTO() {
         long now = 1700000000000L;
         String rawData = "{\"name\":\"Enterprise Plan\",\"price\":499.99,\"currency\":\"USD\"}";
-        VersionSnapshotRecord record = VersionSnapshotRecord.of(1, now, rawData.getBytes(StandardCharsets.UTF_8), true);
+        RecordVersionSnapshot record = RecordVersionSnapshot.of(1, now, rawData.getBytes(StandardCharsets.UTF_8), true);
 
         assertEquals(1, record.versionNumber());
         assertEquals("v1", record.versionId());
@@ -129,7 +130,7 @@ public class HistoricalVersionsDialogTest {
     void testHistoricalVersionsModalRendering() {
         String actionUrl = "/engines?engine=DOCUMENT";
 
-        Widget versionsModal = StorageModalCommands.buildVersionsModal(actionUrl);
+        Widget versionsModal = HistoricalVersionsDialog.buildVersionsModal(actionUrl);
         String html = versionsModal.render(Themes.FlatTheme());
 
         assertNotNull(html);
@@ -138,7 +139,7 @@ public class HistoricalVersionsDialogTest {
         assertTrue(html.contains("restoreEngineLabel"), "Must contain restoreEngineLabel");
         assertTrue(html.contains("restoreRecordIdLabel"), "Must contain restoreRecordIdLabel");
 
-        Widget confirmModal = StorageModalCommands.buildConfirmRestoreModal(actionUrl);
+        Widget confirmModal = HistoricalVersionsDialog.buildConfirmRestoreModal(actionUrl);
         String confirmHtml = confirmModal.render(Themes.FlatTheme());
 
         assertNotNull(confirmHtml);
@@ -148,42 +149,53 @@ public class HistoricalVersionsDialogTest {
     }
 
     @Test
-    @DisplayName("Test 4: Restore Command dispatch and StorageCore state rollback")
-    void testRestoreCommandExecutionAndRollback() {
-        String testDb = "inventory_db";
-        String coll = "items";
-        String id = "sku_999";
-        String key = "doc:" + testDb + ":" + coll + ":" + id;
+    @DisplayName("Test 4: HistoricalVersionsDialog.renderVersionTable generates table without UNDEFINED values")
+    void testHistoricalVersionsDialogRenderVersionTable() {
+        RecordVersionSnapshot v1 = RecordVersionSnapshot.of(1, 1700000000000L, "{\"role\":\"admin\"}".getBytes(StandardCharsets.UTF_8), false);
+        RecordVersionSnapshot v2 = RecordVersionSnapshot.of(2, 1700000050000L, "{\"role\":\"superadmin\"}".getBytes(StandardCharsets.UTF_8), true);
 
-        long t1 = 1700000000000L;
-        long t2 = 1700000050000L;
+        Widget tableWidget = HistoricalVersionsDialog.renderVersionTable(List.of(v2, v1));
+        String html = tableWidget.render(Themes.FlatTheme());
 
-        String payloadV1 = "{\"name\":\"Widget\",\"stock\":100}";
-        String payloadV2 = "{\"name\":\"Widget\",\"stock\":45}";
-
-        engine.getStorageCore().put(key, payloadV1.getBytes(StandardCharsets.UTF_8), t1);
-        engine.getStorageCore().put(key, payloadV2.getBytes(StandardCharsets.UTF_8), t2);
-
-        // Verify current active payload is V2
-        byte[] current = engine.getStorageCore().get(key);
-        assertEquals(payloadV2, new String(current, StandardCharsets.UTF_8));
-
-        // Dispatch RestoreCommand
-        HierarchyRowCommand restoreCmd = new RestoreCommand("DOCUMENT", testDb, coll, id, t1, 1);
-        String dispatched = StorageModalCommands.dispatchCommand(restoreCmd);
-        assertTrue(dispatched.startsWith("RESTORE:DOCUMENT:inventory_db:items:sku_999@"));
-
-        // Execute restore to timestamp t1
-        boolean restored = engine.getStorageCore().restoreVersion(key, t1);
-        assertTrue(restored, "Storage core restoreVersion must succeed");
-
-        // Verify active payload rolled back to V1
-        byte[] rolledBack = engine.getStorageCore().get(key);
-        assertEquals(payloadV1, new String(rolledBack, StandardCharsets.UTF_8));
+        assertNotNull(html);
+        assertFalse(html.contains("UNDEFINED"), "Table must not contain UNDEFINED text");
+        assertTrue(html.contains("v2 (CURRENT)") || html.contains("v2"), "Must render v2 badge");
+        assertTrue(html.contains("v1"), "Must render v1 badge");
+        assertTrue(html.contains("superadmin"), "Must render preview for active version");
+        assertTrue(html.contains("admin"), "Must render preview for historical version");
+        assertTrue(html.contains("Restaurar"), "Historical row must have Restaurar button");
+        assertTrue(html.contains("Activo"), "Current row must have Activo badge");
     }
 
     @Test
-    @DisplayName("Test 5: StoreEnginesPage full POST restore_version handler refreshes table view")
+    @DisplayName("Test 5: RestoreActionHandler executes rollback and async rollback")
+    void testRestoreActionHandlerExecution() {
+        RestoreActionHandler handler = new RestoreActionHandler(engine);
+        String testDb = "tenant_db";
+        String coll = "configs";
+        String id = "cfg_01";
+        String key = "doc:" + testDb + ":" + coll + ":" + id;
+
+        long t1 = 1700000000000L;
+        long t2 = 1700000080000L;
+
+        engine.getStorageCore().put(key, "{\"theme\":\"light\"}".getBytes(StandardCharsets.UTF_8), t1);
+        engine.getStorageCore().put(key, "{\"theme\":\"dark\"}".getBytes(StandardCharsets.UTF_8), t2);
+
+        // Execute synchronous restore
+        RestoreActionHandler.RestoreResult syncRes = handler.executeRestore("DOCUMENT", testDb, coll, id, t1);
+        assertTrue(syncRes.success(), "Sync restore must succeed");
+        assertEquals("{\"theme\":\"light\"}", new String(engine.getStorageCore().get(key), StandardCharsets.UTF_8));
+
+        // Re-modify and test async restore
+        engine.getStorageCore().put(key, "{\"theme\":\"solarized\"}".getBytes(StandardCharsets.UTF_8), t2 + 1000);
+        RestoreActionHandler.RestoreResult asyncRes = handler.executeRestoreAsync("DOCUMENT", testDb, coll, id, t1).join();
+        assertTrue(asyncRes.success(), "Async restore must succeed");
+        assertEquals("{\"theme\":\"light\"}", new String(engine.getStorageCore().get(key), StandardCharsets.UTF_8));
+    }
+
+    @Test
+    @DisplayName("Test 6: StoreEnginesPage full POST restore_version handler refreshes table view")
     void testStoreEnginesPagePostRestoreHandler() {
         StoreEnginesPage page = new StoreEnginesPage(engine);
         String testDb = "ecommerce_db";
