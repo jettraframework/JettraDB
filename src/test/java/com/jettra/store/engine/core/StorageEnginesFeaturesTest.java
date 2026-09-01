@@ -625,15 +625,15 @@ public class StorageEnginesFeaturesTest {
         assertTrue(htmlEmpty.contains("0 Total Records"), "Empty database must report 0 total records");
         assertFalse(htmlEmpty.contains("order_master_7001"), "Empty database must not leak entities from ExampleDBReferences");
 
-        // 11. Verify Main Dashboard Modular Panels, StatCards and JettraFlux Charts Rendering
-        io.jettra.flux.core.Widget uiDashboard = page.buildContent(null, java.util.Map.of("target_db", "ExampleDBReferences"), "dark");
+        // 11. Verify Main Dashboard View with Modular Panels, Metric Cards, Charts, and Engine Matrix
+        io.jettra.flux.core.Widget uiDashboard = page.buildContent(null, java.util.Map.of("tab", "schema", "target_db", "ExampleDBReferences"), "dark");
         String htmlDashboard = uiDashboard.render(io.jettra.flux.theme.Themes.FlatTheme());
-        assertTrue(htmlDashboard.contains("stat-card"), "Dashboard must render metric StatCards");
-        assertTrue(htmlDashboard.contains("Active Engines"), "Dashboard must display Active Engines stat");
-        assertTrue(htmlDashboard.contains("Storage Distribution by Model"), "Dashboard must render Storage Distribution panel");
-        assertTrue(htmlDashboard.contains("espresso-charspie") || htmlDashboard.contains("canvas"), "Dashboard must render CharsPie chart");
-        assertTrue(htmlDashboard.contains("Engine Activity & Record Volumes"), "Dashboard must render Engine Activity panel");
-        assertTrue(htmlDashboard.contains("espresso-charsbar") || htmlDashboard.contains("canvas"), "Dashboard must render CharsBar chart");
-        assertTrue(htmlDashboard.contains("Multi-Model Storage Engines"), "Dashboard must render Multi-Model Storage Engines grid panel");
+        assertTrue(htmlDashboard.contains("TOTAL RECORDS"), "Dashboard must render Total Records metric card");
+        assertTrue(htmlDashboard.contains("ACTIVE ENGINES"), "Dashboard must render Active Engines metric card");
+        assertTrue(htmlDashboard.contains("SCOPED DATABASE"), "Dashboard must render Scoped Database metric card");
+        assertTrue(htmlDashboard.contains("Multi-Model Storage Breakdown"), "Dashboard must render Storage Breakdown Panel");
+        assertTrue(htmlDashboard.contains("Engine Performance & Telemetry"), "Dashboard must render Performance Telemetry Panel");
+        assertTrue(htmlDashboard.contains("Unified Multi-Model Engine Matrix"), "Dashboard must render Unified Engine Matrix Card");
+        assertTrue(htmlDashboard.contains("Quick Database & Storage Actions"), "Dashboard must render Quick Action toolbar");
     }
 }
