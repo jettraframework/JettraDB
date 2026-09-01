@@ -37,6 +37,11 @@ public class StoreDashboardPage extends StoreTemplatePage {
     }
 
     @Override
+    protected RouteVisibilityGuard.NavigationRouteConfig getRouteConfig(HttpExchange exchange, Map<String, String> params) {
+        return RouteVisibilityGuard.NavigationRouteConfig.dashboardConfig();
+    }
+
+    @Override
     public Widget buildContent(HttpExchange exchange, Map<String, String> params, String currentTheme) {
         ComprehensiveDashboardSnapshot snapshot = metricsCollector.collectSnapshot();
         return MainDashboardView.build(snapshot);

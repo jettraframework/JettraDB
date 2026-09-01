@@ -7,13 +7,19 @@ import io.jettra.flux.core.Widget;
 import io.jettra.flux.widgets.*;
 import io.jettra.core.login.NoLoginRequired;
 import io.jettra.server.JettraServer;
+import com.jettra.store.engine.web.RouteVisibilityGuard.NavigationRouteConfig;
+
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 
 /**
  * Base template layout for JettraStoreEngine Web Management Console.
  * Directly styled to resemble modern multi-model database studio consoles:
  * - Slim Left Icon Rail with branding, system modules, and settings
- * - Clean Top Header with connection badge, horizontal section tabs, and action buttons
+ * - Context-Aware Top Header with connection badge, optional horizontal section tabs, and action buttons
  * - Responsive workspace supporting Schema, Table, Tree, and Query views in Light and Dark modes.
  */
 @NoLoginRequired
@@ -22,50 +28,44 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
     protected abstract String getPageTitle();
     protected abstract Widget buildContent(HttpExchange exchange, Map<String, String> params, String currentTheme);
 
-    protected java.util.Set<String> getAvailableDatabases() {
-        return new java.util.TreeSet<>(java.util.Set.of("customers_db", "ExampleDBReferences", "ecommerce_db"));
+    protected Set<String> getAvailableDatabases() {
+        return new TreeSet<>(Set.of("customers_db", "ExampleDBReferences", "ecommerce_db"));
+    }
+
+    /**
+     * Determines navigation route visibility policy. Can be overridden by subclasses.
+     */
+    protected NavigationRouteConfig getRouteConfig(HttpExchange exchange, Map<String, String> params) {
+        return RouteVisibilityGuard.resolveConfig(exchange, params, getPageTitle());
     }
 
     @Override
-    protected Widget buildUI(HttpExchange exchange, Map<String, String> params, String currentTheme) {
-        String loggedUser = getLoggedUser(exchange);
-        if (loggedUser == null || loggedUser.isBlank()) {
-            loggedUser = "root";
+    public Widget buildUI(HttpExchange exchange, Map<String, String> params, String currentTheme) {
+        String loggedUser = "root";
+        if (exchange != null) {
+            try {
+                String u = getLoggedUser(exchange);
+                if (u != null && !u.isBlank()) {
+                    loggedUser = u;
+                }
+            } catch (Exception ignored) {}
         }
 
         String targetDb = params != null && params.containsKey("target_db") ? params.get("target_db") : "customers_db";
         String currentTab = params != null ? params.getOrDefault("tab", "schema").toLowerCase() : "schema";
         String activeModule = params != null ? params.getOrDefault("module", "database").toLowerCase() : "database";
         String selectedEngine = params != null ? params.getOrDefault("engine", "DOCUMENT").toUpperCase() : "DOCUMENT";
+        String currentColl = params != null ? params.getOrDefault("coll", "default") : "default";
 
-        java.util.Set<String> databases = getAvailableDatabases();
+        NavigationRouteConfig routeConfig = getRouteConfig(exchange, params);
+
+        Set<String> databases = getAvailableDatabases();
         if (databases == null || databases.isEmpty()) {
-            databases = new java.util.TreeSet<>(java.util.Set.of("customers_db", "ExampleDBReferences"));
+            databases = new TreeSet<>(Set.of("customers_db", "ExampleDBReferences"));
         }
         if (!databases.contains(targetDb)) {
             databases.add(targetDb);
         }
-
-        StringBuilder dbOptionsHtml = new StringBuilder();
-        for (String db : databases) {
-            String sel = db.equalsIgnoreCase(targetDb) ? " selected" : "";
-            dbOptionsHtml.append("<option value='").append(db).append("'").append(sel).append(">")
-                .append(db).append("</option>");
-        }
-
-        Widget dbSelector = RawHtml.of(
-            "<div style='display:inline-flex; align-items:center; gap:6px; margin-right:6px;'>" +
-            "<i class='fas fa-database' style='color:#0284c7; font-size:13px;'></i>" +
-            "<span style='font-size:12px; font-weight:500; color:var(--j-text-secondary);'>Connected as <strong style='color:var(--j-text-primary);'>" + loggedUser + "</strong> @</span>" +
-            "<div style='position:relative; display:inline-flex; align-items:center;'>" +
-            "<select id='topDatabaseSelect' onchange=\"location.href='" + JettraServer.resolvePath("/engines?target_db=") + "' + encodeURIComponent(this.value) + '&engine=" + selectedEngine + "&tab=" + currentTab + "';\" style='background:var(--j-bg-subsurface); color:var(--j-primary); border:1px solid var(--j-border); padding:3px 22px 3px 8px; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer; outline:none; appearance:none; -webkit-appearance:none;'>" +
-            dbOptionsHtml +
-            "</select>" +
-            "<i class='fas fa-caret-down' style='position:absolute; right:7px; pointer-events:none; font-size:10px; color:var(--j-text-muted);'></i>" +
-            "</div>" +
-            "<span style='font-size:11px; color:var(--j-text-muted); font-weight:500;'>(" + databases.size() + ")</span>" +
-            "</div>"
-        );
 
         // Modern CSS styling system
         Widget customCss = RawHtml.of(
@@ -168,10 +168,148 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
             "</script>\n"
         );
 
-        // Build Left Slim Icon Rail matching the screenshot
-        String actionUrl = JettraServer.resolvePath("/engines?engine=");
-        String currentColl = params != null ? params.getOrDefault("coll", "default") : "default";
+        // Build Left Slim Icon Rail
+        Widget iconRail = buildIconRail(targetDb, selectedEngine, currentTab, activeModule);
 
+        // Build Top Bar Left & Right Groups Conditionally
+        Widget topLeftGroup = buildTopLeftGroup(routeConfig, loggedUser, targetDb, selectedEngine, currentTab, databases);
+        Widget topRightGroup = buildTopRightGroup(routeConfig, selectedEngine, targetDb, currentColl);
+
+        Widget topBar = Div.of(topLeftGroup, topRightGroup)
+            .modifier(new Modifier().cssClass("jettra-top-bar"));
+
+        // Content Area
+        Widget content = buildContent(exchange, params, currentTheme);
+
+        Widget mainArea = Div.of(
+            topBar,
+            Div.of(content).modifier(new Modifier().cssClass("jettra-workspace-body"))
+        ).modifier(new Modifier().cssClass("jettra-main-area"));
+
+        Widget scaffold = Div.of(
+            iconRail,
+            mainArea
+        ).modifier(new Modifier().cssClass("jettra-studio-layout"));
+
+        return Column.of(
+            customCss,
+            scaffold
+        );
+    }
+
+    private Widget buildTopLeftGroup(
+        NavigationRouteConfig config,
+        String loggedUser,
+        String targetDb,
+        String selectedEngine,
+        String currentTab,
+        Set<String> databases
+    ) {
+        List<Widget> leftItems = new ArrayList<>();
+
+        if (config.showDatabaseSelector()) {
+            StringBuilder dbOptionsHtml = new StringBuilder();
+            for (String db : databases) {
+                String sel = db.equalsIgnoreCase(targetDb) ? " selected" : "";
+                dbOptionsHtml.append("<option value='").append(db).append("'").append(sel).append(">")
+                    .append(db).append("</option>");
+            }
+
+            Widget dbSelector = RawHtml.of(
+                "<div style='display:inline-flex; align-items:center; gap:6px; margin-right:6px;'>" +
+                "<i class='fas fa-database' style='color:#0284c7; font-size:13px;'></i>" +
+                "<span style='font-size:12px; font-weight:500; color:var(--j-text-secondary);'>Connected as <strong style='color:var(--j-text-primary);'>" + loggedUser + "</strong> @</span>" +
+                "<div style='position:relative; display:inline-flex; align-items:center;'>" +
+                "<select id='topDatabaseSelect' onchange=\"location.href='" + JettraServer.resolvePath("/engines?target_db=") + "' + encodeURIComponent(this.value) + '&engine=" + selectedEngine + "&tab=" + currentTab + "';\" style='background:var(--j-bg-subsurface); color:var(--j-primary); border:1px solid var(--j-border); padding:3px 22px 3px 8px; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer; outline:none; appearance:none; -webkit-appearance:none;'>" +
+                dbOptionsHtml +
+                "</select>" +
+                "<i class='fas fa-caret-down' style='position:absolute; right:7px; pointer-events:none; font-size:10px; color:var(--j-text-muted);'></i>" +
+                "</div>" +
+                "<span style='font-size:11px; color:var(--j-text-muted); font-weight:500;'>(" + databases.size() + ")</span>" +
+                "</div>"
+            );
+            leftItems.add(dbSelector);
+        } else {
+            // Clean connection indicator for Global Dashboard route
+            Widget cleanConnChip = Div.of(
+                Icon.of("fas fa-database").modifier(new Modifier().style("color:#0284c7; font-size:13px; margin-right:6px;")),
+                Span.of("Connected as ").modifier(new Modifier().style("font-size:12px; font-weight:500; color:var(--j-text-secondary);")),
+                Span.of(loggedUser).modifier(new Modifier().style("color:var(--j-text-primary); font-weight:700; font-size:12px; margin-right:4px;")),
+                Span.of("@ JettraDB Cluster").modifier(new Modifier().style("font-size:12px; color:var(--j-text-muted); font-weight:500;"))
+            ).modifier(new Modifier().style("display:inline-flex; align-items:center; padding:4px 0;"));
+            leftItems.add(cleanConnChip);
+        }
+
+        if (config.showTopNavigationTabs()) {
+            Widget topTabs = Div.of(
+                Link.of(JettraServer.resolvePath("/engines?tab=schema&engine=" + selectedEngine + "&target_db=" + targetDb), "Schema")
+                    .modifier(new Modifier().cssClass("top-tab" + ("schema".equals(currentTab) ? " active" : ""))),
+                Link.of(JettraServer.resolvePath("/engines?tab=buckets&engine=OBJECT&target_db=" + targetDb), "Buckets")
+                    .modifier(new Modifier().cssClass("top-tab" + ("buckets".equals(currentTab) ? " active" : ""))),
+                Link.of(JettraServer.resolvePath("/engines?tab=indexes&engine=" + selectedEngine + "&target_db=" + targetDb), "Indexes")
+                    .modifier(new Modifier().cssClass("top-tab" + ("indexes".equals(currentTab) ? " active" : ""))),
+                Link.of(JettraServer.resolvePath("/engines?tab=dictionary&engine=" + selectedEngine + "&target_db=" + targetDb), "Dictionary")
+                    .modifier(new Modifier().cssClass("top-tab" + ("dictionary".equals(currentTab) ? " active" : ""))),
+                Link.of(JettraServer.resolvePath("/engines?tab=metrics&target_db=" + targetDb), "Metrics")
+                    .modifier(new Modifier().cssClass("top-tab" + ("metrics".equals(currentTab) ? " active" : ""))),
+                Link.of(JettraServer.resolvePath("/engines?tab=settings&target_db=" + targetDb), "Settings")
+                    .modifier(new Modifier().cssClass("top-tab" + ("settings".equals(currentTab) ? " active" : "")))
+            ).modifier(new Modifier().cssClass("top-tabs-nav"));
+            leftItems.add(topTabs);
+        }
+
+        return Div.of(leftItems.toArray(new Widget[0]))
+            .modifier(new Modifier().cssClass("top-left-group"));
+    }
+
+    private Widget buildTopRightGroup(
+        NavigationRouteConfig config,
+        String selectedEngine,
+        String targetDb,
+        String currentColl
+    ) {
+        List<Widget> rightItems = new ArrayList<>();
+
+        if (config.showGlobalActionButtons()) {
+            rightItems.add(
+                Button.of(Icon.of("fas fa-database"), Text.of(" + DB"))
+                    .modifier(new Modifier().attribute("type", "button").attribute("title", "Create Database").attribute("onclick", "if(typeof showModal === 'function') showModal('createDbModal'); else location.href='" + JettraServer.resolvePath("/engines?tab=schema&engine=" + selectedEngine + "&target_db=" + targetDb) + "';").cssClass("btn-studio-primary"))
+            );
+            rightItems.add(
+                Button.of(Icon.of("fas fa-folder-plus"), Text.of(" + Unit"))
+                    .modifier(new Modifier().attribute("type", "button").attribute("title", "Add Unit / Collection").attribute("onclick", "if(typeof showModal === 'function') showModal('createUnitModal'); else location.href='" + JettraServer.resolvePath("/engines?tab=schema&engine=" + selectedEngine + "&target_db=" + targetDb) + "';").cssClass("btn-studio-secondary"))
+            );
+            rightItems.add(
+                Button.of(Icon.of("fas fa-download"), Text.of(" Backup"))
+                    .modifier(new Modifier().attribute("type", "button").attribute("title", "Backup Database").attribute("onclick", "var db=getSelectedTopDatabase(); if(typeof openBackupDbModal === 'function') openBackupDbModal(db); else location.href='" + JettraServer.resolvePath("/engines?tab=backup&target_db=") + "' + encodeURIComponent(db);").cssClass("btn-studio-secondary").style("color:#16a34a; background:rgba(34,197,94,0.12); border-color:rgba(34,197,94,0.3);"))
+            );
+            rightItems.add(
+                Button.of(Icon.of("fas fa-upload"), Text.of(" Restore"))
+                    .modifier(new Modifier().attribute("type", "button").attribute("title", "Restore Database").attribute("onclick", "var db=getSelectedTopDatabase(); if(typeof openRestoreDbModal === 'function') openRestoreDbModal(db); else location.href='" + JettraServer.resolvePath("/engines?tab=backup&target_db=") + "' + encodeURIComponent(db);").cssClass("btn-studio-secondary").style("color:#9333ea; background:rgba(168,85,247,0.12); border-color:rgba(168,85,247,0.3);"))
+            );
+            rightItems.add(
+                Button.of(Icon.of("fas fa-file-export"), Text.of(" Export"))
+                    .modifier(new Modifier().attribute("type", "button").attribute("title", "Export Data").attribute("onclick", "var db=getSelectedTopDatabase(); if(typeof openExportDataModal === 'function') openExportDataModal('" + selectedEngine + "', db, '" + currentColl + "'); else location.href='" + JettraServer.resolvePath("/engines?tab=schema&engine=" + selectedEngine + "&target_db=") + "' + encodeURIComponent(db);").cssClass("btn-studio-secondary").style("color:#d97706; background:rgba(234,179,8,0.12); border-color:rgba(234,179,8,0.3);"))
+            );
+            rightItems.add(
+                Button.of(Icon.of("fas fa-search-plus"), Text.of(" Búsqueda Avanzada"))
+                    .modifier(new Modifier().attribute("type", "button").attribute("title", "Búsqueda Avanzada").attribute("onclick", "var db=getSelectedTopDatabase(); if(typeof openAdvancedSearchModal === 'function') openAdvancedSearchModal('" + selectedEngine + "', db, '" + currentColl + "'); else location.href='" + JettraServer.resolvePath("/engines?tab=schema&engine=" + selectedEngine + "&target_db=") + "' + encodeURIComponent(db);").cssClass("btn-studio-secondary").style("color:#0284c7; background:rgba(56,189,248,0.12); border-color:rgba(56,189,248,0.3);"))
+            );
+            rightItems.add(
+                Button.of(Icon.of("fas fa-cubes"), Text.of(" Sample DBs"))
+                    .modifier(new Modifier().attribute("type", "button").attribute("title", "Sample DBs").attribute("onclick", "if(typeof openSampleDatabasesModal === 'function') openSampleDatabasesModal(); else location.href='" + JettraServer.resolvePath("/engines?target_db=" + targetDb) + "';").cssClass("btn-studio-secondary").style("color:#db2777; background:rgba(236,72,153,0.12); border-color:rgba(236,72,153,0.3);"))
+            );
+        }
+
+        if (config.showThemeToggle()) {
+            rightItems.add(ThemeChanged.of().modifier(new Modifier().style("margin-left: 4px;")));
+        }
+
+        return Div.of(rightItems.toArray(new Widget[0]))
+            .modifier(new Modifier().cssClass("top-right-group"));
+    }
+
+    private Widget buildIconRail(String targetDb, String selectedEngine, String currentTab, String activeModule) {
         Widget railLogo = Link.of(JettraServer.resolvePath("/dashboard"),
             RawHtml.of(
                 "<svg width='32' height='32' viewBox='0 0 40 40' fill='none' xmlns='http://www.w3.org/2000/svg' style='filter: drop-shadow(0 2px 4px rgba(0,0,0,0.15));'>" +
@@ -229,67 +367,7 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
             ).modifier(new Modifier().cssClass("rail-item").attribute("title", "Sign Out"))
         ).modifier(new Modifier().cssClass("rail-bottom-section"));
 
-        Widget iconRail = Div.of(railTop, railBottom)
+        return Div.of(railTop, railBottom)
             .modifier(new Modifier().cssClass("jettra-icon-rail"));
-
-        // Top App Header
-        Widget dbConnChip = dbSelector;
-
-        Widget topTabs = Div.of(
-            Link.of(JettraServer.resolvePath("/engines?tab=schema&engine=" + selectedEngine + "&target_db=" + targetDb), "Schema")
-                .modifier(new Modifier().cssClass("top-tab" + ("schema".equals(currentTab) ? " active" : ""))),
-            Link.of(JettraServer.resolvePath("/engines?tab=buckets&engine=OBJECT&target_db=" + targetDb), "Buckets")
-                .modifier(new Modifier().cssClass("top-tab" + ("buckets".equals(currentTab) ? " active" : ""))),
-            Link.of(JettraServer.resolvePath("/engines?tab=indexes&engine=" + selectedEngine + "&target_db=" + targetDb), "Indexes")
-                .modifier(new Modifier().cssClass("top-tab" + ("indexes".equals(currentTab) ? " active" : ""))),
-            Link.of(JettraServer.resolvePath("/engines?tab=dictionary&engine=" + selectedEngine + "&target_db=" + targetDb), "Dictionary")
-                .modifier(new Modifier().cssClass("top-tab" + ("dictionary".equals(currentTab) ? " active" : ""))),
-            Link.of(JettraServer.resolvePath("/engines?tab=metrics&target_db=" + targetDb), "Metrics")
-                .modifier(new Modifier().cssClass("top-tab" + ("metrics".equals(currentTab) ? " active" : ""))),
-            Link.of(JettraServer.resolvePath("/engines?tab=settings&target_db=" + targetDb), "Settings")
-                .modifier(new Modifier().cssClass("top-tab" + ("settings".equals(currentTab) ? " active" : "")))
-        ).modifier(new Modifier().cssClass("top-tabs-nav"));
-
-        Widget topLeftGroup = Div.of(dbConnChip, topTabs)
-            .modifier(new Modifier().cssClass("top-left-group"));
-
-        Widget topRightGroup = Div.of(
-            Button.of(Icon.of("fas fa-database"), Text.of(" + DB"))
-                .modifier(new Modifier().attribute("type", "button").attribute("title", "Create Database").attribute("onclick", "if(typeof showModal === 'function') showModal('createDbModal'); else location.href='" + JettraServer.resolvePath("/engines?tab=schema&engine=" + selectedEngine + "&target_db=" + targetDb) + "';").cssClass("btn-studio-primary")),
-            Button.of(Icon.of("fas fa-folder-plus"), Text.of(" + Unit"))
-                .modifier(new Modifier().attribute("type", "button").attribute("title", "Add Unit / Collection").attribute("onclick", "if(typeof showModal === 'function') showModal('createUnitModal'); else location.href='" + JettraServer.resolvePath("/engines?tab=schema&engine=" + selectedEngine + "&target_db=" + targetDb) + "';").cssClass("btn-studio-secondary")),
-            Button.of(Icon.of("fas fa-download"), Text.of(" Backup"))
-                .modifier(new Modifier().attribute("type", "button").attribute("title", "Backup Database").attribute("onclick", "var db=getSelectedTopDatabase(); if(typeof openBackupDbModal === 'function') openBackupDbModal(db); else location.href='" + JettraServer.resolvePath("/engines?tab=backup&target_db=") + "' + encodeURIComponent(db);").cssClass("btn-studio-secondary").style("color:#16a34a; background:rgba(34,197,94,0.12); border-color:rgba(34,197,94,0.3);")),
-            Button.of(Icon.of("fas fa-upload"), Text.of(" Restore"))
-                .modifier(new Modifier().attribute("type", "button").attribute("title", "Restore Database").attribute("onclick", "var db=getSelectedTopDatabase(); if(typeof openRestoreDbModal === 'function') openRestoreDbModal(db); else location.href='" + JettraServer.resolvePath("/engines?tab=backup&target_db=") + "' + encodeURIComponent(db);").cssClass("btn-studio-secondary").style("color:#9333ea; background:rgba(168,85,247,0.12); border-color:rgba(168,85,247,0.3);")),
-            Button.of(Icon.of("fas fa-file-export"), Text.of(" Export"))
-                .modifier(new Modifier().attribute("type", "button").attribute("title", "Export Data").attribute("onclick", "var db=getSelectedTopDatabase(); if(typeof openExportDataModal === 'function') openExportDataModal('" + selectedEngine + "', db, '" + currentColl + "'); else location.href='" + JettraServer.resolvePath("/engines?tab=schema&engine=" + selectedEngine + "&target_db=") + "' + encodeURIComponent(db);").cssClass("btn-studio-secondary").style("color:#d97706; background:rgba(234,179,8,0.12); border-color:rgba(234,179,8,0.3);")),
-            Button.of(Icon.of("fas fa-search-plus"), Text.of(" Búsqueda Avanzada"))
-                .modifier(new Modifier().attribute("type", "button").attribute("title", "Búsqueda Avanzada").attribute("onclick", "var db=getSelectedTopDatabase(); if(typeof openAdvancedSearchModal === 'function') openAdvancedSearchModal('" + selectedEngine + "', db, '" + currentColl + "'); else location.href='" + JettraServer.resolvePath("/engines?tab=schema&engine=" + selectedEngine + "&target_db=") + "' + encodeURIComponent(db);").cssClass("btn-studio-secondary").style("color:#0284c7; background:rgba(56,189,248,0.12); border-color:rgba(56,189,248,0.3);")),
-            Button.of(Icon.of("fas fa-cubes"), Text.of(" Sample DBs"))
-                .modifier(new Modifier().attribute("type", "button").attribute("title", "Sample DBs").attribute("onclick", "if(typeof openSampleDatabasesModal === 'function') openSampleDatabasesModal(); else location.href='" + JettraServer.resolvePath("/engines?target_db=" + targetDb) + "';").cssClass("btn-studio-secondary").style("color:#db2777; background:rgba(236,72,153,0.12); border-color:rgba(236,72,153,0.3);")),
-            ThemeChanged.of().modifier(new Modifier().style("margin-left: 4px;"))
-        ).modifier(new Modifier().cssClass("top-right-group"));
-
-        Widget topBar = Div.of(topLeftGroup, topRightGroup)
-            .modifier(new Modifier().cssClass("jettra-top-bar"));
-
-        // Content
-        Widget content = buildContent(exchange, params, currentTheme);
-
-        Widget mainArea = Div.of(
-            topBar,
-            Div.of(content).modifier(new Modifier().cssClass("jettra-workspace-body"))
-        ).modifier(new Modifier().cssClass("jettra-main-area"));
-
-        Widget scaffold = Div.of(
-            iconRail,
-            mainArea
-        ).modifier(new Modifier().cssClass("jettra-studio-layout"));
-
-        return Column.of(
-            customCss,
-            scaffold
-        );
     }
 }
