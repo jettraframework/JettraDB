@@ -172,7 +172,7 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
         String actionUrl = JettraServer.resolvePath("/engines?engine=");
         String currentColl = params != null ? params.getOrDefault("coll", "default") : "default";
 
-        Widget railLogo = Link.of(JettraServer.resolvePath("/engines"),
+        Widget railLogo = Link.of(JettraServer.resolvePath("/dashboard"),
             RawHtml.of(
                 "<svg width='32' height='32' viewBox='0 0 40 40' fill='none' xmlns='http://www.w3.org/2000/svg' style='filter: drop-shadow(0 2px 4px rgba(0,0,0,0.15));'>" +
                 "<path d='M20 4L36 32H4L20 4Z' fill='url(#jdbGrad)'/>" +
@@ -187,7 +187,7 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
                 "</defs>" +
                 "</svg>"
             )
-        ).modifier(new Modifier().cssClass("rail-logo-container").attribute("title", "JettraStoreEngine Studio"));
+        ).modifier(new Modifier().cssClass("rail-logo-container").attribute("title", "JettraDB Studio"));
 
         Widget railTop = Div.of(
             railLogo,

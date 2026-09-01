@@ -41,18 +41,29 @@ public class InformationPage extends StoreTemplatePage {
                 Paragraph.of(
                     Text.of("Comprehensive architectural matrix, storage models, and replication capabilities for all 9 native multi-model engines.")
                 ).modifier(new Modifier().style("margin: 4px 0 0 0; color: #94a3b8; font-size: 14px;"))
-            ),
-            Row.of(
-                Link.of(JettraServer.resolvePath("/engines"),
-                    Icon.of("fas fa-cubes"),
-                    Text.of(" Engines Explorer")
-                ).modifier(new Modifier().cssClass("btn-action btn-secondary").style("margin-right:8px;")),
-                Link.of(JettraServer.resolvePath("/dashboard"),
-                    Icon.of("fas fa-tachometer-alt"),
-                    Text.of(" Dashboard")
-                ).modifier(new Modifier().cssClass("btn-action btn-primary"))
-            ).modifier(new Modifier().style("align-items: center;"))
+            )
         ).modifier(new Modifier().style("justify-content: space-between; align-items: center; margin-bottom: 24px;"));
+//        Widget titleBlock = Row.of(
+//            Column.of(
+//                Header.of(1,
+//                    Icon.of("fas fa-info-circle").modifier(new Modifier().style("color:#38bdf8; margin-right:8px;")),
+//                    Text.of("Multi-Model Engines Information")
+//                ).modifier(new Modifier().style("margin: 0; font-size: 26px; font-weight: 700;")),
+//                Paragraph.of(
+//                    Text.of("Comprehensive architectural matrix, storage models, and replication capabilities for all 9 native multi-model engines.")
+//                ).modifier(new Modifier().style("margin: 4px 0 0 0; color: #94a3b8; font-size: 14px;"))
+//            ),
+//            Row.of(
+//                Link.of(JettraServer.resolvePath("/engines"),
+//                    Icon.of("fas fa-cubes"),
+//                    Text.of(" Engines Explorer")
+//                ).modifier(new Modifier().cssClass("btn-action btn-secondary").style("margin-right:8px;")),
+//                Link.of(JettraServer.resolvePath("/dashboard"),
+//                    Icon.of("fas fa-tachometer-alt"),
+//                    Text.of(" Dashboard")
+//                ).modifier(new Modifier().cssClass("btn-action btn-primary"))
+//            ).modifier(new Modifier().style("align-items: center;"))
+//        ).modifier(new Modifier().style("justify-content: space-between; align-items: center; margin-bottom: 24px;"));
 
         // Overview Highlights
         Widget highlightsGrid = Row.of(
