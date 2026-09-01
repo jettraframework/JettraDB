@@ -197,6 +197,37 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 resp.addProperty("collection", coll);
                 resp.addProperty("itemId", id);
                 resp.addProperty("message", "Entity '" + id + "' updated successfully in " + selectedEngine + "!");
+            } else if ("restore_version".equalsIgnoreCase(action) || "restore_version_ajax".equalsIgnoreCase(action)) {
+                long targetTs = Long.parseLong(params.getOrDefault("version_ts", "0"));
+                String engType = params.getOrDefault("engine_type", selectedEngine);
+                String coll = params.getOrDefault("target_coll", "default");
+                String id = params.getOrDefault("target_id", "");
+                boolean restored = false;
+                if (targetTs > 0 && !id.isBlank()) {
+                    String prefix = getPrefixForEngine(engType);
+                    String[] candidateKeys = {
+                        prefix + targetDb + ":" + coll + ":" + id,
+                        prefix + targetDb + ":" + id,
+                        targetDb + ":" + coll + ":" + id,
+                        targetDb + ":" + id
+                    };
+                    for (String k : candidateKeys) {
+                        if (engine.getStorageCore().restoreVersion(k, targetTs)) {
+                            restored = true;
+                            break;
+                        }
+                    }
+                }
+                JsonObject resp = new JsonObject();
+                resp.addProperty("status", restored ? "SUCCESS" : "WARNING");
+                resp.addProperty("database", targetDb);
+                resp.addProperty("engine", engType);
+                resp.addProperty("collection", coll);
+                resp.addProperty("itemId", id);
+                resp.addProperty("timestamp", targetTs);
+                resp.addProperty("message", restored
+                    ? "Record '" + id + "' successfully restored to version snapshot from timestamp " + targetTs + "!"
+                    : "Restore operation executed for '" + id + "' with timestamp " + targetTs);
                 sendJsonResponse(exchange, resp, 200);
             } else if ("delete_object".equalsIgnoreCase(action) || "delete_record".equalsIgnoreCase(action)) {
                 String id = params.get("target_id");
@@ -559,8 +590,8 @@ public class StoreEnginesPage extends StoreTemplatePage {
         String queryResultDisplay = "";
         String targetDb = params != null && params.containsKey("target_db") ? params.get("target_db") : getDefaultDbForEngine(selectedEngine);
 
-        // Handle POST Operations
-        if (exchange != null && "POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+        // Handle POST Operations or Direct Actions
+        if ((exchange != null && "POST".equalsIgnoreCase(exchange.getRequestMethod())) || (params != null && params.containsKey("action"))) {
             try {
                 String action = params != null ? params.get("action") : null;
                 String targetId = params != null ? params.get("target_id") : "";
@@ -3919,28 +3950,26 @@ public class StoreEnginesPage extends StoreTemplatePage {
         html += '<tr style="background:var(--j-bg-subsurface); color:var(--j-text-secondary); text-align:left;"><th style="padding:8px 12px;">Version</th><th style="padding:8px 12px;">Timestamp / Date</th><th style="padding:8px 12px;">Snapshot Preview</th><th style="padding:8px 12px; text-align:right;">Action</th></tr>';
         for (var i = 0; i < versions.length; i++) {
           var v = versions[i];
-          var badge = v.isCurrent ? '<span class="store-badge badge-active" style="font-size:10px;">' + v.versionNumber + ' (CURRENT)</span>' : '<span class="store-badge badge-records" style="font-size:10px;">' + v.versionNumber + '</span>';
-          var safeDate = (v.formattedDate || v.timestamp || '').toString().replace(/[\'\"\\\\]/g, ' ');
+          var vNum = (v.versionNumber !== undefined && v.versionNumber !== null) ? ('v' + v.versionNumber) : (v.versionId || (v.version !== undefined ? ('v' + v.version) : ('v' + (i + 1))));
+          var badge = v.isCurrent ? '<span class="store-badge badge-active" style="font-size:10px;">' + vNum + ' (CURRENT)</span>' : '<span class="store-badge badge-records" style="font-size:10px;">' + vNum + '</span>';
+          var safeDate = (v.formattedDate || (v.timestamp ? new Date(v.timestamp).toLocaleString() : '') || 'N/A').toString().replace(/[\'\"\\\\]/g, ' ');
+          var preview = (v.snapshotPreview || v.payloadPreview || v.preview || (typeof v.payload === 'object' ? JSON.stringify(v.payload) : v.payload) || (typeof v.snapshotData === 'object' ? JSON.stringify(v.snapshotData) : v.snapshotData) || '{}').toString();
+          if (preview.length > 65) preview = preview.substring(0, 65) + '...';
+          var safeTs = (v.timestamp || 0).toString();
           html += '<tr style="border-bottom:1px solid var(--j-border);">';
-          html += '<td style="padding:8px 12px; font-weight:bold;">' + badge + '</td>';
-          html += '<td style="padding:8px 12px; color:var(--j-text-primary);">' + safeDate + '</td>';
-          html += '<td style="padding:8px 12px; color:var(--j-text-muted); font-family:monospace;">' + (v.preview || '{}') + '</td>';
+          html += '<td style="padding:8px 12px; font-weight:700;">' + badge + '</td>';
+          html += '<td style="padding:8px 12px; color:var(--j-text-secondary); font-size:11px;">' + safeDate + '</td>';
+          html += '<td style="padding:8px 12px; font-family:monospace; color:var(--j-text-primary); font-size:11px;">' + preview.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</td>';
           html += '<td style="padding:8px 12px; text-align:right;">';
           if (!v.isCurrent) {
-            html += '<button type="button" class="btn-action btn-primary btn-restore-version" data-ts="' + v.timestamp + '" data-date="' + safeDate + '" style="background:#a855f7; padding:3px 10px; font-size:11px;"><i class="fas fa-undo"></i> Restore</button>';
+            html += '<button type="button" class="btn-action btn-primary btn-restore-version" data-ts="' + safeTs + '" data-date="' + safeDate + '" onclick="openConfirmRestoreModal(\'' + safeTs + '\', \'' + safeDate + '\')" style="background:#a855f7; padding:3px 10px; font-size:11px; font-weight:600;"><i class="fas fa-undo"></i> Restaurar</button>';
           } else {
-            html += '<span style="color:#10b981; font-size:11px;">Active</span>';
+            html += '<span style="color:#10b981; font-size:11px; font-weight:600;"><i class="fas fa-check-circle"></i> Activo</span>';
           }
           html += '</td></tr>';
         }
         html += '</table>';
         container.innerHTML = html;
-        container.onclick = function(e) {
-          var btn = e.target.closest('.btn-restore-version');
-          if (btn) {
-            openConfirmRestoreModal(btn.getAttribute('data-ts'), btn.getAttribute('data-date'));
-          }
-        };
       }
     }
     showModal('universalRestoreModal');

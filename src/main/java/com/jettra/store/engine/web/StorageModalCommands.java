@@ -468,19 +468,21 @@ public final class StorageModalCommands {
             "        html += '<tr style=\"background:var(--j-bg-subsurface); color:var(--j-text-secondary); text-align:left;\"><th style=\"padding:8px 12px;\">Version</th><th style=\"padding:8px 12px;\">Timestamp / Date</th><th style=\"padding:8px 12px;\">Snapshot Preview</th><th style=\"padding:8px 12px; text-align:right;\">Action</th></tr>';\n" +
             "        for (var i = 0; i < versions.length; i++) {\n" +
             "          var v = versions[i];\n" +
-            "          var badge = v.isCurrent ? '<span class=\"store-badge badge-active\" style=\"font-size:10px;\">' + v.versionNumber + ' (CURRENT)</span>' : '<span class=\"store-badge badge-records\" style=\"font-size:10px;\">' + v.versionNumber + '</span>';\n" +
-            "          var safeDate = (v.formattedDate || v.timestamp || '').toString().replace(/[\\\'\\\"\\\\\\\\]/g, ' ');\n" +
-            "          var preview = (v.payloadPreview || '').toString();\n" +
-            "          if (preview.length > 50) preview = preview.substring(0, 50) + '...';\n" +
+            "          var vNum = (v.versionNumber !== undefined && v.versionNumber !== null) ? ('v' + v.versionNumber) : (v.versionId || (v.version !== undefined ? ('v' + v.version) : ('v' + (i + 1))));\n" +
+            "          var badge = v.isCurrent ? '<span class=\"store-badge badge-active\" style=\"font-size:10px;\">' + vNum + ' (CURRENT)</span>' : '<span class=\"store-badge badge-records\" style=\"font-size:10px;\">' + vNum + '</span>';\n" +
+            "          var safeDate = (v.formattedDate || (v.timestamp ? new Date(v.timestamp).toLocaleString() : '') || 'N/A').toString().replace(/[\\\'\\\"\\\\\\\\]/g, ' ');\n" +
+            "          var preview = (v.snapshotPreview || v.payloadPreview || v.preview || (typeof v.payload === 'object' ? JSON.stringify(v.payload) : v.payload) || (typeof v.snapshotData === 'object' ? JSON.stringify(v.snapshotData) : v.snapshotData) || '{}').toString();\n" +
+            "          if (preview.length > 65) preview = preview.substring(0, 65) + '...';\n" +
+            "          var safeTs = (v.timestamp || 0).toString();\n" +
             "          html += '<tr style=\"border-bottom:1px solid var(--j-border);\">';\n" +
-            "          html += '<td style=\"padding:8px 12px;\">' + badge + '</td>';\n" +
-            "          html += '<td style=\"padding:8px 12px; color:var(--j-text-muted); font-size:11px;\">' + safeDate + '</td>';\n" +
-            "          html += '<td style=\"padding:8px 12px; font-family:monospace; color:var(--j-text-secondary); font-size:11px;\">' + preview + '</td>';\n" +
+            "          html += '<td style=\"padding:8px 12px; font-weight:700;\">' + badge + '</td>';\n" +
+            "          html += '<td style=\"padding:8px 12px; color:var(--j-text-secondary); font-size:11px;\">' + safeDate + '</td>';\n" +
+            "          html += '<td style=\"padding:8px 12px; font-family:monospace; color:var(--j-text-primary); font-size:11px;\">' + preview.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</td>';\n" +
             "          html += '<td style=\"padding:8px 12px; text-align:right;\">';\n" +
             "          if (!v.isCurrent) {\n" +
-            "            html += '<button type=\"button\" onclick=\"openConfirmRestoreModal(\\'' + v.timestamp + '\\', \\'' + safeDate + '\\')\" style=\"background:rgba(168,85,247,0.15); border:1px solid rgba(168,85,247,0.3); color:#a855f7; font-size:10.5px; padding:3px 8px; border-radius:4px; cursor:pointer;\">Restaurar</button>';\n" +
+            "            html += '<button type=\"button\" onclick=\"openConfirmRestoreModal(\\'' + safeTs + '\\', \\'' + safeDate + '\\')\" style=\"background:rgba(168,85,247,0.15); border:1px solid rgba(168,85,247,0.3); color:#a855f7; font-size:10.5px; padding:3px 10px; border-radius:4px; cursor:pointer; font-weight:600;\"><i class=\"fas fa-undo\" style=\"margin-right:3px;\"></i> Restaurar</button>';\n" +
             "          } else {\n" +
-            "            html += '<span style=\"color:var(--j-text-muted); font-size:11px;\">Active</span>';\n" +
+            "            html += '<span style=\"color:#10b981; font-size:11px; font-weight:600;\"><i class=\"fas fa-check-circle\" style=\"margin-right:3px;\"></i> Activo</span>';\n" +
             "          }\n" +
             "          html += '</td></tr>';\n" +
             "        }\n" +

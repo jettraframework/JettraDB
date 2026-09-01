@@ -26,27 +26,19 @@ public final class MainDashboardView {
                     .modifier(new Modifier().style("margin:0; font-size:24px; font-weight:800; color:var(--j-text-primary); letter-spacing:-0.5px;")),
                 Paragraph.of(Text.of("Real-time operational monitoring, multi-model storage hierarchy, and cluster telemetry."))
                     .modifier(new Modifier().style("margin:4px 0 0 0; color:var(--j-text-muted); font-size:13px;"))
-            )
+            ),
+            Div.of(
+                Button.of(
+                    Icon.of("fas fa-save").modifier(new Modifier().style("margin-right:6px;")),
+                    Text.of("Create Backup Snapshot")
+                ).attribute("onclick", "triggerBackup()")
+                 .modifier(new Modifier().cssClass("btn-action btn-primary").style("padding:8px 16px; font-size:12px; font-weight:600;")),
+                Link.of(JettraServer.resolvePath("/engines"),
+                    Icon.of("fas fa-cubes").modifier(new Modifier().style("margin-right:6px;")),
+                    Text.of("Hierarchy Explorer")
+                ).modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:8px 16px; font-size:12px; font-weight:600; margin-left:10px;"))
+            ).modifier(new Modifier().style("display:flex; align-items:center; flex-wrap:wrap; gap:8px;"))
         ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:12px;"));
-//        Widget titleBlock = Div.of(
-//            Div.of(
-//                Header.of(1, Text.of("Storage Engine Dashboard"))
-//                    .modifier(new Modifier().style("margin:0; font-size:24px; font-weight:800; color:var(--j-text-primary); letter-spacing:-0.5px;")),
-//                Paragraph.of(Text.of("Real-time operational monitoring, multi-model storage hierarchy, and cluster telemetry."))
-//                    .modifier(new Modifier().style("margin:4px 0 0 0; color:var(--j-text-muted); font-size:13px;"))
-//            ),
-//            Div.of(
-//                Button.of(
-//                    Icon.of("fas fa-save").modifier(new Modifier().style("margin-right:6px;")),
-//                    Text.of("Create Backup Snapshot")
-//                ).attribute("onclick", "triggerBackup()")
-//                 .modifier(new Modifier().cssClass("btn-action btn-primary").style("padding:8px 16px; font-size:12px; font-weight:600;")),
-//                Link.of(JettraServer.resolvePath("/engines"),
-//                    Icon.of("fas fa-cubes").modifier(new Modifier().style("margin-right:6px;")),
-//                    Text.of("Hierarchy Explorer")
-//                ).modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:8px 16px; font-size:12px; font-weight:600; margin-left:10px;"))
-//            ).modifier(new Modifier().style("display:flex; align-items:center; flex-wrap:wrap; gap:8px;"))
-//        ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:12px;"));
 
         // 2. Top KPI Summary Cards Row
         Widget kpiRow = KpiSummaryCardsPanel.build(snapshot.kpi());

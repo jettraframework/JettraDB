@@ -10,8 +10,10 @@ import com.jettra.store.engine.models.ObjectEngine;
 import com.jettra.store.engine.models.RecordsEngine;
 import com.jettra.store.engine.models.TimeSeriesEngine;
 import com.jettra.store.engine.models.VectorEngine;
+import io.jettra.json.JsonArray;
 import io.jettra.json.JettraJson;
 import io.jettra.json.JsonObject;
+import com.jettra.store.engine.models.VersionSnapshotRecord;
 
 import java.nio.charset.StandardCharsets;
 import java.util.*;
@@ -376,38 +378,49 @@ public class HierarchyExplorerService {
             primaryKey = prefix + db + ":" + id;
         }
         if (engine.getStorageCore().get(primaryKey) == null) {
+            primaryKey = db + ":" + coll + ":" + id;
+        }
+        if (engine.getStorageCore().get(primaryKey) == null) {
             primaryKey = db + ":" + id;
         }
 
-        List<com.jettra.store.engine.core.LsmBTreeHybrid.RecordVersion> versions = engine.getStorageCore().getVersionHistory(primaryKey);
-        List<byte[]> versionBytes = new ArrayList<>();
-        if (versions != null && !versions.isEmpty()) {
-            for (com.jettra.store.engine.core.LsmBTreeHybrid.RecordVersion rv : versions) {
-                if (rv.data() != null && rv.data().length > 0) {
-                    versionBytes.add(rv.data());
+        List<com.jettra.store.engine.core.LsmBTreeHybrid.RecordVersion> rawVersions = engine.getStorageCore().getVersionHistory(primaryKey);
+        List<VersionSnapshotRecord> snapshots = new ArrayList<>();
+
+        if (rawVersions != null && !rawVersions.isEmpty()) {
+            for (com.jettra.store.engine.core.LsmBTreeHybrid.RecordVersion rv : rawVersions) {
+                byte[] data = rv.data();
+                if (data == null && rv.payload() != null) {
+                    data = rv.payload().getBytes(StandardCharsets.UTF_8);
+                }
+                if (data != null && data.length > 0) {
+                    snapshots.add(VersionSnapshotRecord.of(
+                        rv.versionNumber(),
+                        rv.timestamp(),
+                        data,
+                        rv.isCurrent()
+                    ));
                 }
             }
         }
-        if (versionBytes.isEmpty()) {
+
+        if (snapshots.isEmpty()) {
             byte[] cur = engine.getStorageCore().get(primaryKey);
-            if (cur != null) versionBytes.add(cur);
+            if (cur != null && cur.length > 0) {
+                snapshots.add(VersionSnapshotRecord.of(
+                    1,
+                    System.currentTimeMillis(),
+                    cur,
+                    true
+                ));
+            }
         }
 
-        StringBuilder sb = new StringBuilder("[");
-        for (int i = 0; i < versionBytes.size(); i++) {
-            if (i > 0) sb.append(",");
-            String val = new String(versionBytes.get(i), StandardCharsets.UTF_8);
-            sb.append("{\"version\":").append(i + 1).append(",\"payload\":");
-            try {
-                JsonObject test = jsonParser.fromJson(val, JsonObject.class);
-                sb.append(test != null ? jsonParser.toJson(test) : "\"" + jsonParser.toJson(val) + "\"");
-            } catch (Exception e) {
-                sb.append("\"").append(val.replace("\"", "\\\"")).append("\"");
-            }
-            sb.append("}");
+        JsonArray arr = new JsonArray();
+        for (VersionSnapshotRecord snap : snapshots) {
+            arr.add(snap.toJsonObject(jsonParser));
         }
-        sb.append("]");
-        return sb.toString();
+        return jsonParser.toJson(arr);
     }
 
     public String resolveExistingDatabaseName(String dbName) {
