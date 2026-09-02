@@ -1970,7 +1970,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 .modifier(new Modifier().cssClass("store-card").style("margin-bottom:20px; border: 1px solid var(--j-border); background:var(--j-bg-surface); color:var(--j-text-primary); padding:16px; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.05);"));
         }
 
-        Widget treeBody = StorageTreeView.build(selectedEngine, targetDb, currentColl, actionUrl, params);
+        Widget treeBody = StorageTreeView.build(selectedEngine, targetDb, currentColl, actionUrl, params, hierarchyService);
         return Div.of(treeHeader, treeBody)
             .modifier(new Modifier().cssClass("store-card").style("margin-bottom:20px; border: 1px solid var(--j-border); background:var(--j-bg-surface); color:var(--j-text-primary); padding:16px; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.05);"));
     }
@@ -4753,6 +4753,9 @@ public class StoreEnginesPage extends StoreTemplatePage {
   }
 
   function expandAllTreeNodes() {
+    if (window.FluxTree && typeof window.FluxTree.expandAll === 'function') {
+      window.FluxTree.expandAll('storage-hierarchy-tree');
+    }
     var dbContainers = document.querySelectorAll('.db-subtree-container');
     for (var i = 0; i < dbContainers.length; i++) {
       var c = dbContainers[i];
@@ -4760,11 +4763,12 @@ public class StoreEnginesPage extends StoreTemplatePage {
       var dbIdx = c.getAttribute('data-db-idx') || (i + 1);
       c.style.display = 'block';
       c.setAttribute('aria-expanded', 'true');
+      c.setAttribute('data-state', 'expanded');
       treeStateManager.expandNode(c.id);
       var icon = document.getElementById('icon_' + c.id);
       var header = document.getElementById('db_header_' + dbIdx);
       var btn = document.getElementById('btn_toggle_' + c.id) || document.getElementById('btn_toggle_' + dbIdx);
-      if (header) header.setAttribute('aria-expanded', 'true');
+      if (header) { header.setAttribute('aria-expanded', 'true'); header.setAttribute('data-state', 'expanded'); }
       if (btn) btn.setAttribute('aria-expanded', 'true');
       if (icon) icon.className = 'fas fa-chevron-down tree-toggle-icon';
       if (c.getAttribute('data-loaded') !== 'true') {
@@ -4773,28 +4777,29 @@ public class StoreEnginesPage extends StoreTemplatePage {
         loadDbHierarchy(null, c.id, db, selectedEngine, actionUrl, dbIdx, false);
       }
     }
-    var nodes = document.querySelectorAll('.tree-collapsible-content:not(.db-subtree-container)');
+    var nodes = document.querySelectorAll('.tree-collapsible-content, .flux-tree-group');
     for (var j = 0; j < nodes.length; j++) {
-      if (!nodes[j].id || !nodes[j].id.startsWith('item_detail_')) {
-        nodes[j].style.display = 'block';
-        nodes[j].setAttribute('aria-expanded', 'true');
-        if (nodes[j].id) treeStateManager.expandNode(nodes[j].id);
-      }
+      nodes[j].style.display = 'block';
+      nodes[j].setAttribute('aria-expanded', 'true');
+      if (nodes[j].id) treeStateManager.expandNode(nodes[j].id);
     }
-    var icons = document.querySelectorAll('.tree-toggle-icon');
+    var icons = document.querySelectorAll('.tree-toggle-icon, .flux-tree-toggle-icon');
     for (var k = 0; k < icons.length; k++) {
-      if (icons[k].id && icons[k].id.startsWith('icon_item_detail_')) continue;
-      icons[k].className = 'fas fa-chevron-down tree-toggle-icon';
+      icons[k].className = 'fas fa-chevron-down tree-toggle-icon flux-tree-toggle-icon';
     }
   }
 
   function collapseAllTreeNodes() {
+    if (window.FluxTree && typeof window.FluxTree.collapseAll === 'function') {
+      window.FluxTree.collapseAll('storage-hierarchy-tree');
+    }
     var dbContainers = document.querySelectorAll('.db-subtree-container');
     for (var cIdx = 0; cIdx < dbContainers.length; cIdx++) {
       var dc = dbContainers[cIdx];
       var dIdx = dc.getAttribute('data-db-idx') || (cIdx + 1);
       var dHeader = document.getElementById('db_header_' + dIdx);
       var dBtn = document.getElementById('btn_toggle_' + dc.id) || document.getElementById('btn_toggle_' + dIdx);
+      dc.style.display = 'none';
       dc.setAttribute('aria-expanded', 'false');
       dc.setAttribute('data-state', 'collapsed');
       treeStateManager.collapseNode(dc.id);
@@ -4807,19 +4812,15 @@ public class StoreEnginesPage extends StoreTemplatePage {
         dBtn.setAttribute('data-state', 'collapsed');
       }
     }
-    var nodes = document.querySelectorAll('.tree-collapsible-content');
+    var nodes = document.querySelectorAll('.tree-collapsible-content, .flux-tree-group');
     for (var i = 0; i < nodes.length; i++) {
       nodes[i].style.display = 'none';
       nodes[i].setAttribute('aria-expanded', 'false');
       if (nodes[i].id) treeStateManager.collapseNode(nodes[i].id);
     }
-    var icons = document.querySelectorAll('.tree-toggle-icon');
+    var icons = document.querySelectorAll('.tree-toggle-icon, .flux-tree-toggle-icon');
     for (var j = 0; j < icons.length; j++) {
-      if (icons[j].className.indexOf('fa-caret-') >= 0) {
-        icons[j].className = 'fas fa-caret-right tree-toggle-icon';
-      } else {
-        icons[j].className = 'fas fa-chevron-right tree-toggle-icon';
-      }
+      icons[j].className = 'fas fa-chevron-right tree-toggle-icon flux-tree-toggle-icon';
     }
   }
 """;
