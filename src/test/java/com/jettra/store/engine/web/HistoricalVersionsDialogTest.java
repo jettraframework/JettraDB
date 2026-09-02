@@ -341,4 +341,105 @@ public class HistoricalVersionsDialogTest {
 
         JettraAssert.assertTrue(html.contains("prod_alpha"), "Table must display restored item ID");
     }
+
+    @Test
+    @JettraTest
+    @DisplayName("Test 8: Reversion preserves append-only version history without truncating change log and notifies observer")
+    public void testRestoreVersionAppendOnlyAuditIntegrityAndObserverNotification() {
+        initIfNeeded();
+        RestoreCommandHandler handler = new RestoreCommandHandler(engine);
+        java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicBoolean observerNotified = new java.util.concurrent.atomic.AtomicBoolean(false);
+        java.util.concurrent.atomic.AtomicReference<RestoreCommandHandler.RestoreEvent> receivedEvent = new java.util.concurrent.atomic.AtomicReference<>();
+
+        handler.addListener(event -> {
+            observerNotified.set(true);
+            receivedEvent.set(event);
+            latch.countDown();
+        });
+
+        String testDb = "audit_db";
+        String coll = "users";
+        String id = "usr_99";
+        String key = "doc:" + testDb + ":" + coll + ":" + id;
+
+        long t1 = 1000000L;
+        long t2 = 2000000L;
+
+        byte[] snapV1 = "{\"name\":\"Alice\",\"role\":\"Viewer\"}".getBytes(StandardCharsets.UTF_8);
+        byte[] snapV2 = "{\"name\":\"Alice\",\"role\":\"Admin\"}".getBytes(StandardCharsets.UTF_8);
+
+        engine.getStorageCore().put(key, snapV1, t1);
+        engine.getStorageCore().put(key, snapV2, t2);
+
+        assertEquals(2, engine.getStorageCore().getVersionCount(key), "Initially should have 2 versions");
+
+        // Execute rollback to v1 (t1) via RollbackCommand
+        RollbackCommand cmd = new RollbackCommand("DOCUMENT", testDb, coll, id, t1, 1, "security_auditor", "Rollback privileges");
+        RestoreCommandHandler.RestoreResult res = handler.handle(cmd);
+
+        assertTrue(res.success(), "Rollback execution must succeed");
+        boolean notified = false;
+        try {
+            notified = latch.await(2, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (InterruptedException ignored) {}
+        assertTrue(notified && observerNotified.get(), "Observer must be reactively notified upon rollback completion");
+        assertNotNull(receivedEvent.get(), "Received event must not be null");
+        assertTrue(receivedEvent.get() instanceof RestoreCommandHandler.RestoreSuccessEvent, "Event must be RestoreSuccessEvent");
+
+        // Verify append-only strategy: Version count increased to 3 (NOT truncated to 1 or 2)
+        int finalVersionCount = engine.getStorageCore().getVersionCount(key);
+        assertEquals(3, finalVersionCount, "Append-only strategy must produce version count 3 without truncating history");
+
+        // Verify active record has exact payload of selected snapshot (v1)
+        byte[] activeData = engine.getStorageCore().get(key);
+        assertNotNull(activeData);
+        assertEquals("{\"name\":\"Alice\",\"role\":\"Viewer\"}", new String(activeData, StandardCharsets.UTF_8), "Active record must match selected historical snapshot exactly");
+    }
+
+    @Test
+    @JettraTest
+    @DisplayName("Test 9: HistoricalVersionsDialog Confirm Modal wires button cleanly without premature form disabling")
+    public void testConfirmRestoreModalButtonWiringAndClientScript() {
+        Widget confirmModal = HistoricalVersionsDialog.buildConfirmRestoreModal("/engines");
+        String html = confirmModal.render(Themes.FlatTheme());
+
+        assertNotNull(html);
+        assertTrue(html.contains("btnConfirmRestoreSubmit"), "Submit button must have ID btnConfirmRestoreSubmit");
+        assertTrue(html.contains("executeVersionRollback"), "Button must bind executeVersionRollback event dispatcher");
+        assertFalse(html.contains("this.form.submit()"), "Button must not invoke premature this.form.submit() inline");
+        assertTrue(html.contains("confirmRestoreEngineInput"), "Must have hidden engine input");
+        assertTrue(html.contains("confirmRestoreDbInput"), "Must have hidden db input");
+        assertTrue(html.contains("confirmRestoreCollInput"), "Must have hidden coll input");
+        assertTrue(html.contains("confirmRestoreIdInput"), "Must have hidden id input");
+        assertTrue(html.contains("confirmRestoreTsInput"), "Must have hidden ts input");
+        assertTrue(html.contains("confirmRestoreVNumInput"), "Must have hidden version number input");
+
+        Widget fullDialog = HistoricalVersionsDialog.build("/engines");
+        String fullHtml = fullDialog.render(Themes.FlatTheme());
+        assertTrue(fullHtml.contains("universalRestoreModal"), "Must include universal restore modal");
+        assertTrue(fullHtml.contains("confirmRestoreModal"), "Must include confirm restore modal");
+        assertTrue(fullHtml.contains("window.executeVersionRollback"), "Must include executeVersionRollback client script");
+        assertTrue(fullHtml.contains("window.openConfirmRestoreModal"), "Must include openConfirmRestoreModal client script");
+        assertTrue(fullHtml.contains("window.openUniversalRestoreModal"), "Must include openUniversalRestoreModal client script");
+    }
+
+    @Test
+    @JettraTest
+    @DisplayName("Test 10: Snapshot Preview renders structured multi-view tabs (Tree, Table, Raw) via FluxObjectViewer")
+    public void testSnapshotPreviewMultiViewTabsRendering() {
+        String structuredJson = "{\"sku\":\"PROD-123\",\"price\":49.99,\"inStock\":true,\"tags\":[\"tech\",\"deal\"]}";
+        RecordVersionSnapshot snap = RecordVersionSnapshot.of(1, System.currentTimeMillis(), structuredJson.getBytes(StandardCharsets.UTF_8), true);
+
+        Widget tableWidget = HistoricalVersionsDialog.renderVersionTable("DOCUMENT", "shop_db", "items", "PROD-123", List.of(snap));
+        String html = tableWidget.render(Themes.FlatTheme());
+
+        assertNotNull(html);
+        assertTrue(html.contains("jettra-flux-object-viewer"), "Must render FluxObjectViewer container");
+        assertTrue(html.contains("Tree"), "Must render Tree view mode tab");
+        assertTrue(html.contains("Table"), "Must render Table view mode tab");
+        assertTrue(html.contains("Raw"), "Must render Raw view mode tab");
+        assertTrue(html.contains("PROD-123"), "Must render SKU attribute");
+        assertTrue(html.contains("49.99"), "Must render price attribute");
+    }
 }

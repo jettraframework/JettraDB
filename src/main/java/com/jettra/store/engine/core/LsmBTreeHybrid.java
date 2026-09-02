@@ -160,6 +160,12 @@ public class LsmBTreeHybrid {
         }
 
         public byte[] get(String key) {
+            ConcurrentSkipListMap<Long, byte[]> hist = versionHistory.get(key);
+            if (hist != null && !hist.isEmpty()) {
+                byte[] val = hist.lastEntry().getValue();
+                return (val != null && val.length > 0) ? val : null;
+            }
+
             String latestKey = memTable.floorKey(key + "@" + Long.MAX_VALUE);
             if (latestKey != null && latestKey.startsWith(key + "@")) {
                 byte[] val = memTable.get(latestKey);

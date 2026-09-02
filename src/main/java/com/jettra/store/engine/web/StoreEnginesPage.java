@@ -204,7 +204,14 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 String engType = params.getOrDefault("engine_type", selectedEngine);
                 String coll = params.getOrDefault("target_coll", "default");
                 String id = params.getOrDefault("target_id", "");
-                RestoreActionHandler.RestoreResult result = restoreHandler.executeRestore(engType, targetDb, coll, id, targetTs);
+                int vNum = 0;
+                try { vNum = Integer.parseInt(params.getOrDefault("version_number", "0")); } catch (Exception ignored) {}
+                String rDb = params.getOrDefault("target_db", targetDb);
+
+                RollbackCommand cmd = new RollbackCommand(engType, rDb, coll, id, targetTs, vNum, "web_admin", "UI Version Rollback Request");
+                java.util.concurrent.CompletableFuture<RestoreActionHandler.RestoreResult> future = restoreHandler.executeRollbackAsync(cmd);
+                RestoreActionHandler.RestoreResult result = future.join();
+
                 JsonObject resp = new JsonObject();
                 resp.addProperty("status", result.success() ? "SUCCESS" : "WARNING");
                 resp.addProperty("database", result.database());
@@ -213,6 +220,20 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 resp.addProperty("itemId", result.recordId());
                 resp.addProperty("timestamp", result.timestamp());
                 resp.addProperty("message", result.message());
+                sendJsonResponse(exchange, resp, 200);
+            } else if ("load_version_history_table".equalsIgnoreCase(action)) {
+                String engType = params.getOrDefault("engine", selectedEngine);
+                String rDb = params.getOrDefault("target_db", targetDb);
+                String coll = params.getOrDefault("target_coll", "default");
+                String id = params.getOrDefault("target_id", "");
+
+                List<RecordVersionSnapshot> snapshots = hierarchyService.getVersionSnapshots(engType, rDb, coll, id);
+                Widget tableWidget = HistoricalVersionsDialog.renderVersionTable(engType, rDb, coll, id, snapshots);
+                String html = tableWidget.render(io.jettra.flux.theme.Themes.FlatTheme());
+
+                JsonObject resp = new JsonObject();
+                resp.addProperty("status", "SUCCESS");
+                resp.addProperty("html", html);
                 sendJsonResponse(exchange, resp, 200);
             } else if ("delete_object".equalsIgnoreCase(action) || "delete_record".equalsIgnoreCase(action)) {
                 String id = params.get("target_id");
@@ -382,6 +403,10 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
     public String getVersionsJson(String engineKey, String db, String coll, String id) {
         return hierarchyService.getVersionsJson(engineKey, db, coll, id);
+    }
+
+    public List<RecordVersionSnapshot> getVersionSnapshots(String engineKey, String db, String coll, String id) {
+        return hierarchyService.getVersionSnapshots(engineKey, db, coll, id);
     }
 
     public String resolveExistingDatabaseName(String dbName) {
@@ -662,7 +687,10 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     String engType = params.getOrDefault("engine_type", selectedEngine);
                     String coll = params.getOrDefault("target_coll", params.getOrDefault("coll", "default"));
                     String restoreDb = params.getOrDefault("target_db", targetDb);
-                    RestoreActionHandler.RestoreResult result = restoreHandler.executeRestore(engType, restoreDb, coll, targetId, targetTs);
+                    int vNum = 0;
+                    try { vNum = Integer.parseInt(params.getOrDefault("version_number", "0")); } catch (Exception ignored) {}
+                    RollbackCommand cmd = new RollbackCommand(engType, restoreDb, coll, targetId, targetTs, vNum, "web_admin", "UI Version Rollback");
+                    RestoreActionHandler.RestoreResult result = restoreHandler.executeRollback(cmd);
                     targetDb = result.database();
                     selectedEngine = result.engineType();
                     alertMessage = result.message();
@@ -1977,8 +2005,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
         modals.add(buildEditObjectModal(actionUrl));
         modals.add(buildEditRecordsModal(actionUrl));
         modals.add(StorageModalCommands.buildUniversalEditModal(actionUrl));
-        modals.add(buildUniversalRestoreModal(actionUrl));
-        modals.add(buildConfirmRestoreModal(actionUrl));
+        modals.add(HistoricalVersionsDialog.build(actionUrl));
         modals.add(buildConfirmDeleteModal(actionUrl));
         modals.add(buildAdvancedSearchModal(actionUrl, targetDb, currentColl));
         modals.add(buildAdvancedSearchHelpModal());
@@ -2723,66 +2750,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
         return createModalOverlay("editRecordsModal", "560px", "rgba(244,63,94,0.4)", header, form);
     }
 
-    private Widget buildUniversalRestoreModal(String actionUrl) {
-        Widget header = Div.of(
-            Header.of(3,
-                Icon.of("fas fa-history").modifier(new Modifier().style("color:#a855f7; margin-right:8px;")),
-                Text.of("Historical Versions: "),
-                Span.of("").id("restoreEngineLabel").modifier(new Modifier().cssClass("store-badge").style("background:rgba(168,85,247,0.2); color:#c084fc; font-size:11px;")),
-                Text.of(" ("),
-                Span.of("").id("restoreRecordIdLabel").modifier(new Modifier().style("color:#38bdf8;")),
-                Text.of(")")
-            ).modifier(new Modifier().style("margin:0; font-size:18px; font-weight:700; color:#f8fafc;")),
-            Button.of(Icon.of("fas fa-times"))
-                .attribute("type", "button")
-                .attribute("onclick", "document.getElementById('universalRestoreModal').style.display='none'")
-                .modifier(new Modifier().style("background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;"))
-        ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;"));
 
-        Widget form = Form.of(
-            InputHidden.of("action", "restore_version"),
-            InputHidden.of("engine_type", "").id("restoreEngineTypeInput"),
-            InputHidden.of("target_db", "").id("restoreRecordDbInput"),
-            InputHidden.of("target_coll", "").id("restoreRecordCollInput"),
-            InputHidden.of("target_id", "").id("restoreRecordIdInput"),
-            InputHidden.of("version_ts", "").id("restoreVersionTsInput"),
-            Paragraph.of("Select any previous snapshot version (ordered descending: newest to oldest) to rollback:").modifier(new Modifier().style("font-size:13px; color:#cbd5e1; margin-top:0;")),
-            Div.of().id("universalVersionsContainer").modifier(new Modifier().style("max-height:240px; overflow-y:auto; margin-bottom:16px; border:1px solid rgba(255,255,255,0.08); border-radius:8px; background:#0f172a;")),
-            Div.of(
-                Button.of(Text.of("Close"))
-                    .attribute("type", "button")
-                    .attribute("onclick", "document.getElementById('universalRestoreModal').style.display='none'")
-                    .modifier(new Modifier().cssClass("btn-action btn-secondary"))
-            ).modifier(new Modifier().style("display:flex; justify-content:flex-end; gap:8px;"))
-        ).method("POST").action(actionUrl);
-
-        return createModalOverlay("universalRestoreModal", "680px", "rgba(168,85,247,0.4)", header, form);
-    }
-
-    private Widget buildConfirmRestoreModal(String actionUrl) {
-        Widget header = createModalHeader("Confirm Version Rollback", "fas fa-undo", "#a855f7", "confirmRestoreModal");
-
-        Widget form = Form.of(
-            InputHidden.of("action", "restore_version"),
-            InputHidden.of("engine_type", "").id("confirmRestoreEngineInput"),
-            InputHidden.of("target_db", "").id("confirmRestoreDbInput"),
-            InputHidden.of("target_coll", "").id("confirmRestoreCollInput"),
-            InputHidden.of("target_id", "").id("confirmRestoreIdInput"),
-            InputHidden.of("version_ts", "").id("confirmRestoreTsInput"),
-            Div.of(
-                Paragraph.of(Text.of("Are you sure you want to restore item version from timestamp "), Span.of("").id("confirmRestoreTsDisplay").modifier(new Modifier().style("color:#c084fc; font-weight:bold;")), Text.of("?")).modifier(new Modifier().style("margin:0 0 8px 0;")),
-                Div.of(
-                    Span.of(Text.of("Record ID: "), Span.of("").id("confirmRestoreIdDisplay").modifier(new Modifier().style("color:#38bdf8; font-weight:bold;"))),
-                    Span.of(Text.of("Engine: "), Span.of("").id("confirmRestoreEngineDisplay").modifier(new Modifier().cssClass("store-badge badge-active"))).modifier(new Modifier().style("margin-left:12px;")),
-                    Span.of(Text.of("Date: "), Span.of("").id("confirmRestoreDateDisplay").modifier(new Modifier().style("color:#f8fafc;"))).modifier(new Modifier().style("margin-left:12px;"))
-                ).modifier(new Modifier().style("font-size:11px; color:#cbd5e1;"))
-            ).modifier(new Modifier().style("background:rgba(168,85,247,0.1); border-left:3px solid #a855f7; padding:12px 14px; border-radius:6px; margin-bottom:16px; font-size:13px; color:#f8fafc;")),
-            Paragraph.of("The historical snapshot version will be restored as the active record.").modifier(new Modifier().style("font-size:12px; color:#94a3b8; margin:0 0 16px 0;")),
-            createModalFormActions("confirmRestoreModal", "Restore Version", "fas fa-undo", "#a855f7")
-        ).method("POST").action(actionUrl);
-
-        return createConfirmationModalOverlay("confirmRestoreModal", "500px", "rgba(168,85,247,0.5)", header, form);
-    }
 
     private Widget buildConfirmDeleteModal(String actionUrl) {
         Widget header = createModalHeader("Confirm Delete Record", "fas fa-trash-alt", "#ef4444", "confirmDeleteModal");
@@ -3886,86 +3854,15 @@ public class StoreEnginesPage extends StoreTemplatePage {
   }
 
   function openUniversalRestoreModal(engine, db, unit, id, versionsJsonB64) {
-    var normEngine = (engine || 'DOCUMENT').toUpperCase();
-    if (normEngine === 'RECORD') normEngine = 'RECORDS';
-    if (normEngine === 'KEY_VALUE' || normEngine === 'KEY-VALUE') normEngine = 'KEYVALUE';
-    if (normEngine === 'TIME_SERIES' || normEngine === 'TIMESERIE') normEngine = 'TIMESERIES';
-    if (normEngine === 'GEO') normEngine = 'GEOSPATIAL';
-
-    var versionsJsonStr = decodeUtf8Base64(versionsJsonB64);
-    setElementValues({
-      restoreEngineLabel: normEngine,
-      restoreEngineTypeInput: normEngine,
-      restoreRecordDbInput: db,
-      restoreRecordCollInput: unit || 'default',
-      restoreRecordIdInput: id,
-      restoreRecordIdLabel: id
-    });
-    var container = document.getElementById('universalVersionsContainer');
-    if (container) {
-      container.innerHTML = '';
-      var versions = [];
-      if (versionsJsonStr && versionsJsonStr.trim().length > 0) {
-        try {
-          versions = JSON.parse(versionsJsonStr);
-        } catch(e) {
-          versions = [];
-        }
-      }
-      if (!versions || versions.length === 0) {
-        container.innerHTML = '<div style="padding:16px; color:var(--j-text-muted); text-align:center;">No historical snapshot versions recorded for this item yet. Edit the item to create new versions.</div>';
-      } else {
-        var html = '<table style="width:100%; border-collapse:collapse; font-size:12px;">';
-        html += '<tr style="background:var(--j-bg-subsurface); color:var(--j-text-secondary); text-align:left;"><th style="padding:8px 12px;">Version</th><th style="padding:8px 12px;">Timestamp / Date</th><th style="padding:8px 12px;">Snapshot Preview</th><th style="padding:8px 12px; text-align:right;">Action</th></tr>';
-        for (var i = 0; i < versions.length; i++) {
-          var v = versions[i];
-          var vNum = (v.versionNumber !== undefined && v.versionNumber !== null) ? ('v' + v.versionNumber) : (v.versionId || (v.version !== undefined ? ('v' + v.version) : ('v' + (i + 1))));
-          var badge = v.isCurrent ? '<span class=\"store-badge badge-active\" style=\"font-size:10px;\">' + vNum + ' (CURRENT)</span>' : '<span class=\"store-badge badge-records\" style=\"font-size:10px;\">' + vNum + '</span>';
-          var safeDate = (v.formattedDate || (v.timestamp ? new Date(v.timestamp).toLocaleString() : '') || 'N/A').toString().replace(/[\'\"\\\\]/g, ' ');
-          var fullPayload = (typeof v.payload === 'object' ? JSON.stringify(v.payload, null, 2) : (v.snapshotData || v.payload || '{}')).toString();
-          var preview = (v.snapshotPreview || v.payloadPreview || v.preview || fullPayload).toString();
-          if (preview.length > 65) preview = preview.substring(0, 65) + '...';
-          var safeTs = (v.timestamp || 0).toString();
-          var rowDetailId = 'hist_snap_detail_' + i;
-          html += '<tr style=\"border-bottom:1px solid var(--j-border); vertical-align:top;\">';
-          html += '<td style=\"padding:8px 12px; font-weight:700;\">' + badge + '</td>';
-          html += '<td style=\"padding:8px 12px; color:var(--j-text-secondary); font-size:11px;\">' + safeDate + '</td>';
-          html += '<td style=\"padding:8px 12px; color:var(--j-text-secondary); font-size:11px;\">';
-          html += '<div style=\"display:flex; align-items:center; gap:4px;\">';
-          html += '<button type=\"button\" onclick=\"var el=document.getElementById(\\'' + rowDetailId + '\\');if(el){el.style.display=(el.style.display===\\'none\\'?\\'block\\':\\'none\\');}\" style=\"background:none; border:none; color:var(--j-text-muted); cursor:pointer; font-size:10px; padding:2px;\"><i class=\"fas fa-chevron-down\"></i></button>';
-          html += '<span style=\"font-family:monospace; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1;\">' + preview.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</span>';
-          html += '</div>';
-          html += '<div id=\"' + rowDetailId + '\" style=\"display:none; margin-top:6px; padding:6px 8px; background:var(--j-bg-body); border-radius:4px; border:1px solid var(--j-border); font-family:monospace; font-size:10.5px; white-space:pre-wrap; max-height:160px; overflow-y:auto; color:var(--j-text-primary);\">' + fullPayload.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</div>';
-          html += '</td>';
-          html += '<td style=\"padding:8px 12px; text-align:right;\">';
-          if (!v.isCurrent) {
-            html += '<button type=\"button\" class=\"btn-action btn-primary btn-restore-version\" data-ts=\"' + safeTs + '\" data-date=\"' + safeDate + '\" onclick=\"openConfirmRestoreModal(\\'' + safeTs + '\\', \\'' + safeDate + '\\')\" style=\"background:#a855f7; padding:3px 10px; font-size:11px; font-weight:600;\"><i class=\"fas fa-undo\"></i> Restaurar</button>';
-          } else {
-            html += '<span style=\"color:#10b981; font-size:11px; font-weight:600;\"><i class=\"fas fa-check-circle\"></i> Activo</span>';
-          }
-          html += '</td></tr>';
-        }
-        html += '</table>';
-        container.innerHTML = html;
-      }
+    if (typeof window.openUniversalRestoreModal === 'function') {
+      window.openUniversalRestoreModal(engine, db, unit, id, versionsJsonB64);
     }
-    showModal('universalRestoreModal');
   }
 
-  function openConfirmRestoreModal(ts, formattedDate) {
-    var get = function(id) { var el = document.getElementById(id); return el ? el.value : ''; };
-    setElementValues({
-      confirmRestoreEngineInput: get('restoreEngineTypeInput'),
-      confirmRestoreEngineDisplay: get('restoreEngineTypeInput'),
-      confirmRestoreDbInput: get('restoreRecordDbInput'),
-      confirmRestoreCollInput: get('restoreRecordCollInput') || 'default',
-      confirmRestoreIdInput: get('restoreRecordIdInput'),
-      confirmRestoreIdDisplay: get('restoreRecordIdInput'),
-      confirmRestoreTsInput: ts,
-      confirmRestoreTsDisplay: ts,
-      confirmRestoreDateDisplay: formattedDate || ts
-    });
-    showModal('confirmRestoreModal');
+  function openConfirmRestoreModal(ts, formattedDate, engine, db, coll, id, vNum) {
+    if (typeof window.openConfirmRestoreModal === 'function') {
+      window.openConfirmRestoreModal(ts, formattedDate, engine, db, coll, id, vNum);
+    }
   }
 
   function openUniversalDeleteModal(engine, db, unit, id) {

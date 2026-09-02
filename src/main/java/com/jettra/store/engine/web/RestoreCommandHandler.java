@@ -113,6 +113,10 @@ public class RestoreCommandHandler {
         };
     }
 
+    public AutoCloseable addListener(Consumer<RestoreEvent> listener) {
+        return subscribe(listener);
+    }
+
     /**
      * Executes synchronous transactional rollback with validation and state synchronization.
      */

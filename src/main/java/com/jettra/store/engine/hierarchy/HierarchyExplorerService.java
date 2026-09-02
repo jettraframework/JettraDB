@@ -372,7 +372,7 @@ public class HierarchyExplorerService {
         return 1;
     }
 
-    public String getVersionsJson(String engineKey, String db, String coll, String id) {
+    public List<RecordVersionSnapshot> getVersionSnapshots(String engineKey, String db, String coll, String id) {
         String prefix = getPrefixForEngine(engineKey);
         String primaryKey = prefix + db + ":" + coll + ":" + id;
         if (engine.getStorageCore().get(primaryKey) == null) {
@@ -417,6 +417,11 @@ public class HierarchyExplorerService {
             }
         }
 
+        return snapshots;
+    }
+
+    public String getVersionsJson(String engineKey, String db, String coll, String id) {
+        List<RecordVersionSnapshot> snapshots = getVersionSnapshots(engineKey, db, coll, id);
         JsonArray arr = new JsonArray();
         for (RecordVersionSnapshot snap : snapshots) {
             arr.add(snap.toJsonObject(jsonParser));
