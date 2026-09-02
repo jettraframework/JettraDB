@@ -8,7 +8,7 @@ import java.util.concurrent.CompletableFuture;
 /**
  * Controller and Command Handler adapter for transactional record version rollbacks.
  * Delegates to RestoreCommandHandler for decoupled command pattern execution,
- * Virtual Threads async execution, and reactive event distribution.
+ * Virtual Threads (Thread.ofVirtual()) async execution, and reactive event distribution.
  */
 public class RestoreActionHandler {
 
@@ -53,6 +53,19 @@ public class RestoreActionHandler {
         );
     }
 
+    public RestoreResult executeRollback(RollbackCommand rollbackCommand) {
+        RestoreCommandHandler.RestoreResult res = commandHandler.handle(rollbackCommand);
+        return new RestoreResult(
+            res.success(),
+            res.engineType(),
+            res.database(),
+            res.collection(),
+            res.recordId(),
+            res.timestamp(),
+            res.message()
+        );
+    }
+
     /**
      * Executes asynchronous rollback using Java 25 Virtual Threads.
      */
@@ -68,5 +81,16 @@ public class RestoreActionHandler {
             res.message()
         ));
     }
-}
 
+    public CompletableFuture<RestoreResult> executeRollbackAsync(RollbackCommand rollbackCommand) {
+        return commandHandler.handleAsync(rollbackCommand).thenApply(res -> new RestoreResult(
+            res.success(),
+            res.engineType(),
+            res.database(),
+            res.collection(),
+            res.recordId(),
+            res.timestamp(),
+            res.message()
+        ));
+    }
+}

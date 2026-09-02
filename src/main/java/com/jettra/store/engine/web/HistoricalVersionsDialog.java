@@ -13,8 +13,9 @@ import java.util.List;
  * Encapsulates:
  * - Version column renderer with badge formatting (e.g., 'v1 (CURRENT)', 'v2').
  * - Formatted Timestamp/Date column (yyyy-MM-dd HH:mm:ss).
- * - Single-line structured Snapshot Preview column with escaping.
+ * - Comprehensive Snapshot Preview column powered by FluxObjectViewer for inspecting full payload attributes.
  * - Restore Action Button triggering confirm restore modal and rollback flow.
+ * - Reactive Virtual Thread execution and Toast feedback.
  */
 public final class HistoricalVersionsDialog {
 
@@ -60,12 +61,12 @@ public final class HistoricalVersionsDialog {
 
         Widget versionsContainer = Div.of()
             .id("universalVersionsContainer")
-            .modifier(new Modifier().style("max-height:280px; overflow-y:auto; border:1px solid var(--j-border); border-radius:6px; margin-bottom:14px;"));
+            .modifier(new Modifier().style("max-height:380px; overflow-y:auto; border:1px solid var(--j-border); border-radius:6px; margin-bottom:14px;"));
 
         Widget body = Div.of(infoRow, versionsContainer)
             .modifier(new Modifier().style("padding:16px 18px;"));
 
-        return createModalOverlay("universalRestoreModal", "680px", "rgba(168,85,247,0.4)", header, body);
+        return createModalOverlay("universalRestoreModal", "780px", "rgba(168,85,247,0.4)", header, body);
     }
 
     /**
@@ -95,24 +96,39 @@ public final class HistoricalVersionsDialog {
                 Paragraph.of(Text.of("¿Está seguro de que desea restaurar este registro al snapshot de la versión seleccionada?"))
                     .modifier(new Modifier().style("font-weight:600; color:var(--j-text-primary); font-size:13px; text-align:center; margin:0 0 12px 0;")),
                 Div.of(
-                    Span.of("Snapshot Timestamp: ").modifier(new Modifier().style("font-weight:bold; color:var(--j-text-muted); font-size:11px; margin-right:4px;")),
-                    Span.of("").id("confirmRestoreDateDisplay").modifier(new Modifier().style("color:#a855f7; font-weight:700; font-size:12px;"))
-                ).modifier(new Modifier().style("background:var(--j-bg-body); border:1px solid var(--j-border); padding:10px 14px; border-radius:6px; margin-bottom:16px; text-align:center;"))
+                    Div.of(
+                        Span.of("Engine: ").modifier(new Modifier().style("font-weight:bold; color:var(--j-text-muted); font-size:11px;")),
+                        Span.of("DOCUMENT").id("confirmRestoreEngineDisplay").modifier(new Modifier().style("color:#38bdf8; font-weight:700; font-size:11px; margin-right:12px;")),
+                        Span.of("Record ID: ").modifier(new Modifier().style("font-weight:bold; color:var(--j-text-muted); font-size:11px;")),
+                        Span.of("").id("confirmRestoreIdDisplay").modifier(new Modifier().style("color:#4ade80; font-family:monospace; font-weight:700; font-size:11px;"))
+                    ).modifier(new Modifier().style("display:flex; align-items:center; justify-content:center; margin-bottom:6px;")),
+                    Div.of(
+                        Span.of("Snapshot Date / Timestamp: ").modifier(new Modifier().style("font-weight:bold; color:var(--j-text-muted); font-size:11px; margin-right:4px;")),
+                        Span.of("").id("confirmRestoreDateDisplay").modifier(new Modifier().style("color:#a855f7; font-weight:700; font-size:12px;"))
+                    ).modifier(new Modifier().style("text-align:center;"))
+                ).modifier(new Modifier().style("background:var(--j-bg-body); border:1px solid var(--j-border); padding:10px 14px; border-radius:6px; margin-bottom:16px;")),
+                Paragraph.of(Text.of("La restauración aplicará el estado histórico como nueva versión activa (auditoría append-only sin pérdida de historial)."))
+                    .modifier(new Modifier().style("font-size:11.5px; color:var(--j-text-muted); text-align:center; margin:0 0 14px 0;"))
             ),
 
             Div.of(
                 Button.of(Icon.of("fas fa-times"), Text.of(" Cancelar"))
                     .modifier(new Modifier().attribute("type", "button").attribute("onclick", "hideModal('confirmRestoreModal')").cssClass("btn-action btn-secondary").style("padding:6px 14px; font-size:12px; margin-right:8px;")),
-                Button.of(Icon.of("fas fa-undo"), Text.of(" Sí, Restaurar Versión"))
-                    .modifier(new Modifier().attribute("type", "submit").cssClass("btn-action btn-primary").style("padding:6px 16px; font-size:12px; font-weight:700; background:#a855f7; border-color:#a855f7;"))
+                Button.of(Icon.of("fas fa-undo"), Text.of(" Restore Version"))
+                    .id("btnConfirmRestoreSubmit")
+                    .modifier(new Modifier()
+                        .attribute("type", "submit")
+                        .attribute("onclick", "var b=document.getElementById('btnConfirmRestoreSubmit');if(b){b.disabled=true;b.innerHTML='<i class=\"fas fa-spinner fa-spin\"></i> Restaurando...';}this.form.submit();")
+                        .cssClass("btn-action btn-primary")
+                        .style("padding:6px 16px; font-size:12px; font-weight:700; background:#a855f7; border-color:#a855f7; cursor:pointer;"))
             ).modifier(new Modifier().style("display:flex; justify-content:flex-end; align-items:center; margin-top:8px;"))
         ).action(actionUrl).method("POST").modifier(new Modifier().style("padding:18px 20px;"));
 
-        return createModalOverlay("confirmRestoreModal", "480px", "rgba(168,85,247,0.4)", header, form);
+        return createModalOverlay("confirmRestoreModal", "500px", "rgba(168,85,247,0.4)", header, form);
     }
 
     /**
-     * Builds static HTML table rows for a list of RecordVersionSnapshot DTOs.
+     * Builds static HTML table rows for a list of RecordVersionSnapshot DTOs using FluxObjectViewer.
      */
     public static Widget renderVersionTable(List<RecordVersionSnapshot> snapshots) {
         if (snapshots == null || snapshots.isEmpty()) {
@@ -126,8 +142,8 @@ public final class HistoricalVersionsDialog {
         // Header row
         rows.add(Div.of(
             Span.of("Version").modifier(new Modifier().style("width:90px; font-weight:700; font-size:11px; color:var(--j-text-secondary);")),
-            Span.of("Timestamp / Date").modifier(new Modifier().style("width:160px; font-weight:700; font-size:11px; color:var(--j-text-secondary);")),
-            Span.of("Snapshot Preview").modifier(new Modifier().style("flex:1; font-weight:700; font-size:11px; color:var(--j-text-secondary);")),
+            Span.of("Timestamp / Date").modifier(new Modifier().style("width:150px; font-weight:700; font-size:11px; color:var(--j-text-secondary);")),
+            Span.of("Snapshot Preview").modifier(new Modifier().style("flex:1; min-width:200px; font-weight:700; font-size:11px; color:var(--j-text-secondary);")),
             Span.of("Action").modifier(new Modifier().style("width:100px; text-align:right; font-weight:700; font-size:11px; color:var(--j-text-secondary);"))
         ).modifier(new Modifier().style("display:flex; align-items:center; padding:8px 12px; background:var(--j-bg-subsurface); border-bottom:1px solid var(--j-border); gap:8px;")));
 
@@ -137,10 +153,15 @@ public final class HistoricalVersionsDialog {
                 .modifier(new Modifier().cssClass(snap.isCurrent() ? "store-badge badge-active" : "store-badge badge-records").style("font-size:10px; font-weight:700; width:90px;"));
 
             Widget dateCell = Span.of(snap.formattedDate())
-                .modifier(new Modifier().style("width:160px; color:var(--j-text-secondary); font-size:11px;"));
+                .modifier(new Modifier().style("width:150px; color:var(--j-text-secondary); font-size:11px;"));
 
-            Widget previewCell = Span.of(snap.snapshotPreview())
-                .modifier(new Modifier().style("flex:1; font-family:monospace; color:var(--j-text-secondary); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"));
+            // Full structured preview widget using FluxObjectViewer
+            Widget previewCell = FluxObjectViewer.of(snap.snapshotData())
+                .title("Snapshot " + badgeText + " (" + snap.formattedDate() + ")")
+                .expandable(true)
+                .defaultExpanded(false)
+                .maxPreviewLength(65)
+                .modifier(new Modifier().style("flex:1; min-width:200px; color:var(--j-text-secondary); font-size:11px;"));
 
             Widget actionCell;
             if (!snap.isCurrent()) {
@@ -155,7 +176,7 @@ public final class HistoricalVersionsDialog {
             }
 
             rows.add(Div.of(versionCell, dateCell, previewCell, actionCell)
-                .modifier(new Modifier().style("display:flex; align-items:center; padding:8px 12px; border-bottom:1px solid var(--j-border); gap:8px;")));
+                .modifier(new Modifier().style("display:flex; align-items:flex-start; padding:8px 12px; border-bottom:1px solid var(--j-border); gap:8px;")));
         }
 
         return Div.of(rows.toArray(new Widget[0])).modifier(new Modifier().style("width:100%; font-size:12px;"));

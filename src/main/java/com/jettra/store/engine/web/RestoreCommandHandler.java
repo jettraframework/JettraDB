@@ -2,6 +2,8 @@ package com.jettra.store.engine.web;
 
 import com.jettra.store.engine.core.JettraStorageEngine;
 import com.jettra.store.engine.hierarchy.HierarchyExplorerService;
+import com.jettra.store.engine.hierarchy.MementoService;
+import com.jettra.store.engine.models.RecordMemento;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -14,12 +16,13 @@ import java.util.function.Consumer;
 /**
  * Reactive Command Handler for transactional record version rollbacks in JettraFlux.
  * Encapsulates the Command Pattern, Event Bus state synchronization, Java 25+ immutable records,
- * and Java 25 Virtual Threads for non-blocking asynchronous execution.
+ * Memento Pattern integration, and Java 25 Virtual Threads (Thread.ofVirtual()) for non-blocking asynchronous execution.
  */
 public class RestoreCommandHandler {
 
     private final JettraStorageEngine engine;
     private final HierarchyExplorerService hierarchyService;
+    private final MementoService mementoService;
     private final List<Consumer<RestoreEvent>> eventListeners = new CopyOnWriteArrayList<>();
     private static final ExecutorService VIRTUAL_EXECUTOR = Executors.newVirtualThreadPerTaskExecutor();
 
@@ -36,6 +39,10 @@ public class RestoreCommandHandler {
     ) {
         public static RestoreCommand of(String engine, String database, String unit, String recordId, long targetTimestamp) {
             return new RestoreCommand(engine, database, unit, recordId, targetTimestamp, 0);
+        }
+
+        public RollbackCommand toRollbackCommand() {
+            return RollbackCommand.of(engine, database, unit, recordId, targetTimestamp, versionNumber);
         }
     }
 
@@ -82,6 +89,11 @@ public class RestoreCommandHandler {
     public RestoreCommandHandler(JettraStorageEngine engine) {
         this.engine = engine;
         this.hierarchyService = new HierarchyExplorerService(engine);
+        this.mementoService = new MementoService(engine);
+    }
+
+    public MementoService getMementoService() {
+        return mementoService;
     }
 
     /**
@@ -121,6 +133,28 @@ public class RestoreCommandHandler {
             return new RestoreResult(false, engineType, database, unit, recordId, targetTimestamp, errorMsg, null);
         }
 
+        // 1. Attempt Memento pattern restoration
+        RecordMemento memento = mementoService.findMemento(engineType, database, unit, recordId, targetTimestamp);
+        if (memento != null) {
+            MementoService.MementoRestoreResult memRes = mementoService.applyRollback(memento);
+            if (memRes.success()) {
+                byte[] restoredData = memento.getRawBytes();
+                RestoreResult result = new RestoreResult(
+                    true,
+                    engineType,
+                    database,
+                    unit,
+                    recordId,
+                    targetTimestamp,
+                    memRes.message(),
+                    restoredData
+                );
+                notifyListeners(new RestoreSuccessEvent(command, result, System.currentTimeMillis()));
+                return result;
+            }
+        }
+
+        // 2. Direct core restore fallback
         String prefix = hierarchyService.getPrefixForEngine(engineType);
         String[] candidateKeys = {
             prefix + database + ":" + unit + ":" + recordId,
@@ -169,15 +203,35 @@ public class RestoreCommandHandler {
         }
     }
 
+    public RestoreResult handle(RollbackCommand rollbackCommand) {
+        if (rollbackCommand == null) {
+            return new RestoreResult(false, "DOCUMENT", "default", "default", "", 0, "Null rollback command.", null);
+        }
+        return handle(rollbackCommand.toRestoreCommand());
+    }
+
     /**
-     * Executes asynchronous rollback using Java 25 Virtual Threads.
+     * Executes asynchronous rollback using Java 25 Virtual Threads (Thread.ofVirtual()).
      */
     public CompletableFuture<RestoreResult> handleAsync(RestoreCommand command) {
-        return CompletableFuture.supplyAsync(() -> handle(command), VIRTUAL_EXECUTOR);
+        CompletableFuture<RestoreResult> future = new CompletableFuture<>();
+        Thread.ofVirtual().name("virtual-rollback-" + command.recordId()).start(() -> {
+            try {
+                RestoreResult res = handle(command);
+                future.complete(res);
+            } catch (Exception e) {
+                future.completeExceptionally(e);
+            }
+        });
+        return future;
+    }
+
+    public CompletableFuture<RestoreResult> handleAsync(RollbackCommand rollbackCommand) {
+        return handleAsync(rollbackCommand.toRestoreCommand());
     }
 
     private void notifyListeners(RestoreEvent event) {
-        VIRTUAL_EXECUTOR.submit(() -> {
+        Thread.ofVirtual().name("virtual-restore-event-notify").start(() -> {
             for (Consumer<RestoreEvent> listener : eventListeners) {
                 try {
                     listener.accept(event);

@@ -324,20 +324,35 @@ public final class StorageModalCommands {
                 Paragraph.of(Text.of("¿Está seguro de que desea restaurar este registro al snapshot de la versión seleccionada?"))
                     .modifier(new Modifier().style("font-weight:600; color:var(--j-text-primary); font-size:13px; text-align:center; margin:0 0 12px 0;")),
                 Div.of(
-                    Span.of("Snapshot Timestamp: ").modifier(new Modifier().style("font-weight:bold; color:var(--j-text-muted); font-size:11px; margin-right:4px;")),
-                    Span.of("").id("confirmRestoreDateDisplay").modifier(new Modifier().style("color:#a855f7; font-weight:700; font-size:12px;"))
-                ).modifier(new Modifier().style("background:var(--j-bg-body); border:1px solid var(--j-border); padding:10px 14px; border-radius:6px; margin-bottom:16px; text-align:center;"))
+                    Div.of(
+                        Span.of("Engine: ").modifier(new Modifier().style("font-weight:bold; color:var(--j-text-muted); font-size:11px;")),
+                        Span.of("DOCUMENT").id("confirmRestoreEngineDisplay").modifier(new Modifier().style("color:#38bdf8; font-weight:700; font-size:11px; margin-right:12px;")),
+                        Span.of("Record ID: ").modifier(new Modifier().style("font-weight:bold; color:var(--j-text-muted); font-size:11px;")),
+                        Span.of("").id("confirmRestoreIdDisplay").modifier(new Modifier().style("color:#4ade80; font-family:monospace; font-weight:700; font-size:11px;"))
+                    ).modifier(new Modifier().style("display:flex; align-items:center; justify-content:center; margin-bottom:6px;")),
+                    Div.of(
+                        Span.of("Snapshot Date / Timestamp: ").modifier(new Modifier().style("font-weight:bold; color:var(--j-text-muted); font-size:11px; margin-right:4px;")),
+                        Span.of("").id("confirmRestoreDateDisplay").modifier(new Modifier().style("color:#a855f7; font-weight:700; font-size:12px;"))
+                    ).modifier(new Modifier().style("text-align:center;"))
+                ).modifier(new Modifier().style("background:var(--j-bg-body); border:1px solid var(--j-border); padding:10px 14px; border-radius:6px; margin-bottom:16px;")),
+                Paragraph.of(Text.of("La restauración aplicará el estado histórico como nueva versión activa (auditoría append-only sin pérdida de historial)."))
+                    .modifier(new Modifier().style("font-size:11.5px; color:var(--j-text-muted); text-align:center; margin:0 0 14px 0;"))
             ),
 
             Div.of(
                 Button.of(Icon.of("fas fa-times"), Text.of(" Cancelar"))
                     .modifier(new Modifier().attribute("type", "button").attribute("onclick", "hideModal('confirmRestoreModal')").cssClass("btn-action btn-secondary").style("padding:6px 14px; font-size:12px; margin-right:8px;")),
-                Button.of(Icon.of("fas fa-undo"), Text.of(" Sí, Restaurar Versión"))
-                    .modifier(new Modifier().attribute("type", "submit").cssClass("btn-action btn-primary").style("padding:6px 16px; font-size:12px; font-weight:700; background:#a855f7; border-color:#a855f7;"))
+                Button.of(Icon.of("fas fa-undo"), Text.of(" Restore Version"))
+                    .id("btnConfirmRestoreSubmitStorage")
+                    .modifier(new Modifier()
+                        .attribute("type", "submit")
+                        .attribute("onclick", "var b=document.getElementById('btnConfirmRestoreSubmitStorage');if(b){b.disabled=true;b.innerHTML='<i class=\"fas fa-spinner fa-spin\"></i> Restaurando...';}this.form.submit();")
+                        .cssClass("btn-action btn-primary")
+                        .style("padding:6px 16px; font-size:12px; font-weight:700; background:#a855f7; border-color:#a855f7; cursor:pointer;"))
             ).modifier(new Modifier().style("display:flex; justify-content:flex-end; align-items:center; margin-top:8px;"))
         ).action(actionUrl).method("POST").modifier(new Modifier().style("padding:18px 20px;"));
 
-        return createModalOverlay("confirmRestoreModal", "480px", "rgba(168,85,247,0.4)", header, form);
+        return createModalOverlay("confirmRestoreModal", "500px", "rgba(168,85,247,0.4)", header, form);
     }
 
     /**
@@ -465,19 +480,27 @@ public final class StorageModalCommands {
             "        container.innerHTML = '<div style=\"padding:16px; color:var(--j-text-muted); text-align:center;\">No historical snapshot versions recorded for this item yet. Edit the item to create new versions.</div>';\n" +
             "      } else {\n" +
             "        var html = '<table style=\"width:100%; border-collapse:collapse; font-size:12px;\">';\n" +
-            "        html += '<tr style=\"background:var(--j-bg-subsurface); color:var(--j-text-secondary); text-align:left;\"><th style=\"padding:8px 12px;\">Version</th><th style=\"padding:8px 12px;\">Timestamp / Date</th><th style=\"padding:8px 12px;\">Snapshot Preview</th><th style=\"padding:8px 12px; text-align:right;\">Action</th></tr>';\n" +
+            "        html += '<tr style=\"background:var(--j-bg-subsurface); color:var(--j-text-secondary); text-align:left;\"><th style=\"padding:8px 12px; width:90px;\">Version</th><th style=\"padding:8px 12px; width:150px;\">Timestamp / Date</th><th style=\"padding:8px 12px;\">Snapshot Preview</th><th style=\"padding:8px 12px; text-align:right; width:100px;\">Action</th></tr>';\n" +
             "        for (var i = 0; i < versions.length; i++) {\n" +
             "          var v = versions[i];\n" +
             "          var vNum = (v.versionNumber !== undefined && v.versionNumber !== null) ? ('v' + v.versionNumber) : (v.versionId || (v.version !== undefined ? ('v' + v.version) : ('v' + (i + 1))));\n" +
             "          var badge = v.isCurrent ? '<span class=\"store-badge badge-active\" style=\"font-size:10px;\">' + vNum + ' (CURRENT)</span>' : '<span class=\"store-badge badge-records\" style=\"font-size:10px;\">' + vNum + '</span>';\n" +
             "          var safeDate = (v.formattedDate || (v.timestamp ? new Date(v.timestamp).toLocaleString() : '') || 'N/A').toString().replace(/[\\\'\\\"\\\\\\\\]/g, ' ');\n" +
-            "          var preview = (v.snapshotPreview || v.payloadPreview || v.preview || (typeof v.payload === 'object' ? JSON.stringify(v.payload) : v.payload) || (typeof v.snapshotData === 'object' ? JSON.stringify(v.snapshotData) : v.snapshotData) || '{}').toString();\n" +
+            "          var fullPayload = (typeof v.payload === 'object' ? JSON.stringify(v.payload, null, 2) : (v.snapshotData || v.payload || '{}')).toString();\n" +
+            "          var preview = (v.snapshotPreview || v.payloadPreview || v.preview || fullPayload).toString();\n" +
             "          if (preview.length > 65) preview = preview.substring(0, 65) + '...';\n" +
             "          var safeTs = (v.timestamp || 0).toString();\n" +
-            "          html += '<tr style=\"border-bottom:1px solid var(--j-border);\">';\n" +
+            "          var rowDetailId = 'snap_detail_' + i;\n" +
+            "          html += '<tr style=\"border-bottom:1px solid var(--j-border); vertical-align:top;\">';\n" +
             "          html += '<td style=\"padding:8px 12px; font-weight:700;\">' + badge + '</td>';\n" +
             "          html += '<td style=\"padding:8px 12px; color:var(--j-text-secondary); font-size:11px;\">' + safeDate + '</td>';\n" +
-            "          html += '<td style=\"padding:8px 12px; font-family:monospace; color:var(--j-text-secondary); font-size:11px;\">' + preview.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</td>';\n" +
+            "          html += '<td style=\"padding:8px 12px; color:var(--j-text-secondary); font-size:11px;\">';\n" +
+            "          html += '<div style=\"display:flex; align-items:center; gap:4px;\">';\n" +
+            "          html += '<button type=\"button\" onclick=\"var el=document.getElementById(\\'' + rowDetailId + '\\');if(el){el.style.display=(el.style.display===\\'none\\'?\\'block\\':\\'none\\');}\" style=\"background:none; border:none; color:var(--j-text-muted); cursor:pointer; font-size:10px; padding:2px;\"><i class=\"fas fa-chevron-down\"></i></button>';\n" +
+            "          html += '<span style=\"font-family:monospace; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1;\">' + preview.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</span>';\n" +
+            "          html += '</div>';\n" +
+            "          html += '<div id=\"' + rowDetailId + '\" style=\"display:none; margin-top:6px; padding:6px 8px; background:var(--j-bg-body); border-radius:4px; border:1px solid var(--j-border); font-family:monospace; font-size:10.5px; white-space:pre-wrap; max-height:160px; overflow-y:auto; color:var(--j-text-primary);\">' + fullPayload.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</div>';\n" +
+            "          html += '</td>';\n" +
             "          html += '<td style=\"padding:8px 12px; text-align:right;\">';\n" +
             "          if (!v.isCurrent) {\n" +
             "            html += '<button type=\"button\" onclick=\"openConfirmRestoreModal(\\'' + safeTs + '\\', \\'' + safeDate + '\\')\" style=\"background:rgba(168,85,247,0.15); border:1px solid rgba(168,85,247,0.3); color:#a855f7; font-size:10.5px; padding:3px 10px; border-radius:4px; cursor:pointer; font-weight:600;\"><i class=\"fas fa-undo\" style=\"margin-right:3px;\"></i> Restaurar</button>';\n" +
@@ -493,7 +516,14 @@ public final class StorageModalCommands {
             "    window.showModal('universalRestoreModal');\n" +
             "  };\n" +
             "  window.openConfirmRestoreModal = function(ts, formattedDate) {\n" +
+            "    var get = function(id) { var el = document.getElementById(id); return el ? el.value : ''; };\n" +
             "    window.setElementValues({\n" +
+            "      confirmRestoreEngineInput: get('restoreEngineTypeInput'),\n" +
+            "      confirmRestoreEngineDisplay: get('restoreEngineTypeInput'),\n" +
+            "      confirmRestoreDbInput: get('restoreRecordDbInput'),\n" +
+            "      confirmRestoreCollInput: get('restoreRecordCollInput') || 'default',\n" +
+            "      confirmRestoreIdInput: get('restoreRecordIdInput'),\n" +
+            "      confirmRestoreIdDisplay: get('restoreRecordIdInput'),\n" +
             "      confirmRestoreTsInput: ts,\n" +
             "      confirmRestoreDateDisplay: formattedDate || ts\n" +
             "    });\n" +

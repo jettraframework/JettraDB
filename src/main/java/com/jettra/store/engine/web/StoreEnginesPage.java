@@ -3920,20 +3920,28 @@ public class StoreEnginesPage extends StoreTemplatePage {
         for (var i = 0; i < versions.length; i++) {
           var v = versions[i];
           var vNum = (v.versionNumber !== undefined && v.versionNumber !== null) ? ('v' + v.versionNumber) : (v.versionId || (v.version !== undefined ? ('v' + v.version) : ('v' + (i + 1))));
-          var badge = v.isCurrent ? '<span class="store-badge badge-active" style="font-size:10px;">' + vNum + ' (CURRENT)</span>' : '<span class="store-badge badge-records" style="font-size:10px;">' + vNum + '</span>';
+          var badge = v.isCurrent ? '<span class=\"store-badge badge-active\" style=\"font-size:10px;\">' + vNum + ' (CURRENT)</span>' : '<span class=\"store-badge badge-records\" style=\"font-size:10px;\">' + vNum + '</span>';
           var safeDate = (v.formattedDate || (v.timestamp ? new Date(v.timestamp).toLocaleString() : '') || 'N/A').toString().replace(/[\'\"\\\\]/g, ' ');
-          var preview = (v.snapshotPreview || v.payloadPreview || v.preview || (typeof v.payload === 'object' ? JSON.stringify(v.payload) : v.payload) || (typeof v.snapshotData === 'object' ? JSON.stringify(v.snapshotData) : v.snapshotData) || '{}').toString();
+          var fullPayload = (typeof v.payload === 'object' ? JSON.stringify(v.payload, null, 2) : (v.snapshotData || v.payload || '{}')).toString();
+          var preview = (v.snapshotPreview || v.payloadPreview || v.preview || fullPayload).toString();
           if (preview.length > 65) preview = preview.substring(0, 65) + '...';
           var safeTs = (v.timestamp || 0).toString();
-          html += '<tr style="border-bottom:1px solid var(--j-border);">';
-          html += '<td style="padding:8px 12px; font-weight:700;">' + badge + '</td>';
-          html += '<td style="padding:8px 12px; color:var(--j-text-secondary); font-size:11px;">' + safeDate + '</td>';
-          html += '<td style="padding:8px 12px; font-family:monospace; color:var(--j-text-secondary); font-size:11px;">' + preview.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</td>';
-          html += '<td style="padding:8px 12px; text-align:right;">';
+          var rowDetailId = 'hist_snap_detail_' + i;
+          html += '<tr style=\"border-bottom:1px solid var(--j-border); vertical-align:top;\">';
+          html += '<td style=\"padding:8px 12px; font-weight:700;\">' + badge + '</td>';
+          html += '<td style=\"padding:8px 12px; color:var(--j-text-secondary); font-size:11px;\">' + safeDate + '</td>';
+          html += '<td style=\"padding:8px 12px; color:var(--j-text-secondary); font-size:11px;\">';
+          html += '<div style=\"display:flex; align-items:center; gap:4px;\">';
+          html += '<button type=\"button\" onclick=\"var el=document.getElementById(\\'' + rowDetailId + '\\');if(el){el.style.display=(el.style.display===\\'none\\'?\\'block\\':\\'none\\');}\" style=\"background:none; border:none; color:var(--j-text-muted); cursor:pointer; font-size:10px; padding:2px;\"><i class=\"fas fa-chevron-down\"></i></button>';
+          html += '<span style=\"font-family:monospace; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1;\">' + preview.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</span>';
+          html += '</div>';
+          html += '<div id=\"' + rowDetailId + '\" style=\"display:none; margin-top:6px; padding:6px 8px; background:var(--j-bg-body); border-radius:4px; border:1px solid var(--j-border); font-family:monospace; font-size:10.5px; white-space:pre-wrap; max-height:160px; overflow-y:auto; color:var(--j-text-primary);\">' + fullPayload.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</div>';
+          html += '</td>';
+          html += '<td style=\"padding:8px 12px; text-align:right;\">';
           if (!v.isCurrent) {
-            html += '<button type="button" class="btn-action btn-primary btn-restore-version" data-ts="' + safeTs + '" data-date="' + safeDate + '" onclick="openConfirmRestoreModal(\'' + safeTs + '\', \'' + safeDate + '\')" style="background:#a855f7; padding:3px 10px; font-size:11px; font-weight:600;"><i class="fas fa-undo"></i> Restaurar</button>';
+            html += '<button type=\"button\" class=\"btn-action btn-primary btn-restore-version\" data-ts=\"' + safeTs + '\" data-date=\"' + safeDate + '\" onclick=\"openConfirmRestoreModal(\\'' + safeTs + '\\', \\'' + safeDate + '\\')\" style=\"background:#a855f7; padding:3px 10px; font-size:11px; font-weight:600;\"><i class=\"fas fa-undo\"></i> Restaurar</button>';
           } else {
-            html += '<span style="color:#10b981; font-size:11px; font-weight:600;"><i class="fas fa-check-circle"></i> Activo</span>';
+            html += '<span style=\"color:#10b981; font-size:11px; font-weight:600;\"><i class=\"fas fa-check-circle\"></i> Activo</span>';
           }
           html += '</td></tr>';
         }
