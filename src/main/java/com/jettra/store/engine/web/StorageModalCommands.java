@@ -477,7 +477,7 @@ public final class StorageModalCommands {
             "          html += '<tr style=\"border-bottom:1px solid var(--j-border);\">';\n" +
             "          html += '<td style=\"padding:8px 12px; font-weight:700;\">' + badge + '</td>';\n" +
             "          html += '<td style=\"padding:8px 12px; color:var(--j-text-secondary); font-size:11px;\">' + safeDate + '</td>';\n" +
-            "          html += '<td style=\"padding:8px 12px; font-family:monospace; color:var(--j-text-primary); font-size:11px;\">' + preview.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</td>';\n" +
+            "          html += '<td style=\"padding:8px 12px; font-family:monospace; color:var(--j-text-secondary); font-size:11px;\">' + preview.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</td>';\n" +
             "          html += '<td style=\"padding:8px 12px; text-align:right;\">';\n" +
             "          if (!v.isCurrent) {\n" +
             "            html += '<button type=\"button\" onclick=\"openConfirmRestoreModal(\\'' + safeTs + '\\', \\'' + safeDate + '\\')\" style=\"background:rgba(168,85,247,0.15); border:1px solid rgba(168,85,247,0.3); color:#a855f7; font-size:10.5px; padding:3px 10px; border-radius:4px; cursor:pointer; font-weight:600;\"><i class=\"fas fa-undo\" style=\"margin-right:3px;\"></i> Restaurar</button>';\n" +

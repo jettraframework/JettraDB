@@ -3928,7 +3928,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
           html += '<tr style="border-bottom:1px solid var(--j-border);">';
           html += '<td style="padding:8px 12px; font-weight:700;">' + badge + '</td>';
           html += '<td style="padding:8px 12px; color:var(--j-text-secondary); font-size:11px;">' + safeDate + '</td>';
-          html += '<td style="padding:8px 12px; font-family:monospace; color:var(--j-text-primary); font-size:11px;">' + preview.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</td>';
+          html += '<td style="padding:8px 12px; font-family:monospace; color:var(--j-text-secondary); font-size:11px;">' + preview.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</td>';
           html += '<td style="padding:8px 12px; text-align:right;">';
           if (!v.isCurrent) {
             html += '<button type="button" class="btn-action btn-primary btn-restore-version" data-ts="' + safeTs + '" data-date="' + safeDate + '" onclick="openConfirmRestoreModal(\'' + safeTs + '\', \'' + safeDate + '\')" style="background:#a855f7; padding:3px 10px; font-size:11px; font-weight:600;"><i class="fas fa-undo"></i> Restaurar</button>';

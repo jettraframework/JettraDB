@@ -140,7 +140,7 @@ public final class HistoricalVersionsDialog {
                 .modifier(new Modifier().style("width:160px; color:var(--j-text-secondary); font-size:11px;"));
 
             Widget previewCell = Span.of(snap.snapshotPreview())
-                .modifier(new Modifier().style("flex:1; font-family:monospace; color:var(--j-text-primary); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"));
+                .modifier(new Modifier().style("flex:1; font-family:monospace; color:var(--j-text-secondary); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"));
 
             Widget actionCell;
             if (!snap.isCurrent()) {

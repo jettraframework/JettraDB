@@ -6,14 +6,17 @@ import com.jettra.store.engine.models.DocumentEngine;
 import com.jettra.store.engine.models.KeyValueEngine;
 import com.jettra.store.engine.models.RecordsEngine;
 import com.jettra.store.engine.models.RecordVersionSnapshot;
-import com.jettra.store.engine.models.VersionSnapshotRecord;
-import com.jettra.store.engine.web.StorageModalCommands.HierarchyRowCommand;
-import com.jettra.store.engine.web.StorageModalCommands.RestoreCommand;
+import com.jettra.store.engine.web.RestoreCommandHandler.RestoreCommand;
+import com.jettra.store.engine.web.RestoreCommandHandler.RestoreEvent;
+import com.jettra.store.engine.web.RestoreCommandHandler.RestoreSuccessEvent;
+import com.jettra.store.engine.web.RestoreCommandHandler.RestoreFailureEvent;
 import io.jettra.flux.core.Widget;
 import io.jettra.flux.theme.Themes;
 import io.jettra.json.JsonArray;
 import io.jettra.json.JsonObject;
 import io.jettra.json.JettraJson;
+import io.jettra.test.annotation.JettraTest;
+import io.jettra.test.core.JettraAssert;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -25,15 +28,19 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Unit and UI Integration Tests validating:
- * 1. VersionSnapshotRecord DTO serialization & temporal formatting.
+ * 1. RecordVersionSnapshot DTO serialization & temporal formatting.
  * 2. Data Mapping in HierarchyExplorerService.getVersionsJson.
- * 3. Historical Versions Dialog rendering in JettraFlux.
- * 4. Restore Action Command dispatch and state synchronization.
+ * 3. Historical Versions Dialog rendering in JettraFlux with standardized typography contrast.
+ * 4. RestoreCommandHandler reactive command execution, validation, Virtual Threads & Event Bus.
+ * 5. RestoreActionHandler delegating and StoreEnginesPage integration.
  */
 public class HistoricalVersionsDialogTest {
 
@@ -43,20 +50,30 @@ public class HistoricalVersionsDialogTest {
     private HierarchyExplorerService hierarchyService;
 
     @BeforeEach
-    void setUp() throws IOException {
-        tempDir = Files.createTempDirectory("jettra_historical_versions_test");
-        engine = new JettraStorageEngine(tempDir.toString());
-        engine.registerEngine("DOCUMENT", new DocumentEngine(engine));
-        engine.registerEngine("KEYVALUE", new KeyValueEngine(engine));
-        engine.registerEngine("RECORDS", new RecordsEngine(engine));
-        engine.start();
+    public void setUp() throws IOException {
+        initIfNeeded();
+    }
 
-        jsonParser = new JettraJson();
-        hierarchyService = new HierarchyExplorerService(engine);
+    private synchronized void initIfNeeded() {
+        if (engine == null) {
+            try {
+                tempDir = Files.createTempDirectory("jettra_historical_versions_test");
+                engine = new JettraStorageEngine(tempDir.toString());
+                engine.registerEngine("DOCUMENT", new DocumentEngine(engine));
+                engine.registerEngine("KEYVALUE", new KeyValueEngine(engine));
+                engine.registerEngine("RECORDS", new RecordsEngine(engine));
+                engine.start();
+
+                jsonParser = new JettraJson();
+                hierarchyService = new HierarchyExplorerService(engine);
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to init test engine", e);
+            }
+        }
     }
 
     @AfterEach
-    void tearDown() throws IOException {
+    public void tearDown() throws IOException {
         if (engine != null) {
             engine.stop();
         }
@@ -69,8 +86,9 @@ public class HistoricalVersionsDialogTest {
     }
 
     @Test
+    @JettraTest
     @DisplayName("Test 1: RecordVersionSnapshot DTO attributes, default values, and JSON representation")
-    void testRecordVersionSnapshotDTO() {
+    public void testRecordVersionSnapshotDTO() {
         long now = 1700000000000L;
         String rawData = "{\"name\":\"Enterprise Plan\",\"price\":499.99,\"currency\":\"USD\"}";
         RecordVersionSnapshot record = RecordVersionSnapshot.of(1, now, rawData.getBytes(StandardCharsets.UTF_8), true);
@@ -92,11 +110,16 @@ public class HistoricalVersionsDialogTest {
         assertTrue(json.has("snapshotPreview"));
         assertTrue(json.has("preview"));
         assertTrue((Boolean) json.get("isCurrent"));
+
+        JettraAssert.assertEquals("v1", record.versionId(), "Version ID should be v1");
+        JettraAssert.assertTrue(record.isCurrent(), "Record should be current");
     }
 
     @Test
+    @JettraTest
     @DisplayName("Test 2: HierarchyExplorerService getVersionsJson returns structured array with mapped columns")
-    void testHierarchyExplorerServiceVersionsJsonMapping() {
+    public void testHierarchyExplorerServiceVersionsJsonMapping() {
+        initIfNeeded();
         String testDb = "crm_db";
         String coll = "accounts";
         String id = "acc_100";
@@ -123,11 +146,14 @@ public class HistoricalVersionsDialogTest {
         assertTrue(vFirst.has("timestamp"), "Must contain timestamp");
         assertTrue(vFirst.has("formattedDate"), "Must contain formatted date string");
         assertTrue(vFirst.has("snapshotPreview") || vFirst.has("preview"), "Must contain snapshot preview");
+
+        JettraAssert.assertNotNull(versionsJson, "Versions JSON should not be null");
     }
 
     @Test
+    @JettraTest
     @DisplayName("Test 3: Historical Versions Modal Component rendering and DOM IDs")
-    void testHistoricalVersionsModalRendering() {
+    public void testHistoricalVersionsModalRendering() {
         String actionUrl = "/engines?engine=DOCUMENT";
 
         Widget versionsModal = HistoricalVersionsDialog.buildVersionsModal(actionUrl);
@@ -146,11 +172,14 @@ public class HistoricalVersionsDialogTest {
         assertTrue(confirmHtml.contains("id=\"confirmRestoreModal\"") || confirmHtml.contains("id='confirmRestoreModal'"));
         assertTrue(confirmHtml.contains("confirmRestoreTsInput"), "Must have hidden timestamp input for restore");
         assertTrue(confirmHtml.contains("confirmRestoreDateDisplay"), "Must display snapshot date confirmation");
+
+        JettraAssert.assertTrue(html.contains("universalVersionsContainer"), "Must contain versions container");
     }
 
     @Test
-    @DisplayName("Test 4: HistoricalVersionsDialog.renderVersionTable generates table without UNDEFINED values")
-    void testHistoricalVersionsDialogRenderVersionTable() {
+    @JettraTest
+    @DisplayName("Test 4: HistoricalVersionsDialog.renderVersionTable generates table with standardized typography contrast")
+    public void testHistoricalVersionsDialogRenderVersionTable() {
         RecordVersionSnapshot v1 = RecordVersionSnapshot.of(1, 1700000000000L, "{\"role\":\"admin\"}".getBytes(StandardCharsets.UTF_8), false);
         RecordVersionSnapshot v2 = RecordVersionSnapshot.of(2, 1700000050000L, "{\"role\":\"superadmin\"}".getBytes(StandardCharsets.UTF_8), true);
 
@@ -165,12 +194,20 @@ public class HistoricalVersionsDialogTest {
         assertTrue(html.contains("admin"), "Must render preview for historical version");
         assertTrue(html.contains("Restaurar"), "Historical row must have Restaurar button");
         assertTrue(html.contains("Activo"), "Current row must have Activo badge");
+
+        // Verify Snapshot Preview typography contrast matches Date column (var(--j-text-secondary))
+        assertTrue(html.contains("color:var(--j-text-secondary)"), "Snapshot preview cell must use standard text-secondary token for contrast");
+
+        JettraAssert.assertTrue(html.contains("Restaurar"), "Must contain restore button");
+        JettraAssert.assertTrue(html.contains("color:var(--j-text-secondary)"), "Must use secondary text color token");
     }
 
     @Test
-    @DisplayName("Test 5: RestoreActionHandler executes rollback and async rollback")
-    void testRestoreActionHandlerExecution() {
-        RestoreActionHandler handler = new RestoreActionHandler(engine);
+    @JettraTest
+    @DisplayName("Test 5: RestoreCommandHandler executes transactional rollback, validation, and Virtual Thread async")
+    public void testRestoreCommandHandlerExecution() throws InterruptedException {
+        initIfNeeded();
+        RestoreCommandHandler handler = new RestoreCommandHandler(engine);
         String testDb = "tenant_db";
         String coll = "configs";
         String id = "cfg_01";
@@ -182,21 +219,95 @@ public class HistoricalVersionsDialogTest {
         engine.getStorageCore().put(key, "{\"theme\":\"light\"}".getBytes(StandardCharsets.UTF_8), t1);
         engine.getStorageCore().put(key, "{\"theme\":\"dark\"}".getBytes(StandardCharsets.UTF_8), t2);
 
+        // 1. Pre-validation failure test with failure event listener
+        CountDownLatch failLatch = new CountDownLatch(1);
+        AtomicReference<RestoreEvent> failEventRef = new AtomicReference<>();
+        AutoCloseable failSub = handler.subscribe(event -> {
+            if (event instanceof RestoreFailureEvent) {
+                failEventRef.set(event);
+                failLatch.countDown();
+            }
+        });
+
+        RestoreCommandHandler.RestoreResult invalidRes = handler.handle(new RestoreCommand("DOCUMENT", testDb, coll, "", -1, 0));
+        assertFalse(invalidRes.success(), "Invalid command must fail validation");
+        boolean failReceived = failLatch.await(2, TimeUnit.SECONDS);
+        assertTrue(failReceived, "Reactive listener should receive failure event");
+        assertInstanceOf(RestoreFailureEvent.class, failEventRef.get());
+        try {
+            failSub.close();
+        } catch (Exception ignored) {}
+
+        // 2. Setup Reactive Event Bus listener for success event
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicReference<RestoreEvent> eventRef = new AtomicReference<>();
+        AutoCloseable subscription = handler.subscribe(event -> {
+            if (event instanceof RestoreSuccessEvent) {
+                eventRef.set(event);
+                latch.countDown();
+            }
+        });
+
         // Execute synchronous restore
-        RestoreActionHandler.RestoreResult syncRes = handler.executeRestore("DOCUMENT", testDb, coll, id, t1);
+        RestoreCommand cmd = RestoreCommand.of("DOCUMENT", testDb, coll, id, t1);
+        RestoreCommandHandler.RestoreResult syncRes = handler.handle(cmd);
         assertTrue(syncRes.success(), "Sync restore must succeed");
         assertEquals("{\"theme\":\"light\"}", new String(engine.getStorageCore().get(key), StandardCharsets.UTF_8));
+        assertEquals("{\"theme\":\"light\"}", syncRes.restoredPayloadString());
 
-        // Re-modify and test async restore
+        // Wait for event notification
+        boolean eventReceived = latch.await(2, TimeUnit.SECONDS);
+        assertTrue(eventReceived, "Reactive listener should receive success restore event");
+        assertInstanceOf(RestoreSuccessEvent.class, eventRef.get());
+        RestoreSuccessEvent successEvent = (RestoreSuccessEvent) eventRef.get();
+        assertEquals(id, successEvent.command().recordId());
+
+        // Re-modify and test async restore with Virtual Threads
         engine.getStorageCore().put(key, "{\"theme\":\"solarized\"}".getBytes(StandardCharsets.UTF_8), t2 + 1000);
-        RestoreActionHandler.RestoreResult asyncRes = handler.executeRestoreAsync("DOCUMENT", testDb, coll, id, t1).join();
+        RestoreCommandHandler.RestoreResult asyncRes = handler.handleAsync(cmd).join();
         assertTrue(asyncRes.success(), "Async restore must succeed");
         assertEquals("{\"theme\":\"light\"}", new String(engine.getStorageCore().get(key), StandardCharsets.UTF_8));
+
+        try {
+            subscription.close();
+        } catch (Exception ignored) {}
+        assertEquals(0, handler.getListenerCount());
+
+        JettraAssert.assertTrue(syncRes.success(), "Synchronous restore must succeed");
+        JettraAssert.assertTrue(asyncRes.success(), "Asynchronous restore must succeed");
     }
 
     @Test
-    @DisplayName("Test 6: StoreEnginesPage full POST restore_version handler refreshes table view")
-    void testStoreEnginesPagePostRestoreHandler() {
+    @JettraTest
+    @DisplayName("Test 6: RestoreActionHandler delegates to RestoreCommandHandler")
+    public void testRestoreActionHandlerDelegation() {
+        initIfNeeded();
+        RestoreActionHandler handler = new RestoreActionHandler(engine);
+        assertNotNull(handler.getCommandHandler(), "Command handler must be initialized");
+
+        String testDb = "tenant_db";
+        String coll = "configs";
+        String id = "cfg_02";
+        String key = "doc:" + testDb + ":" + coll + ":" + id;
+
+        long t1 = 1700000000000L;
+        long t2 = 1700000080000L;
+
+        engine.getStorageCore().put(key, "{\"status\":\"pending\"}".getBytes(StandardCharsets.UTF_8), t1);
+        engine.getStorageCore().put(key, "{\"status\":\"approved\"}".getBytes(StandardCharsets.UTF_8), t2);
+
+        RestoreActionHandler.RestoreResult syncRes = handler.executeRestore("DOCUMENT", testDb, coll, id, t1);
+        assertTrue(syncRes.success(), "Sync restore through adapter must succeed");
+        assertEquals("{\"status\":\"pending\"}", new String(engine.getStorageCore().get(key), StandardCharsets.UTF_8));
+
+        JettraAssert.assertTrue(syncRes.success(), "Restore action must succeed");
+    }
+
+    @Test
+    @JettraTest
+    @DisplayName("Test 7: StoreEnginesPage full POST restore_version handler refreshes table view")
+    public void testStoreEnginesPagePostRestoreHandler() {
+        initIfNeeded();
         StoreEnginesPage page = new StoreEnginesPage(engine);
         String testDb = "ecommerce_db";
         String coll = "products";
@@ -227,5 +338,7 @@ public class HistoricalVersionsDialogTest {
         String html = responseWidget.render(Themes.FlatTheme());
         assertTrue(html.contains("successfully restored") || html.contains("Restored"), "Flash message must indicate restore success");
         assertTrue(html.contains("prod_alpha"), "Table view must render restored record ID");
+
+        JettraAssert.assertTrue(html.contains("prod_alpha"), "Table must display restored item ID");
     }
 }
