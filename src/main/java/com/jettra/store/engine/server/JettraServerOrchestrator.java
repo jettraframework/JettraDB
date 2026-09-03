@@ -173,13 +173,33 @@ public class JettraServerOrchestrator {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
             if ("POST".equals(exchange.getRequestMethod())) {
-                com.jettra.store.engine.core.BackupManager backupManager = new com.jettra.store.engine.core.BackupManager(engine.getStorageDir());
-                backupManager.createBackup();
-                String resp = "{\"status\":\"Backup initiated\"}";
-                exchange.getResponseHeaders().set("Content-Type", "application/json");
-                exchange.sendResponseHeaders(200, resp.length());
-                try (OutputStream os = exchange.getResponseBody()) {
-                    os.write(resp.getBytes());
+                try {
+                    com.jettra.store.engine.core.BackupManager backupManager = new com.jettra.store.engine.core.BackupManager(engine.getStorageDir());
+                    backupManager.createBackup();
+
+                    com.jettra.store.engine.dashboard.DashboardMetricsCollector collector = new com.jettra.store.engine.dashboard.DashboardMetricsCollector(engine);
+                    com.jettra.store.engine.dashboard.DashboardMetrics.ComprehensiveDashboardSnapshot snap = collector.collectSnapshot();
+                    java.nio.file.Path snapPath = com.jettra.store.engine.dashboard.SnapshotService.createSnapshot(snap, "root", "Matrix", io.jettra.flux.theme.ColorMode.DARK);
+
+                    String resp = String.format(
+                        "{\"success\":true,\"status\":\"Backup initiated\",\"fileName\":\"%s\",\"path\":\"%s\"}",
+                        snapPath.getFileName().toString(),
+                        snapPath.toAbsolutePath().toString().replace("\\", "/")
+                    );
+                    byte[] bytes = resp.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                    exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
+                    exchange.sendResponseHeaders(200, bytes.length);
+                    try (OutputStream os = exchange.getResponseBody()) {
+                        os.write(bytes);
+                    }
+                } catch (Exception e) {
+                    String err = "{\"success\":false,\"error\":\"" + (e.getMessage() != null ? e.getMessage().replace("\"", "\\\"") : "Internal Error") + "\"}";
+                    byte[] bytes = err.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                    exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
+                    exchange.sendResponseHeaders(500, bytes.length);
+                    try (OutputStream os = exchange.getResponseBody()) {
+                        os.write(bytes);
+                    }
                 }
             } else {
                 exchange.sendResponseHeaders(405, -1);

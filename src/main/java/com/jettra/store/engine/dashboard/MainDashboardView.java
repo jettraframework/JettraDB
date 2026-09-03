@@ -31,8 +31,10 @@ public final class MainDashboardView {
                 Button.of(
                     Icon.of("fas fa-save").modifier(new Modifier().style("margin-right:6px;")),
                     Text.of("Create Backup Snapshot")
-                ).attribute("onclick", "triggerBackup()")
-                 .modifier(new Modifier().cssClass("btn-action btn-primary").style("padding:8px 16px; font-size:12px; font-weight:600;")),
+                ).attribute("id", "btnCreateBackupSnapshot")
+                 .attribute("type", "button")
+                 .attribute("onclick", "triggerBackup(this)")
+                 .modifier(new Modifier().cssClass("btn-action btn-primary").style("padding:8px 16px; font-size:12px; font-weight:600; cursor:pointer;")),
                 Link.of(JettraServer.resolvePath("/engines"),
                     Icon.of("fas fa-cubes").modifier(new Modifier().style("margin-right:6px;")),
                     Text.of("Hierarchy Explorer")
@@ -58,18 +60,86 @@ public final class MainDashboardView {
         // 6. Quick Operations & Network Interfaces Panel
         Widget bottomPanel = QuickActionsAndEndpointsPanel.build();
 
-        // 7. Client-side backup trigger script
+        // 7. Client-side backup trigger script with non-invasive toast feedback and button state management
         Widget backupScript = RawScript.of(
-            "async function triggerBackup() {\n" +
-            "  try {\n" +
-            "    const res = await fetch('" + JettraServer.resolvePath("/api/backup") + "', { method: 'POST' });\n" +
-            "    if (res.ok) {\n" +
-            "      alert('Backup snapshot successfully initiated and written to storage directory!');\n" +
+            "async function triggerBackup(btn) {\n" +
+            "  if (!btn) btn = document.getElementById('btnCreateBackupSnapshot');\n" +
+            "  var origHtml = btn ? btn.innerHTML : '';\n" +
+            "  if (btn) {\n" +
+            "    btn.disabled = true;\n" +
+            "    btn.style.opacity = '0.7';\n" +
+            "    btn.style.cursor = 'not-allowed';\n" +
+            "    btn.innerHTML = '<i class=\"fas fa-spinner fa-spin\" style=\"margin-right:6px;\"></i> Generating Snapshot...';\n" +
+            "  }\n" +
+            "\n" +
+            "  function showToast(msg, isSuccess) {\n" +
+            "    var toast = document.getElementById('jettra-snapshot-toast');\n" +
+            "    if (!toast) {\n" +
+            "      toast = document.createElement('div');\n" +
+            "      toast.id = 'jettra-snapshot-toast';\n" +
+            "      toast.style.position = 'fixed';\n" +
+            "      toast.style.bottom = '24px';\n" +
+            "      toast.style.right = '24px';\n" +
+            "      toast.style.zIndex = '999999';\n" +
+            "      toast.style.padding = '14px 20px';\n" +
+            "      toast.style.borderRadius = '8px';\n" +
+            "      toast.style.fontFamily = 'Inter, -apple-system, BlinkMacSystemFont, sans-serif';\n" +
+            "      toast.style.fontSize = '13px';\n" +
+            "      toast.style.fontWeight = '600';\n" +
+            "      toast.style.boxShadow = '0 10px 25px rgba(0,0,0,0.3)';\n" +
+            "      toast.style.display = 'flex';\n" +
+            "      toast.style.alignItems = 'center';\n" +
+            "      toast.style.gap = '10px';\n" +
+            "      toast.style.transition = 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)';\n" +
+            "      document.body.appendChild(toast);\n" +
+            "    }\n" +
+            "    if (isSuccess) {\n" +
+            "      toast.style.background = 'var(--jf-surface, var(--j-bg-surface, #0f172a))';\n" +
+            "      toast.style.border = '1px solid var(--jf-accent, var(--j-primary, #10b981))';\n" +
+            "      toast.style.color = 'var(--jf-text-primary, var(--j-text-primary, #f8fafc))';\n" +
+            "      toast.innerHTML = '<i class=\"fas fa-check-circle\" style=\"color:var(--jf-accent, var(--j-primary, #10b981)); font-size:16px;\"></i> <span>' + msg + '</span>';\n" +
             "    } else {\n" +
-            "      alert('Backup failed with status: ' + res.status);\n" +
+            "      toast.style.background = 'var(--jf-surface, var(--j-bg-surface, #0f172a))';\n" +
+            "      toast.style.border = '1px solid #ef4444';\n" +
+            "      toast.style.color = 'var(--jf-text-primary, var(--j-text-primary, #f8fafc))';\n" +
+            "      toast.innerHTML = '<i class=\"fas fa-exclamation-triangle\" style=\"color:#ef4444; font-size:16px;\"></i> <span>' + msg + '</span>';\n" +
+            "    }\n" +
+            "    toast.style.opacity = '1';\n" +
+            "    toast.style.transform = 'translateY(0)';\n" +
+            "    setTimeout(function() {\n" +
+            "      toast.style.opacity = '0';\n" +
+            "      toast.style.transform = 'translateY(10px)';\n" +
+            "    }, 4500);\n" +
+            "  }\n" +
+            "\n" +
+            "  try {\n" +
+            "    var curMode = document.documentElement.getAttribute('data-color-mode') || 'dark';\n" +
+            "    var curTheme = document.documentElement.getAttribute('data-theme') || 'Matrix';\n" +
+            "    var res = await fetch('" + JettraServer.resolvePath("/dashboard?action=backup") + "', {\n" +
+            "      method: 'POST',\n" +
+            "      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },\n" +
+            "      body: 'action=backup&_jettra_theme=' + encodeURIComponent(curTheme) + '&_jettra_color_mode=' + encodeURIComponent(curMode)\n" +
+            "    });\n" +
+            "    if (!res.ok) {\n" +
+            "      res = await fetch('" + JettraServer.resolvePath("/api/backup") + "', { method: 'POST' });\n" +
+            "    }\n" +
+            "    if (res.ok) {\n" +
+            "      var data = await res.json();\n" +
+            "      var fname = data.fileName || data.snapshot || 'snapshot.md';\n" +
+            "      var p = data.path || '/data/snapshot/' + fname;\n" +
+            "      showToast('Markdown Snapshot created: ' + fname + ' in ' + p, true);\n" +
+            "    } else {\n" +
+            "      showToast('Snapshot generation failed (HTTP ' + res.status + ')', false);\n" +
             "    }\n" +
             "  } catch(e) {\n" +
-            "    alert('Error triggering backup: ' + e);\n" +
+            "    showToast('Error creating snapshot: ' + e.message, false);\n" +
+            "  } finally {\n" +
+            "    if (btn) {\n" +
+            "      btn.disabled = false;\n" +
+            "      btn.style.opacity = '1';\n" +
+            "      btn.style.cursor = 'pointer';\n" +
+            "      btn.innerHTML = origHtml;\n" +
+            "    }\n" +
             "  }\n" +
             "}"
         );

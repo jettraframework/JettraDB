@@ -5,6 +5,7 @@ import com.jettra.store.engine.core.JettraStorageEngine;
 import com.jettra.store.engine.dashboard.DashboardMetrics.ComprehensiveDashboardSnapshot;
 import com.jettra.store.engine.dashboard.DashboardMetricsCollector;
 import com.jettra.store.engine.dashboard.MainDashboardView;
+import com.jettra.store.engine.dashboard.SnapshotService;
 import com.sun.net.httpserver.HttpExchange;
 import io.jettra.flux.core.Widget;
 
@@ -32,7 +33,7 @@ public class StoreDashboardPage extends StoreTemplatePage {
     }
 
     @Override
-    protected String getPageTitle() {
+    public String getPageTitle() {
         return "Dashboard - JettraStoreEngine";
     }
 
@@ -45,5 +46,56 @@ public class StoreDashboardPage extends StoreTemplatePage {
     public Widget buildContent(HttpExchange exchange, Map<String, String> params, String currentTheme) {
         ComprehensiveDashboardSnapshot snapshot = metricsCollector.collectSnapshot();
         return MainDashboardView.build(snapshot);
+    }
+
+    @Override
+    protected boolean onPost(HttpExchange exchange, Map<String, String> params) throws java.io.IOException {
+        String query = exchange.getRequestURI().getQuery();
+        String action = params != null ? params.get("action") : null;
+        if (action == null && query != null && query.contains("action=backup")) {
+            action = "backup";
+        }
+        if ("backup".equalsIgnoreCase(action) || "snapshot".equalsIgnoreCase(action)) {
+            handleSnapshotCreation(exchange, params);
+            return true;
+        }
+        return super.onPost(exchange, params);
+    }
+
+    private void handleSnapshotCreation(HttpExchange exchange, Map<String, String> params) throws java.io.IOException {
+        ComprehensiveDashboardSnapshot snapshot = metricsCollector.collectSnapshot();
+        String user = getLoggedUser(exchange);
+        if (user == null || user.isBlank()) {
+            user = "root";
+        }
+        String themeName = params != null && params.containsKey("_jettra_theme") ? params.get("_jettra_theme") : getThemeCookie(exchange);
+        io.jettra.flux.theme.ColorMode mode = params != null && params.containsKey("_jettra_color_mode")
+            ? io.jettra.flux.theme.ColorMode.fromString(params.get("_jettra_color_mode"), io.jettra.flux.theme.ColorMode.DARK)
+            : getColorModeCookie(exchange);
+
+        try {
+            java.nio.file.Path path = SnapshotService.createSnapshot(snapshot, user, themeName, mode);
+            String json = String.format(
+                "{\"success\":true,\"fileName\":\"%s\",\"path\":\"%s\",\"size\":%d,\"timestamp\":\"%s\"}",
+                path.getFileName().toString(),
+                path.toAbsolutePath().toString().replace("\\", "/"),
+                java.nio.file.Files.size(path),
+                java.time.LocalDateTime.now().toString()
+            );
+            byte[] bytes = json.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
+            exchange.sendResponseHeaders(200, bytes.length);
+            try (java.io.OutputStream os = exchange.getResponseBody()) {
+                os.write(bytes);
+            }
+        } catch (Exception e) {
+            String errJson = String.format("{\"success\":false,\"error\":\"%s\"}", e.getMessage() != null ? e.getMessage().replace("\"", "\\\"") : "Internal Error");
+            byte[] bytes = errJson.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
+            exchange.sendResponseHeaders(500, bytes.length);
+            try (java.io.OutputStream os = exchange.getResponseBody()) {
+                os.write(bytes);
+            }
+        }
     }
 }

@@ -35,9 +35,12 @@ public final class EngineHierarchyChartPanel {
             ).modifier(new Modifier().cssClass("btn-action btn-secondary").style("font-size:11.5px; padding:4px 10px;"))
         ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;"));
 
-        // Native JettraFlux Bar Chart
+        // Native JettraFlux Bar Chart in a flexible, dedicated wrapper to maintain aspect-ratio
         Widget barChart = CharsBar.of()
-            .modifier(new Modifier().style("width:100%; height:220px; position:relative; margin-bottom:16px;"));
+            .modifier(new Modifier().style("width:100%; min-height:300px; height:320px; position:relative; box-sizing:border-box;"));
+
+        Widget chartWrapper = Div.of(barChart)
+            .modifier(new Modifier().style("width:100%; min-height:300px; height:320px; position:relative; margin-bottom:18px; box-sizing:border-box;"));
 
         // Datatable breakdown
         List<Widget> tableHeaders = List.of(
@@ -97,11 +100,29 @@ public final class EngineHierarchyChartPanel {
         datatable.modifier(new Modifier().cssClass("jettra-table"));
 
         Widget tableContainer = Div.of(datatable)
-            .modifier(new Modifier().cssClass("table-responsive").style("max-height:260px; overflow-y:auto; border:1px solid var(--j-border); border-radius:8px;"));
+            .modifier(new Modifier().cssClass("table-responsive").style("width:100%; border:1px solid var(--jf-border, var(--j-border)); border-radius:8px; overflow-x:auto; margin-bottom:8px;"));
 
-        return Div.of(header, barChart, tableContainer)
+        // Embedded scrollbar styling referencing JettraFlux tokens
+        Widget scrollbarStyles = RawHtml.of(
+            "<style>\n" +
+            "  .storage-hierarchy-scroll-container::-webkit-scrollbar { width: 6px; height: 6px; }\n" +
+            "  .storage-hierarchy-scroll-container::-webkit-scrollbar-track { background: var(--jf-surface, var(--j-bg-surface, #ffffff)); border-radius: 4px; }\n" +
+            "  .storage-hierarchy-scroll-container::-webkit-scrollbar-thumb { background: var(--jf-accent, var(--j-primary, #0284c7)); border-radius: 4px; }\n" +
+            "  .storage-hierarchy-scroll-container::-webkit-scrollbar-thumb:hover { background: var(--jf-focus-ring, var(--j-primary-hover, #0369a1)); }\n" +
+            "</style>"
+        );
+
+        // Fluid vertical scroll container preventing any chart or table truncation
+        Widget scrollableContent = Div.of(chartWrapper, tableContainer, scrollbarStyles)
+            .modifier(new Modifier()
+                .cssClass("storage-hierarchy-scroll-container")
+                .style("width:100%; max-height:580px; overflow-y:auto; overflow-x:hidden; flex-grow:1; min-height:0; padding-right:6px; box-sizing:border-box; " +
+                       "scrollbar-width:thin; scrollbar-color:var(--jf-accent, var(--j-primary, #0284c7)) var(--jf-surface, var(--j-bg-surface, #ffffff));")
+            );
+
+        return Div.of(header, scrollableContent)
             .modifier(new Modifier()
                 .cssClass("store-card")
-                .style("background:var(--j-bg-surface); border:1px solid var(--j-border); border-radius:10px; padding:18px; box-shadow:0 2px 8px rgba(0,0,0,0.05); margin-bottom:24px; width:100%;"));
+                .style("background:var(--jf-surface, var(--j-bg-surface)); border:1px solid var(--jf-border, var(--j-border)); border-radius:10px; padding:18px; box-shadow:0 2px 8px rgba(0,0,0,0.05); margin-bottom:24px; width:100%; display:flex; flex-direction:column; box-sizing:border-box;"));
     }
 }
