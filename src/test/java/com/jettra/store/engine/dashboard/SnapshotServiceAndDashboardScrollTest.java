@@ -129,6 +129,21 @@ public class SnapshotServiceAndDashboardScrollTest {
     }
 
     @Test
+    @DisplayName("SnapshotService creates snapshot specifically in engine.getStorageDir()/snapshot")
+    void testCreateSnapshotInEngineStorageDir() throws IOException {
+        ComprehensiveDashboardSnapshot snapshot = collector.collectSnapshot();
+        Path storageDir = engine.getStorageDir();
+        Path snapshotPath = SnapshotService.createSnapshot(storageDir, snapshot, "root", "Matrix", ColorMode.DARK);
+
+        assertNotNull(snapshotPath);
+        assertTrue(Files.exists(snapshotPath));
+        assertEquals(storageDir.resolve("snapshot"), snapshotPath.getParent(),
+            "Snapshot must be saved in the snapshot subdirectory of the database storage directory");
+
+        Files.deleteIfExists(snapshotPath);
+    }
+
+    @Test
     @DisplayName("EngineHierarchyChartPanel includes scrollableContent and theme-styled scrollbar")
     void testEngineHierarchyChartPanelScrollableLayout() {
         ComprehensiveDashboardSnapshot snapshot = collector.collectSnapshot();

@@ -179,7 +179,7 @@ public class JettraServerOrchestrator {
 
                     com.jettra.store.engine.dashboard.DashboardMetricsCollector collector = new com.jettra.store.engine.dashboard.DashboardMetricsCollector(engine);
                     com.jettra.store.engine.dashboard.DashboardMetrics.ComprehensiveDashboardSnapshot snap = collector.collectSnapshot();
-                    java.nio.file.Path snapPath = com.jettra.store.engine.dashboard.SnapshotService.createSnapshot(snap, "root", "Matrix", io.jettra.flux.theme.ColorMode.DARK);
+                    java.nio.file.Path snapPath = com.jettra.store.engine.dashboard.SnapshotService.createSnapshot(engine.getStorageDir(), snap, "root", "Matrix", io.jettra.flux.theme.ColorMode.DARK);
 
                     String resp = String.format(
                         "{\"success\":true,\"status\":\"Backup initiated\",\"fileName\":\"%s\",\"path\":\"%s\"}",

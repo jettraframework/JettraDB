@@ -27,10 +27,41 @@ public final class SnapshotService {
     private SnapshotService() {}
 
     /**
-     * Resolves the target directory for snapshots.
-     * Attempts root /data/snapshot first; falls back to local data/snapshot if root is not writable.
+     * Resolves the target directory for snapshots based on the database storage directory.
+     * The snapshot subdirectory is created inside the database storage directory (e.g. /data/snapshot or storageDir/snapshot).
+     *
+     * @param storageDir database storage directory (e.g. from engine.getStorageDir()), or null to auto-discover
+     * @return Path to the snapshot directory
      */
-    public static Path resolveSnapshotDirectory() {
+    public static Path resolveSnapshotDirectory(Path storageDir) {
+        if (storageDir != null) {
+            Path snapshotDir = storageDir.resolve("snapshot");
+            try {
+                if (!Files.exists(snapshotDir)) {
+                    Files.createDirectories(snapshotDir);
+                }
+                return snapshotDir;
+            } catch (IOException ignored) {
+                // If the specified storageDir cannot be created or written to, try fallback
+            }
+        }
+
+        // Check system property or environment variable for database storage directory
+        String configuredDir = System.getProperty("jettra.data.dir", System.getenv("JETTRA_DATA_DIR"));
+        if (configuredDir != null && !configuredDir.isBlank()) {
+            if (configuredDir.startsWith("~/")) {
+                configuredDir = System.getProperty("user.home") + configuredDir.substring(1);
+            }
+            Path dir = Path.of(configuredDir).resolve("snapshot");
+            try {
+                if (!Files.exists(dir)) {
+                    Files.createDirectories(dir);
+                }
+                return dir;
+            } catch (Exception ignored) {}
+        }
+
+        // Try /data/snapshot (standard root database storage directory)
         Path rootTarget = Path.of("/data/snapshot");
         try {
             if (!Files.exists(rootTarget)) {
@@ -43,6 +74,7 @@ public final class SnapshotService {
             // Root path not accessible without elevated system privileges
         }
 
+        // Fallback to local working directory data/snapshot (./data/snapshot)
         Path localTarget = Path.of(System.getProperty("user.dir"), "data", "snapshot");
         try {
             if (!Files.exists(localTarget)) {
@@ -50,21 +82,31 @@ public final class SnapshotService {
             }
             return localTarget;
         } catch (IOException e) {
-            throw new RuntimeException("Could not create local snapshot directory: " + localTarget, e);
+            throw new RuntimeException("Could not create snapshot directory in data path: " + localTarget, e);
         }
     }
 
     /**
-     * Captures and persists a comprehensive Markdown snapshot of the dashboard metrics.
+     * Resolves the default snapshot directory.
+     */
+    public static Path resolveSnapshotDirectory() {
+        return resolveSnapshotDirectory(null);
+    }
+
+    /**
+     * Captures and persists a comprehensive Markdown snapshot of the dashboard metrics
+     * inside the snapshot subdirectory of the database storage directory.
      *
-     * @param snapshot   immutable snapshot DTO
-     * @param user       authenticated user or session identifier
-     * @param themeName  active visual theme (e.g. "Matrix")
-     * @param colorMode  active color mode (WHITE / DARK)
+     * @param baseStorageDir path to database storage directory (engine.getStorageDir())
+     * @param snapshot       immutable snapshot DTO
+     * @param user           authenticated user or session identifier
+     * @param themeName      active visual theme (e.g. "Matrix")
+     * @param colorMode      active color mode (WHITE / DARK)
      * @return Path of the persisted Markdown snapshot file
      * @throws IOException if writing to disk fails
      */
     public static Path createSnapshot(
+        Path baseStorageDir,
         ComprehensiveDashboardSnapshot snapshot,
         String user,
         String themeName,
@@ -79,7 +121,7 @@ public final class SnapshotService {
 
         String markdownContent = generateMarkdown(snapshot, effectiveUser, effectiveTheme, effectiveMode, now);
 
-        Path snapshotDir = resolveSnapshotDirectory();
+        Path snapshotDir = resolveSnapshotDirectory(baseStorageDir);
         String fileName = "snapshot-" + now.format(FILE_NAME_FORMATTER) + ".md";
         Path targetPath = snapshotDir.resolve(fileName);
         Path tempPath = snapshotDir.resolve(fileName + ".tmp." + System.nanoTime());
@@ -99,10 +141,36 @@ public final class SnapshotService {
     }
 
     /**
+     * Captures and persists a comprehensive Markdown snapshot of the dashboard metrics.
+     *
+     * @param snapshot   immutable snapshot DTO
+     * @param user       authenticated user or session identifier
+     * @param themeName  active visual theme (e.g. "Matrix")
+     * @param colorMode  active color mode (WHITE / DARK)
+     * @return Path of the persisted Markdown snapshot file
+     * @throws IOException if writing to disk fails
+     */
+    public static Path createSnapshot(
+        ComprehensiveDashboardSnapshot snapshot,
+        String user,
+        String themeName,
+        ColorMode colorMode
+    ) throws IOException {
+        return createSnapshot(null, snapshot, user, themeName, colorMode);
+    }
+
+    /**
+     * Overload using baseStorageDir and default user session and active theme.
+     */
+    public static Path createSnapshot(Path baseStorageDir, ComprehensiveDashboardSnapshot snapshot) throws IOException {
+        return createSnapshot(baseStorageDir, snapshot, "root", "Matrix", ColorMode.DARK);
+    }
+
+    /**
      * Overload using defaults for user session and active theme.
      */
     public static Path createSnapshot(ComprehensiveDashboardSnapshot snapshot) throws IOException {
-        return createSnapshot(snapshot, "root", "Matrix", ColorMode.DARK);
+        return createSnapshot(null, snapshot, "root", "Matrix", ColorMode.DARK);
     }
 
     /**

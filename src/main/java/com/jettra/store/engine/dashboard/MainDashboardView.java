@@ -127,7 +127,8 @@ public final class MainDashboardView {
             "      var data = await res.json();\n" +
             "      var fname = data.fileName || data.snapshot || 'snapshot.md';\n" +
             "      var p = data.path || '/data/snapshot/' + fname;\n" +
-            "      showToast('Markdown Snapshot created: ' + fname + ' in ' + p, true);\n" +
+//            "      showToast('Markdown Snapshot created: ' + fname + ' in ' + p, true);\n" +
+            "      showToast('Markdown Snapshot created: ' + fname + ' ', true);\n" +
             "    } else {\n" +
             "      showToast('Snapshot generation failed (HTTP ' + res.status + ')', false);\n" +
             "    }\n" +

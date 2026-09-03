@@ -74,7 +74,7 @@ public class StoreDashboardPage extends StoreTemplatePage {
             : getColorModeCookie(exchange);
 
         try {
-            java.nio.file.Path path = SnapshotService.createSnapshot(snapshot, user, themeName, mode);
+            java.nio.file.Path path = SnapshotService.createSnapshot(engine.getStorageDir(), snapshot, user, themeName, mode);
             String json = String.format(
                 "{\"success\":true,\"fileName\":\"%s\",\"path\":\"%s\",\"size\":%d,\"timestamp\":\"%s\"}",
                 path.getFileName().toString(),
