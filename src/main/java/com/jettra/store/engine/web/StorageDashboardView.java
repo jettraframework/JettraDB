@@ -40,7 +40,7 @@ public final class StorageDashboardView {
         int objCount,
         int recCount
     ) {
-        return build(selectedEngine, targetDb, actionUrl, docCount, kvCount, vecCount, graphCount, tsCount, colCount, geoCount, objCount, recCount, "FlatTheme");
+        return build(selectedEngine, targetDb, actionUrl, docCount, kvCount, vecCount, graphCount, tsCount, colCount, geoCount, objCount, recCount, "Matrix");
     }
 
     public static Widget build(

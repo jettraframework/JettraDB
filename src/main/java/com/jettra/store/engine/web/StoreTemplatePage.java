@@ -74,35 +74,35 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
             "<link href='https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap' rel='stylesheet'>\n" +
             "<style>\n" +
             "  :root {\n" +
-            "    --j-bg-body: #f8fafc;\n" +
-            "    --j-bg-surface: #ffffff;\n" +
-            "    --j-bg-subsurface: #f1f5f9;\n" +
-            "    --j-text-primary: #0f172a;\n" +
-            "    --j-text-secondary: #475569;\n" +
-            "    --j-text-muted: #94a3b8;\n" +
-            "    --j-border: #e2e8f0;\n" +
-            "    --j-border-dark: #cbd5e1;\n" +
-            "    --j-primary: #0284c7;\n" +
-            "    --j-primary-hover: #0369a1;\n" +
-            "    --j-primary-light: #e0f2fe;\n" +
+            "    --j-bg-body: var(--jf-bg, #f8fafc);\n" +
+            "    --j-bg-surface: var(--jf-surface, #ffffff);\n" +
+            "    --j-bg-subsurface: var(--jf-surface-hover, #f1f5f9);\n" +
+            "    --j-text-primary: var(--jf-text-primary, #0f172a);\n" +
+            "    --j-text-secondary: var(--jf-text-secondary, #475569);\n" +
+            "    --j-text-muted: var(--jf-text-secondary, #94a3b8);\n" +
+            "    --j-border: var(--jf-border, #e2e8f0);\n" +
+            "    --j-border-dark: var(--jf-border, #cbd5e1);\n" +
+            "    --j-primary: var(--jf-accent, #0284c7);\n" +
+            "    --j-primary-hover: var(--jf-accent, #0369a1);\n" +
+            "    --j-primary-light: var(--jf-focus-ring, #e0f2fe);\n" +
             "    --j-accent-records: #10b981;\n" +
             "    --j-accent-docs: #38bdf8;\n" +
             "    --j-accent-vectors: #a855f7;\n" +
             "    --j-accent-graph: #ec4899;\n" +
             "    --j-accent-ts: #06b6d4;\n" +
             "  }\n" +
-            "  [data-theme='dark'], body.dark {\n" +
-            "    --j-bg-body: #0b0f19;\n" +
-            "    --j-bg-surface: #111827;\n" +
-            "    --j-bg-subsurface: #1f2937;\n" +
-            "    --j-text-primary: #f8fafc;\n" +
-            "    --j-text-secondary: #cbd5e1;\n" +
-            "    --j-text-muted: #64748b;\n" +
-            "    --j-border: rgba(255, 255, 255, 0.08);\n" +
-            "    --j-border-dark: rgba(255, 255, 255, 0.15);\n" +
-            "    --j-primary: #38bdf8;\n" +
-            "    --j-primary-hover: #7dd3fc;\n" +
-            "    --j-primary-light: rgba(56, 189, 248, 0.12);\n" +
+            "  [data-color-mode='dark'], [data-theme-mode='dark'], [data-theme='dark'], html.dark, body.dark {\n" +
+            "    --j-bg-body: var(--jf-bg, #0b0f19);\n" +
+            "    --j-bg-surface: var(--jf-surface, #111827);\n" +
+            "    --j-bg-subsurface: var(--jf-surface-hover, #1f2937);\n" +
+            "    --j-text-primary: var(--jf-text-primary, #f8fafc);\n" +
+            "    --j-text-secondary: var(--jf-text-secondary, #cbd5e1);\n" +
+            "    --j-text-muted: var(--jf-text-secondary, #64748b);\n" +
+            "    --j-border: var(--jf-border, rgba(255, 255, 255, 0.08));\n" +
+            "    --j-border-dark: var(--jf-border, rgba(255, 255, 255, 0.15));\n" +
+            "    --j-primary: var(--jf-accent, #38bdf8);\n" +
+            "    --j-primary-hover: var(--jf-accent, #7dd3fc);\n" +
+            "    --j-primary-light: var(--jf-focus-ring, rgba(56, 189, 248, 0.12));\n" +
             "  }\n" +
             "  * { box-sizing: border-box; margin: 0; padding: 0; }\n" +
             "  body, .jettra-studio-layout { min-height: 100vh; background-color: var(--j-bg-body); color: var(--j-text-primary); font-family: 'Inter', -apple-system, sans-serif; display: flex; overflow: hidden; }\n" +
@@ -173,7 +173,7 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
 
         // Build Top Bar Left & Right Groups Conditionally
         Widget topLeftGroup = buildTopLeftGroup(routeConfig, loggedUser, targetDb, selectedEngine, currentTab, databases);
-        Widget topRightGroup = buildTopRightGroup(routeConfig, selectedEngine, targetDb, currentColl);
+        Widget topRightGroup = buildTopRightGroup(routeConfig, selectedEngine, targetDb, currentColl, currentTheme);
 
         Widget topBar = Div.of(topLeftGroup, topRightGroup)
             .modifier(new Modifier().cssClass("jettra-top-bar"));
@@ -266,7 +266,8 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
         NavigationRouteConfig config,
         String selectedEngine,
         String targetDb,
-        String currentColl
+        String currentColl,
+        String currentTheme
     ) {
         List<Widget> rightItems = new ArrayList<>();
 
@@ -304,7 +305,7 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
         if (config.showThemeToggle()) {
             rightItems.add(
                 Div.of(
-                    ThemeChanged.of().modifier(new Modifier().style("margin-left: 4px;")),
+                    io.jettra.flux.widgets.ThemeSelectDropdown.of().current(currentTheme).asNativeSelect(true).modifier(new Modifier().style("margin-left: 4px;")),
                     io.jettra.flux.widgets.ThemeModeToggle.of().size(18).modifier(new Modifier().style("margin-left: 4px;"))
                 ).modifier(new Modifier().style("display:inline-flex; align-items:center; gap:4px;"))
             );
