@@ -26,12 +26,17 @@ public class JettraFileManager {
         this.fileChannel = raf.getChannel();
     }
 
+    public synchronized long append(byte[] data) throws IOException {
+        return append(data, false);
+    }
+
     /**
      * Appends a block of data to the end of the file.
      * @param data The byte array to append.
+     * @param forceSync If true, immediately invokes fileChannel.force(false)
      * @return The offset at which the data was written.
      */
-    public synchronized long append(byte[] data) throws IOException {
+    public synchronized long append(byte[] data, boolean forceSync) throws IOException {
         long offset = fileChannel.size();
         fileChannel.position(offset);
         
@@ -45,9 +50,19 @@ public class JettraFileManager {
             fileChannel.write(buffer);
         }
         
-        // Force flush to disk (simulating write-ahead log safety)
-        fileChannel.force(false);
+        if (forceSync) {
+            fileChannel.force(false);
+        }
         return offset;
+    }
+
+    /**
+     * Forces any updates to this file's channel to be written to the storage device.
+     */
+    public synchronized void force() throws IOException {
+        if (fileChannel != null && fileChannel.isOpen()) {
+            fileChannel.force(false);
+        }
     }
 
     /**

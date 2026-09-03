@@ -84,14 +84,31 @@ public class LsmBTreeHybrid {
             return dbDirectory;
         }
 
+        public void loadInitialRecord(String key, byte[] data, long timestamp) {
+            if (key == null || data == null) return;
+            ConcurrentSkipListMap<Long, byte[]> history = versionHistory.computeIfAbsent(key, k -> new ConcurrentSkipListMap<>());
+            long effectiveTs = timestamp;
+            if (!history.isEmpty() && history.lastKey() >= effectiveTs) {
+                effectiveTs = history.lastKey() + 1;
+            }
+            history.put(effectiveTs, data);
+            String versionedKey = key + "@" + effectiveTs;
+            memTable.put(versionedKey, data);
+        }
+
         private void loadFromWal() {
             if (!Files.exists(journalFile)) {
                 return;
             }
             try (java.io.DataInputStream dis = new java.io.DataInputStream(
                     new java.io.BufferedInputStream(Files.newInputStream(journalFile)))) {
-                while (dis.available() > 0) {
-                    String key = dis.readUTF();
+                while (true) {
+                    String key;
+                    try {
+                        key = dis.readUTF();
+                    } catch (java.io.EOFException eof) {
+                        break;
+                    }
                     long ts = dis.readLong();
                     int len = dis.readInt();
                     byte[] data = new byte[len];
@@ -114,7 +131,6 @@ public class LsmBTreeHybrid {
                         memTable.put(key + "@" + ts, new byte[0]);
                     }
                 }
-            } catch (java.io.EOFException ignored) {
             } catch (IOException e) {
                 System.err.println("Warning while loading WAL for database [" + dbName + "]: " + e.getMessage());
             }
@@ -324,11 +340,12 @@ public class LsmBTreeHybrid {
             if (fileManager == null || memTable.isEmpty()) return;
             try {
                 for (Map.Entry<String, byte[]> entry : memTable.entrySet()) {
-                    long offset = fileManager.append(entry.getValue());
+                    long offset = fileManager.append(entry.getValue(), false);
                     String k = entry.getKey();
                     String baseKey = k.contains("@") ? k.substring(0, k.lastIndexOf('@')) : k;
                     diskIndex.put(baseKey, offset);
                 }
+                fileManager.force();
                 memTable.clear();
             } catch (IOException e) {
                 System.err.println("Error flushing MemTable for database [" + dbName + "]: " + e.getMessage());
@@ -416,20 +433,46 @@ public class LsmBTreeHybrid {
     }
 
     private void migrateLegacyWal(Path legacyWal) {
+        System.out.println("[LsmBTreeHybrid] Migrating legacy root WAL (" + legacyWal.getFileName() + ")...");
+        long start = System.currentTimeMillis();
+        int migratedCount = 0;
         try (java.io.DataInputStream dis = new java.io.DataInputStream(
                 new java.io.BufferedInputStream(Files.newInputStream(legacyWal)))) {
-            while (dis.available() > 0) {
-                String key = dis.readUTF();
+            while (true) {
+                String key;
+                try {
+                    key = dis.readUTF();
+                } catch (java.io.EOFException eof) {
+                    break;
+                }
                 long ts = dis.readLong();
                 int len = dis.readInt();
                 byte[] data = new byte[len];
                 if (len > 0) {
                     dis.readFully(data);
                     String db = extractDatabaseFromKey(key);
-                    getPartition(db).put(key, data, ts);
+                    getPartition(db).loadInitialRecord(key, data, ts);
+                    migratedCount++;
                 }
             }
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            System.err.println("[LsmBTreeHybrid] Warning during legacy WAL migration: " + e.getMessage());
+        }
+
+        // Flush partitions that received legacy records
+        for (DatabasePartition partition : partitions.values()) {
+            partition.flushToBTree();
+        }
+
+        // Once migration is complete, rename the legacy WAL so it never runs again
+        try {
+            Path migratedPath = legacyWal.resolveSibling(legacyWal.getFileName() + ".migrated");
+            Files.move(legacyWal, migratedPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            long elapsed = System.currentTimeMillis() - start;
+            System.out.println("[LsmBTreeHybrid] Legacy WAL migration completed (" + migratedCount + " records in " + elapsed + "ms) and archived to " + migratedPath.getFileName());
+        } catch (IOException e) {
+            System.err.println("[LsmBTreeHybrid] Warning renaming migrated legacy WAL: " + e.getMessage());
+        }
     }
 
     /**
