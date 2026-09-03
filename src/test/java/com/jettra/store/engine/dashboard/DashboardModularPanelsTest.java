@@ -221,8 +221,9 @@ public class DashboardModularPanelsTest {
         String html = storageDash.render(Themes.SL());
         assertNotNull(html);
         assertTrue(html.contains("Quick Database & Storage Actions"));
-        // Assert Presence of Theme Selector Menu
-        assertTrue(html.contains("jettra-theme-selector-menu") || html.contains("Select Theme"));
+        // Assert Presence of Theme Select Dropdown
+        assertTrue(html.contains("<select") && html.contains("jettra-theme-select-native"));
+        assertTrue(html.contains("<option value=\"FlatTheme\""));
         // Assert Presence of White/Dark Toggle
         assertTrue(html.contains("jettra-theme-mode-toggle") || html.contains("jettra-theme-icon-"));
         assertTrue(html.contains("data-next-mode"));

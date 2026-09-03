@@ -86,9 +86,9 @@ public final class StorageDashboardView {
                 Button.of(Icon.of("fas fa-cubes").modifier(new Modifier().style("margin-right:4px; color:#ec4899;")), Text.of("Sample Datasets"))
                     .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openSampleDatabasesModal()").cssClass("btn-studio-secondary").style("padding:6px 12px; font-size:11.5px; color:#ec4899;")),
 
-                // Adjacent Theme Selector & White/Dark Mode Toggle
+                // Adjacent Theme <select> Dropdown & White/Dark Mode Toggle
                 Div.of(
-                    ThemeSelectorMenu.of().current(currentTheme),
+                    ThemeSelectDropdown.of().current(currentTheme).asNativeSelect(true),
                     ThemeModeToggle.of().size(16)
                 ).modifier(new Modifier().style("display:inline-flex; align-items:center; gap:6px; margin-left:6px; padding-left:8px; border-left:1px solid var(--j-border);"))
             ).modifier(new Modifier().style("display:flex; align-items:center; flex-wrap:wrap; gap:6px;"))
