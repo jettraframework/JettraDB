@@ -40,9 +40,27 @@ public final class StorageDashboardView {
         int objCount,
         int recCount
     ) {
+        return build(selectedEngine, targetDb, actionUrl, docCount, kvCount, vecCount, graphCount, tsCount, colCount, geoCount, objCount, recCount, "FlatTheme");
+    }
+
+    public static Widget build(
+        String selectedEngine,
+        String targetDb,
+        String actionUrl,
+        int docCount,
+        int kvCount,
+        int vecCount,
+        int graphCount,
+        int tsCount,
+        int colCount,
+        int geoCount,
+        int objCount,
+        int recCount,
+        String currentTheme
+    ) {
         int totalRecords = docCount + kvCount + vecCount + graphCount + tsCount + colCount + geoCount + objCount + recCount;
 
-        // 1. Quick Actions Bar
+        // 1. Quick Actions Bar with Theme Selector and adjacent White/Dark Toggle
         Widget quickActionsBar = Div.of(
             Div.of(
                 Icon.of("fas fa-rocket").modifier(new Modifier().style("color:#ec4899; font-size:16px; margin-right:10px;")),
@@ -66,7 +84,13 @@ public final class StorageDashboardView {
                     Text.of("Hierarchy Tree")
                 ).modifier(new Modifier().cssClass("btn-studio-secondary").style("padding:6px 12px; font-size:11.5px; margin-right:8px; text-decoration:none; display:inline-flex; align-items:center;")),
                 Button.of(Icon.of("fas fa-cubes").modifier(new Modifier().style("margin-right:4px; color:#ec4899;")), Text.of("Sample Datasets"))
-                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openSampleDatabasesModal()").cssClass("btn-studio-secondary").style("padding:6px 12px; font-size:11.5px; color:#ec4899;"))
+                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openSampleDatabasesModal()").cssClass("btn-studio-secondary").style("padding:6px 12px; font-size:11.5px; color:#ec4899;")),
+
+                // Adjacent Theme Selector & White/Dark Mode Toggle
+                Div.of(
+                    ThemeSelectorMenu.of().current(currentTheme),
+                    ThemeModeToggle.of().size(16)
+                ).modifier(new Modifier().style("display:inline-flex; align-items:center; gap:6px; margin-left:6px; padding-left:8px; border-left:1px solid var(--j-border);"))
             ).modifier(new Modifier().style("display:flex; align-items:center; flex-wrap:wrap; gap:6px;"))
         ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; padding:14px 18px; background:var(--j-bg-surface); border:1px solid var(--j-border); border-radius:10px; flex-wrap:wrap; gap:12px; margin-bottom:16px;"));
 

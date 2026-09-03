@@ -209,4 +209,22 @@ public class DashboardModularPanelsTest {
         assertTrue(renderedHtml.contains("Quick Operations"));
         assertTrue(renderedHtml.contains("Network Endpoints"));
     }
+
+    @Test
+    @DisplayName("Test 6: StorageDashboardView contains ThemeSelectorMenu and adjacent ThemeModeToggle")
+    void testStorageDashboardViewAdjacentThemeControls() {
+        Widget storageDash = com.jettra.store.engine.web.StorageDashboardView.build(
+            "DOCUMENT", "customers_db", "/engines?engine=", 10, 5, 2, 0, 100, 20, 0, 1, 4, "SL"
+        );
+        assertNotNull(storageDash);
+
+        String html = storageDash.render(Themes.SL());
+        assertNotNull(html);
+        assertTrue(html.contains("Quick Database & Storage Actions"));
+        // Assert Presence of Theme Selector Menu
+        assertTrue(html.contains("jettra-theme-selector-menu") || html.contains("Select Theme"));
+        // Assert Presence of White/Dark Toggle
+        assertTrue(html.contains("jettra-theme-mode-toggle") || html.contains("jettra-theme-icon-"));
+        assertTrue(html.contains("data-next-mode"));
+    }
 }

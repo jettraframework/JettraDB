@@ -302,7 +302,12 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
         }
 
         if (config.showThemeToggle()) {
-            rightItems.add(ThemeChanged.of().modifier(new Modifier().style("margin-left: 4px;")));
+            rightItems.add(
+                Div.of(
+                    ThemeChanged.of().modifier(new Modifier().style("margin-left: 4px;")),
+                    io.jettra.flux.widgets.ThemeModeToggle.of().size(18).modifier(new Modifier().style("margin-left: 4px;"))
+                ).modifier(new Modifier().style("display:inline-flex; align-items:center; gap:4px;"))
+            );
         }
 
         return Div.of(rightItems.toArray(new Widget[0]))

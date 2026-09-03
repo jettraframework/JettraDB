@@ -820,7 +820,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
         String currentCollection = params != null && params.containsKey("coll") ? params.get("coll") : "default";
 
         // Two-Column Studio Layout: Left TYPES sidebar + Right workspace canvas matching screenshot
-        Widget studioLayout = createStudioWorkspaceLayout(selectedEngine, targetDb, currentCollection, alertWidget, params);
+        Widget studioLayout = createStudioWorkspaceLayout(selectedEngine, targetDb, currentCollection, alertWidget, params, currentTheme);
 
         Widget modalsWidget = createEngineModals(selectedEngine, targetDb, currentCollection);
 
@@ -830,7 +830,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
         ).modifier(new Modifier().style("width:100%; height:100%; display:flex; flex-direction:column; overflow:hidden;"));
     }
 
-    private Widget createStudioWorkspaceLayout(String selectedEngine, String targetDb, String currentColl, Widget alertWidget, Map<String, String> params) {
+    private Widget createStudioWorkspaceLayout(String selectedEngine, String targetDb, String currentColl, Widget alertWidget, Map<String, String> params, String currentTheme) {
         String actionUrl = JettraServer.resolvePath("/engines?engine=");
         String currentTab = params != null ? params.getOrDefault("tab", "schema").toLowerCase() : "schema";
         boolean hasExplicitSelection = params != null && (params.containsKey("coll") || params.containsKey("view_mode") || params.containsKey("engine"));
@@ -893,7 +893,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
         // Main Right Canvas
         Widget canvasContent;
         if ("dashboard".equalsIgnoreCase(params != null ? params.get("view_mode") : "") || ("schema".equals(currentTab) && !hasExplicitSelection)) {
-            canvasContent = createMainDashboardView(selectedEngine, targetDb, actionUrl, docCount, kvCount, vecCount, verticesCount + edgesCount, tsCount, colCount, geoCount, objCount, recCount);
+            canvasContent = createMainDashboardView(selectedEngine, targetDb, actionUrl, docCount, kvCount, vecCount, verticesCount + edgesCount, tsCount, colCount, geoCount, objCount, recCount, currentTheme);
         } else {
             canvasContent = createHierarchyTreeCard(selectedEngine, targetDb, currentColl, params);
         }
@@ -922,8 +922,9 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
     private Widget createMainDashboardView(String selectedEngine, String targetDb, String actionUrl,
                                            int docCount, int kvCount, int vecCount, int graphCount,
-                                           int tsCount, int colCount, int geoCount, int objCount, int recCount) {
-        return StorageDashboardView.build(selectedEngine, targetDb, actionUrl, docCount, kvCount, vecCount, graphCount, tsCount, colCount, geoCount, objCount, recCount);
+                                           int tsCount, int colCount, int geoCount, int objCount, int recCount,
+                                           String currentTheme) {
+        return StorageDashboardView.build(selectedEngine, targetDb, actionUrl, docCount, kvCount, vecCount, graphCount, tsCount, colCount, geoCount, objCount, recCount, currentTheme);
     }
 
     private Widget createMiniEngineLegend(String label, int count, String color) {
