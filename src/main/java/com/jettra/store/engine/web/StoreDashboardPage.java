@@ -49,6 +49,16 @@ public class StoreDashboardPage extends StoreTemplatePage {
     }
 
     @Override
+    protected boolean onGet(HttpExchange exchange, Map<String, String> params) throws java.io.IOException {
+        String action = params != null ? params.get("action") : null;
+        if ("download".equalsIgnoreCase(action)) {
+            handleDownloadRequest(exchange, params);
+            return true;
+        }
+        return super.onGet(exchange, params);
+    }
+
+    @Override
     protected boolean onPost(HttpExchange exchange, Map<String, String> params) throws java.io.IOException {
         String query = exchange.getRequestURI().getQuery();
         String action = params != null ? params.get("action") : null;
@@ -74,12 +84,28 @@ public class StoreDashboardPage extends StoreTemplatePage {
             : getColorModeCookie(exchange);
 
         try {
-            java.nio.file.Path path = SnapshotService.createSnapshot(engine.getStorageDir(), snapshot, user, themeName, mode);
+            com.jettra.store.engine.dashboard.CreateSnapshotCommand command =
+                new com.jettra.store.engine.dashboard.CreateSnapshotCommand(engine.getStorageDir(), snapshot, user, themeName, mode);
+            io.jettra.flux.download.DownloadResource resource = command.execute();
+
+            String fileName = resource.fileName();
+            String downloadUrl = io.jettra.server.JettraServer.resolvePath("/dashboard?action=download&file=" + fileName);
+
+            if (params != null && "true".equalsIgnoreCase(params.get("stream"))) {
+                io.jettra.flux.download.JettraDownloadHandler.sendDownload(exchange, resource);
+                return;
+            }
+
+            java.nio.file.Path snapshotPath = SnapshotService.resolveSnapshotDirectory(engine.getStorageDir()).resolve(fileName);
+            long size = resource.contentLength() >= 0 ? resource.contentLength()
+                : (java.nio.file.Files.exists(snapshotPath) ? java.nio.file.Files.size(snapshotPath) : 0L);
+
             String json = String.format(
-                "{\"success\":true,\"fileName\":\"%s\",\"path\":\"%s\",\"size\":%d,\"timestamp\":\"%s\"}",
-                path.getFileName().toString(),
-                path.toAbsolutePath().toString().replace("\\", "/"),
-                java.nio.file.Files.size(path),
+                "{\"success\":true,\"fileName\":\"%s\",\"path\":\"%s\",\"size\":%d,\"downloadUrl\":\"%s\",\"timestamp\":\"%s\"}",
+                fileName,
+                snapshotPath.toAbsolutePath().toString().replace("\\", "/"),
+                size,
+                downloadUrl,
                 java.time.LocalDateTime.now().toString()
             );
             byte[] bytes = json.getBytes(java.nio.charset.StandardCharsets.UTF_8);
@@ -96,6 +122,45 @@ public class StoreDashboardPage extends StoreTemplatePage {
             try (java.io.OutputStream os = exchange.getResponseBody()) {
                 os.write(bytes);
             }
+        }
+    }
+
+    private void handleDownloadRequest(HttpExchange exchange, Map<String, String> params) throws java.io.IOException {
+        String fileName = params != null ? params.get("file") : null;
+        if (fileName == null || fileName.isBlank()) {
+            sendError(exchange, 400, "Missing required 'file' parameter");
+            return;
+        }
+
+        try {
+            String safeName = io.jettra.flux.download.DownloadSecurity.sanitizeFileName(fileName);
+            java.nio.file.Path snapshotDir = SnapshotService.resolveSnapshotDirectory(engine.getStorageDir());
+            java.nio.file.Path targetFile = snapshotDir.resolve(safeName);
+
+            io.jettra.flux.download.DownloadSecurity.validatePathWithinDirectory(snapshotDir, targetFile);
+
+            if (!java.nio.file.Files.exists(targetFile)) {
+                sendError(exchange, 404, "Snapshot file not found: " + safeName);
+                return;
+            }
+
+            io.jettra.flux.download.DownloadResource resource =
+                io.jettra.flux.download.DownloadResource.ofPath(targetFile, "text/markdown; charset=UTF-8", false);
+            io.jettra.flux.download.JettraDownloadHandler.sendDownload(exchange, resource);
+        } catch (SecurityException se) {
+            sendError(exchange, 403, "Access denied: " + se.getMessage());
+        } catch (Exception e) {
+            sendError(exchange, 500, "Download error: " + e.getMessage());
+        }
+    }
+
+    private void sendError(HttpExchange exchange, int statusCode, String message) throws java.io.IOException {
+        String errJson = String.format("{\"success\":false,\"error\":\"%s\"}", message != null ? message.replace("\"", "\\\"") : "Error");
+        byte[] bytes = errJson.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
+        exchange.sendResponseHeaders(statusCode, bytes.length);
+        try (java.io.OutputStream os = exchange.getResponseBody()) {
+            os.write(bytes);
         }
     }
 }

@@ -60,8 +60,9 @@ public final class MainDashboardView {
         // 6. Quick Operations & Network Interfaces Panel
         Widget bottomPanel = QuickActionsAndEndpointsPanel.build();
 
-        // 7. Client-side backup trigger script with non-invasive toast feedback and button state management
+        // 7. Client-side backup trigger script with native JettraFlux download driver, toast feedback, and button state
         Widget backupScript = RawScript.of(
+            io.jettra.flux.download.FluxDownload.renderClientDriverScript() + "\n" +
             "async function triggerBackup(btn) {\n" +
             "  if (!btn) btn = document.getElementById('btnCreateBackupSnapshot');\n" +
             "  var origHtml = btn ? btn.innerHTML : '';\n" +
@@ -126,9 +127,19 @@ public final class MainDashboardView {
             "    if (res.ok) {\n" +
             "      var data = await res.json();\n" +
             "      var fname = data.fileName || data.snapshot || 'snapshot.md';\n" +
-            "      var p = data.path || '/data/snapshot/' + fname;\n" +
-//            "      showToast('Markdown Snapshot created: ' + fname + ' in ' + p, true);\n" +
-            "      showToast('Markdown Snapshot created: ' + fname + ' ', true);\n" +
+            "      var dlUrl = data.downloadUrl || ('" + JettraServer.resolvePath("/dashboard?action=download&file=") + "' + encodeURIComponent(fname));\n" +
+            "      if (window.jettraTriggerDownload) {\n" +
+            "        window.jettraTriggerDownload(dlUrl, fname);\n" +
+            "      } else {\n" +
+            "        var a = document.createElement('a');\n" +
+            "        a.href = dlUrl;\n" +
+            "        a.setAttribute('download', fname);\n" +
+            "        a.style.display = 'none';\n" +
+            "        document.body.appendChild(a);\n" +
+            "        a.click();\n" +
+            "        setTimeout(function() { if (a.parentNode) a.parentNode.removeChild(a); }, 300);\n" +
+            "      }\n" +
+            "      showToast('Markdown Snapshot created and downloading: ' + fname, true);\n" +
             "    } else {\n" +
             "      showToast('Snapshot generation failed (HTTP ' + res.status + ')', false);\n" +
             "    }\n" +
