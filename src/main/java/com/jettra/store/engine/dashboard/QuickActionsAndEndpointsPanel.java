@@ -39,7 +39,7 @@ public final class QuickActionsAndEndpointsPanel {
             ).modifier(new Modifier().style("display:flex; flex-wrap:wrap; gap:8px; align-items:center;"))
         ).modifier(new Modifier()
             .cssClass("store-card")
-            .style("background:var(--j-bg-surface); border:1px solid var(--j-border); border-radius:10px; padding:18px; box-shadow:0 2px 8px rgba(0,0,0,0.05); flex:1; min-width:280px;"));
+            .style("background:var(--j-bg-surface); border:1px solid var(--j-border); border-radius:10px; padding:18px; box-shadow:0 2px 8px rgba(0,0,0,0.05); flex:1; min-width:280px; box-sizing:border-box;"));
 
         // Right: Network Endpoints Card
         Widget endpointsCard = Div.of(
@@ -55,10 +55,10 @@ public final class QuickActionsAndEndpointsPanel {
             ).modifier(new Modifier().style("display:flex; flex-direction:column; gap:4px;"))
         ).modifier(new Modifier()
             .cssClass("store-card")
-            .style("background:var(--j-bg-surface); border:1px solid var(--j-border); border-radius:10px; padding:18px; box-shadow:0 2px 8px rgba(0,0,0,0.05); flex:1; min-width:280px;"));
+            .style("background:var(--j-bg-surface); border:1px solid var(--j-border); border-radius:10px; padding:18px; box-shadow:0 2px 8px rgba(0,0,0,0.05); flex:1; min-width:280px; box-sizing:border-box;"));
 
         return Div.of(quickOpsCard, endpointsCard)
-            .modifier(new Modifier().style("display:flex; flex-wrap:wrap; gap:16px; margin-bottom:24px; width:100%;"));
+            .modifier(new Modifier().style("display:flex; flex-wrap:wrap; gap:16px; margin-bottom:24px; width:100%; box-sizing:border-box;"));
     }
 
     private static Widget createEndpointRow(String label, String endpoint) {

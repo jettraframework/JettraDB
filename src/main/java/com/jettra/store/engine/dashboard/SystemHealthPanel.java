@@ -85,7 +85,7 @@ public final class SystemHealthPanel {
         return Div.of(header, grid)
             .modifier(new Modifier()
                 .cssClass("store-card")
-                .style("background:var(--j-bg-surface); border:1px solid var(--j-border); border-radius:10px; padding:18px; box-shadow:0 2px 8px rgba(0,0,0,0.05); margin-bottom:24px; width:100%;"));
+                .style("background:var(--j-bg-surface); border:1px solid var(--j-border); border-radius:10px; padding:18px; box-shadow:0 2px 8px rgba(0,0,0,0.05); margin-bottom:24px; width:100%; box-sizing:border-box;"));
     }
 
     private static Widget createHealthItem(

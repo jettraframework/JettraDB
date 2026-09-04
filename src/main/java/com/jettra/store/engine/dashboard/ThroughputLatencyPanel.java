@@ -44,6 +44,6 @@ public final class ThroughputLatencyPanel {
         return Div.of(header, lineChart)
             .modifier(new Modifier()
                 .cssClass("store-card")
-                .style("background:var(--j-bg-surface); border:1px solid var(--j-border); border-radius:10px; padding:18px; box-shadow:0 2px 8px rgba(0,0,0,0.05); flex:1; min-width:320px;"));
+                .style("background:var(--j-bg-surface); border:1px solid var(--j-border); border-radius:10px; padding:18px; box-shadow:0 2px 8px rgba(0,0,0,0.05); flex:1; min-width:320px; box-sizing:border-box;"));
     }
 }

@@ -40,7 +40,7 @@ public final class MainDashboardView {
                     Text.of("Hierarchy Explorer")
                 ).modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:8px 16px; font-size:12px; font-weight:600; margin-left:10px;"))
             ).modifier(new Modifier().style("display:flex; align-items:center; flex-wrap:wrap; gap:8px;"))
-        ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:12px;"));
+        ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:12px; width:100%; box-sizing:border-box;"));
 
         // 2. Top KPI Summary Cards Row
         Widget kpiRow = KpiSummaryCardsPanel.build(snapshot.kpi());
@@ -49,7 +49,7 @@ public final class MainDashboardView {
         Widget chartsRow = Div.of(
             MultiModelDistributionPanel.build(snapshot.distribution()),
             ThroughputLatencyPanel.build(snapshot.telemetry())
-        ).modifier(new Modifier().style("display:flex; flex-wrap:wrap; gap:16px; margin-bottom:24px; width:100%;"));
+        ).modifier(new Modifier().style("display:flex; flex-wrap:wrap; gap:16px; margin-bottom:24px; width:100%; box-sizing:border-box;"));
 
         // 4. Storage Hierarchy Panel: Comparative Bar Chart + Namespaces Datatable
         Widget hierarchyPanel = EngineHierarchyChartPanel.build(snapshot.hierarchy());

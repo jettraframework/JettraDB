@@ -77,7 +77,7 @@ public final class KpiSummaryCardsPanel {
 
         return Div.of(cards.toArray(new Widget[0]))
             .modifier(new Modifier()
-                .style("display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:16px; margin-bottom:24px; width:100%;"));
+                .style("display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:16px; margin-bottom:24px; width:100%; box-sizing:border-box;"));
     }
 
     private static Widget createKpiCard(

@@ -108,7 +108,8 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
             "    --j-primary-light: var(--jf-focus-ring, rgba(56, 189, 248, 0.12));\n" +
             "  }\n" +
             "  * { box-sizing: border-box; margin: 0; padding: 0; }\n" +
-            "  body, .jettra-studio-layout { min-height: 100vh; background-color: var(--j-bg-body); color: var(--j-text-primary); font-family: 'Inter', -apple-system, sans-serif; display: flex; overflow: hidden; }\n" +
+            "  html, body { min-height: 100vh; width: 100%; margin: 0; padding: 0; background-color: var(--j-bg-body); color: var(--j-text-primary); font-family: 'Inter', -apple-system, sans-serif; overflow: hidden; }\n" +
+            "  .jettra-studio-layout { width: 100%; min-width: 100%; min-height: 100vh; height: 100vh; flex: 1; background-color: var(--j-bg-body); color: var(--j-text-primary); font-family: 'Inter', -apple-system, sans-serif; display: flex; flex-direction: row; overflow: hidden; box-sizing: border-box; }\n" +
             "  h1, h2, h3, h4, h5, .brand-font { font-family: 'Outfit', sans-serif; }\n" +
             "  code, pre, .mono { font-family: 'JetBrains Mono', monospace; }\n" +
             "  \n" +
@@ -125,10 +126,10 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
             "  .rail-item i { font-size: 17px; margin: 0; }\n" +
             "  \n" +
             "  /* Main Studio Canvas */\n" +
-            "  .jettra-main-area { flex: 1; display: flex; flex-direction: column; height: 100vh; overflow: hidden; background: var(--j-bg-body); }\n" +
+            "  .jettra-main-area { flex: 1; width: calc(100% - 54px); min-width: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; background: var(--j-bg-body); box-sizing: border-box; }\n" +
             "  \n" +
             "  /* Top Header Bar */\n" +
-            "  .jettra-top-bar { flex-shrink: 0; position: sticky; top: 0; min-height: 50px; background: var(--j-bg-surface); border-bottom: 1px solid var(--j-border); display: flex; align-items: center; justify-content: space-between; padding: 6px 16px; gap: 10px; z-index: 30; flex-wrap: wrap; }\n" +
+            "  .jettra-top-bar { width: 100%; min-width: 0; flex-shrink: 0; position: sticky; top: 0; min-height: 50px; background: var(--j-bg-surface); border-bottom: 1px solid var(--j-border); display: flex; align-items: center; justify-content: space-between; padding: 6px 16px; gap: 10px; z-index: 30; flex-wrap: wrap; box-sizing: border-box; }\n" +
             "  .top-left-group { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }\n" +
             "  .conn-chip { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 600; color: var(--j-text-primary); padding: 4px 10px; border-radius: 6px; cursor: pointer; user-select: none; }\n" +
             "  .conn-chip:hover { background: var(--j-bg-subsurface); }\n" +
@@ -149,14 +150,14 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
             "  .btn-studio-secondary:hover { color: var(--j-text-primary); border-color: var(--j-border-dark); background: var(--j-border); }\n" +
             "  \n" +
             "  /* Studio Workspace */\n" +
-            "  .jettra-workspace-body { flex: 1; display: flex; flex-direction: column; overflow-y: auto; overflow-x: hidden; outline: none; scrollbar-width: thin; scrollbar-color: var(--jf-accent, var(--j-primary, #0284c7)) transparent; min-height: 0; }\n" +
+            "  .jettra-workspace-body { width: 100%; min-width: 0; flex: 1; display: flex; flex-direction: column; overflow-y: auto; overflow-x: hidden; outline: none; scrollbar-width: thin; scrollbar-color: var(--jf-accent, var(--j-primary, #0284c7)) transparent; min-height: 0; box-sizing: border-box; }\n" +
             "  .jettra-workspace-body::-webkit-scrollbar { width: 8px; height: 8px; }\n" +
             "  .jettra-workspace-body::-webkit-scrollbar-track { background: transparent; }\n" +
             "  .jettra-workspace-body::-webkit-scrollbar-thumb { background-color: var(--jf-accent, var(--j-primary, #0284c7)); border-radius: 4px; }\n" +
             "  .jettra-workspace-body::-webkit-scrollbar-thumb:hover { background-color: var(--jf-accent-hover, var(--j-primary-hover, #0369a1)); }\n" +
             "  \n" +
             "  /* Content Wrapper for Sticky Footer */\n" +
-            "  .jettra-content-wrapper { flex: 1 0 auto; display: flex; flex-direction: column; width: 100%; min-height: 0; }\n" +
+            "  .jettra-content-wrapper { flex: 1 0 auto; display: flex; flex-direction: column; width: 100%; min-width: 100%; min-height: 0; box-sizing: border-box; }\n" +
             "  \n" +
             "  /* Badges & Shared UI elements */\n" +
             "  .store-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: 6px; font-size: 10px; font-weight: 600; text-transform: uppercase; }\n" +
@@ -211,12 +212,12 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
         Widget scaffold = Div.of(
             iconRail,
             mainArea
-        ).modifier(new Modifier().cssClass("jettra-studio-layout"));
+        ).modifier(new Modifier().cssClass("jettra-studio-layout").style("width:100%; min-width:100%; min-height:100vh; height:100vh; flex:1; display:flex; flex-direction:row; overflow:hidden; box-sizing:border-box;"));
 
         return Column.of(
             customCss,
             scaffold
-        );
+        ).modifier(new Modifier().style("width:100%; min-width:100%; min-height:100vh; height:100vh; flex:1; display:flex; flex-direction:column; gap:0; margin:0; padding:0; box-sizing:border-box; overflow:hidden;"));
     }
 
     /**

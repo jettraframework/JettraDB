@@ -122,4 +122,23 @@ public class DashboardFullWidthLayoutIntegrationTest {
         assertTrue(enginesHtml.contains("padding:16px 20px"), "Engines canvas must utilize 16px 20px padding");
         assertTrue(enginesHtml.contains("jettra-fluid-container"), "Embedded dashboard inside Engines must also use FluidContainer");
     }
+
+    @Test
+    @DisplayName("Dashboard UI enforces 100% full-width scaffold and avoids body flex row bottleneck")
+    void testDashboardScaffoldFullWidthAndNoBodyFlexBottleneck() {
+        StoreDashboardPage dashPage = new StoreDashboardPage(engine);
+        Widget dashUi = dashPage.buildUI(null, Collections.emptyMap(), "Matrix");
+        String dashHtml = dashUi.render(Themes.Matrix(ColorMode.DARK));
+
+        assertNotNull(dashHtml);
+        assertTrue(dashHtml.contains("jettra-studio-layout"), "Must contain jettra-studio-layout");
+        assertTrue(dashHtml.contains("width:100%"), "Must enforce width:100% on scaffold and wrappers");
+        assertTrue(dashHtml.contains("min-width:100%"), "Must enforce min-width:100%");
+        assertTrue(dashHtml.contains("box-sizing:border-box"), "Must enforce box-sizing:border-box");
+        assertTrue(dashHtml.contains("gap:0"), "Outer column must not introduce 8px gap shifting scaffold");
+
+        // Verify CSS definition separates html, body from .jettra-studio-layout
+        assertTrue(dashHtml.contains("html, body { min-height: 100vh; width: 100%;"), "Body must not be a flex row container");
+        assertTrue(dashHtml.contains(".jettra-studio-layout { width: 100%; min-width: 100%;"), "Scaffold class must have full-width definitions");
+    }
 }
