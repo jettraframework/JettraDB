@@ -3642,6 +3642,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
       el.style.opacity = '1';
     }
   }
+  window.showModal = showModal;
 
   function hideModal(id) {
     if (!id) return;
@@ -3650,6 +3651,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
       el.style.display = 'none';
     }
   }
+  window.hideModal = hideModal;
 
   function setElementValues(map) {
     for (var id in map) {
@@ -3855,16 +3857,18 @@ public class StoreEnginesPage extends StoreTemplatePage {
     }
   }
 
-  function openUniversalRestoreModal(engine, db, unit, id, versionsJsonB64) {
-    if (typeof window.openUniversalRestoreModal === 'function') {
-      window.openUniversalRestoreModal(engine, db, unit, id, versionsJsonB64);
-    }
+  if (typeof window.openUniversalRestoreModal !== 'function') {
+    window.openUniversalRestoreModal = function(engine, db, unit, id, versionsJsonB64) {
+      var m = document.getElementById('universalRestoreModal');
+      if (m) showModal('universalRestoreModal');
+    };
   }
 
-  function openConfirmRestoreModal(ts, formattedDate, engine, db, coll, id, vNum) {
-    if (typeof window.openConfirmRestoreModal === 'function') {
-      window.openConfirmRestoreModal(ts, formattedDate, engine, db, coll, id, vNum);
-    }
+  if (typeof window.openConfirmRestoreModal !== 'function') {
+    window.openConfirmRestoreModal = function(ts, formattedDate, engine, db, coll, id, vNum) {
+      var m = document.getElementById('confirmRestoreModal');
+      if (m) showModal('confirmRestoreModal');
+    };
   }
 
   function openUniversalDeleteModal(engine, db, unit, id) {

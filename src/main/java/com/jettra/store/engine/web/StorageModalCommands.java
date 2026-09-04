@@ -455,80 +455,84 @@ public final class StorageModalCommands {
             "    });\n" +
             "    window.showModal('confirmDeleteModal');\n" +
             "  };\n" +
-            "  window.openUniversalRestoreModal = function(engine, db, unit, id, versionsJsonB64) {\n" +
-            "    var versionsJsonStr = window.decodeUtf8Base64(versionsJsonB64);\n" +
-            "    window.setElementValues({\n" +
-            "      restoreEngineLabel: engine,\n" +
-            "      restoreEngineTypeInput: engine,\n" +
-            "      restoreRecordDbInput: db,\n" +
-            "      restoreRecordCollInput: unit || 'default',\n" +
-            "      restoreRecordIdInput: id,\n" +
-            "      restoreRecordIdLabel: id,\n" +
-            "      confirmRestoreEngineInput: engine,\n" +
-            "      confirmRestoreDbInput: db,\n" +
-            "      confirmRestoreCollInput: unit || 'default',\n" +
-            "      confirmRestoreIdInput: id\n" +
-            "    });\n" +
-            "    var container = document.getElementById('universalVersionsContainer');\n" +
-            "    if (container) {\n" +
-            "      container.innerHTML = '';\n" +
-            "      var versions = [];\n" +
-            "      if (versionsJsonStr && versionsJsonStr.trim().length > 0) {\n" +
-            "        try { versions = JSON.parse(versionsJsonStr); } catch(e) { versions = []; }\n" +
-            "      }\n" +
-            "      if (!versions || versions.length === 0) {\n" +
-            "        container.innerHTML = '<div style=\"padding:16px; color:var(--j-text-muted); text-align:center;\">No historical snapshot versions recorded for this item yet. Edit the item to create new versions.</div>';\n" +
-            "      } else {\n" +
-            "        var html = '<table style=\"width:100%; border-collapse:collapse; font-size:12px;\">';\n" +
-            "        html += '<tr style=\"background:var(--j-bg-subsurface); color:var(--j-text-secondary); text-align:left;\"><th style=\"padding:8px 12px; width:90px;\">Version</th><th style=\"padding:8px 12px; width:150px;\">Timestamp / Date</th><th style=\"padding:8px 12px;\">Snapshot Preview</th><th style=\"padding:8px 12px; text-align:right; width:100px;\">Action</th></tr>';\n" +
-            "        for (var i = 0; i < versions.length; i++) {\n" +
-            "          var v = versions[i];\n" +
-            "          var vNum = (v.versionNumber !== undefined && v.versionNumber !== null) ? ('v' + v.versionNumber) : (v.versionId || (v.version !== undefined ? ('v' + v.version) : ('v' + (i + 1))));\n" +
-            "          var badge = v.isCurrent ? '<span class=\"store-badge badge-active\" style=\"font-size:10px;\">' + vNum + ' (CURRENT)</span>' : '<span class=\"store-badge badge-records\" style=\"font-size:10px;\">' + vNum + '</span>';\n" +
-            "          var safeDate = (v.formattedDate || (v.timestamp ? new Date(v.timestamp).toLocaleString() : '') || 'N/A').toString().replace(/[\\\'\\\"\\\\\\\\]/g, ' ');\n" +
-            "          var fullPayload = (typeof v.payload === 'object' ? JSON.stringify(v.payload, null, 2) : (v.snapshotData || v.payload || '{}')).toString();\n" +
-            "          var preview = (v.snapshotPreview || v.payloadPreview || v.preview || fullPayload).toString();\n" +
-            "          if (preview.length > 65) preview = preview.substring(0, 65) + '...';\n" +
-            "          var safeTs = (v.timestamp || 0).toString();\n" +
-            "          var rowDetailId = 'snap_detail_' + i;\n" +
-            "          html += '<tr style=\"border-bottom:1px solid var(--j-border); vertical-align:top;\">';\n" +
-            "          html += '<td style=\"padding:8px 12px; font-weight:700;\">' + badge + '</td>';\n" +
-            "          html += '<td style=\"padding:8px 12px; color:var(--j-text-secondary); font-size:11px;\">' + safeDate + '</td>';\n" +
-            "          html += '<td style=\"padding:8px 12px; color:var(--j-text-secondary); font-size:11px;\">';\n" +
-            "          html += '<div style=\"display:flex; align-items:center; gap:4px;\">';\n" +
-            "          html += '<button type=\"button\" onclick=\"var el=document.getElementById(\\'' + rowDetailId + '\\');if(el){el.style.display=(el.style.display===\\'none\\'?\\'block\\':\\'none\\');}\" style=\"background:none; border:none; color:var(--j-text-muted); cursor:pointer; font-size:10px; padding:2px;\"><i class=\"fas fa-chevron-down\"></i></button>';\n" +
-            "          html += '<span style=\"font-family:monospace; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1;\">' + preview.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</span>';\n" +
-            "          html += '</div>';\n" +
-            "          html += '<div id=\"' + rowDetailId + '\" style=\"display:none; margin-top:6px; padding:6px 8px; background:var(--j-bg-body); border-radius:4px; border:1px solid var(--j-border); font-family:monospace; font-size:10.5px; white-space:pre-wrap; max-height:160px; overflow-y:auto; color:var(--j-text-primary);\">' + fullPayload.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</div>';\n" +
-            "          html += '</td>';\n" +
-            "          html += '<td style=\"padding:8px 12px; text-align:right;\">';\n" +
-            "          if (!v.isCurrent) {\n" +
-            "            html += '<button type=\"button\" onclick=\"openConfirmRestoreModal(\\'' + safeTs + '\\', \\'' + safeDate + '\\')\" style=\"background:rgba(168,85,247,0.15); border:1px solid rgba(168,85,247,0.3); color:#a855f7; font-size:10.5px; padding:3px 10px; border-radius:4px; cursor:pointer; font-weight:600;\"><i class=\"fas fa-undo\" style=\"margin-right:3px;\"></i> Restaurar</button>';\n" +
-            "          } else {\n" +
-            "            html += '<span style=\"color:#10b981; font-size:11px; font-weight:600;\"><i class=\"fas fa-check-circle\" style=\"margin-right:3px;\"></i> Activo</span>';\n" +
-            "          }\n" +
-            "          html += '</td></tr>';\n" +
+            "  if (typeof window.openUniversalRestoreModal !== 'function') {\n" +
+            "    window.openUniversalRestoreModal = function(engine, db, unit, id, versionsJsonB64) {\n" +
+            "      var versionsJsonStr = window.decodeUtf8Base64(versionsJsonB64);\n" +
+            "      window.setElementValues({\n" +
+            "        restoreEngineLabel: engine,\n" +
+            "        restoreEngineTypeInput: engine,\n" +
+            "        restoreRecordDbInput: db,\n" +
+            "        restoreRecordCollInput: unit || 'default',\n" +
+            "        restoreRecordIdInput: id,\n" +
+            "        restoreRecordIdLabel: id,\n" +
+            "        confirmRestoreEngineInput: engine,\n" +
+            "        confirmRestoreDbInput: db,\n" +
+            "        confirmRestoreCollInput: unit || 'default',\n" +
+            "        confirmRestoreIdInput: id\n" +
+            "      });\n" +
+            "      var container = document.getElementById('universalVersionsContainer');\n" +
+            "      if (container) {\n" +
+            "        container.innerHTML = '';\n" +
+            "        var versions = [];\n" +
+            "        if (versionsJsonStr && versionsJsonStr.trim().length > 0) {\n" +
+            "          try { versions = JSON.parse(versionsJsonStr); } catch(e) { versions = []; }\n" +
             "        }\n" +
-            "        html += '</table>';\n" +
-            "        container.innerHTML = html;\n" +
+            "        if (!versions || versions.length === 0) {\n" +
+            "          container.innerHTML = '<div style=\"padding:16px; color:var(--j-text-muted); text-align:center;\">No historical snapshot versions recorded for this item yet. Edit the item to create new versions.</div>';\n" +
+            "        } else {\n" +
+            "          var html = '<table style=\"width:100%; border-collapse:collapse; font-size:12px;\">';\n" +
+            "          html += '<tr style=\"background:var(--j-bg-subsurface); color:var(--j-text-secondary); text-align:left;\"><th style=\"padding:8px 12px; width:90px;\">Version</th><th style=\"padding:8px 12px; width:150px;\">Timestamp / Date</th><th style=\"padding:8px 12px;\">Snapshot Preview</th><th style=\"padding:8px 12px; text-align:right; width:100px;\">Action</th></tr>';\n" +
+            "          for (var i = 0; i < versions.length; i++) {\n" +
+            "            var v = versions[i];\n" +
+            "            var vNum = (v.versionNumber !== undefined && v.versionNumber !== null) ? ('v' + v.versionNumber) : (v.versionId || (v.version !== undefined ? ('v' + v.version) : ('v' + (i + 1))));\n" +
+            "            var badge = v.isCurrent ? '<span class=\"store-badge badge-active\" style=\"font-size:10px;\">' + vNum + ' (CURRENT)</span>' : '<span class=\"store-badge badge-records\" style=\"font-size:10px;\">' + vNum + '</span>';\n" +
+            "            var safeDate = (v.formattedDate || (v.timestamp ? new Date(v.timestamp).toLocaleString() : '') || 'N/A').toString().replace(/[\\\'\\\"\\\\\\\\]/g, ' ');\n" +
+            "            var fullPayload = (typeof v.payload === 'object' ? JSON.stringify(v.payload, null, 2) : (v.snapshotData || v.payload || '{}')).toString();\n" +
+            "            var preview = (v.snapshotPreview || v.payloadPreview || v.preview || fullPayload).toString();\n" +
+            "            if (preview.length > 65) preview = preview.substring(0, 65) + '...';\n" +
+            "            var safeTs = (v.timestamp || 0).toString();\n" +
+            "            var rowDetailId = 'snap_detail_' + i;\n" +
+            "            html += '<tr style=\"border-bottom:1px solid var(--j-border); vertical-align:top;\">';\n" +
+            "            html += '<td style=\"padding:8px 12px; font-weight:700;\">' + badge + '</td>';\n" +
+            "            html += '<td style=\"padding:8px 12px; color:var(--j-text-secondary); font-size:11px;\">' + safeDate + '</td>';\n" +
+            "            html += '<td style=\"padding:8px 12px; color:var(--j-text-secondary); font-size:11px;\">';\n" +
+            "            html += '<div style=\"display:flex; align-items:center; gap:4px;\">';\n" +
+            "            html += '<button type=\"button\" onclick=\"var el=document.getElementById(\\'' + rowDetailId + '\\');if(el){el.style.display=(el.style.display===\\'none\\'?\\'block\\':\\'none\\');}\" style=\"background:none; border:none; color:var(--j-text-muted); cursor:pointer; font-size:10px; padding:2px;\"><i class=\"fas fa-chevron-down\"></i></button>';\n" +
+            "            html += '<span style=\"font-family:monospace; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1;\">' + preview.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</span>';\n" +
+            "            html += '</div>';\n" +
+            "            html += '<div id=\"' + rowDetailId + '\" style=\"display:none; margin-top:6px; padding:6px 8px; background:var(--j-bg-body); border-radius:4px; border:1px solid var(--j-border); font-family:monospace; font-size:10.5px; white-space:pre-wrap; max-height:160px; overflow-y:auto; color:var(--j-text-primary);\">' + fullPayload.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</div>';\n" +
+            "            html += '</td>';\n" +
+            "            html += '<td style=\"padding:8px 12px; text-align:right;\">';\n" +
+            "            if (!v.isCurrent) {\n" +
+            "              html += '<button type=\"button\" onclick=\"openConfirmRestoreModal(\\'' + safeTs + '\\', \\'' + safeDate + '\\')\" style=\"background:rgba(168,85,247,0.15); border:1px solid rgba(168,85,247,0.3); color:#a855f7; font-size:10.5px; padding:3px 10px; border-radius:4px; cursor:pointer; font-weight:600;\"><i class=\"fas fa-undo\" style=\"margin-right:3px;\"></i> Restaurar</button>';\n" +
+            "            } else {\n" +
+            "              html += '<span style=\"color:#10b981; font-size:11px; font-weight:600;\"><i class=\"fas fa-check-circle\" style=\"margin-right:3px;\"></i> Activo</span>';\n" +
+            "            }\n" +
+            "            html += '</td></tr>';\n" +
+            "          }\n" +
+            "          html += '</table>';\n" +
+            "          container.innerHTML = html;\n" +
+            "        }\n" +
             "      }\n" +
-            "    }\n" +
-            "    window.showModal('universalRestoreModal');\n" +
-            "  };\n" +
-            "  window.openConfirmRestoreModal = function(ts, formattedDate) {\n" +
-            "    var get = function(id) { var el = document.getElementById(id); return el ? el.value : ''; };\n" +
-            "    window.setElementValues({\n" +
-            "      confirmRestoreEngineInput: get('restoreEngineTypeInput'),\n" +
-            "      confirmRestoreEngineDisplay: get('restoreEngineTypeInput'),\n" +
-            "      confirmRestoreDbInput: get('restoreRecordDbInput'),\n" +
-            "      confirmRestoreCollInput: get('restoreRecordCollInput') || 'default',\n" +
-            "      confirmRestoreIdInput: get('restoreRecordIdInput'),\n" +
-            "      confirmRestoreIdDisplay: get('restoreRecordIdInput'),\n" +
-            "      confirmRestoreTsInput: ts,\n" +
-            "      confirmRestoreDateDisplay: formattedDate || ts\n" +
-            "    });\n" +
-            "    window.showModal('confirmRestoreModal');\n" +
-            "  };\n" +
+            "      window.showModal('universalRestoreModal');\n" +
+            "    };\n" +
+            "  }\n" +
+            "  if (typeof window.openConfirmRestoreModal !== 'function') {\n" +
+            "    window.openConfirmRestoreModal = function(ts, formattedDate) {\n" +
+            "      var get = function(id) { var el = document.getElementById(id); return el ? el.value : ''; };\n" +
+            "      window.setElementValues({\n" +
+            "        confirmRestoreEngineInput: get('restoreEngineTypeInput'),\n" +
+            "        confirmRestoreEngineDisplay: get('restoreEngineTypeInput'),\n" +
+            "        confirmRestoreDbInput: get('restoreRecordDbInput'),\n" +
+            "        confirmRestoreCollInput: get('restoreRecordCollInput') || 'default',\n" +
+            "        confirmRestoreIdInput: get('restoreRecordIdInput'),\n" +
+            "        confirmRestoreIdDisplay: get('restoreRecordIdInput'),\n" +
+            "        confirmRestoreTsInput: ts,\n" +
+            "        confirmRestoreDateDisplay: formattedDate || ts\n" +
+            "      });\n" +
+            "      window.showModal('confirmRestoreModal');\n" +
+            "    };\n" +
+            "  }\n" +
             "</script>\n"
         );
     }
