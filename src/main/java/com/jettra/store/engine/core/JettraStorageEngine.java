@@ -37,7 +37,6 @@ public class JettraStorageEngine {
             raftOrchestrator.start();
         } catch (Exception e) {
             System.err.println("Failed to start Raft Server: " + e.getMessage());
-            e.printStackTrace();
         }
         
         for (EngineFamily engine : registeredEngines.values()) {

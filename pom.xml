@@ -154,6 +154,7 @@
                         <configuration>
                             <mainClass>io.jettra.test.runner.JettraTestRunner</mainClass>
                             <classpathScope>test</classpathScope>
+                            <cleanupDaemonThreads>false</cleanupDaemonThreads>
                             <arguments>
                                 <argument>${project.build.testOutputDirectory}</argument>
                             </arguments>

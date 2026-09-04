@@ -30,8 +30,16 @@ public class JettraConsensusServer {
             // fallback
         }
         
+        boolean enabled = Boolean.parseBoolean(System.getProperty("jettra.consensus.enabled",
+            props.getProperty("jettra.consensus.enabled", "true")));
+        if (!enabled) {
+            System.out.println("[JettraConsensusServer] Consensus Server disabled via configuration");
+            return;
+        }
+
         String nodeId = props.getProperty("jettra.node.id", System.getenv().getOrDefault("NODE_ID", "node1"));
-        String myAddress = props.getProperty("jettra.grpc.port", System.getenv().getOrDefault("CLUSTER_ADDRESS", "127.0.0.1:50051"));
+        String myAddress = System.getProperty("jettra.grpc.port",
+            props.getProperty("jettra.grpc.port", System.getenv().getOrDefault("CLUSTER_ADDRESS", "127.0.0.1:50051")));
         int port = 50051;
         
         try {
@@ -46,21 +54,37 @@ public class JettraConsensusServer {
         
         System.out.println("[JettraConsensusServer] Initializing Consensus Server on " + nodeId + " at port " + port);
 
-        serverSocket = new ServerSocket(port);
+        try {
+            serverSocket = new ServerSocket();
+            serverSocket.setReuseAddress(true);
+            serverSocket.bind(new java.net.InetSocketAddress(port));
+        } catch (java.net.BindException be) {
+            // Port is already occupied (e.g. concurrent test suites or active engine instances)
+            // Fall back gracefully to an available dynamic port
+            serverSocket = new ServerSocket(0);
+            port = serverSocket.getLocalPort();
+            System.out.println("[JettraConsensusServer] Port 50051 in use, allocated fallback dynamic port " + port);
+        }
+        try {
+            serverSocket.setSoTimeout(1000);
+        } catch (Exception ignored) {}
         running = true;
 
         serverThread = new Thread(() -> {
-            while (running) {
+            while (running && !Thread.currentThread().isInterrupted()) {
                 try {
                     Socket clientSocket = serverSocket.accept();
                     handleClient(clientSocket);
+                } catch (java.net.SocketTimeoutException ste) {
+                    // Timeout allows evaluating 'running' and thread interruption
                 } catch (Exception e) {
-                    if (running) {
+                    if (running && !Thread.currentThread().isInterrupted()) {
                         e.printStackTrace();
                     }
                 }
             }
-        });
+        }, "JettraConsensusServer-" + port);
+        serverThread.setDaemon(true);
         serverThread.start();
         System.out.println("[JettraConsensusServer] Consensus Server started successfully on port " + port);
     }
