@@ -21,8 +21,9 @@ import com.jettra.store.engine.samples.lifecycle.SampleDatabaseService;
 import com.sun.net.httpserver.HttpExchange;
 import io.jettra.flux.core.Modifier;
 import io.jettra.flux.core.Widget;
+import io.jettra.flux.core.FluxEscapers;
 import io.jettra.flux.widgets.*;
-import jcf.annotation.PageWidgetAllow;
+import io.jettra.core.security.widget.PageWidgetAllow;
 import jcf.AppRole;
 import io.jettra.json.JettraJson;
 import io.jettra.json.JsonObject;
@@ -1356,8 +1357,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
     }
 
     private String escapeJs(String s) {
-        if (s == null) return "";
-        return s.replace("\\", "\\\\").replace("'", "\\'").replace("\"", "\\\"").replace("\n", " ").replace("\r", "");
+        return FluxEscapers.escapeJs(s);
     }
 
     private void executeTypeSpecificDelete(String engineName, String db, String id, String coll, Map<String, String> params) {
@@ -4187,8 +4187,8 @@ public class StoreEnginesPage extends StoreTemplatePage {
           dbCardDiv.style.cssText = 'margin-bottom:6px; padding:4px 8px; border-radius:6px; background:rgba(56,189,248,0.06); border:1px solid rgba(56,189,248,0.2);';
           
           dbCardDiv.innerHTML = '<div style="display:flex; justify-content:space-between; align-items:center; padding:3px 4px;">' +
-            '<div id="' + newHeaderId + '" data-db="' + escapeHtml(finalDb) + '" data-state="collapsed" role="treeitem" tabindex="0" aria-expanded="false" aria-controls="' + newContainerId + '" style="display:inline-flex; align-items:center; cursor:pointer; outline:none; user-select:none;" onclick="toggleLazyDbSubtree(event, \'' + newContainerId + '\', \'' + escapeJsString(finalDb) + '\', \'' + escapeJsString(finalEngine) + '\', \'' + escapeJsString(actionUrl) + '\', ' + newDbIdx + ')">' +
-              '<button type="button" id="' + newToggleBtnId + '" aria-label="Toggle ' + escapeHtml(finalDb) + ' database subtree" aria-controls="' + newContainerId + '" aria-expanded="false" data-db="' + escapeHtml(finalDb) + '" data-container-id="' + newContainerId + '" onclick="toggleLazyDbSubtree(event, \'' + newContainerId + '\', \'' + escapeJsString(finalDb) + '\', \'' + escapeJsString(finalEngine) + '\', \'' + escapeJsString(actionUrl) + '\', ' + newDbIdx + ')" style="background:none; border:none; padding:2px 5px; margin-right:3px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center;">' +
+            '<div id="' + newHeaderId + '" data-db="' + escapeHtml(finalDb) + '" data-engine="' + escapeHtml(finalEngine) + '" data-action-url="' + escapeHtml(actionUrl) + '" data-db-idx="' + newDbIdx + '" data-container-id="' + newContainerId + '" data-state="collapsed" role="treeitem" tabindex="0" aria-expanded="false" aria-controls="' + newContainerId + '" style="display:inline-flex; align-items:center; cursor:pointer; outline:none; user-select:none;" onclick="handleToggleLazyDbSubtree(this, event)">' +
+              '<button type="button" id="' + newToggleBtnId + '" aria-label="Toggle ' + escapeHtml(finalDb) + ' database subtree" aria-controls="' + newContainerId + '" aria-expanded="false" data-db="' + escapeHtml(finalDb) + '" data-engine="' + escapeHtml(finalEngine) + '" data-action-url="' + escapeHtml(actionUrl) + '" data-db-idx="' + newDbIdx + '" data-container-id="' + newContainerId + '" onclick="handleToggleLazyDbSubtree(this, event)" style="background:none; border:none; padding:2px 5px; margin-right:3px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center;">' +
                 '<i id="icon_' + newContainerId + '" class="fas fa-chevron-right tree-toggle-icon" style="color:#38bdf8; font-size:10px; pointer-events:none;"></i>' +
               '</button>' +
               '<i class="fas fa-database" style="margin-right:4px; color:#38bdf8; font-size:11px; pointer-events:none;"></i>' +
@@ -4196,7 +4196,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
             '</div>' +
             '<div style="display:inline-flex; align-items:center;">' +
               '<span class="store-badge badge-active" style="font-size:8px; padding:1px 5px; margin-left:4px;">NEW</span>' +
-              '<button type="button" title="Refresh database hierarchy" onclick="event.stopPropagation(); refreshLazyDbSubtree(event, \'' + newContainerId + '\', \'' + escapeJsString(finalDb) + '\', \'' + escapeJsString(finalEngine) + '\', \'' + escapeJsString(actionUrl) + '\', ' + newDbIdx + ')" style="background:none; border:none; color:#94a3b8; font-size:9px; cursor:pointer; padding:1px 4px; margin-right:2px;"><i class="fas fa-sync-alt"></i></button>' +
+              '<button type="button" title="Refresh database hierarchy" data-container-id="' + newContainerId + '" data-db="' + escapeHtml(finalDb) + '" data-engine="' + escapeHtml(finalEngine) + '" data-action-url="' + escapeHtml(actionUrl) + '" data-db-idx="' + newDbIdx + '" onclick="handleRefreshLazyDbSubtree(this, event)" style="background:none; border:none; color:#94a3b8; font-size:9px; cursor:pointer; padding:1px 4px; margin-right:2px;"><i class="fas fa-sync-alt"></i></button>' +
             '</div>' +
           '</div>' +
           '<div id="' + newContainerId + '" data-db="' + escapeHtml(finalDb) + '" data-loaded="false" data-state="collapsed" data-db-idx="' + newDbIdx + '" aria-expanded="false" class="tree-collapsible-content db-subtree-container" style="margin-left:8px; border-left: 2px dashed rgba(56,189,248,0.3); padding-left:6px; margin-top:3px; display:none;"></div>';
@@ -4278,6 +4278,26 @@ public class StoreEnginesPage extends StoreTemplatePage {
     var eng = selectedEngine || window.lastSelectedEngine || 'DOCUMENT';
     var cleanBase = base.indexOf('?') >= 0 ? base.split('?')[0] : base;
     return cleanBase + '?action=load_hierarchy&engine=' + encodeURIComponent(eng) + '&target_db=' + encodeURIComponent(dbName);
+  }
+
+  function handleToggleLazyDbSubtree(triggerEl, evt) {
+    if (!triggerEl) return;
+    var containerId = triggerEl.getAttribute('data-container-id') || triggerEl.getAttribute('aria-controls');
+    var dbName = triggerEl.getAttribute('data-db');
+    var selectedEngine = triggerEl.getAttribute('data-engine') || window.lastSelectedEngine || 'DOCUMENT';
+    var actionUrl = triggerEl.getAttribute('data-action-url') || window.lastActionUrl || '/engines';
+    var dbIdx = triggerEl.getAttribute('data-db-idx');
+    toggleLazyDbSubtree(evt, containerId, dbName, selectedEngine, actionUrl, dbIdx);
+  }
+
+  function handleRefreshLazyDbSubtree(triggerEl, evt) {
+    if (!triggerEl) return;
+    var containerId = triggerEl.getAttribute('data-container-id');
+    var dbName = triggerEl.getAttribute('data-db');
+    var selectedEngine = triggerEl.getAttribute('data-engine') || window.lastSelectedEngine || 'DOCUMENT';
+    var actionUrl = triggerEl.getAttribute('data-action-url') || window.lastActionUrl || '/engines';
+    var dbIdx = triggerEl.getAttribute('data-db-idx');
+    refreshLazyDbSubtree(evt, containerId, dbName, selectedEngine, actionUrl, dbIdx);
   }
 
   function toggleLazyDbSubtree(evt, containerId, dbName, selectedEngine, actionUrl, dbIdx) {

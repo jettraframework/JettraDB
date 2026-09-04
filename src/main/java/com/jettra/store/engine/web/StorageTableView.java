@@ -1,5 +1,6 @@
 package com.jettra.store.engine.web;
 
+import io.jettra.flux.core.FluxEscapers;
 import io.jettra.flux.core.Modifier;
 import io.jettra.flux.core.Widget;
 import io.jettra.flux.widgets.*;
@@ -367,7 +368,6 @@ public final class StorageTableView {
     }
 
     private static String escapeJs(String s) {
-        if (s == null) return "";
-        return s.replace("\\", "\\\\").replace("'", "\\'").replace("\"", "\\\"");
+        return FluxEscapers.escapeJs(s);
     }
 }

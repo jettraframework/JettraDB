@@ -6,7 +6,7 @@ import com.sun.net.httpserver.HttpExchange;
 import io.jettra.flux.core.Modifier;
 import io.jettra.flux.core.Widget;
 import io.jettra.flux.widgets.*;
-import jcf.annotation.PageWidgetAllow;
+import io.jettra.core.security.widget.PageWidgetAllow;
 import jcf.AppRole;
 import io.jettra.server.JettraServer;
 import io.jettra.server.autentification.entity.JCredential;

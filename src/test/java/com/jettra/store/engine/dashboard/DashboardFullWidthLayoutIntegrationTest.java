@@ -141,4 +141,13 @@ public class DashboardFullWidthLayoutIntegrationTest {
         assertTrue(dashHtml.contains("html, body { min-height: 100vh; width: 100%;"), "Body must not be a flex row container");
         assertTrue(dashHtml.contains(".jettra-studio-layout { width: 100%; min-width: 100%;"), "Scaffold class must have full-width definitions");
     }
+
+    @Test
+    @DisplayName("Diagnose engines schema page line 4885")
+    void testDiagnoseSchemaErrorLine() throws IOException {
+        StoreEnginesPage enginesPage = new StoreEnginesPage(engine);
+        Widget enginesUi = enginesPage.buildUI(null, Map.of("tab", "schema", "engine", "DOCUMENT", "target_db", "customers_db"), "Matrix");
+        String html = enginesUi.render(Themes.Matrix(ColorMode.DARK));
+        Files.writeString(Path.of("target/rendered_schema_page.html"), html);
+    }
 }
