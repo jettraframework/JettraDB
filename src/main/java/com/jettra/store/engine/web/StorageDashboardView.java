@@ -254,12 +254,12 @@ public final class StorageDashboardView {
             )
         ).modifier(new Modifier().style("width:100%; background:var(--j-bg-surface); border:1px solid var(--j-border); border-radius:10px; margin-bottom:20px; overflow:hidden;"));
 
-        return Div.of(
+        return FluidContainer.of(
             quickActionsBar,
             statsRow,
             chartsRow,
             engineMatrixCard
-        ).modifier(new Modifier().style("display:flex; flex-direction:column; width:100%; max-width:1400px; margin:0 auto; padding:4px;"));
+        );
     }
 
     private static Widget createMiniEngineLegend(String label, int count, String color) {

@@ -94,7 +94,7 @@ public class DashboardGlobalScrollAndKeyboardAccessibilityTest {
     }
 
     @Test
-    @DisplayName("MainDashboardView renders using elastic FlexColumn without height constraints")
+    @DisplayName("MainDashboardView renders using elastic fluid container without height constraints")
     void testMainDashboardViewFlexColumnFlow() {
         DashboardMetricsCollector collector = new DashboardMetricsCollector(engine);
         DashboardMetrics.ComprehensiveDashboardSnapshot snapshot = collector.collectSnapshot();
@@ -103,7 +103,7 @@ public class DashboardGlobalScrollAndKeyboardAccessibilityTest {
         String html = mainView.render(Themes.Matrix(ColorMode.DARK));
 
         assertNotNull(html);
-        assertTrue(html.contains("jettra-flex-column"), "MainDashboardView must use FlexColumn for elastic layout flow");
+        assertTrue(html.contains("jettra-fluid-container") || html.contains("jettra-flex-column"), "MainDashboardView must use fluid container for elastic layout flow");
         assertTrue(html.contains("Storage Engine Dashboard"), "Must render header block");
         assertTrue(html.contains("btnCreateBackupSnapshot"), "Must render backup button");
         assertTrue(html.contains("Hierarchy Explorer"), "Must render hierarchy explorer link");

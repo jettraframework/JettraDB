@@ -156,7 +156,7 @@ public final class MainDashboardView {
             "}"
         );
 
-        return FlexColumn.of(
+        return FluidContainer.of(
             titleBlock,
             kpiRow,
             chartsRow,
@@ -164,6 +164,6 @@ public final class MainDashboardView {
             healthPanel,
             bottomPanel,
             backupScript
-        ).modifier(new Modifier().style("width:100%; max-width:1440px; margin:0 auto; padding:4px; box-sizing:border-box;"));
+        );
     }
 }
