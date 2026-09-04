@@ -156,7 +156,7 @@ public final class MainDashboardView {
             "}"
         );
 
-        return Column.of(
+        return FlexColumn.of(
             titleBlock,
             kpiRow,
             chartsRow,

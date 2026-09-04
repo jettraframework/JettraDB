@@ -125,7 +125,7 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
             "  .jettra-main-area { flex: 1; display: flex; flex-direction: column; height: 100vh; overflow: hidden; background: var(--j-bg-body); }\n" +
             "  \n" +
             "  /* Top Header Bar */\n" +
-            "  .jettra-top-bar { min-height: 50px; background: var(--j-bg-surface); border-bottom: 1px solid var(--j-border); display: flex; align-items: center; justify-content: space-between; padding: 6px 16px; gap: 10px; z-index: 30; flex-wrap: wrap; }\n" +
+            "  .jettra-top-bar { flex-shrink: 0; position: sticky; top: 0; min-height: 50px; background: var(--j-bg-surface); border-bottom: 1px solid var(--j-border); display: flex; align-items: center; justify-content: space-between; padding: 6px 16px; gap: 10px; z-index: 30; flex-wrap: wrap; }\n" +
             "  .top-left-group { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }\n" +
             "  .conn-chip { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 600; color: var(--j-text-primary); padding: 4px 10px; border-radius: 6px; cursor: pointer; user-select: none; }\n" +
             "  .conn-chip:hover { background: var(--j-bg-subsurface); }\n" +
@@ -146,7 +146,11 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
             "  .btn-studio-secondary:hover { color: var(--j-text-primary); border-color: var(--j-border-dark); background: var(--j-border); }\n" +
             "  \n" +
             "  /* Studio Workspace */\n" +
-            "  .jettra-workspace-body { flex: 1; display: flex; overflow: hidden; }\n" +
+            "  .jettra-workspace-body { flex: 1; display: flex; flex-direction: column; overflow-y: auto; overflow-x: hidden; outline: none; scrollbar-width: thin; scrollbar-color: var(--jf-accent, var(--j-primary, #0284c7)) transparent; }\n" +
+            "  .jettra-workspace-body::-webkit-scrollbar { width: 8px; height: 8px; }\n" +
+            "  .jettra-workspace-body::-webkit-scrollbar-track { background: transparent; }\n" +
+            "  .jettra-workspace-body::-webkit-scrollbar-thumb { background-color: var(--jf-accent, var(--j-primary, #0284c7)); border-radius: 4px; }\n" +
+            "  .jettra-workspace-body::-webkit-scrollbar-thumb:hover { background-color: var(--jf-accent-hover, var(--j-primary-hover, #0369a1)); }\n" +
             "  \n" +
             "  /* Badges & Shared UI elements */\n" +
             "  .store-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: 6px; font-size: 10px; font-weight: 600; text-transform: uppercase; }\n" +
@@ -181,9 +185,16 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
         // Content Area
         Widget content = buildContent(exchange, params, currentTheme);
 
+        Widget workspaceBody = Div.of(content)
+            .attribute("id", "jettraWorkspaceBody")
+            .attribute("tabindex", "0")
+            .attribute("role", "region")
+            .attribute("aria-label", "Dashboard Content Body")
+            .modifier(new Modifier().cssClass("jettra-workspace-body"));
+
         Widget mainArea = Div.of(
             topBar,
-            Div.of(content).modifier(new Modifier().cssClass("jettra-workspace-body"))
+            workspaceBody
         ).modifier(new Modifier().cssClass("jettra-main-area"));
 
         Widget scaffold = Div.of(
