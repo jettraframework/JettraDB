@@ -1,6 +1,7 @@
 package com.jettra.store.engine.web;
 
-import io.jettra.core.login.NoLoginRequired;
+import jcf.annotation.PageWidgetAllow;
+import jcf.AppRole;
 import com.jettra.store.engine.core.JettraStorageEngine;
 import com.jettra.store.engine.dashboard.DashboardMetrics.ComprehensiveDashboardSnapshot;
 import com.jettra.store.engine.dashboard.DashboardMetricsCollector;
@@ -17,7 +18,7 @@ import java.util.Objects;
  * Delegates data aggregation to DashboardMetricsCollector (Java 25 Virtual Threads)
  * and view composition to MainDashboardView (Modular Panels & Native Charts).
  */
-@NoLoginRequired
+@PageWidgetAllow(role = { jcf.AppRole.ADMIN, jcf.AppRole.MANAGER, jcf.AppRole.USER })
 public class StoreDashboardPage extends StoreTemplatePage {
 
     private final JettraStorageEngine engine;

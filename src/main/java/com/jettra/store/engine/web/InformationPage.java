@@ -2,7 +2,8 @@ package com.jettra.store.engine.web;
 
 import com.jettra.store.engine.core.JettraStorageEngine;
 import com.sun.net.httpserver.HttpExchange;
-import io.jettra.core.login.NoLoginRequired;
+import jcf.annotation.PageWidgetAllow;
+import jcf.AppRole;
 import io.jettra.flux.core.Modifier;
 import io.jettra.flux.core.Widget;
 import io.jettra.flux.widgets.*;
@@ -15,7 +16,7 @@ import java.util.Map;
  * Information Page for JettraStoreEngine.
  * Displays comprehensive architecture, storage schemas, and capabilities of all 9 multi-model database engines.
  */
-@NoLoginRequired
+@PageWidgetAllow(role = { jcf.AppRole.ADMIN, jcf.AppRole.MANAGER, jcf.AppRole.USER })
 public class InformationPage extends StoreTemplatePage {
 
     private final JettraStorageEngine engine;

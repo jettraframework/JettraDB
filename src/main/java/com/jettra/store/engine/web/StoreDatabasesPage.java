@@ -4,7 +4,8 @@ import com.jettra.store.engine.auth.AuthManager;
 import com.jettra.store.engine.core.JettraStorageEngine;
 import com.jettra.store.engine.samples.SampleDatasetManager;
 import com.sun.net.httpserver.HttpExchange;
-import io.jettra.core.login.NoLoginRequired;
+import jcf.annotation.PageWidgetAllow;
+import jcf.AppRole;
 import io.jettra.flux.core.Modifier;
 import io.jettra.flux.core.Widget;
 import io.jettra.flux.widgets.*;
@@ -37,7 +38,7 @@ import java.util.TreeSet;
  * - Component inspector with item payloads, schema reflection, and deletion
  * Built with pure JettraFlux components.
  */
-@NoLoginRequired
+@PageWidgetAllow(role = { jcf.AppRole.ADMIN, jcf.AppRole.MANAGER, jcf.AppRole.USER })
 public class StoreDatabasesPage extends StoreTemplatePage {
 
     private final JettraStorageEngine engine;

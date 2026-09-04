@@ -6,7 +6,8 @@ import com.sun.net.httpserver.HttpExchange;
 import io.jettra.flux.core.Modifier;
 import io.jettra.flux.core.Widget;
 import io.jettra.flux.widgets.*;
-import io.jettra.core.login.NoLoginRequired;
+import jcf.annotation.PageWidgetAllow;
+import jcf.AppRole;
 import io.jettra.server.JettraServer;
 import io.jettra.server.autentification.entity.JCredential;
 import io.jettra.server.autentification.entity.JRole;
@@ -29,7 +30,7 @@ import java.util.ArrayList;
  * Visual User and RBAC Role Management Console for JettraStoreEngine.
  * Built with pure JettraFlux components.
  */
-@NoLoginRequired
+@PageWidgetAllow(role = { jcf.AppRole.ADMIN })
 public class StoreUsersPage extends StoreTemplatePage {
 
     private final JettraStorageEngine engine;

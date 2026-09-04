@@ -5,7 +5,6 @@ import com.sun.net.httpserver.HttpExchange;
 import io.jettra.flux.core.Modifier;
 import io.jettra.flux.core.Widget;
 import io.jettra.flux.widgets.*;
-import io.jettra.core.login.NoLoginRequired;
 import io.jettra.server.JettraServer;
 import com.jettra.store.engine.web.RouteVisibilityGuard.NavigationRouteConfig;
 
@@ -22,10 +21,14 @@ import java.util.TreeSet;
  * - Context-Aware Top Header with connection badge, optional horizontal section tabs, and action buttons
  * - Responsive workspace supporting Schema, Table, Tree, and Query views in Light and Dark modes.
  */
-@NoLoginRequired
 public abstract class StoreTemplatePage extends FluxBaseHandler {
 
     protected abstract String getPageTitle();
+
+    @Override
+    protected String getTitle() {
+        return getPageTitle();
+    }
     protected abstract Widget buildContent(HttpExchange exchange, Map<String, String> params, String currentTheme);
 
     protected Set<String> getAvailableDatabases() {

@@ -22,7 +22,8 @@ import com.sun.net.httpserver.HttpExchange;
 import io.jettra.flux.core.Modifier;
 import io.jettra.flux.core.Widget;
 import io.jettra.flux.widgets.*;
-import io.jettra.core.login.NoLoginRequired;
+import jcf.annotation.PageWidgetAllow;
+import jcf.AppRole;
 import io.jettra.json.JettraJson;
 import io.jettra.json.JsonObject;
 import io.jettra.json.JsonArray;
@@ -52,7 +53,7 @@ import java.util.TreeSet;
  * Provides specialized management interfaces for Document, KeyValue, Vector, Graph,
  * TimeSeries, Column, Geospatial, Object, and Records engines, built entirely with JettraFlux components.
  */
-@NoLoginRequired
+@PageWidgetAllow(role = { jcf.AppRole.ADMIN, jcf.AppRole.MANAGER, jcf.AppRole.USER })
 public class StoreEnginesPage extends StoreTemplatePage {
 
     private final JettraStorageEngine engine;

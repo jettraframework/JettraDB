@@ -5,7 +5,8 @@ import com.sun.net.httpserver.HttpExchange;
 import io.jettra.flux.core.Modifier;
 import io.jettra.flux.core.Widget;
 import io.jettra.flux.widgets.*;
-import io.jettra.core.login.NoLoginRequired;
+import jcf.annotation.PageWidgetAllow;
+import jcf.AppRole;
 import io.jettra.server.JettraServer;
 import java.io.File;
 import java.util.ArrayList;
@@ -16,7 +17,7 @@ import java.util.Map;
  * Technical components & node internals inspection page for JettraStoreEngine.
  * Built with pure JettraFlux components.
  */
-@NoLoginRequired
+@PageWidgetAllow(role = { jcf.AppRole.ADMIN, jcf.AppRole.MANAGER, jcf.AppRole.USER })
 public class StoreComponentsPage extends StoreTemplatePage {
 
     private final JettraStorageEngine engine;
