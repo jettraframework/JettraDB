@@ -149,11 +149,14 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
             "  .btn-studio-secondary:hover { color: var(--j-text-primary); border-color: var(--j-border-dark); background: var(--j-border); }\n" +
             "  \n" +
             "  /* Studio Workspace */\n" +
-            "  .jettra-workspace-body { flex: 1; display: flex; flex-direction: column; overflow-y: auto; overflow-x: hidden; outline: none; scrollbar-width: thin; scrollbar-color: var(--jf-accent, var(--j-primary, #0284c7)) transparent; }\n" +
+            "  .jettra-workspace-body { flex: 1; display: flex; flex-direction: column; overflow-y: auto; overflow-x: hidden; outline: none; scrollbar-width: thin; scrollbar-color: var(--jf-accent, var(--j-primary, #0284c7)) transparent; min-height: 0; }\n" +
             "  .jettra-workspace-body::-webkit-scrollbar { width: 8px; height: 8px; }\n" +
             "  .jettra-workspace-body::-webkit-scrollbar-track { background: transparent; }\n" +
             "  .jettra-workspace-body::-webkit-scrollbar-thumb { background-color: var(--jf-accent, var(--j-primary, #0284c7)); border-radius: 4px; }\n" +
             "  .jettra-workspace-body::-webkit-scrollbar-thumb:hover { background-color: var(--jf-accent-hover, var(--j-primary-hover, #0369a1)); }\n" +
+            "  \n" +
+            "  /* Content Wrapper for Sticky Footer */\n" +
+            "  .jettra-content-wrapper { flex: 1 0 auto; display: flex; flex-direction: column; width: 100%; min-height: 0; }\n" +
             "  \n" +
             "  /* Badges & Shared UI elements */\n" +
             "  .store-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: 6px; font-size: 10px; font-weight: 600; text-transform: uppercase; }\n" +
@@ -187,8 +190,13 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
 
         // Content Area
         Widget content = buildContent(exchange, params, currentTheme);
+        Widget contentWrapper = Div.of(content)
+            .modifier(new Modifier().cssClass("jettra-content-wrapper"));
 
-        Widget workspaceBody = Div.of(content)
+        // Global Reusable AppFooter
+        Widget footer = buildFooter(exchange, params, currentTheme);
+
+        Widget workspaceBody = Div.of(contentWrapper, footer)
             .attribute("id", "jettraWorkspaceBody")
             .attribute("tabindex", "0")
             .attribute("role", "region")
@@ -209,6 +217,21 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
             customCss,
             scaffold
         );
+    }
+
+    /**
+     * Builds the global application footer. Subclasses can override this method to customize slots or links.
+     */
+    protected AppFooter buildFooter(HttpExchange exchange, Map<String, String> params, String currentTheme) {
+        return AppFooter.of()
+            .appName("JettraDB Studio")
+            .version("v1.0-SNAPSHOT (Java 25)")
+            .copyright("JettraStack")
+            .status("Cluster Online", "#10b981")
+            .link("Overview", JettraServer.resolvePath("/dashboard"), "fas fa-tachometer-alt")
+            .link("Engines", JettraServer.resolvePath("/engines"), "fas fa-database")
+            .link("Architecture", JettraServer.resolvePath("/information"), "fas fa-info-circle")
+            .link("REST API", JettraServer.resolvePath("/swagger-ui"), "fas fa-code");
     }
 
     private Widget buildTopLeftGroup(
