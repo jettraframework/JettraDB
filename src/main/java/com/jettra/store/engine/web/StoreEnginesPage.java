@@ -48,6 +48,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Interactive Type-Specific Database and Object Administrator for all 9 Multi-Model Storage Engines in JettraStoreEngine.
@@ -63,6 +64,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
     private final HierarchyExplorerService hierarchyService;
     private final SampleDatabaseService sampleDbService;
     private final RestoreActionHandler restoreHandler;
+    private final EditActionHandler editActionHandler;
 
     public StoreEnginesPage(JettraStorageEngine engine) {
         this.engine = engine;
@@ -70,6 +72,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
         this.hierarchyService = new HierarchyExplorerService(engine);
         this.sampleDbService = new SampleDatabaseService(engine);
         this.restoreHandler = new RestoreActionHandler(engine);
+        this.editActionHandler = new EditActionHandler(engine, hierarchyService);
     }
 
     @Override
@@ -193,14 +196,30 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 if (payload == null) payload = params.get("raw_payload");
                 if (payload == null) payload = params.get("kv_value");
                 if (payload == null) payload = params.get("rec_payload");
-                executeTypeSpecificEdit(engType, targetDb, id, coll, payload, params);
+
+                EditDocumentCommand cmd = EditDocumentCommand.of(engType, targetDb, coll, id, payload, params);
+                CompletableFuture<EditDocumentResult> future = editActionHandler.executeEditAsync(cmd);
+                EditDocumentResult res = future.join();
+
                 JsonObject resp = new JsonObject();
-                resp.addProperty("status", "SUCCESS");
-                resp.addProperty("database", targetDb);
-                resp.addProperty("engine", selectedEngine);
-                resp.addProperty("collection", coll);
-                resp.addProperty("itemId", id);
-                resp.addProperty("message", "Entity '" + id + "' updated successfully in " + selectedEngine + "!");
+                if (res.success()) {
+                    resp.addProperty("status", "SUCCESS");
+                    resp.addProperty("database", res.database());
+                    resp.addProperty("engine", res.engineType());
+                    resp.addProperty("collection", res.collection());
+                    resp.addProperty("itemId", res.recordId());
+                    resp.addProperty("timestamp", res.timestamp());
+                    resp.addProperty("versionCount", res.versionCount());
+                    resp.addProperty("message", res.message());
+                } else {
+                    resp.addProperty("status", "ERROR");
+                    resp.addProperty("database", res.database());
+                    resp.addProperty("engine", res.engineType());
+                    resp.addProperty("collection", res.collection());
+                    resp.addProperty("itemId", res.recordId());
+                    resp.addProperty("message", res.error() != null ? res.error() : "Failed to update record");
+                }
+                sendJsonResponse(exchange, resp, 200);
             } else if ("restore_version".equalsIgnoreCase(action) || "restore_version_ajax".equalsIgnoreCase(action)) {
                 long targetTs = Long.parseLong(params.getOrDefault("version_ts", "0"));
                 String engType = params.getOrDefault("engine_type", selectedEngine);
@@ -409,6 +428,10 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
     public List<RecordVersionSnapshot> getVersionSnapshots(String engineKey, String db, String coll, String id) {
         return hierarchyService.getVersionSnapshots(engineKey, db, coll, id);
+    }
+
+    public EditActionHandler getEditActionHandler() {
+        return editActionHandler;
     }
 
     public String resolveExistingDatabaseName(String dbName) {
@@ -681,9 +704,15 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     String engType = params.getOrDefault("engine_type", selectedEngine);
                     String coll = params.getOrDefault("target_coll", params.getOrDefault("coll", "default"));
                     String rawPayload = params.getOrDefault("record_payload", params.getOrDefault("doc_payload", "{}"));
-                    executeTypeSpecificEdit(engType, targetDb, targetId, coll, rawPayload, params);
-                    alertMessage = "[" + engType + "] Record '" + targetId + "' updated successfully (new version created)!";
-                    alertType = "badge-active";
+                    EditDocumentCommand cmd = EditDocumentCommand.of(engType, targetDb, coll, targetId, rawPayload, params);
+                    EditDocumentResult res = editActionHandler.executeEdit(cmd);
+                    if (res.success()) {
+                        alertMessage = res.message();
+                        alertType = "badge-active";
+                    } else {
+                        alertMessage = res.error();
+                        alertType = "badge-raft";
+                    }
                 } else if ("restore_version".equalsIgnoreCase(action)) {
                     long targetTs = Long.parseLong(params.getOrDefault("version_ts", "0"));
                     String engType = params.getOrDefault("engine_type", selectedEngine);
@@ -2108,10 +2137,11 @@ public class StoreEnginesPage extends StoreTemplatePage {
     }
 
     private Widget createModalOverlay(String modalId, String width, String borderColor, Widget header, Widget content) {
-        return Div.of(
-            Div.of(header, content).modifier(new Modifier().cssClass("store-card")
-                .style("width:" + width + "; max-width:94%; max-height:90vh; overflow-y:auto; background:var(--j-bg-surface); border:1px solid " + borderColor + "; box-shadow:0 20px 50px rgba(0,0,0,0.5); padding:24px; border-radius:12px; position:relative; z-index:100000;"))
-        ).id(modalId).modifier(new Modifier().style("display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.7); backdrop-filter:blur(6px); z-index:99999; align-items:center; justify-content:center;"));
+        return ModalDialog.of(modalId)
+            .maxWidth(width)
+            .borderColor(borderColor)
+            .header(header)
+            .body(content);
     }
 
     private Widget createConfirmationModalOverlay(String modalId, String width, String borderColor, Widget header, Widget content) {
@@ -2184,11 +2214,18 @@ public class StoreEnginesPage extends StoreTemplatePage {
     }
 
     private Widget createModalFormActions(String modalId, String submitText, String submitIcon, String submitColor) {
+        LoadingButton submitBtn = LoadingButton.of(submitText, submitIcon)
+            .savingLabel("Saving...")
+            .savingIcon("fas fa-circle-notch fa-spin")
+            .onClickAction("handleModalFormSubmit(event, '" + modalId + "')")
+            .variant("btn-action btn-primary")
+            .backgroundColor(submitColor)
+            .timeout(10000);
+
         return Div.of(
             Button.of(Text.of("Cancel"))
                 .modifier(new Modifier().attribute("type", "button").attribute("onclick", "hideModal('" + modalId + "')").cssClass("btn-action btn-secondary")),
-            Button.of(Icon.of(submitIcon), Text.of(" " + submitText))
-                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "handleModalFormSubmit(event, '" + modalId + "')").cssClass("btn-action btn-primary").style(submitColor.isEmpty() ? "" : "background:" + submitColor + ";"))
+            submitBtn
         ).modifier(new Modifier().style("display:flex; justify-content:flex-end; gap:8px;"));
     }
 
@@ -4101,10 +4138,11 @@ public class StoreEnginesPage extends StoreTemplatePage {
     }
     if (!form) return false;
 
-    var submitBtn = modal.querySelector('button[type="submit"], button.btn-primary');
+    var submitBtn = modal.querySelector('button[type="submit"], button.btn-primary, .espresso-button[data-state]');
     var origBtnHtml = submitBtn ? submitBtn.innerHTML : '';
     if (submitBtn) {
       submitBtn.disabled = true;
+      submitBtn.setAttribute('data-state', 'saving');
       submitBtn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Saving...';
     }
 
@@ -4130,21 +4168,28 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
     var actionUrl = form.getAttribute('action') || window.lastActionUrl || '/engines';
 
+    var timeoutMs = parseInt(submitBtn ? submitBtn.getAttribute('data-timeout') : '10000') || 10000;
+    var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    var timeoutId = controller ? setTimeout(function() { controller.abort(); }, timeoutMs) : null;
+
     fetch(actionUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
         'X-Requested-With': 'XMLHttpRequest'
       },
-      body: params.toString()
+      body: params.toString(),
+      signal: controller ? controller.signal : undefined
     })
     .then(function(res) {
+      if (timeoutId) clearTimeout(timeoutId);
       if (!res.ok) throw new Error('HTTP ' + res.status + ' - ' + res.statusText);
       return res.json();
     })
     .then(function(data) {
       if (submitBtn) {
         submitBtn.disabled = false;
+        submitBtn.setAttribute('data-state', data.status === 'ERROR' ? 'error' : 'idle');
         submitBtn.innerHTML = origBtnHtml;
       }
 
@@ -4242,11 +4287,16 @@ public class StoreEnginesPage extends StoreTemplatePage {
       }
     })
     .catch(function(err) {
+      if (timeoutId) clearTimeout(timeoutId);
       if (submitBtn) {
         submitBtn.disabled = false;
+        submitBtn.setAttribute('data-state', 'error');
         submitBtn.innerHTML = origBtnHtml;
       }
-      showTreeToast('Server communication error: ' + err.message, 'error');
+      var msg = (err.name === 'AbortError')
+        ? 'Save operation timed out. Storage engine took too long to respond.'
+        : 'Server communication error: ' + err.message;
+      showTreeToast(msg, 'error');
     });
 
     return false;
