@@ -1983,10 +1983,8 @@ public class StoreEnginesPage extends StoreTemplatePage {
                         .modifier(new Modifier().attribute("type", "button").attribute("onclick", "location.href='" + actionUrl + selectedEngine + "&target_db=" + escapeJs(targetDb) + "&coll=" + escapeJs(currentColl) + "&view_mode=tree'").cssClass(!isTableView ? "btn-action btn-primary" : "btn-action btn-secondary").style("padding:3px 8px; font-size:9.5px; margin-right:4px;")),
                     Button.of(Icon.of("fas fa-table"), Text.of(" Table View"))
                         .modifier(new Modifier().attribute("type", "button").attribute("onclick", "location.href='" + actionUrl + selectedEngine + "&target_db=" + escapeJs(targetDb) + "&coll=" + escapeJs(currentColl) + "&view_mode=table'").cssClass(isTableView ? "btn-action btn-primary" : "btn-action btn-secondary").style("padding:3px 8px; font-size:9.5px; margin-right:4px;")),
-                    Button.of(Icon.of("fas fa-expand-alt"), Text.of(" Expand All"))
-                        .modifier(new Modifier().attribute("type", "button").attribute("onclick", "expandAllTreeNodes()").cssClass("btn-action btn-secondary").style("padding:3px 6px; font-size:9px; margin-right:3px; background:var(--j-primary-light); border-color:var(--j-primary); color:var(--j-primary);")),
-                    Button.of(Icon.of("fas fa-compress-alt"), Text.of(" Collapse All"))
-                        .modifier(new Modifier().attribute("type", "button").attribute("onclick", "collapseAllTreeNodes()").cssClass("btn-action btn-secondary").style("padding:3px 6px; font-size:9px; margin-right:4px; background:var(--j-bg-subsurface); border-color:var(--j-border); color:var(--j-text-muted);"))
+                    FluxTree.expandAllButton("storage-hierarchy-tree", "Expand All", "fas fa-expand-alt"),
+                    FluxTree.collapseToRootButton("storage-hierarchy-tree", "Collapse All", "fas fa-compress-alt")
                 ).modifier(new Modifier().style("display:flex; align-items:center;"))
             ).modifier(new Modifier().style("display:flex; align-items:center; flex-wrap:wrap; gap:4px;"))
         ).modifier(new Modifier().style("justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:6px;"));
@@ -4851,71 +4849,13 @@ public class StoreEnginesPage extends StoreTemplatePage {
     if (window.FluxTree && typeof window.FluxTree.expandAll === 'function') {
       window.FluxTree.expandAll('storage-hierarchy-tree');
     }
-    var dbContainers = document.querySelectorAll('.db-subtree-container');
-    for (var i = 0; i < dbContainers.length; i++) {
-      var c = dbContainers[i];
-      var db = c.getAttribute('data-db');
-      var dbIdx = c.getAttribute('data-db-idx') || (i + 1);
-      c.style.display = 'block';
-      c.setAttribute('aria-expanded', 'true');
-      c.setAttribute('data-state', 'expanded');
-      treeStateManager.expandNode(c.id);
-      var icon = document.getElementById('icon_' + c.id);
-      var header = document.getElementById('db_header_' + dbIdx);
-      var btn = document.getElementById('btn_toggle_' + c.id) || document.getElementById('btn_toggle_' + dbIdx);
-      if (header) { header.setAttribute('aria-expanded', 'true'); header.setAttribute('data-state', 'expanded'); }
-      if (btn) btn.setAttribute('aria-expanded', 'true');
-      if (icon) icon.className = 'fas fa-chevron-down tree-toggle-icon';
-      if (c.getAttribute('data-loaded') !== 'true') {
-        var actionUrl = window.lastActionUrl || '/engines?engine=';
-        var selectedEngine = window.lastSelectedEngine || 'DOCUMENT';
-        loadDbHierarchy(null, c.id, db, selectedEngine, actionUrl, dbIdx, false);
-      }
-    }
-    var nodes = document.querySelectorAll('.tree-collapsible-content, .flux-tree-group');
-    for (var j = 0; j < nodes.length; j++) {
-      nodes[j].style.display = 'block';
-      nodes[j].setAttribute('aria-expanded', 'true');
-      if (nodes[j].id) treeStateManager.expandNode(nodes[j].id);
-    }
-    var icons = document.querySelectorAll('.tree-toggle-icon, .flux-tree-toggle-icon');
-    for (var k = 0; k < icons.length; k++) {
-      icons[k].className = 'fas fa-chevron-down tree-toggle-icon flux-tree-toggle-icon';
-    }
   }
 
   function collapseAllTreeNodes() {
-    if (window.FluxTree && typeof window.FluxTree.collapseAll === 'function') {
+    if (window.FluxTree && typeof window.FluxTree.collapseToRoot === 'function') {
+      window.FluxTree.collapseToRoot('storage-hierarchy-tree');
+    } else if (window.FluxTree && typeof window.FluxTree.collapseAll === 'function') {
       window.FluxTree.collapseAll('storage-hierarchy-tree');
-    }
-    var dbContainers = document.querySelectorAll('.db-subtree-container');
-    for (var cIdx = 0; cIdx < dbContainers.length; cIdx++) {
-      var dc = dbContainers[cIdx];
-      var dIdx = dc.getAttribute('data-db-idx') || (cIdx + 1);
-      var dHeader = document.getElementById('db_header_' + dIdx);
-      var dBtn = document.getElementById('btn_toggle_' + dc.id) || document.getElementById('btn_toggle_' + dIdx);
-      dc.style.display = 'none';
-      dc.setAttribute('aria-expanded', 'false');
-      dc.setAttribute('data-state', 'collapsed');
-      treeStateManager.collapseNode(dc.id);
-      if (dHeader) {
-        dHeader.setAttribute('aria-expanded', 'false');
-        dHeader.setAttribute('data-state', 'collapsed');
-      }
-      if (dBtn) {
-        dBtn.setAttribute('aria-expanded', 'false');
-        dBtn.setAttribute('data-state', 'collapsed');
-      }
-    }
-    var nodes = document.querySelectorAll('.tree-collapsible-content, .flux-tree-group');
-    for (var i = 0; i < nodes.length; i++) {
-      nodes[i].style.display = 'none';
-      nodes[i].setAttribute('aria-expanded', 'false');
-      if (nodes[i].id) treeStateManager.collapseNode(nodes[i].id);
-    }
-    var icons = document.querySelectorAll('.tree-toggle-icon, .flux-tree-toggle-icon');
-    for (var j = 0; j < icons.length; j++) {
-      icons[j].className = 'fas fa-chevron-right tree-toggle-icon flux-tree-toggle-icon';
     }
   }
 """;

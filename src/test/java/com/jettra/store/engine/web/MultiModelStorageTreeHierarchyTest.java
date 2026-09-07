@@ -8,6 +8,7 @@ import io.jettra.flux.theme.Themes;
 import io.jettra.flux.widgets.FluxTree;
 import io.jettra.flux.widgets.FluxTreeNode;
 import io.jettra.flux.widgets.FluxTreeVisitor;
+import io.jettra.flux.widgets.NodeExpansionState;
 import io.jettra.test.annotation.JettraTest;
 import io.jettra.test.annotation.AfterAll;
 import io.jettra.test.annotation.BeforeAll;
@@ -201,5 +202,71 @@ public class MultiModelStorageTreeHierarchyTest {
         assertEquals(1, databaseCount.get(), "Must have counted 1 database node");
         assertEquals(1, unitCount.get(), "Must have counted 1 unit node");
         assertEquals(2, itemCount.get(), "Must have counted 2 item nodes");
+
+        // 5. Test collapseToRoot(): keeps root database node expanded, collapses all children
+        tree.expandAll();
+        assertTrue(dbNode.isExpanded());
+        assertTrue(docEngineNode.isExpanded());
+        assertTrue(collCustomers.isExpanded());
+
+        tree.collapseToRoot();
+        assertTrue(dbNode.isExpanded(), "Database root node must remain expanded after collapseToRoot");
+        assertFalse(docEngineNode.isExpanded(), "Engine node must be collapsed");
+        assertFalse(collCustomers.isExpanded(), "Collection node must be collapsed");
+        assertFalse(item1.isExpanded(), "Item 1 must be collapsed");
+        assertFalse(item2.isExpanded(), "Item 2 must be collapsed");
+    }
+
+    @JettraTest
+    @DisplayName("Test Java 25 NodeExpansionState Pattern Matching and Stream Gatherer on Storage Hierarchy")
+    public void testJava25NodeExpansionStateAndStreamGatherersOnStorageHierarchy() {
+        FluxTreeNode<StorageHierarchyNodeData> dbNode = FluxTreeNode.of(
+                "db_orders", "orders_db", StorageHierarchyNodeData.forDatabase("DOCUMENT", "orders_db")
+        );
+        FluxTreeNode<StorageHierarchyNodeData> collNode = FluxTreeNode.of(
+                "coll_orders", "orders", StorageHierarchyNodeData.forUnit("DOCUMENT", "orders_db", "orders", 1)
+        );
+        FluxTreeNode<StorageHierarchyNodeData> itemNode = FluxTreeNode.of(
+                "item_1", "ord_1", StorageHierarchyNodeData.forItem("DOCUMENT", "orders_db", "orders", "ord_1", 1, 0, "", "{}", "", "")
+        );
+
+        collNode.child(itemNode);
+        dbNode.child(collNode);
+        FluxTree<StorageHierarchyNodeData> tree = FluxTree.of(dbNode);
+
+        // 1. Immutable state records
+        NodeExpansionState expState = NodeExpansionState.expanded("coll_orders");
+        NodeExpansionState collState = NodeExpansionState.collapsed("item_1");
+
+        collNode.applyExpansionState(expState);
+        itemNode.applyExpansionState(collState);
+
+        assertTrue(collNode.isExpanded(), "Pattern matching must set collNode expanded");
+        assertFalse(itemNode.isExpanded(), "Pattern matching must set itemNode collapsed");
+
+        // 2. Stream Gatherers fold aggregation
+        FluxTree.TreeExpansionSummary summary = tree.summarizeExpansion();
+        assertEquals(3, summary.totalNodes(), "Total nodes must be 3");
+        assertEquals(1, summary.expandedNodes(), "Only collNode is expanded");
+        assertEquals(2, summary.collapsedNodes(), "dbNode and itemNode are collapsed");
+
+        // 3. Collect expansion states
+        List<NodeExpansionState> collected = tree.collectExpansionStates();
+        assertEquals(3, collected.size());
+        assertTrue(collected.stream().anyMatch(s -> s.nodeId().equals("coll_orders") && s.isExpanded()));
+        assertTrue(collected.stream().anyMatch(s -> s.nodeId().equals("item_1") && !s.isExpanded()));
+    }
+
+    @JettraTest
+    @DisplayName("Test Pure JettraFlux Button Generation for Storage Tree")
+    public void testStorageTreeViewToolbarButtonsPresence() {
+        Widget expandBtn = FluxTree.expandAllButton("storage-hierarchy-tree");
+        Widget collapseBtn = FluxTree.collapseToRootButton("storage-hierarchy-tree");
+
+        String expandHtml = expandBtn.render(Themes.FlatTheme());
+        String collapseHtml = collapseBtn.render(Themes.FlatTheme());
+
+        assertTrue(expandHtml.contains("FluxTree.expandAll('storage-hierarchy-tree')"), "Expand All button must target tree ID");
+        assertTrue(collapseHtml.contains("FluxTree.collapseToRoot('storage-hierarchy-tree')"), "Collapse button must target tree ID");
     }
 }

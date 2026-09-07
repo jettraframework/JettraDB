@@ -65,11 +65,6 @@ public final class StorageTreeView {
         String dbContainerId = "db_content_" + dbIdx;
         String dbHeaderId = "db_header_" + dbIdx;
         String dbToggleBtnId = "btn_toggle_" + dbIdx;
-
-        boolean isExpandedRequested = params != null &&
-            ("true".equalsIgnoreCase(params.get("expand")) ||
-             "expanded".equalsIgnoreCase(params.get("tree_state")));
-
         // Build native FluxTree component
         FluxTree<StorageHierarchyNodeData> fluxTree = FluxTree.of("storage-hierarchy-tree");
         fluxTree.ariaLabel("Multi-Model Storage Hierarchy for " + targetDb);
@@ -266,9 +261,18 @@ public final class StorageTreeView {
             } catch (Exception ignored) {}
         }
 
+        boolean isExpandedRequested = params != null &&
+            ("true".equalsIgnoreCase(params.get("expand")) ||
+             "expanded".equalsIgnoreCase(params.get("tree_state")));
+        boolean isCollapsedRequested = params != null &&
+            ("false".equalsIgnoreCase(params.get("expand")) ||
+             "collapsed".equalsIgnoreCase(params.get("tree_state")));
+
         // Apply state: expandAll or default expand active database
         if (isExpandedRequested) {
             fluxTree.expandAll();
+        } else if (isCollapsedRequested) {
+            fluxTree.collapseToRoot();
         } else {
             dbNode.expand();
             for (FluxTreeNode<StorageHierarchyNodeData> ch : dbNode.getChildren()) {
@@ -276,9 +280,15 @@ public final class StorageTreeView {
             }
         }
 
+        boolean isSubtreeOpen = !isCollapsedRequested;
+        String subtreeDisplay = isSubtreeOpen ? "block" : "none";
+        String subtreeState = isSubtreeOpen ? "expanded" : "collapsed";
+        String subtreeAria = String.valueOf(isSubtreeOpen);
+        String toggleIconClass = isSubtreeOpen ? "fas fa-chevron-down tree-toggle-icon" : "fas fa-chevron-right tree-toggle-icon";
+
         // Render card layout preserving test contracts and accessible roles
         Widget dbToggleBtn = Button.of(
-            Icon.of("fas fa-chevron-right tree-toggle-icon")
+            Icon.of(toggleIconClass)
                 .id("icon_" + dbContainerId)
                 .modifier(new Modifier().style("color:var(--j-primary); font-size:10px; pointer-events:none;"))
         ).id(dbToggleBtnId)
@@ -286,7 +296,7 @@ public final class StorageTreeView {
             .attribute("type", "button")
             .attribute("aria-label", "Toggle " + targetDb + " database subtree")
             .attribute("aria-controls", dbContainerId)
-            .attribute("aria-expanded", "false")
+            .attribute("aria-expanded", subtreeAria)
             .attribute("data-db", targetDb)
             .attribute("data-container-id", dbContainerId)
             .attribute("onclick", "toggleLazyDbSubtree(event, '" + dbContainerId + "', '" + escapeJs(targetDb) + "', '" + escapeJs(selectedEngine) + "', '" + escapeJs(actionUrl) + "', " + dbIdx + ")")
@@ -298,10 +308,10 @@ public final class StorageTreeView {
             Span.of(targetDb).modifier(new Modifier().style("color:var(--j-primary); font-weight:700; font-size:11px; cursor:pointer;"))
         ).id(dbHeaderId)
          .attribute("data-db", targetDb)
-         .attribute("data-state", "collapsed")
+         .attribute("data-state", subtreeState)
          .attribute("role", "treeitem")
          .attribute("tabindex", "0")
-         .attribute("aria-expanded", "false")
+         .attribute("aria-expanded", subtreeAria)
          .attribute("aria-controls", dbContainerId)
          .modifier(new Modifier()
             .attribute("onclick", "toggleLazyDbSubtree(event, '" + dbContainerId + "', '" + escapeJs(targetDb) + "', '" + escapeJs(selectedEngine) + "', '" + escapeJs(actionUrl) + "', " + dbIdx + ")")
@@ -322,11 +332,11 @@ public final class StorageTreeView {
         Widget dbSubtreeContainer = Div.of(fluxTree)
             .id(dbContainerId)
             .attribute("data-db", targetDb)
-            .attribute("data-loaded", "false")
-            .attribute("data-state", "collapsed")
+            .attribute("data-loaded", "true")
+            .attribute("data-state", subtreeState)
             .attribute("data-db-idx", String.valueOf(dbIdx))
-            .attribute("aria-expanded", "false")
-            .modifier(new Modifier().cssClass("tree-collapsible-content db-subtree-container").style("margin-left:8px; border-left: 2px dashed rgba(56,189,248,0.3); padding-left:6px; margin-top:3px; display:none;"));
+            .attribute("aria-expanded", subtreeAria)
+            .modifier(new Modifier().cssClass("tree-collapsible-content db-subtree-container").style("margin-left:8px; border-left: 2px dashed rgba(56,189,248,0.3); padding-left:6px; margin-top:3px; display:" + subtreeDisplay + ";"));
 
         Widget dbCard = Div.of(dbHeaderRow, dbSubtreeContainer)
             .modifier(new Modifier().style("margin-bottom:6px; padding:4px 8px; border-radius:6px; background:var(--j-primary-light); border:1px solid var(--j-primary);"));
@@ -338,28 +348,6 @@ public final class StorageTreeView {
             "<script>\n" +
             "  window.lastActionUrl = '" + escapeJs(actionUrl) + "';\n" +
             "  window.lastSelectedEngine = '" + escapeJs(selectedEngine) + "';\n" +
-            "  (function() {\n" +
-            "    function autoExpand() {\n" +
-            "      var activeContainer = document.getElementById('" + dbContainerId + "');\n" +
-            "      if (activeContainer) {\n" +
-            "        activeContainer.style.display = 'block';\n" +
-            "        activeContainer.setAttribute('aria-expanded', 'true');\n" +
-            "        activeContainer.setAttribute('data-state', 'expanded');\n" +
-            "        activeContainer.setAttribute('data-loaded', 'true');\n" +
-            "        var header = document.getElementById('" + dbHeaderId + "');\n" +
-            "        if (header) { header.setAttribute('aria-expanded', 'true'); header.setAttribute('data-state', 'expanded'); }\n" +
-            "        var btn = document.getElementById('" + dbToggleBtnId + "');\n" +
-            "        if (btn) btn.setAttribute('aria-expanded', 'true');\n" +
-            "        var icon = document.getElementById('icon_" + dbContainerId + "');\n" +
-            "        if (icon) icon.className = 'fas fa-chevron-down tree-toggle-icon';\n" +
-            "      }\n" +
-            "    }\n" +
-            "    if (document.readyState === 'loading') {\n" +
-            "      document.addEventListener('DOMContentLoaded', function() { setTimeout(autoExpand, 30); });\n" +
-            "    } else {\n" +
-            "      setTimeout(autoExpand, 30);\n" +
-            "    }\n" +
-            "  })();\n" +
             "</script>\n"
         );
 
