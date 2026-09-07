@@ -1,8 +1,9 @@
 package com.jettra.store.engine.core;
 
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import io.jettra.test.annotation.AfterEach;
+import io.jettra.test.annotation.NotRequiresRunningServer;
+import io.jettra.test.annotation.BeforeEach;
+import io.jettra.test.annotation.JettraTest;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -10,13 +11,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static io.jettra.test.core.JettraAssert.*;
 
 /**
  * Validates RQ-2: Per-Database Dedicated Storage Architecture.
  * Ensures each database operates in isolated file partitions on disk,
  * maintaining separate WAL and SSTables without cross-database interference.
  */
+@NotRequiresRunningServer
 public class DatabaseStoragePartitionTest {
 
     private Path tempDir;
@@ -47,7 +49,7 @@ public class DatabaseStoragePartitionTest {
         }
     }
 
-    @Test
+    @JettraTest
     void testPerDatabaseFileIsolation() {
         long now = System.currentTimeMillis();
 
@@ -91,7 +93,7 @@ public class DatabaseStoragePartitionTest {
         assertTrue(scanBeta.containsKey("doc:DatabaseBeta:doc_2"));
     }
 
-    @Test
+    @JettraTest
     void testIndependentDatabaseDrop() {
         long now = System.currentTimeMillis();
 
@@ -116,7 +118,7 @@ public class DatabaseStoragePartitionTest {
         assertNotNull(storage.get("rec:KeepDb:item_2"), "KeepDb record must remain intact");
     }
 
-    @Test
+    @JettraTest
     void testWalRestorationPerDatabase() {
         long now = System.currentTimeMillis();
 

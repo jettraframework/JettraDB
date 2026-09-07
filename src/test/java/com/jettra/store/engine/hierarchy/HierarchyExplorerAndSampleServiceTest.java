@@ -10,9 +10,10 @@ import io.jettra.flux.core.Widget;
 import io.jettra.flux.theme.Themes;
 import io.jettra.json.JettraJson;
 import io.jettra.json.JsonObject;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import io.jettra.test.annotation.AfterEach;
+import io.jettra.test.annotation.NotRequiresRunningServer;
+import io.jettra.test.annotation.BeforeEach;
+import io.jettra.test.annotation.JettraTest;
 
 import java.io.File;
 import java.io.StringWriter;
@@ -22,8 +23,9 @@ import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static io.jettra.test.core.JettraAssert.*;
 
+@NotRequiresRunningServer
 public class HierarchyExplorerAndSampleServiceTest {
 
     private Path tempDir;
@@ -56,7 +58,7 @@ public class HierarchyExplorerAndSampleServiceTest {
         }
     }
 
-    @Test
+    @JettraTest
     void testCleanStartupHasZeroDatabasesByDefault() {
         Set<String> dbs = hierarchyService.discoverAllDatabases();
         // Default clean state without auto-seeding
@@ -72,7 +74,7 @@ public class HierarchyExplorerAndSampleServiceTest {
         }
     }
 
-    @Test
+    @JettraTest
     void testSampleDatabaseLifecycleInstallAndUninstall() throws Exception {
         String targetDb = "scrum_board_db";
         assertEquals(InstallState.NOT_INSTALLED, sampleService.getInstallState(targetDb));
@@ -108,7 +110,7 @@ public class HierarchyExplorerAndSampleServiceTest {
         assertFalse(dbsAfterUninstall.contains(targetDb), "Purged database must no longer appear in discovered databases.");
     }
 
-    @Test
+    @JettraTest
     void testHierarchyStreamingJsonSerializationWithExampleDBReferences() {
         // Load the complex ExampleDBReferences dataset with 9 multi-model engines
         new SampleDatasetManager(engine).loadExampleDBReferencesDataset();
@@ -142,7 +144,7 @@ public class HierarchyExplorerAndSampleServiceTest {
         assertTrue(sw.toString().length() > 500);
     }
 
-    @Test
+    @JettraTest
     void testSpecialAndControlCharactersEscapedCorrectlyInStreamingSerializer() {
         String dbName = "esc_test_db";
         String complexPayload = "{\"key\\\"withQuote\":\"value with \\n newline, \\r carriage return, \\t tab, \\b backspace, \\f formfeed, \\\\ backslash, and \\u001f control char\"}";
@@ -161,7 +163,7 @@ public class HierarchyExplorerAndSampleServiceTest {
         assertEquals(1, parsed.getAsInt("totalItems"));
     }
 
-    @Test
+    @JettraTest
     void testCreateDatabaseInitializesAllNineEngineSubtrees() {
         String newDb = "fintech_multi_model_db";
         // Create new database with custom initial engine/unit
@@ -200,7 +202,7 @@ public class HierarchyExplorerAndSampleServiceTest {
         }
     }
 
-    @Test
+    @JettraTest
     void testMultiModelSubtreeFactoryAndStorageEngineTypeAliases() {
         assertEquals(StorageEngineType.DOCUMENT, StorageEngineType.fromString("document").orElse(null));
         assertEquals(StorageEngineType.KEY_VALUE, StorageEngineType.fromString("KEYVALUE").orElse(null));

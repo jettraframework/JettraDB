@@ -16,11 +16,11 @@ import io.jettra.json.JsonArray;
 import io.jettra.json.JsonObject;
 import io.jettra.json.JettraJson;
 import io.jettra.test.annotation.JettraTest;
+import io.jettra.test.annotation.NotRequiresRunningServer;
 import io.jettra.test.core.JettraAssert;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
+import io.jettra.test.annotation.AfterEach;
+import io.jettra.test.annotation.BeforeEach;
+import io.jettra.test.annotation.DisplayName;
 
 import java.io.File;
 import java.io.IOException;
@@ -32,7 +32,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static io.jettra.test.core.JettraAssert.*;
 
 /**
  * Unit and UI Integration Tests validating:
@@ -42,6 +42,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * 4. RestoreCommandHandler reactive command execution, validation, Virtual Threads & Event Bus.
  * 5. RestoreActionHandler delegating and StoreEnginesPage integration.
  */
+@NotRequiresRunningServer
 public class HistoricalVersionsDialogTest {
 
     private Path tempDir;
@@ -85,7 +86,6 @@ public class HistoricalVersionsDialogTest {
         }
     }
 
-    @Test
     @JettraTest
     @DisplayName("Test 1: RecordVersionSnapshot DTO attributes, default values, and JSON representation")
     public void testRecordVersionSnapshotDTO() {
@@ -115,7 +115,6 @@ public class HistoricalVersionsDialogTest {
         JettraAssert.assertTrue(record.isCurrent(), "Record should be current");
     }
 
-    @Test
     @JettraTest
     @DisplayName("Test 2: HierarchyExplorerService getVersionsJson returns structured array with mapped columns")
     public void testHierarchyExplorerServiceVersionsJsonMapping() {
@@ -150,7 +149,6 @@ public class HistoricalVersionsDialogTest {
         JettraAssert.assertNotNull(versionsJson, "Versions JSON should not be null");
     }
 
-    @Test
     @JettraTest
     @DisplayName("Test 3: Historical Versions Modal Component rendering and DOM IDs")
     public void testHistoricalVersionsModalRendering() {
@@ -176,7 +174,6 @@ public class HistoricalVersionsDialogTest {
         JettraAssert.assertTrue(html.contains("universalVersionsContainer"), "Must contain versions container");
     }
 
-    @Test
     @JettraTest
     @DisplayName("Test 4: HistoricalVersionsDialog.renderVersionTable generates table with standardized typography contrast")
     public void testHistoricalVersionsDialogRenderVersionTable() {
@@ -202,7 +199,6 @@ public class HistoricalVersionsDialogTest {
         JettraAssert.assertTrue(html.contains("color:var(--j-text-secondary)"), "Must use secondary text color token");
     }
 
-    @Test
     @JettraTest
     @DisplayName("Test 5: RestoreCommandHandler executes transactional rollback, validation, and Virtual Thread async")
     public void testRestoreCommandHandlerExecution() throws InterruptedException {
@@ -277,7 +273,6 @@ public class HistoricalVersionsDialogTest {
         JettraAssert.assertTrue(asyncRes.success(), "Asynchronous restore must succeed");
     }
 
-    @Test
     @JettraTest
     @DisplayName("Test 6: RestoreActionHandler delegates to RestoreCommandHandler")
     public void testRestoreActionHandlerDelegation() {
@@ -303,7 +298,6 @@ public class HistoricalVersionsDialogTest {
         JettraAssert.assertTrue(syncRes.success(), "Restore action must succeed");
     }
 
-    @Test
     @JettraTest
     @DisplayName("Test 7: StoreEnginesPage full POST restore_version handler refreshes table view")
     public void testStoreEnginesPagePostRestoreHandler() {
@@ -342,7 +336,6 @@ public class HistoricalVersionsDialogTest {
         JettraAssert.assertTrue(html.contains("prod_alpha"), "Table must display restored item ID");
     }
 
-    @Test
     @JettraTest
     @DisplayName("Test 8: Reversion preserves append-only version history without truncating change log and notifies observer")
     public void testRestoreVersionAppendOnlyAuditIntegrityAndObserverNotification() {
@@ -397,7 +390,6 @@ public class HistoricalVersionsDialogTest {
         assertEquals("{\"name\":\"Alice\",\"role\":\"Viewer\"}", new String(activeData, StandardCharsets.UTF_8), "Active record must match selected historical snapshot exactly");
     }
 
-    @Test
     @JettraTest
     @DisplayName("Test 9: HistoricalVersionsDialog Confirm Modal wires button cleanly without premature form disabling")
     public void testConfirmRestoreModalButtonWiringAndClientScript() {
@@ -424,7 +416,6 @@ public class HistoricalVersionsDialogTest {
         assertTrue(fullHtml.contains("window.openUniversalRestoreModal"), "Must include openUniversalRestoreModal client script");
     }
 
-    @Test
     @JettraTest
     @DisplayName("Test 10: Snapshot Preview renders structured multi-view tabs (Tree, Table, Raw) via FluxObjectViewer")
     public void testSnapshotPreviewMultiViewTabsRendering() {

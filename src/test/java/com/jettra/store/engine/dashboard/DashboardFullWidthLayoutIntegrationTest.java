@@ -10,10 +10,11 @@ import com.jettra.store.engine.web.StoreEnginesPage;
 import io.jettra.flux.core.Widget;
 import io.jettra.flux.theme.ColorMode;
 import io.jettra.flux.theme.Themes;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
+import io.jettra.test.annotation.AfterEach;
+import io.jettra.test.annotation.NotRequiresRunningServer;
+import io.jettra.test.annotation.BeforeEach;
+import io.jettra.test.annotation.DisplayName;
+import io.jettra.test.annotation.JettraTest;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -23,12 +24,13 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static io.jettra.test.core.JettraAssert.*;
 
 /**
  * Integration Test Suite validating the Unified Full-Width and Responsive Layout
  * of Dashboard against Engines in JettraDB using JettraFlux FluidContainer.
  */
+@NotRequiresRunningServer
 public class DashboardFullWidthLayoutIntegrationTest {
 
     private Path tempDir;
@@ -65,7 +67,7 @@ public class DashboardFullWidthLayoutIntegrationTest {
         }
     }
 
-    @Test
+    @JettraTest
     @DisplayName("MainDashboardView renders using FluidContainer with 100% width and no max-width bottleneck")
     void testMainDashboardViewFullWidth() {
         DashboardMetrics.ComprehensiveDashboardSnapshot snapshot = collector.collectSnapshot();
@@ -83,7 +85,7 @@ public class DashboardFullWidthLayoutIntegrationTest {
         assertFalse(html.contains("margin:0 auto"), "Must NOT impose margin: 0 auto centering bottleneck");
     }
 
-    @Test
+    @JettraTest
     @DisplayName("StorageDashboardView renders using FluidContainer with 100% width and no max-width bottleneck")
     void testStorageDashboardViewFullWidth() {
         Widget storageView = StorageDashboardView.build(
@@ -101,7 +103,7 @@ public class DashboardFullWidthLayoutIntegrationTest {
         assertFalse(html.contains("margin:0 auto"), "Must NOT impose margin: 0 auto centering bottleneck");
     }
 
-    @Test
+    @JettraTest
     @DisplayName("StoreDashboardPage renders responsive full-width layout matching StoreEnginesPage")
     void testDashboardMatchesEnginesFullWidthResponsiveness() {
         StoreDashboardPage dashPage = new StoreDashboardPage(engine);
@@ -123,7 +125,7 @@ public class DashboardFullWidthLayoutIntegrationTest {
         assertTrue(enginesHtml.contains("jettra-fluid-container"), "Embedded dashboard inside Engines must also use FluidContainer");
     }
 
-    @Test
+    @JettraTest
     @DisplayName("Dashboard UI enforces 100% full-width scaffold and avoids body flex row bottleneck")
     void testDashboardScaffoldFullWidthAndNoBodyFlexBottleneck() {
         StoreDashboardPage dashPage = new StoreDashboardPage(engine);
@@ -142,7 +144,7 @@ public class DashboardFullWidthLayoutIntegrationTest {
         assertTrue(dashHtml.contains(".jettra-studio-layout { width: 100%; min-width: 100%;"), "Scaffold class must have full-width definitions");
     }
 
-    @Test
+    @JettraTest
     @DisplayName("Diagnose engines schema page line 4885")
     void testDiagnoseSchemaErrorLine() throws IOException {
         StoreEnginesPage enginesPage = new StoreEnginesPage(engine);

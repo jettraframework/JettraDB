@@ -8,10 +8,11 @@ import com.jettra.store.engine.web.StoreDashboardPage;
 import io.jettra.flux.core.Widget;
 import io.jettra.flux.theme.ColorMode;
 import io.jettra.flux.theme.Themes;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
+import io.jettra.test.annotation.AfterEach;
+import io.jettra.test.annotation.NotRequiresRunningServer;
+import io.jettra.test.annotation.BeforeEach;
+import io.jettra.test.annotation.DisplayName;
+import io.jettra.test.annotation.JettraTest;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -21,12 +22,13 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static io.jettra.test.core.JettraAssert.*;
 
 /**
  * Integration Test Suite for Global Vertical Scrolling, Keyboard Focus Accessibility (tabindex="0"),
  * Sticky Header anchoring, and Themed Scrollbar in StoreDashboardPage and MainDashboardView.
  */
+@NotRequiresRunningServer
 public class DashboardGlobalScrollAndKeyboardAccessibilityTest {
 
     private Path tempDir;
@@ -60,7 +62,7 @@ public class DashboardGlobalScrollAndKeyboardAccessibilityTest {
         }
     }
 
-    @Test
+    @JettraTest
     @DisplayName("StoreDashboardPage renders complete layout with scrollable workspace body and tabindex=0")
     void testStoreDashboardPageScrollAndKeyboardAccessibility() {
         StoreDashboardPage page = new StoreDashboardPage(engine);
@@ -93,7 +95,7 @@ public class DashboardGlobalScrollAndKeyboardAccessibilityTest {
         assertTrue(html.contains("Network Endpoints"), "Must contain network endpoints at the bottom");
     }
 
-    @Test
+    @JettraTest
     @DisplayName("MainDashboardView renders using elastic fluid container without height constraints")
     void testMainDashboardViewFlexColumnFlow() {
         DashboardMetricsCollector collector = new DashboardMetricsCollector(engine);
@@ -109,7 +111,7 @@ public class DashboardGlobalScrollAndKeyboardAccessibilityTest {
         assertTrue(html.contains("Hierarchy Explorer"), "Must render hierarchy explorer link");
     }
 
-    @Test
+    @JettraTest
     @DisplayName("StoreDashboardPage renders properly under Light / Flat theme with theme-compliant scrollbar tokens")
     void testStoreDashboardPageLightThemeScrollTokens() {
         StoreDashboardPage page = new StoreDashboardPage(engine);

@@ -8,10 +8,11 @@ import io.jettra.flux.core.Widget;
 import io.jettra.flux.theme.Themes;
 import io.jettra.json.JsonObject;
 import io.jettra.json.JettraJson;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
+import io.jettra.test.annotation.AfterEach;
+import io.jettra.test.annotation.NotRequiresRunningServer;
+import io.jettra.test.annotation.BeforeEach;
+import io.jettra.test.annotation.DisplayName;
+import io.jettra.test.annotation.JettraTest;
 
 import java.io.File;
 import java.io.IOException;
@@ -21,7 +22,7 @@ import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.*;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static io.jettra.test.core.JettraAssert.*;
 
 /**
  * Comprehensive Unit and UI Integration Test Suite for JettraDB Multi-Model Storage Hierarchy Explorer.
@@ -29,6 +30,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * dynamic TreeView active DB scoping, dashboard modular panels, JettraFlux charts,
  * Java 25 pattern matching on sealed records, and Virtual Thread concurrency.
  */
+@NotRequiresRunningServer
 public class MultiModelExplorerInteractivityTest {
 
     private Path tempDir;
@@ -60,7 +62,7 @@ public class MultiModelExplorerInteractivityTest {
         }
     }
 
-    @Test
+    @JettraTest
     @DisplayName("TableView: Verify Row Expansion (>) and Detail Panel with Field Attributes")
     void testTableViewRowExpansionAndNestedDetailPanel() {
         String testDb = "retail_store_db";
@@ -91,7 +93,7 @@ public class MultiModelExplorerInteractivityTest {
         assertTrue(html.contains("📍 doc:retail_store_db:products:prod_101") || html.contains("doc:retail_store_db"), "Detail row must contain storage address");
     }
 
-    @Test
+    @JettraTest
     @DisplayName("TableView: Verify 4 Row Action Buttons (VER, EDITAR, VERSIONES, ELIMINAR)")
     void testTableViewRowActionButtonsAndModalTriggers() {
         String testDb = "action_test_db";
@@ -124,7 +126,7 @@ public class MultiModelExplorerInteractivityTest {
         assertTrue(html.contains("Eliminar registro") || html.contains("fa-trash"), "ELIMINAR button must have tooltip / trash icon");
     }
 
-    @Test
+    @JettraTest
     @DisplayName("TreeView: Verify Scoping to Active DB and Absence of Redundant [Explore DB]")
     void testTreeViewActiveDatabaseScopingAndNoExploreDbButton() {
         String activeDb = "active_scoped_db";
@@ -153,7 +155,7 @@ public class MultiModelExplorerInteractivityTest {
         assertTrue(html.contains("collapseAllTreeNodes"), "Tree view header must contain Collapse All handler");
     }
 
-    @Test
+    @JettraTest
     @DisplayName("Dashboard: Verify Modular Panels, Metric StatCards, and Native JettraFlux Charts")
     void testDashboardLayoutModularPanelsAndNativeCharts() {
         String targetDb = "analytics_dashboard_db";
@@ -188,7 +190,7 @@ public class MultiModelExplorerInteractivityTest {
         assertTrue(html.contains("Quick Database & Storage Actions"), "Dashboard must render Quick Action toolbar");
     }
 
-    @Test
+    @JettraTest
     @DisplayName("Java 25: Test Sealed HierarchyRowCommand Pattern Matching Dispatch")
     void testJava25SealedHierarchyRowCommandPatternMatching() {
         StorageModalCommands.HierarchyRowCommand viewCmd = new StorageModalCommands.ViewCommand(
@@ -210,7 +212,7 @@ public class MultiModelExplorerInteractivityTest {
         assertEquals("DELETE:VECTOR:ai_db:embeddings:vec_42", StorageModalCommands.dispatchCommand(deleteCmd));
     }
 
-    @Test
+    @JettraTest
     @DisplayName("Java 25: Test Virtual Thread Asynchronous Query Execution")
     void testVirtualThreadAsyncExplorerQueries() throws InterruptedException, ExecutionException {
         int queryCount = 20;

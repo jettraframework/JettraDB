@@ -11,10 +11,11 @@ import io.jettra.flux.core.Widget;
 import io.jettra.flux.download.DownloadResource;
 import io.jettra.flux.theme.ColorMode;
 import io.jettra.flux.theme.Themes;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
+import io.jettra.test.annotation.AfterAll;
+import io.jettra.test.annotation.NotRequiresRunningServer;
+import io.jettra.test.annotation.BeforeAll;
+import io.jettra.test.annotation.DisplayName;
+import io.jettra.test.annotation.JettraTest;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -30,8 +31,9 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static io.jettra.test.core.JettraAssert.*;
 
+@NotRequiresRunningServer
 public class SnapshotDownloadIntegrationTest {
 
     private static Path tempBaseDir;
@@ -62,7 +64,7 @@ public class SnapshotDownloadIntegrationTest {
         }
     }
 
-    @Test
+    @JettraTest
     @DisplayName("CreateSnapshotCommand executes and encapsulates snapshot in DownloadResource")
     void testCreateSnapshotCommand() throws IOException {
         ComprehensiveDashboardSnapshot snapshot = collector.collectSnapshot();
@@ -88,7 +90,7 @@ public class SnapshotDownloadIntegrationTest {
         }
     }
 
-    @Test
+    @JettraTest
     @DisplayName("StoreDashboardPage onPost action=backup responds with JSON containing downloadUrl")
     void testStoreDashboardPageOnPostBackup() throws Exception {
         StoreDashboardPage page = new StoreDashboardPage(engine);
@@ -114,7 +116,7 @@ public class SnapshotDownloadIntegrationTest {
         assertTrue(body.contains("action=download"));
     }
 
-    @Test
+    @JettraTest
     @DisplayName("StoreDashboardPage onGet action=download streams snapshot markdown with attachment headers")
     void testStoreDashboardPageOnGetDownload() throws Exception {
         ComprehensiveDashboardSnapshot snapshot = collector.collectSnapshot();
@@ -148,7 +150,7 @@ public class SnapshotDownloadIntegrationTest {
         assertTrue(downloadedBody.contains("# JettraDB System & Storage Dashboard Snapshot"));
     }
 
-    @Test
+    @JettraTest
     @DisplayName("StoreDashboardPage onGet action=download strictly blocks Path Traversal attempts")
     void testStoreDashboardPagePathTraversalBlocked() throws Exception {
         StoreDashboardPage page = new StoreDashboardPage(engine);
@@ -167,7 +169,7 @@ public class SnapshotDownloadIntegrationTest {
         assertTrue(exchange.getResponseBodyAsString().contains("Access denied"));
     }
 
-    @Test
+    @JettraTest
     @DisplayName("MainDashboardView embeds FluxDownload driver and reactive download invocation")
     void testMainDashboardViewDownloadDriver() {
         ComprehensiveDashboardSnapshot snapshot = collector.collectSnapshot();

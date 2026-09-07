@@ -8,10 +8,11 @@ import com.jettra.store.engine.models.RecordsEngine;
 import com.jettra.store.engine.web.StoreDashboardPage;
 import io.jettra.flux.core.Widget;
 import io.jettra.flux.theme.Themes;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
+import io.jettra.test.annotation.AfterEach;
+import io.jettra.test.annotation.NotRequiresRunningServer;
+import io.jettra.test.annotation.BeforeEach;
+import io.jettra.test.annotation.DisplayName;
+import io.jettra.test.annotation.JettraTest;
 
 import java.io.File;
 import java.io.IOException;
@@ -22,7 +23,7 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static io.jettra.test.core.JettraAssert.*;
 
 /**
  * Test Suite for JettraDB Modular Panel-and-Chart Dashboard.
@@ -30,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * JettraFlux chart components (CharsDoughnut, ChartsLine, CharsBar),
  * and StoreDashboardPage lifecycle integration.
  */
+@NotRequiresRunningServer
 public class DashboardModularPanelsTest {
 
     private Path tempDir;
@@ -68,7 +70,7 @@ public class DashboardModularPanelsTest {
         }
     }
 
-    @Test
+    @JettraTest
     @DisplayName("Test 1: Virtual Thread Telemetry Collection and Snapshot Accuracy")
     void testVirtualThreadMetricsCollection() {
         ComprehensiveDashboardSnapshot snapshot = collector.collectSnapshot();
@@ -97,7 +99,7 @@ public class DashboardModularPanelsTest {
         assertTrue(snapshot.health().maxHeapMb() > 0);
     }
 
-    @Test
+    @JettraTest
     @DisplayName("Test 2: Reactive Observer Subscription and Telemetry Burst Updates")
     void testReactiveObserverSubscriptionAndTelemetryBurst() {
         AtomicInteger notificationCount = new AtomicInteger(0);
@@ -131,7 +133,7 @@ public class DashboardModularPanelsTest {
         collector.unsubscribe(lastReceived::set);
     }
 
-    @Test
+    @JettraTest
     @DisplayName("Test 3: Modular Panel Rendering with Native JettraFlux Components")
     void testMainDashboardViewAndModularPanelsRendering() {
         ComprehensiveDashboardSnapshot snapshot = collector.collectSnapshot();
@@ -180,7 +182,7 @@ public class DashboardModularPanelsTest {
         assertTrue(mainHtml.contains("Hierarchy Explorer"));
     }
 
-    @Test
+    @JettraTest
     @DisplayName("Test 4: Java 25 Pattern Matching Prefix Categorization")
     void testPrefixPatternMatchingCategorization() {
         assertEquals("RECORDS", DashboardMetricsCollector.categorizePrefix("rec:"));
@@ -195,7 +197,7 @@ public class DashboardModularPanelsTest {
         assertEquals("DOCUMENT", DashboardMetricsCollector.categorizePrefix("unknown:"));
     }
 
-    @Test
+    @JettraTest
     @DisplayName("Test 5: StoreDashboardPage Full Integration")
     void testStoreDashboardPageIntegration() {
         StoreDashboardPage page = new StoreDashboardPage(engine);
@@ -210,7 +212,7 @@ public class DashboardModularPanelsTest {
         assertTrue(renderedHtml.contains("Network Endpoints"));
     }
 
-    @Test
+    @JettraTest
     @DisplayName("Test 6: StorageDashboardView contains ThemeSelectorMenu and adjacent ThemeModeToggle")
     void testStorageDashboardViewAdjacentThemeControls() {
         Widget storageDash = com.jettra.store.engine.web.StorageDashboardView.build(

@@ -4,9 +4,10 @@ import com.jettra.store.engine.models.RecordsEngine;
 import com.jettra.store.engine.models.KeyValueEngine;
 import com.jettra.store.engine.models.DocumentEngine;
 import io.jettra.json.JsonObject;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import io.jettra.test.annotation.AfterEach;
+import io.jettra.test.annotation.NotRequiresRunningServer;
+import io.jettra.test.annotation.BeforeEach;
+import io.jettra.test.annotation.JettraTest;
 
 import java.io.File;
 import java.io.IOException;
@@ -16,8 +17,9 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static io.jettra.test.core.JettraAssert.*;
 
+@NotRequiresRunningServer
 public class StorageEnginesFeaturesTest {
 
     private Path tempDir;
@@ -48,7 +50,7 @@ public class StorageEnginesFeaturesTest {
         }
     }
 
-    @Test
+    @JettraTest
     void testRecordsEnginePersistenceAndStorageCore() {
         RecordsEngine recEngine = (RecordsEngine) engine.getEngine("RECORDS");
         assertNotNull(recEngine);
@@ -76,7 +78,7 @@ public class StorageEnginesFeaturesTest {
         assertNull(engine.getStorageCore().get("rec:programmers:rec_001"));
     }
 
-    @Test
+    @JettraTest
     void testKeyValueEnginePersistenceAndStorageCore() {
         KeyValueEngine kvEngine = (KeyValueEngine) engine.getEngine("KEYVALUE");
         assertNotNull(kvEngine);
@@ -92,7 +94,7 @@ public class StorageEnginesFeaturesTest {
         assertNull(engine.getStorageCore().get("kv:config_db:sys.timeout"));
     }
 
-    @Test
+    @JettraTest
     void testDatabaseBackupAndRestore() throws IOException {
         String testDb = "orders_db";
         DocumentEngine docEngine = (DocumentEngine) engine.getEngine("DOCUMENT");
@@ -142,7 +144,7 @@ public class StorageEnginesFeaturesTest {
                 .forEach(File::delete);
     }
 
-    @Test
+    @JettraTest
     void testExampleDBReferencesAndReferenceResolver() {
         com.jettra.store.engine.samples.SampleDatasetManager sampleManager = new com.jettra.store.engine.samples.SampleDatasetManager(engine);
         int loaded = sampleManager.loadExampleDBReferencesDataset();
@@ -287,7 +289,7 @@ public class StorageEnginesFeaturesTest {
         assertTrue(resHr.exists(), "HR employee with table slash path should resolve and auto-load");
     }
 
-    @Test
+    @JettraTest
     void testStoreEnginesPageHtmlRendering() throws Exception {
         com.jettra.store.engine.samples.SampleDatasetManager sampleManager = new com.jettra.store.engine.samples.SampleDatasetManager(engine);
         sampleManager.loadAllDatasets();
@@ -363,7 +365,7 @@ public class StorageEnginesFeaturesTest {
         assertTrue(html.contains("item_detail_"), "HTML must contain level 5 item detail subtrees");
     }
 
-    @Test
+    @JettraTest
     void testRecordEditVersionIncrementAndHistory() {
         String testKey = "doc:test_v_db:record_01";
         long t1 = 1000000L;
@@ -391,7 +393,7 @@ public class StorageEnginesFeaturesTest {
         assertFalse(history.get(2).isCurrent());
     }
 
-    @Test
+    @JettraTest
     void testGeospatialReferenceResolution() {
         new com.jettra.store.engine.samples.SampleDatasetManager(engine).loadExampleDBReferencesDataset();
         com.jettra.store.engine.ref.JettraReferenceResolver resolver = new com.jettra.store.engine.ref.JettraReferenceResolver(engine);
@@ -422,7 +424,7 @@ public class StorageEnginesFeaturesTest {
         assertTrue(expanded.has("fulfillmentHubRef"));
     }
 
-    @Test
+    @JettraTest
     void testEditOrderMasterVersionIncrement() {
         new com.jettra.store.engine.samples.SampleDatasetManager(engine).loadExampleDBReferencesDataset();
         com.jettra.store.engine.web.StoreEnginesPage page = new com.jettra.store.engine.web.StoreEnginesPage(engine);
@@ -465,7 +467,7 @@ public class StorageEnginesFeaturesTest {
         assertEquals(1, engine.getStorageCore().getVersionCount("geo:" + db + ":hub_colon"), "hub_colon must stay at version 1");
     }
 
-    @Test
+    @JettraTest
     void testReferenceResolutionAndDynamicClusterRouting() {
         new com.jettra.store.engine.samples.SampleDatasetManager(engine).loadExampleDBReferencesDataset();
         com.jettra.store.engine.cluster.ClusterNodeRegistry registry = com.jettra.store.engine.cluster.ClusterNodeRegistry.getInstance();

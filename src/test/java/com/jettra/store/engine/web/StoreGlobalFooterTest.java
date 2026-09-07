@@ -8,10 +8,11 @@ import com.sun.net.httpserver.HttpContext;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpPrincipal;
 import io.jettra.flux.security.SecurityContextHolder;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
+import io.jettra.test.annotation.AfterEach;
+import io.jettra.test.annotation.NotRequiresRunningServer;
+import io.jettra.test.annotation.BeforeEach;
+import io.jettra.test.annotation.DisplayName;
+import io.jettra.test.annotation.JettraTest;
 
 import java.io.*;
 import java.net.InetSocketAddress;
@@ -22,11 +23,12 @@ import java.nio.file.Path;
 import java.time.Year;
 import java.util.Comparator;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static io.jettra.test.core.JettraAssert.*;
 
 /**
  * Integration Test Suite validating the global, reusable AppFooter in JettraDB master layout.
  */
+@NotRequiresRunningServer
 public class StoreGlobalFooterTest {
 
     private Path tempDir;
@@ -65,7 +67,7 @@ public class StoreGlobalFooterTest {
         }
     }
 
-    @Test
+    @JettraTest
     @DisplayName("1. Dashboard page renders global AppFooter with dynamic year, branding, and links")
     void testDashboardRendersGlobalFooter() throws IOException {
         TestHttpExchange exchange = new TestHttpExchange("GET", "/dashboard");
@@ -92,7 +94,7 @@ public class StoreGlobalFooterTest {
         assertTrue(body.contains("jettra-workspace-body"), "Workspace body must contain flex column layout");
     }
 
-    @Test
+    @JettraTest
     @DisplayName("2. Secondary management views (Engines, Users, Info) inherit global AppFooter automatically")
     void testSecondaryViewsInheritGlobalFooter() throws IOException {
         // Test Engines Page
@@ -118,7 +120,7 @@ public class StoreGlobalFooterTest {
         assertTrue(exchangeInfo.getResponseBodyAsString().contains("<footer"), "Information view must inherit footer");
     }
 
-    @Test
+    @JettraTest
     @DisplayName("3. Footer navigation links contain valid target paths without script leaks")
     void testFooterNavigationLinks() throws IOException {
         TestHttpExchange exchange = new TestHttpExchange("GET", "/dashboard");

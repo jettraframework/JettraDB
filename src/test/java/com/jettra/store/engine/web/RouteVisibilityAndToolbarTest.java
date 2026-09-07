@@ -8,10 +8,11 @@ import com.jettra.store.engine.web.RouteVisibilityGuard.NavigationRouteConfig;
 import com.jettra.store.engine.web.RouteVisibilityGuard.RouteType;
 import io.jettra.flux.core.Widget;
 import io.jettra.flux.theme.Themes;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
+import io.jettra.test.annotation.AfterEach;
+import io.jettra.test.annotation.NotRequiresRunningServer;
+import io.jettra.test.annotation.BeforeEach;
+import io.jettra.test.annotation.DisplayName;
+import io.jettra.test.annotation.JettraTest;
 
 import java.io.File;
 import java.io.IOException;
@@ -19,7 +20,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static io.jettra.test.core.JettraAssert.*;
 
 /**
  * Test Suite validating Conditional Navigation Bar & Toolbar Rendering.
@@ -27,6 +28,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * structural tabs, and the database selectOne dropdown, while secondary management routes
  * retain full controls.
  */
+@NotRequiresRunningServer
 public class RouteVisibilityAndToolbarTest {
 
     private Path tempDir;
@@ -60,7 +62,7 @@ public class RouteVisibilityAndToolbarTest {
         }
     }
 
-    @Test
+    @JettraTest
     @DisplayName("Test 1: RouteVisibilityGuard Pattern Matching Resolution")
     void testRouteVisibilityGuardResolution() {
         // 1. Dashboard routes -> Hidden toolbars, tabs, and database select
@@ -92,7 +94,7 @@ public class RouteVisibilityAndToolbarTest {
         assertTrue(dbConfig.showGlobalActionButtons());
     }
 
-    @Test
+    @JettraTest
     @DisplayName("Test 2: Dashboard Route HTML Output Excludes Toolbar, Tabs & Database Select")
     void testDashboardRouteExcludesToolbars() {
         Widget dashboardUi = dashboardPage.buildUI(null, Collections.emptyMap(), "Ast");
@@ -123,7 +125,7 @@ public class RouteVisibilityAndToolbarTest {
         assertTrue(renderedHtml.contains("TOTAL DATABASES"), "Dashboard must show KPI cards");
     }
 
-    @Test
+    @JettraTest
     @DisplayName("Test 3: Management Route (/engines) Retains Full Toolbar, Tabs & Database Select")
     void testEnginesRouteRetainsToolbars() {
         Map<String, String> params = new HashMap<>();

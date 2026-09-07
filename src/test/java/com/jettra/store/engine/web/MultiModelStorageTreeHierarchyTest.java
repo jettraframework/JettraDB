@@ -8,7 +8,12 @@ import io.jettra.flux.theme.Themes;
 import io.jettra.flux.widgets.FluxTree;
 import io.jettra.flux.widgets.FluxTreeNode;
 import io.jettra.flux.widgets.FluxTreeVisitor;
-import org.junit.jupiter.api.*;
+import io.jettra.test.annotation.JettraTest;
+import io.jettra.test.annotation.AfterAll;
+import io.jettra.test.annotation.BeforeAll;
+import io.jettra.test.annotation.BeforeEach;
+import io.jettra.test.annotation.AfterEach;
+import io.jettra.test.annotation.DisplayName;
 
 import java.io.File;
 import java.nio.charset.StandardCharsets;
@@ -17,9 +22,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static io.jettra.test.core.JettraAssert.*;
 
-import io.jettra.test.annotation.JettraTest;
 import io.jettra.test.annotation.NotRequiresRunningServer;
 
 /**
@@ -73,7 +77,6 @@ public class MultiModelStorageTreeHierarchyTest {
         dir.delete();
     }
 
-    @Test
     @JettraTest
     @DisplayName("Test Multi-Model Tree Hierarchy: hydrate engines, units, and items with JettraFlux")
     public void testMultiModelTreeHierarchyHydrationAndRendering() {
@@ -129,7 +132,6 @@ public class MultiModelStorageTreeHierarchyTest {
         assertTrue(html.contains("FluxTree.collapseAll"), "Tree view must embed FluxTree.collapseAll controller");
     }
 
-    @Test
     @JettraTest
     @DisplayName("Test State & Visitor Patterns: expandAll, collapseAll, and Visitor traversal on multi-model tree")
     public void testTreeExpandAllAndCollapseAllStateConsistency() {

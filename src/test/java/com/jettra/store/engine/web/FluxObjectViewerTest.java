@@ -5,18 +5,18 @@ import io.jettra.flux.widgets.FluxJsonTree;
 import io.jettra.flux.widgets.FluxObjectViewer;
 import io.jettra.flux.widgets.FluxSnapshotDrawer;
 import io.jettra.test.annotation.JettraTest;
+import io.jettra.test.annotation.NotRequiresRunningServer;
 import io.jettra.test.core.JettraAssert;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
+import io.jettra.test.annotation.DisplayName;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static io.jettra.test.core.JettraAssert.*;
 
 /**
  * Unit and DOM Tests for FluxObjectViewer, FluxJsonTree, and FluxSnapshotDrawer components.
  */
+@NotRequiresRunningServer
 public class FluxObjectViewerTest {
 
-    @Test
     @JettraTest
     @DisplayName("Test 1: FluxJsonTree correctly renders nested structures with typed badges")
     public void testFluxJsonTreeRendering() {
@@ -35,7 +35,6 @@ public class FluxObjectViewerTest {
         JettraAssert.assertNotNull(html, "HTML should not be null");
     }
 
-    @Test
     @JettraTest
     @DisplayName("Test 2: FluxObjectViewer renders compact preview and expandable inspector")
     public void testFluxObjectViewerRendering() {
@@ -59,7 +58,6 @@ public class FluxObjectViewerTest {
         JettraAssert.assertTrue(html.contains("jettra-flux-object-viewer"), "Must render viewer component");
     }
 
-    @Test
     @JettraTest
     @DisplayName("Test 3: FluxSnapshotDrawer renders full snapshot attributes flyout panel")
     public void testFluxSnapshotDrawerRendering() {

@@ -8,10 +8,11 @@ import com.sun.net.httpserver.HttpContext;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpPrincipal;
 import io.jettra.flux.security.SecurityContextHolder;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
+import io.jettra.test.annotation.AfterEach;
+import io.jettra.test.annotation.NotRequiresRunningServer;
+import io.jettra.test.annotation.BeforeEach;
+import io.jettra.test.annotation.DisplayName;
+import io.jettra.test.annotation.JettraTest;
 
 import java.io.*;
 import java.net.InetSocketAddress;
@@ -21,12 +22,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static io.jettra.test.core.JettraAssert.*;
 
 /**
  * End-to-End Integration Test Suite validating Declarative Role-Based Access Control (RBAC)
  * with @PageWidgetAllow and JettraFlux security interceptor across JettraDB management views.
  */
+@NotRequiresRunningServer
 public class DeclarativeSecurityAccessControlTest {
 
     private Path tempDir;
@@ -63,7 +65,7 @@ public class DeclarativeSecurityAccessControlTest {
         }
     }
 
-    @Test
+    @JettraTest
     @DisplayName("1. Protected page access without session triggers clean HTTP 302 redirect to /login with zero script leaks")
     void testUnauthenticatedAccessToProtectedPageRedirectsToLogin() throws IOException {
         TestHttpExchange exchange = new TestHttpExchange("GET", "/dashboard");
@@ -80,7 +82,7 @@ public class DeclarativeSecurityAccessControlTest {
         assertFalse(body.contains("<script>setTimeout"), "Redirect must not inject setTimeout script leaks");
     }
 
-    @Test
+    @JettraTest
     @DisplayName("2. Authenticated user with valid role successfully renders protected page (HTTP 200)")
     void testAuthenticatedAccessWithValidRoleRendersPage() throws IOException {
         TestHttpExchange exchange = new TestHttpExchange("GET", "/dashboard");
@@ -95,7 +97,7 @@ public class DeclarativeSecurityAccessControlTest {
         assertTrue(body.contains("Dashboard - JettraStoreEngine"), "Title must match target view");
     }
 
-    @Test
+    @JettraTest
     @DisplayName("3. Authenticated user without required role (USER accessing ADMIN-only StoreUsersPage) yields HTTP 403 Access Denied")
     void testAuthenticatedAccessWithoutRequiredRoleYields403() throws IOException {
         TestHttpExchange exchange = new TestHttpExchange("GET", "/users");
@@ -110,7 +112,7 @@ public class DeclarativeSecurityAccessControlTest {
         assertFalse(body.contains("<script>alert("), "Access denied must not leak script alert popups");
     }
 
-    @Test
+    @JettraTest
     @DisplayName("4. Authenticated ADMIN user successfully accesses ADMIN-only StoreUsersPage (HTTP 200)")
     void testAdminAccessToStoreUsersPageSucceeds() throws IOException {
         TestHttpExchange exchange = new TestHttpExchange("GET", "/users");
@@ -124,7 +126,7 @@ public class DeclarativeSecurityAccessControlTest {
         assertTrue(body.contains("<!DOCTYPE html>"), "Must render full HTML scaffold");
     }
 
-    @Test
+    @JettraTest
     @DisplayName("5. Public page with @NoLoginRequired (StoreLoginPage) is accessible without credentials")
     void testPublicPageAccessibleWithoutLogin() throws IOException {
         TestHttpExchange exchange = new TestHttpExchange("GET", "/login");

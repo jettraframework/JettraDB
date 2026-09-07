@@ -11,10 +11,11 @@ import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpContext;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpPrincipal;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
+import io.jettra.test.annotation.AfterEach;
+import io.jettra.test.annotation.NotRequiresRunningServer;
+import io.jettra.test.annotation.BeforeEach;
+import io.jettra.test.annotation.DisplayName;
+import io.jettra.test.annotation.JettraTest;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -30,12 +31,13 @@ import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.*;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static io.jettra.test.core.JettraAssert.*;
 
 /**
  * Tests for JettraFlux reactive modal dialog form handling, subtree state preservation,
  * and AJAX non-destructive branch updates.
  */
+@NotRequiresRunningServer
 public class TreeStatePreservationTest {
 
     private Path tempDir;
@@ -77,7 +79,7 @@ public class TreeStatePreservationTest {
         }
     }
 
-    @Test
+    @JettraTest
     @DisplayName("Test Pattern Matching with Sealed HierarchyMutationEvent Records")
     void testHierarchyMutationEventPatternMatching() {
         HierarchyMutationEvent insertEvent = new SubtreeInsertEvent(
@@ -95,7 +97,7 @@ public class TreeStatePreservationTest {
         assertEquals("INSERT:customers_db:cust_001", result);
     }
 
-    @Test
+    @JettraTest
     @DisplayName("Test Virtual Thread Concurrent Subtree Record Insertions")
     void testVirtualThreadConcurrentSubtreeInsertions() throws InterruptedException, ExecutionException {
         int workerCount = 50;
@@ -141,7 +143,7 @@ public class TreeStatePreservationTest {
         vThreadExecutor.shutdown();
     }
 
-    @Test
+    @JettraTest
     @DisplayName("Test AJAX Post Handler for Document Insert Without Full Page Reload")
     void testAjaxPostInsertDocumentReturnsSuccessJson() throws IOException {
         MockHttpExchange exchange = new MockHttpExchange();
@@ -171,7 +173,7 @@ public class TreeStatePreservationTest {
         assertTrue(json.getAsString("message").contains("inv_2026_999"));
     }
 
-    @Test
+    @JettraTest
     @DisplayName("Test AJAX Post Handler for Unit/Collection Creation")
     void testAjaxPostCreateUnit() throws IOException {
         MockHttpExchange exchange = new MockHttpExchange();
@@ -194,7 +196,7 @@ public class TreeStatePreservationTest {
         assertEquals("user_sessions", json.getAsString("collection"));
     }
 
-    @Test
+    @JettraTest
     @DisplayName("Test Non-Destructive Subtree JSON Hierarchy Discovery")
     void testHierarchyJsonDiscoveryPreservesUnits() {
         // Insert items across 2 collections

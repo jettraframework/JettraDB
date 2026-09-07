@@ -2,10 +2,11 @@ package com.jettra.store.engine.web;
 
 import com.jettra.store.engine.core.JettraStorageEngine;
 import com.jettra.store.engine.models.DocumentEngine;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
+import io.jettra.test.annotation.AfterEach;
+import io.jettra.test.annotation.NotRequiresRunningServer;
+import io.jettra.test.annotation.BeforeEach;
+import io.jettra.test.annotation.DisplayName;
+import io.jettra.test.annotation.JettraTest;
 
 import java.io.File;
 import java.io.IOException;
@@ -20,7 +21,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static io.jettra.test.core.JettraAssert.*;
 
 /**
  * Unit and integration tests for EditActionHandler validating:
@@ -29,6 +30,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * 3. Observer pattern with reactive event publishing (EditDocumentSuccessEvent / EditDocumentFailureEvent).
  * 4. Resilience and timeout handling without hanging or deadlock.
  */
+@NotRequiresRunningServer
 public class EditActionHandlerTest {
 
     private Path tempDir;
@@ -62,7 +64,7 @@ public class EditActionHandlerTest {
         }
     }
 
-    @Test
+    @JettraTest
     @DisplayName("Should execute edit asynchronously via Virtual Threads and create new version")
     void testExecuteEditAsyncVirtualThreads() throws Exception {
         String db = "customers_db";
@@ -90,7 +92,7 @@ public class EditActionHandlerTest {
         assertTrue(res2.versionCount() >= 2);
     }
 
-    @Test
+    @JettraTest
     @DisplayName("Should notify observers on successful edit via Observer Pattern")
     void testObserverNotificationOnSuccess() throws Exception {
         String db = "products_db";
@@ -120,7 +122,7 @@ public class EditActionHandlerTest {
         assertEquals(db, successEvent.result().database());
     }
 
-    @Test
+    @JettraTest
     @DisplayName("Should notify observer with FailureEvent when record ID is empty")
     void testObserverNotificationOnFailure() throws Exception {
         CountDownLatch latch = new CountDownLatch(1);
@@ -143,7 +145,7 @@ public class EditActionHandlerTest {
         assertInstanceOf(EditDocumentFailureEvent.class, receivedEvent.get());
     }
 
-    @Test
+    @JettraTest
     @DisplayName("Should enforce resilience timeout without blocking execution")
     void testTimeoutResilience() throws Exception {
         // Test with ultra-short timeout (1 ms) on a mock slow task to verify timeout handling

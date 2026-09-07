@@ -9,10 +9,11 @@ import com.jettra.store.engine.web.StoreDashboardPage;
 import io.jettra.flux.core.Widget;
 import io.jettra.flux.theme.ColorMode;
 import io.jettra.flux.theme.Themes;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
+import io.jettra.test.annotation.AfterEach;
+import io.jettra.test.annotation.NotRequiresRunningServer;
+import io.jettra.test.annotation.BeforeEach;
+import io.jettra.test.annotation.DisplayName;
+import io.jettra.test.annotation.JettraTest;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -23,11 +24,12 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static io.jettra.test.core.JettraAssert.*;
 
 /**
  * Test Suite for SnapshotService Markdown persistence and EngineHierarchyChartPanel scrollability.
  */
+@NotRequiresRunningServer
 public class SnapshotServiceAndDashboardScrollTest {
 
     private Path tempDir;
@@ -65,7 +67,7 @@ public class SnapshotServiceAndDashboardScrollTest {
         }
     }
 
-    @Test
+    @JettraTest
     @DisplayName("SnapshotService correctly generates structured Markdown with tables and headers")
     void testGenerateMarkdown() {
         ComprehensiveDashboardSnapshot snapshot = collector.collectSnapshot();
@@ -104,7 +106,7 @@ public class SnapshotServiceAndDashboardScrollTest {
         assertTrue(md.contains("| **JVM Heap Memory** |"));
     }
 
-    @Test
+    @JettraTest
     @DisplayName("SnapshotService persists file matching pattern snapshot-yyyy-MM-dd-HH-mm-ss.md atomically")
     void testCreateSnapshotFilePersistence() throws IOException {
         ComprehensiveDashboardSnapshot snapshot = collector.collectSnapshot();
@@ -128,7 +130,7 @@ public class SnapshotServiceAndDashboardScrollTest {
         Files.deleteIfExists(createdPath);
     }
 
-    @Test
+    @JettraTest
     @DisplayName("SnapshotService creates snapshot specifically in engine.getStorageDir()/snapshot")
     void testCreateSnapshotInEngineStorageDir() throws IOException {
         ComprehensiveDashboardSnapshot snapshot = collector.collectSnapshot();
@@ -143,7 +145,7 @@ public class SnapshotServiceAndDashboardScrollTest {
         Files.deleteIfExists(snapshotPath);
     }
 
-    @Test
+    @JettraTest
     @DisplayName("EngineHierarchyChartPanel includes scrollableContent and theme-styled scrollbar")
     void testEngineHierarchyChartPanelScrollableLayout() {
         ComprehensiveDashboardSnapshot snapshot = collector.collectSnapshot();
@@ -165,7 +167,7 @@ public class SnapshotServiceAndDashboardScrollTest {
         assertTrue(html.contains("espresso-charsbar"), "Must contain bar chart canvas element");
     }
 
-    @Test
+    @JettraTest
     @DisplayName("MainDashboardView renders Create Backup Snapshot button with interactive trigger and toast")
     void testMainDashboardViewButtonAndScript() {
         ComprehensiveDashboardSnapshot snapshot = collector.collectSnapshot();
@@ -180,7 +182,7 @@ public class SnapshotServiceAndDashboardScrollTest {
         assertTrue(html.contains("action=backup"), "Script must trigger dashboard backup action");
     }
 
-    @Test
+    @JettraTest
     @DisplayName("StoreDashboardPage handles action=backup POST request and outputs JSON")
     void testStoreDashboardPageOnPostBackup() {
         StoreDashboardPage page = new StoreDashboardPage(engine);

@@ -8,11 +8,11 @@ import com.jettra.store.engine.models.SnapshotPayload;
 import io.jettra.json.JsonObject;
 import io.jettra.json.JettraJson;
 import io.jettra.test.annotation.JettraTest;
+import io.jettra.test.annotation.NotRequiresRunningServer;
 import io.jettra.test.core.JettraAssert;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
+import io.jettra.test.annotation.AfterEach;
+import io.jettra.test.annotation.BeforeEach;
+import io.jettra.test.annotation.DisplayName;
 
 import java.io.File;
 import java.io.IOException;
@@ -22,7 +22,7 @@ import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.concurrent.CompletableFuture;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static io.jettra.test.core.JettraAssert.*;
 
 /**
  * Unit tests validating:
@@ -31,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * 3. Atomic rollback restoration and append-only version history maintenance.
  * 4. Asynchronous Rollback execution via Java 25 Virtual Threads (Thread.ofVirtual()).
  */
+@NotRequiresRunningServer
 public class RollbackMementoServiceTest {
 
     private Path tempDir;
@@ -74,7 +75,6 @@ public class RollbackMementoServiceTest {
         }
     }
 
-    @Test
     @JettraTest
     @DisplayName("Test 1: SnapshotPayload Sealed Hierarchy and Pattern Matching")
     public void testSnapshotPayloadPatternMatching() {
@@ -108,7 +108,6 @@ public class RollbackMementoServiceTest {
         JettraAssert.assertTrue(jsonSummary.contains("PROD-99"), "Should contain SKU");
     }
 
-    @Test
     @JettraTest
     @DisplayName("Test 2: MementoService atomic rollback restores aggregate and creates append-only version")
     public void testMementoServiceAtomicRollbackAndAppendOnlyHistory() {
@@ -154,7 +153,6 @@ public class RollbackMementoServiceTest {
         JettraAssert.assertEquals(v1Data, new String(activeData, StandardCharsets.UTF_8), "Active state should match v1 data");
     }
 
-    @Test
     @JettraTest
     @DisplayName("Test 3: RollbackCommand execution with Java 25 Virtual Threads and Reactive Events")
     public void testRollbackCommandVirtualThreadsExecution() {

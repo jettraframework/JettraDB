@@ -10,10 +10,11 @@ import io.jettra.flux.core.Widget;
 import io.jettra.flux.theme.Themes;
 import io.jettra.json.JsonObject;
 import io.jettra.json.JettraJson;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
+import io.jettra.test.annotation.AfterEach;
+import io.jettra.test.annotation.NotRequiresRunningServer;
+import io.jettra.test.annotation.BeforeEach;
+import io.jettra.test.annotation.DisplayName;
+import io.jettra.test.annotation.JettraTest;
 
 import java.io.File;
 import java.io.IOException;
@@ -22,12 +23,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static io.jettra.test.core.JettraAssert.*;
 
 /**
  * Test Suite validating Action Handlers and Dialog Modals in StoreEnginesPage Table View
  * (Expanded Row Detail and Actions Column).
  */
+@NotRequiresRunningServer
 public class StorageTableViewActionsTest {
 
     private Path tempDir;
@@ -64,7 +66,7 @@ public class StorageTableViewActionsTest {
         }
     }
 
-    @Test
+    @JettraTest
     @DisplayName("Test 1: Table View Actions Column Renders Functional onClick Handlers")
     void testActionsColumnButtons() {
         String payload = "{\"name\":\"Alice\",\"tier\":\"GOLD\"}";
@@ -96,7 +98,7 @@ public class StorageTableViewActionsTest {
         assertTrue(renderedHtml.contains("openUniversalDeleteModal"), "Must contain openUniversalDeleteModal handler");
     }
 
-    @Test
+    @JettraTest
     @DisplayName("Test 2: Expanded Row Detail Summary Renders Modal Action Handlers")
     void testExpandedRowDetailButtons() {
         String payload = "{\"name\":\"Bob\",\"city\":\"Panama City\",\"_ref\":\"jref://customers_db:orders:ord_99\"}";
@@ -123,7 +125,7 @@ public class StorageTableViewActionsTest {
         assertTrue(renderedHtml.contains("jref://"), "Must highlight jref references");
     }
 
-    @Test
+    @JettraTest
     @DisplayName("Test 3: Sealed HierarchyRowCommand Pattern Matching Dispatch")
     void testHierarchyRowCommandDispatch() {
         HierarchyRowCommand viewCmd = new ViewCommand("DOCUMENT", "customers_db", "default", "cust_01", "{}", 1);
@@ -137,7 +139,7 @@ public class StorageTableViewActionsTest {
         assertEquals("DELETE:DOCUMENT:customers_db:default:cust_01", StorageModalCommands.dispatchCommand(deleteCmd));
     }
 
-    @Test
+    @JettraTest
     @DisplayName("Test 4: Modal Dialog Components HTML Structure & Element IDs")
     void testModalDialogComponentsRendering() {
         String actionUrl = "/engines?engine=DOCUMENT";
@@ -177,7 +179,7 @@ public class StorageTableViewActionsTest {
         assertTrue(scriptHtml.contains("window.openUniversalDeleteModal"));
     }
 
-    @Test
+    @JettraTest
     @DisplayName("Test 5: Full StoreEnginesPage Integration with Modals & Table View")
     void testStoreEnginesPageIntegration() {
         StoreEnginesPage page = new StoreEnginesPage(engine);

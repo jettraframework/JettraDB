@@ -8,9 +8,10 @@ import io.jettra.flux.core.Widget;
 import io.jettra.flux.theme.ThemeData;
 import io.jettra.json.JsonArray;
 import io.jettra.json.JsonObject;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import io.jettra.test.annotation.AfterEach;
+import io.jettra.test.annotation.NotRequiresRunningServer;
+import io.jettra.test.annotation.BeforeEach;
+import io.jettra.test.annotation.JettraTest;
 
 import java.io.File;
 import java.io.IOException;
@@ -22,12 +23,13 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static io.jettra.test.core.JettraAssert.*;
 
 /**
  * Unit and Integration Test Suite verifying strict lazy loading, on-demand
  * hierarchy resolution, and reliable expansion toggle handling for the JettraStoreEngine Web Explorer.
  */
+@NotRequiresRunningServer
 public class HierarchyExplorerLazyLoadTest {
 
     private Path tempDir;
@@ -58,7 +60,7 @@ public class HierarchyExplorerLazyLoadTest {
         }
     }
 
-    @Test
+    @JettraTest
     void testEmptyDatabaseReturnsNoCollectionsOrEnginesRegisteredState() {
         String dbName = "clean_empty_db";
         JsonObject hierarchy = page.buildDatabaseHierarchyJson(dbName);
@@ -80,7 +82,7 @@ public class HierarchyExplorerLazyLoadTest {
         }
     }
 
-    @Test
+    @JettraTest
     void testIsolatedOnDemandChildMetadataResolutionForTargetDatabase() {
         String dbAlpha = "db_alpha";
         String dbBeta = "db_beta";
@@ -159,7 +161,7 @@ public class HierarchyExplorerLazyLoadTest {
         assertEquals(0, betaDocEngine.getAsInt("totalItems"));
     }
 
-    @Test
+    @JettraTest
     void testMultiModelResolutionWithVersionCountsAndBase64Payloads() {
         String dbName = "multimodel_prod_db";
 
@@ -209,7 +211,7 @@ public class HierarchyExplorerLazyLoadTest {
         assertTrue(decodedVersions.contains("usr_01") || decodedVersions.startsWith("["));
     }
 
-    @Test
+    @JettraTest
     void testIndexesAndSchemasScopedResolution() {
         String dbName = "indexed_schema_db";
 
@@ -251,7 +253,7 @@ public class HierarchyExplorerLazyLoadTest {
         assertTrue(foundCustomIndex, "Custom index idx_product_sku should be resolved in database hierarchy.");
     }
 
-    @Test
+    @JettraTest
     void testTreeCardRenderIncludesProperExpansionButtonAttributesAndHandlers() {
         String dbName = "interactive_db";
         engine.getStorageCore().put("doc:" + dbName + ":orders:ord_1",
@@ -286,7 +288,7 @@ public class HierarchyExplorerLazyLoadTest {
         assertTrue(html.contains("loadDbHierarchy"), "Page script must define loadDbHierarchy.");
     }
 
-    @Test
+    @JettraTest
     void testExampleDBReferencesJsonSerializationIsValidAndParsable() {
         new com.jettra.store.engine.samples.SampleDatasetManager(engine).loadExampleDBReferencesDataset();
 
@@ -309,7 +311,7 @@ public class HierarchyExplorerLazyLoadTest {
         }
     }
 
-    @Test
+    @JettraTest
     void testSpecialCharactersAndControlCharactersInMetadataKeysAndValues() {
         String dbName = "special_char_db";
 

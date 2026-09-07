@@ -5,10 +5,10 @@ import com.jettra.store.engine.models.DocumentEngine;
 import io.jettra.flux.core.Widget;
 import io.jettra.flux.theme.Themes;
 import io.jettra.test.annotation.JettraTest;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
+import io.jettra.test.annotation.NotRequiresRunningServer;
+import io.jettra.test.annotation.AfterEach;
+import io.jettra.test.annotation.BeforeEach;
+import io.jettra.test.annotation.DisplayName;
 
 import java.io.File;
 import java.io.IOException;
@@ -20,12 +20,13 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static io.jettra.test.core.JettraAssert.*;
 
 /**
  * Validates the Edit Document dialog flow, JettraFlux LoadingButton/ModalDialog rendering,
  * and the non-blocking execution of version persistence.
  */
+@NotRequiresRunningServer
 public class StoreEnginesPageEditFlowTest {
 
     private Path tempDir;
@@ -59,7 +60,6 @@ public class StoreEnginesPageEditFlowTest {
         }
     }
 
-    @Test
     @JettraTest
     @DisplayName("Modal Edit Document should render JettraFlux ModalDialog and LoadingButton")
     public void testEditDocumentModalRendersLoadingButtonAndModalDialog() {
@@ -82,7 +82,6 @@ public class StoreEnginesPageEditFlowTest {
         assertTrue(html.contains("handleModalFormSubmit"), "LoadingButton must wire handleModalFormSubmit");
     }
 
-    @Test
     @JettraTest
     @DisplayName("Edit entity should persist new version and update view without blocking")
     public void testEditEntityPersistsNewVersionViaPage() throws Exception {
@@ -115,7 +114,6 @@ public class StoreEnginesPageEditFlowTest {
         assertTrue(new String(current, StandardCharsets.UTF_8).contains("750.0"));
     }
 
-    @Test
     @JettraTest
     @DisplayName("Non-AJAX POST on StoreEnginesPage creates new version and produces alert message")
     public void testNonAjaxPostEditProducesSuccessAlert() {
