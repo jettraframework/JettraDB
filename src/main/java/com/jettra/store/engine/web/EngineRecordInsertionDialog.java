@@ -6,6 +6,7 @@ import com.jettra.store.engine.insertion.EngineType;
 import io.jettra.flux.core.Modifier;
 import io.jettra.flux.core.Widget;
 import io.jettra.flux.widgets.*;
+import io.jettra.flux.transport.JettraFluxTransport;
 import io.jettra.json.JsonObject;
 
 import java.util.ArrayList;
@@ -303,7 +304,6 @@ public final class EngineRecordInsertionDialog {
 
             var engineInput = document.getElementById('adaptive_insert_engine_input');
             var selectedEngine = engineInput ? engineInput.value : 'DOCUMENT';
-            var submitBtn = document.getElementById('btnAdaptiveSubmitInsert');
 
             // 1. Ensure all inactive sections have controls disabled so FormData does not include duplicate fields
             var sections = form.querySelectorAll('.jettra-flux-form-section');
@@ -334,67 +334,37 @@ public final class EngineRecordInsertionDialog {
                 }
             }
 
-            var formData = new FormData(form);
-            var params = new URLSearchParams();
-            formData.forEach(function(value, key) {
-                params.append(key, value);
-            });
+            // 3. Delegate to JettraFluxTransport client function
+            dispatchAdaptiveTransport();
+        }
+        """);
 
-            if (submitBtn) {
-                submitBtn.disabled = true;
-                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Guardando en ' + selectedEngine + '...';
-            }
-
-            var targetPostUrl = form.action || window.location.href;
-            fetch(targetPostUrl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-                    'X-Requested-With': 'XMLHttpRequest'
-                },
-                body: params.toString()
-            })
-            .then(function(response) {
-                return response.json();
-            })
-            .then(function(data) {
-                if (submitBtn) {
-                    submitBtn.disabled = false;
-                    submitBtn.innerHTML = '<i class="fas fa-plus-circle"></i> Insertar en ' + selectedEngine;
-                }
-                if (data.status === 'SUCCESS') {
-                    if (window.JettraFluxNotification) {
-                        JettraFluxNotification.show('adaptiveRecordInsertNotification', '¡Inserción Exitosa!', data.message || 'Registro persistido correctamente.', 'SUCCESS');
-                    }
-                    setTimeout(function() {
-                        if (window.JettraFluxModal) {
-                            JettraFluxModal.close('adaptiveRecordInsertModal');
-                        }
+        JettraFluxTransport transport = JettraFluxTransport.post(actionUrl)
+                .contentType(JettraFluxTransport.ContentType.APPLICATION_JSON)
+                .accept("application/json")
+                .form(FORM_ID)
+                .loadingButton("btnAdaptiveSubmitInsert", "Guardando...")
+                .originalButtonHtml("<i class='fas fa-plus-circle'></i> Insertar Registro")
+                .modalToClose(MODAL_ID)
+                .notificationTarget(NOTIFICATION_ID)
+                .functionName("dispatchAdaptiveTransport")
+                .redirectDelay(800)
+                .onSuccess("""
+                    function(data) {
+                        var engineInput = document.getElementById('adaptive_insert_engine_input');
+                        var selectedEngine = engineInput ? engineInput.value : 'DOCUMENT';
                         var dbVal = data.database || (document.getElementById('adaptive_insert_target_db') ? document.getElementById('adaptive_insert_target_db').value : 'customers_db');
                         var collVal = data.collection || 'default';
                         var redirectUrl = window.location.pathname + '?engine=' + encodeURIComponent(selectedEngine)
                             + '&target_db=' + encodeURIComponent(dbVal)
                             + '&coll=' + encodeURIComponent(collVal);
                         window.location.href = redirectUrl;
-                    }, 800);
-                } else {
-                    if (window.JettraFluxNotification) {
-                        JettraFluxNotification.show('adaptiveRecordInsertNotification', 'Error al Insertar', data.message || 'La operación no pudo completarse.', 'ERROR');
                     }
-                }
-            })
-            .catch(function(err) {
-                if (submitBtn) {
-                    submitBtn.disabled = false;
-                    submitBtn.innerHTML = '<i class="fas fa-plus-circle"></i> Insertar en ' + selectedEngine;
-                }
-                if (window.JettraFluxNotification) {
-                    JettraFluxNotification.show('adaptiveRecordInsertNotification', 'Fallo de Red / Servidor', err.message || 'Error en comunicación con el servidor.', 'ERROR');
-                }
-            });
-        }
-        """);
+                """);
 
-        return RawScript.of(sb.toString());
+        return Div.of(
+            transport,
+            RawScript.of(sb.toString())
+        );
     }
 }

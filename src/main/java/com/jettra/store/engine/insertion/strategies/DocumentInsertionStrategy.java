@@ -37,6 +37,12 @@ public class DocumentInsertionStrategy implements EngineRecordInsertionStrategy<
         }
         String payload = params.get("doc_payload");
         if (payload == null || payload.isBlank()) {
+            payload = params.get("doc_json");
+        }
+        if (payload == null || payload.isBlank()) {
+            payload = params.get("raw_payload");
+        }
+        if (payload == null || payload.isBlank()) {
             errors.add("El payload JSON del documento no puede estar vacío.");
         } else {
             try {
@@ -56,7 +62,13 @@ public class DocumentInsertionStrategy implements EngineRecordInsertionStrategy<
         String coll = (unit != null && !unit.isBlank()) ? unit : params.getOrDefault("target_coll", "customers");
         String docId = (id != null && !id.isBlank()) ? id : params.getOrDefault("target_id", "doc_auto");
         String docClass = params.get("doc_class");
-        String rawJson = params.getOrDefault("doc_payload", "{}");
+        String rawJson = params.get("doc_payload");
+        if (rawJson == null || rawJson.isBlank()) {
+            rawJson = params.get("doc_json");
+        }
+        if (rawJson == null || rawJson.isBlank()) {
+            rawJson = params.getOrDefault("raw_payload", "{}");
+        }
         JsonObject doc = JsonPayloadHelper.parseJsonOrWrap(rawJson, "content");
         if (docClass != null && !docClass.isBlank()) {
             doc.addProperty("_class", docClass.trim());

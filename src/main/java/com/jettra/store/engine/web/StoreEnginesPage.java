@@ -18,6 +18,7 @@ import com.jettra.store.engine.samples.SampleDatasetManager;
 import com.jettra.store.engine.samples.lifecycle.InstallState;
 import com.jettra.store.engine.samples.lifecycle.SampleDatabaseDefinition;
 import com.jettra.store.engine.samples.lifecycle.SampleDatabaseService;
+import com.jettra.store.engine.exception.*;
 import com.sun.net.httpserver.HttpExchange;
 import io.jettra.flux.core.Modifier;
 import io.jettra.flux.core.Widget;
@@ -113,7 +114,13 @@ public class StoreEnginesPage extends StoreTemplatePage {
     protected boolean onPost(HttpExchange exchange, Map<String, String> params) throws IOException {
         String action = params != null ? params.get("action") : null;
         String reqWith = exchange.getRequestHeaders() != null ? exchange.getRequestHeaders().getFirst("X-Requested-With") : null;
-        if (action != null && (action.endsWith("_ajax") || "true".equalsIgnoreCase(params.get("is_ajax")) || "XMLHttpRequest".equalsIgnoreCase(reqWith)
+        String accept = exchange.getRequestHeaders() != null ? exchange.getRequestHeaders().getFirst("Accept") : null;
+        String contentType = exchange.getRequestHeaders() != null ? exchange.getRequestHeaders().getFirst("Content-Type") : null;
+        boolean isJsonClient = (accept != null && accept.contains("application/json"))
+                || (contentType != null && contentType.contains("application/json"))
+                || "XMLHttpRequest".equalsIgnoreCase(reqWith);
+
+        if (action != null && (action.endsWith("_ajax") || "true".equalsIgnoreCase(params.get("is_ajax")) || isJsonClient
             || "install_sample_db".equalsIgnoreCase(action) || "uninstall_sample_db".equalsIgnoreCase(action) || "list_sample_dbs".equalsIgnoreCase(action))) {
             handleAjaxPost(exchange, params);
             return true;
@@ -128,9 +135,10 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
         try {
             if ("insert_object".equalsIgnoreCase(action) || "insert_object_ajax".equalsIgnoreCase(action) || "insert_record".equalsIgnoreCase(action) || "insert_record_ajax".equalsIgnoreCase(action)) {
-                com.jettra.store.engine.insertion.InsertionResult res = com.jettra.store.engine.insertion.EngineInsertionFactory.executeInsertAsync(engine, selectedEngine, targetDb, params).join();
-                JsonObject resp = new JsonObject();
+                com.jettra.store.engine.insertion.MultiModelInsertionRequest req = com.jettra.store.engine.insertion.MultiModelInsertionRequest.fromMap(params);
+                com.jettra.store.engine.insertion.InsertionResult res = com.jettra.store.engine.insertion.EngineInsertionFactory.executeInsertAsync(engine, req.engine(), req.targetDb(), req.properties()).join();
                 if (res.success()) {
+                    JsonObject resp = new JsonObject();
                     resp.addProperty("status", "SUCCESS");
                     resp.addProperty("database", res.database());
                     resp.addProperty("engine", res.engine());
@@ -138,15 +146,10 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     resp.addProperty("itemId", res.id());
                     resp.addProperty("timestamp", res.timestamp());
                     resp.addProperty("message", res.message());
+                    sendJsonResponse(exchange, resp, 200);
                 } else {
-                    resp.addProperty("status", "ERROR");
-                    resp.addProperty("database", res.database());
-                    resp.addProperty("engine", res.engine());
-                    resp.addProperty("collection", res.unit());
-                    resp.addProperty("itemId", res.id());
-                    resp.addProperty("message", res.message());
+                    throw new BadRequestException(res.message() != null ? res.message() : "Error en inserción multi-modelo");
                 }
-                sendJsonResponse(exchange, resp, 200);
             } else if ("install_sample_db".equalsIgnoreCase(action) || "install_sample_db_ajax".equalsIgnoreCase(action)) {
                 handleInstallSampleDatabase(exchange, params);
             } else if ("uninstall_sample_db".equalsIgnoreCase(action) || "uninstall_sample_db_ajax".equalsIgnoreCase(action)) {
@@ -284,8 +287,9 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 resp.addProperty("action", action);
                 sendJsonResponse(exchange, resp, 200);
             }
-        } catch (Exception e) {
-            sendJsonError(exchange, "Operation failed: " + (e.getMessage() != null ? e.getMessage() : "Unknown error"));
+        } catch (Throwable t) {
+            String path = exchange != null && exchange.getRequestURI() != null ? exchange.getRequestURI().getPath() : "/engines";
+            ExceptionMapper.handleException(t, exchange, path);
         }
     }
 
@@ -364,10 +368,8 @@ public class StoreEnginesPage extends StoreTemplatePage {
     }
 
     private void sendJsonError(HttpExchange exchange, String errorMsg) throws IOException {
-        JsonObject err = new JsonObject();
-        err.addProperty("status", "ERROR");
-        err.addProperty("message", errorMsg);
-        sendJsonResponse(exchange, err, 400);
+        String path = exchange != null && exchange.getRequestURI() != null ? exchange.getRequestURI().getPath() : "/engines";
+        ExceptionMapper.sendBadRequest(exchange, errorMsg, List.of(), path);
     }
 
     public void handleLoadHierarchy(HttpExchange exchange, Map<String, String> params) throws IOException {

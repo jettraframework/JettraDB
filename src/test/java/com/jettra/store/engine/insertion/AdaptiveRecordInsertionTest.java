@@ -440,8 +440,84 @@ public class AdaptiveRecordInsertionTest {
         assertTrue(html.contains("fas fa-plus"), "Must contain plus icon for insertion on tree nodes");
     }
 
+    @Test
+    @DisplayName("Verify ExceptionMapper Java 25 pattern matching and structured ErrorResponse JSON")
+    public void testExceptionMapperPatternMatchingAndErrorResponse() {
+        // 1. BadRequestException pattern matching
+        var bre = new com.jettra.store.engine.exception.BadRequestException("Parámetro inválido", java.util.List.of("Campo requerido"));
+        var err1 = com.jettra.store.engine.exception.ExceptionMapper.toErrorResponse(bre, "/engines");
+        assertEquals(400, err1.status());
+        assertEquals("Bad Request", err1.error());
+        assertEquals("Parámetro inválido", err1.message());
+        assertEquals(1, err1.errors().size());
+        assertEquals("/engines", err1.path());
+        assertTrue(err1.timestamp() > 0);
+
+        // 2. ConstraintViolationException pattern matching
+        var cve = new com.jettra.store.engine.exception.ConstraintViolationException("Violación de restricción", java.util.List.of("ID duplicado"));
+        var err2 = com.jettra.store.engine.exception.ExceptionMapper.toErrorResponse(cve, "/engines");
+        assertEquals(400, err2.status());
+        assertEquals("Violación de restricción", err2.message());
+
+        // 3. JSON serialization of ErrorResponse
+        io.jettra.json.JettraJson json = new io.jettra.json.JettraJson();
+        String jsonStr = json.toJson(err1);
+        assertNotNull(jsonStr);
+        assertTrue(jsonStr.contains("\"status\":400") || jsonStr.contains("\"status\": 400"));
+        assertTrue(jsonStr.contains("Bad Request"));
+        assertTrue(jsonStr.contains("Campo requerido"));
+        assertFalse(jsonStr.startsWith("<"), "Error response MUST be JSON, not HTML");
+    }
+
+    @Test
+    @DisplayName("Verify MultiModelInsertionRequest and JSON payload execution in DocumentEngine")
+    public void testMultiModelInsertionRequestAndJsonPayloadExecution() {
+        Map<String, String> params = Map.of(
+            "action", "insert_object_ajax",
+            "engine", "DOCUMENT",
+            "target_db", "test_db",
+            "target_coll", "customers",
+            "target_id", "cust_json_01",
+            "id_gen_mode", "MANUAL",
+            "doc_json", "{\"name\":\"TechCorp\",\"tier\":\"Enterprise\",\"active\":true}"
+        );
+
+        var req = com.jettra.store.engine.insertion.MultiModelInsertionRequest.fromMap(params);
+        assertEquals("DOCUMENT", req.engine());
+        assertEquals("test_db", req.targetDb());
+        assertEquals("customers", req.targetColl());
+        assertEquals("cust_json_01", req.targetId());
+
+        var result = EngineInsertionFactory.executeInsertAsync(storageEngine, req.engine(), req.targetDb(), req.properties()).join();
+        assertTrue(result.success(), "Insertion must succeed: " + result.message());
+        assertEquals("cust_json_01", result.id());
+
+        DocumentEngine docEng = (DocumentEngine) storageEngine.getEngine("DOCUMENT");
+        io.jettra.json.JsonObject inserted = docEng.get("test_db", "customers", "cust_json_01");
+        assertNotNull(inserted, "Record must be persisted in storage engine");
+        assertEquals("TechCorp", String.valueOf(inserted.get("name")));
+    }
+
+    @Test
+    @DisplayName("Verify EngineRecordInsertionDialog JettraFluxTransport rendering and resilient error handling")
+    public void testAdaptiveDialogJettraFluxTransportIntegration() {
+        Widget dialog = EngineRecordInsertionDialog.build("/engines?engine=DOCUMENT", "DOCUMENT", "test_db", "orders");
+        assertNotNull(dialog);
+
+        String html = dialog.render(Themes.FlatTheme());
+        assertNotNull(html);
+
+        // Verify JettraFluxTransport client function and strict headers
+        assertTrue(html.contains("dispatchAdaptiveTransport"), "Must define dispatchAdaptiveTransport function");
+        assertTrue(html.contains("'Accept': 'application/json'"), "Must enforce Accept: application/json header");
+        assertTrue(html.contains("'Content-Type': 'application/json; charset=UTF-8'"), "Must enforce Content-Type: application/json header");
+        assertTrue(html.contains("submitAdaptiveRecordInsert"), "Must define submitAdaptiveRecordInsert caller");
+        // Verify resilient HTML error interceptor (preventing unexpected token '<')
+        assertTrue(html.contains("replace(/<[^>]*>/g, ' ')"), "Must safely strip HTML tags from non-JSON errors");
+    }
+
     public static void main(String[] args) {
-        System.out.println("=== RUNNING AdaptiveRecordInsertionTest (15 Test Cases) ===");
+        System.out.println("=== RUNNING AdaptiveRecordInsertionTest (18 Test Cases) ===");
         AdaptiveRecordInsertionTest test = new AdaptiveRecordInsertionTest();
         int passed = 0;
         int failed = 0;
@@ -461,7 +537,10 @@ public class AdaptiveRecordInsertionTest {
             java.util.Map.entry("testEngineRecordInsertionDialogRendering", test::testEngineRecordInsertionDialogRendering),
             java.util.Map.entry("testAdaptiveInsertButtonActionBinding", test::testAdaptiveInsertButtonActionBinding),
             java.util.Map.entry("testStreamGathererValidationAndPatternMatching", test::testStreamGathererValidationAndPatternMatching),
-            java.util.Map.entry("testHierarchyExplorerTreeActionButtons", test::testHierarchyExplorerTreeActionButtons)
+            java.util.Map.entry("testHierarchyExplorerTreeActionButtons", test::testHierarchyExplorerTreeActionButtons),
+            java.util.Map.entry("testExceptionMapperPatternMatchingAndErrorResponse", test::testExceptionMapperPatternMatchingAndErrorResponse),
+            java.util.Map.entry("testMultiModelInsertionRequestAndJsonPayloadExecution", test::testMultiModelInsertionRequestAndJsonPayloadExecution),
+            java.util.Map.entry("testAdaptiveDialogJettraFluxTransportIntegration", test::testAdaptiveDialogJettraFluxTransportIntegration)
         );
 
         for (var tc : testCases) {
