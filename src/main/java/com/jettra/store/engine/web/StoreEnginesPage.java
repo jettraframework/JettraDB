@@ -127,15 +127,25 @@ public class StoreEnginesPage extends StoreTemplatePage {
         String targetDb = params != null && params.containsKey("target_db") ? params.get("target_db") : getDefaultDbForEngine(selectedEngine);
 
         try {
-            if ("insert_object".equalsIgnoreCase(action) || "insert_object_ajax".equalsIgnoreCase(action)) {
-                InsertResult res = executeTypeSpecificInsert(selectedEngine, targetDb, params);
+            if ("insert_object".equalsIgnoreCase(action) || "insert_object_ajax".equalsIgnoreCase(action) || "insert_record".equalsIgnoreCase(action) || "insert_record_ajax".equalsIgnoreCase(action)) {
+                com.jettra.store.engine.insertion.InsertionResult res = com.jettra.store.engine.insertion.EngineInsertionFactory.executeInsertAsync(engine, selectedEngine, targetDb, params).join();
                 JsonObject resp = new JsonObject();
-                resp.addProperty("status", "SUCCESS");
-                resp.addProperty("database", res.database());
-                resp.addProperty("engine", res.engineName());
-                resp.addProperty("collection", res.targetColl());
-                resp.addProperty("itemId", res.targetId());
-                resp.addProperty("message", "Object '" + res.targetId() + "' successfully created in " + res.engineName() + " [" + res.database() + ":" + res.targetColl() + "]!");
+                if (res.success()) {
+                    resp.addProperty("status", "SUCCESS");
+                    resp.addProperty("database", res.database());
+                    resp.addProperty("engine", res.engine());
+                    resp.addProperty("collection", res.unit());
+                    resp.addProperty("itemId", res.id());
+                    resp.addProperty("timestamp", res.timestamp());
+                    resp.addProperty("message", res.message());
+                } else {
+                    resp.addProperty("status", "ERROR");
+                    resp.addProperty("database", res.database());
+                    resp.addProperty("engine", res.engine());
+                    resp.addProperty("collection", res.unit());
+                    resp.addProperty("itemId", res.id());
+                    resp.addProperty("message", res.message());
+                }
                 sendJsonResponse(exchange, resp, 200);
             } else if ("install_sample_db".equalsIgnoreCase(action) || "install_sample_db_ajax".equalsIgnoreCase(action)) {
                 handleInstallSampleDatabase(exchange, params);
@@ -1965,8 +1975,10 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     Text.of("Multi-Model Storage Hierarchy Explorer")
                 ).modifier(new Modifier().style("margin:0; font-size:13px; font-weight:600; color:var(--j-text-primary);")),
                 Row.of(
+                    Button.of(Icon.of("fas fa-plus-circle"), Text.of(" Insertar Registro"))
+                        .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openEngineInsertModal('" + selectedEngine + "', '" + escapeJs(currentColl) + "', '" + escapeJs(targetDb) + "')").cssClass("btn-action btn-primary").style("padding:3px 10px; font-size:9.5px; margin-left:12px; margin-right:4px; font-weight:700; background:linear-gradient(135deg, #38bdf8 0%, #0284c7 100%); color:#0f172a; border:none; box-shadow:0 1px 4px rgba(56,189,248,0.3);")),
                     Button.of(Icon.of("fas fa-sitemap"), Text.of(" Tree View"))
-                        .modifier(new Modifier().attribute("type", "button").attribute("onclick", "location.href='" + actionUrl + selectedEngine + "&target_db=" + escapeJs(targetDb) + "&coll=" + escapeJs(currentColl) + "&view_mode=tree'").cssClass(!isTableView ? "btn-action btn-primary" : "btn-action btn-secondary").style("padding:3px 8px; font-size:9.5px; margin-left:12px; margin-right:4px;")),
+                        .modifier(new Modifier().attribute("type", "button").attribute("onclick", "location.href='" + actionUrl + selectedEngine + "&target_db=" + escapeJs(targetDb) + "&coll=" + escapeJs(currentColl) + "&view_mode=tree'").cssClass(!isTableView ? "btn-action btn-primary" : "btn-action btn-secondary").style("padding:3px 8px; font-size:9.5px; margin-right:4px;")),
                     Button.of(Icon.of("fas fa-table"), Text.of(" Table View"))
                         .modifier(new Modifier().attribute("type", "button").attribute("onclick", "location.href='" + actionUrl + selectedEngine + "&target_db=" + escapeJs(targetDb) + "&coll=" + escapeJs(currentColl) + "&view_mode=table'").cssClass(isTableView ? "btn-action btn-primary" : "btn-action btn-secondary").style("padding:3px 8px; font-size:9.5px; margin-right:4px;")),
                     Button.of(Icon.of("fas fa-expand-alt"), Text.of(" Expand All"))
@@ -2037,6 +2049,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
         modals.add(buildEditRecordsModal(actionUrl));
         modals.add(StorageModalCommands.buildUniversalEditModal(actionUrl));
         modals.add(HistoricalVersionsDialog.build(actionUrl));
+        modals.add(EngineRecordInsertionDialog.build(actionUrl, engineKey, targetDb, currentColl));
         modals.add(buildConfirmDeleteModal(actionUrl));
         modals.add(buildAdvancedSearchModal(actionUrl, targetDb, currentColl));
         modals.add(buildAdvancedSearchHelpModal());
@@ -3740,6 +3753,10 @@ public class StoreEnginesPage extends StoreTemplatePage {
   }
 
   function openAddObjectModal(engine, unit, db) {
+    if (typeof openEngineInsertModal === 'function') {
+      openEngineInsertModal(engine, unit, db);
+      return;
+    }
     var modalMap = {
       DOCUMENT: 'addDocumentModal', KEYVALUE: 'addKeyValueModal', VECTOR: 'addVectorModal',
       GRAPH: 'addGraphModal', TIMESERIES: 'addTimeSeriesModal', COLUMN: 'addColumnModal',
@@ -5979,7 +5996,8 @@ public class StoreEnginesPage extends StoreTemplatePage {
       'universalRestoreModal', 'confirmRestoreModal', 'confirmDeleteModal',
       'inspectRecordModal', 'referenceWarningModal', 'advancedSearchModal',
       'advSearchHelpModal', 'backupDbModal', 'restoreDbModal', 'confirmDbRestoreModal',
-      'exportDataModal', 'createIndexModal', 'createSchemaModal', 'sampleDatabasesModal'
+      'exportDataModal', 'createIndexModal', 'createSchemaModal', 'sampleDatabasesModal',
+      'adaptiveRecordInsertModal'
     ];
     modalIds.forEach(function(mid) {
       var el = document.getElementById(mid);

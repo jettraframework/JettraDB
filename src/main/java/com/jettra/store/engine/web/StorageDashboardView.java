@@ -71,8 +71,10 @@ public final class StorageDashboardView {
             ).modifier(new Modifier().style("display:flex; align-items:center;")),
 
             Div.of(
+                Button.of(Icon.of("fas fa-plus-circle").modifier(new Modifier().style("margin-right:5px;")), Text.of("Insertar Registro"))
+                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openEngineInsertModal('" + selectedEngine + "', 'default', '" + targetDb + "')").cssClass("btn-studio-primary").style("padding:6px 14px; font-size:11.5px; margin-right:8px; font-weight:700; background:linear-gradient(135deg, #38bdf8 0%, #0284c7 100%); color:#0f172a; border:none; box-shadow:0 2px 8px rgba(56,189,248,0.3);")),
                 Button.of(Icon.of("fas fa-plus").modifier(new Modifier().style("margin-right:4px;")), Text.of("New Database"))
-                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "showModal('createDbModal')").cssClass("btn-studio-primary").style("padding:6px 12px; font-size:11.5px; margin-right:8px;")),
+                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "showModal('createDbModal')").cssClass("btn-studio-secondary").style("padding:6px 12px; font-size:11.5px; margin-right:8px;")),
                 Button.of(Icon.of("fas fa-folder-plus").modifier(new Modifier().style("margin-right:4px;")), Text.of("New Unit"))
                     .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openAddUnitModal('" + selectedEngine + "', 'Collection', '" + targetDb + "')").cssClass("btn-studio-secondary").style("padding:6px 12px; font-size:11.5px; margin-right:8px;")),
                 Link.of(actionUrl + selectedEngine + "&target_db=" + targetDb + "&view_mode=table",
