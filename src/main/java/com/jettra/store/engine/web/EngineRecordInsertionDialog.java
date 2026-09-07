@@ -68,11 +68,12 @@ public final class EngineRecordInsertionDialog {
             Div.of(
                 Label.of("Modo de Generación de ID:")
                     .modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
-                RawHtml.of("<select name=\"id_gen_mode\" id=\"adaptive_insert_id_mode\" onchange=\"onAdaptiveIdModeChange(this)\" style=\"width:100%; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:var(--j-text-primary); font-size:12.5px;\">" +
-                        "<option value=\"UUID\" selected>UUID v4 (Automático)</option>" +
-                        "<option value=\"SNOWFLAKE\">Snowflake (Temporal / Distribuido)</option>" +
-                        "<option value=\"SEQUENTIAL\">Secuencial (Entero Auto-incremental)</option>" +
-                        "<option value=\"MANUAL\">Manual (Definir ID específico)</option></select>")
+                JettraFluxSelect.of("adaptive_insert_id_mode", "id_gen_mode")
+                    .onChange("onAdaptiveIdModeChange(this)")
+                    .addOption("UUID", "UUID v4 (Automático)", true)
+                    .addOption("SNOWFLAKE", "Snowflake (Temporal / Distribuido)")
+                    .addOption("SEQUENTIAL", "Secuencial (Entero Auto-incremental)")
+                    .addOption("MANUAL", "Manual (Definir ID específico)")
             ).modifier(new Modifier().style("flex:1.2;")),
 
             Div.of(
@@ -106,8 +107,10 @@ public final class EngineRecordInsertionDialog {
 
         Widget submitButton = JettraFluxButton.of("Insertar Registro", "fas fa-plus-circle")
                 .id("btnAdaptiveSubmitInsert")
+                .form(FORM_ID)
                 .variant(JettraFluxButton.Variant.PRIMARY)
                 .size(JettraFluxButton.Size.MD)
+                .onClickJs("submitAdaptiveRecordInsert()")
                 .submit();
 
         Widget footer = Div.of(
@@ -171,7 +174,6 @@ public final class EngineRecordInsertionDialog {
 
     private static Widget buildClientScript(String actionUrl) {
         StringBuilder sb = new StringBuilder();
-        sb.append("<script>\n");
 
         // Dictionary of sample values for all 9 engines
         sb.append("window.JettraAdaptiveSamples = {\n");
@@ -195,11 +197,18 @@ public final class EngineRecordInsertionDialog {
                 if (dbInput) dbInput.value = dbName;
             }
             if (unitName && unitName !== 'default') {
-                var unitInputs = document.querySelectorAll('#adaptiveRecordInsertForm input[name="target_coll"], #adaptiveRecordInsertForm input[name="node_label"]');
-                unitInputs.forEach(function(inp) { inp.value = unitName; });
+                var activeSec = document.querySelector('#adaptiveRecordInsertForm .jettra-flux-form-section[data-section="' + eng + '"]');
+                if (activeSec) {
+                    var unitInputs = activeSec.querySelectorAll('input[name="target_coll"], input[name="node_label"]');
+                    unitInputs.forEach(function(inp) { inp.value = unitName; });
+                }
             }
-            JettraFluxNotification.hide('adaptiveRecordInsertNotification');
-            JettraFluxModal.open('adaptiveRecordInsertModal');
+            if (window.JettraFluxNotification) {
+                JettraFluxNotification.hide('adaptiveRecordInsertNotification');
+            }
+            if (window.JettraFluxModal) {
+                JettraFluxModal.open('adaptiveRecordInsertModal');
+            }
         }
 
         function switchInsertEngine(engineKey) {
@@ -207,8 +216,21 @@ public final class EngineRecordInsertionDialog {
             var engineInput = document.getElementById('adaptive_insert_engine_input');
             if (engineInput) engineInput.value = eng;
 
-            // Switch dynamic form section
-            JettraFluxDynamicForm.switchSection('adaptiveRecordInsertForm', eng);
+            // Switch dynamic form section and toggle control disabled states
+            if (window.JettraFluxDynamicForm) {
+                JettraFluxDynamicForm.switchSection('adaptiveRecordInsertForm', eng);
+            } else {
+                var form = document.getElementById('adaptiveRecordInsertForm');
+                if (form) {
+                    var sections = form.querySelectorAll('.jettra-flux-form-section');
+                    sections.forEach(function(sec) {
+                        var isMatch = (sec.getAttribute('data-section') === eng);
+                        sec.style.display = isMatch ? 'block' : 'none';
+                        var controls = sec.querySelectorAll('input, select, textarea');
+                        controls.forEach(function(ctrl) { ctrl.disabled = !isMatch; });
+                    });
+                }
+            }
 
             // Update pills highlight
             document.querySelectorAll('[id^="engine_tab_btn_"]').forEach(function(pill) {
@@ -260,7 +282,7 @@ public final class EngineRecordInsertionDialog {
                     if (input) {
                         input.value = sample[key];
                         // If it's a JSON editor, trigger validation
-                        if (input.tagName.toLowerCase() === 'textarea' && key.includes('payload') || key.includes('props') || key.includes('data') || key.includes('meta')) {
+                        if (input.tagName && input.tagName.toLowerCase() === 'textarea') {
                             var statusId = input.id.replace('_input', '_status');
                             if (window.JettraFluxJsonEditor && document.getElementById(statusId)) {
                                 window.JettraFluxJsonEditor.validate(input.id, statusId);
@@ -270,7 +292,9 @@ public final class EngineRecordInsertionDialog {
                 }
             }
 
-            JettraFluxNotification.show('adaptiveRecordInsertNotification', 'Plantilla Cargada', 'Se han cargado datos de ejemplo válidos para el motor ' + activeEng + '.', 'INFO');
+            if (window.JettraFluxNotification) {
+                JettraFluxNotification.show('adaptiveRecordInsertNotification', 'Plantilla Cargada', 'Se han cargado datos de ejemplo válidos para el motor ' + activeEng + '.', 'INFO');
+            }
         }
 
         function submitAdaptiveRecordInsert() {
@@ -281,7 +305,18 @@ public final class EngineRecordInsertionDialog {
             var selectedEngine = engineInput ? engineInput.value : 'DOCUMENT';
             var submitBtn = document.getElementById('btnAdaptiveSubmitInsert');
 
-            // Quick validation for active section
+            // 1. Ensure all inactive sections have controls disabled so FormData does not include duplicate fields
+            var sections = form.querySelectorAll('.jettra-flux-form-section');
+            sections.forEach(function(sec) {
+                var isMatch = (sec.getAttribute('data-section') === selectedEngine);
+                sec.style.display = isMatch ? 'block' : 'none';
+                var controls = sec.querySelectorAll('input, select, textarea');
+                controls.forEach(function(ctrl) {
+                    ctrl.disabled = !isMatch;
+                });
+            });
+
+            // 2. Syntax validation for active section textareas
             var activeSection = form.querySelector('.jettra-flux-form-section[data-section="' + selectedEngine + '"]');
             if (activeSection) {
                 var textareas = activeSection.querySelectorAll('textarea');
@@ -290,7 +325,9 @@ public final class EngineRecordInsertionDialog {
                     var statusId = ta.id.replace('_input', '_status');
                     var statusEl = document.getElementById(statusId);
                     if (statusEl && statusEl.textContent === 'SYNTAX ERROR') {
-                        JettraFluxNotification.show('adaptiveRecordInsertNotification', 'Error de Sintaxis', 'Corrija los errores de sintaxis en el editor JSON antes de enviar.', 'ERROR');
+                        if (window.JettraFluxNotification) {
+                            JettraFluxNotification.show('adaptiveRecordInsertNotification', 'Error de Sintaxis', 'Corrija los errores de sintaxis en el editor JSON antes de enviar.', 'ERROR');
+                        }
                         ta.focus();
                         return;
                     }
@@ -305,10 +342,11 @@ public final class EngineRecordInsertionDialog {
 
             if (submitBtn) {
                 submitBtn.disabled = true;
-                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Guardando...';
+                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Guardando en ' + selectedEngine + '...';
             }
 
-            fetch(form.action || window.location.href, {
+            var targetPostUrl = form.action || window.location.href;
+            fetch(targetPostUrl, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
@@ -325,13 +363,24 @@ public final class EngineRecordInsertionDialog {
                     submitBtn.innerHTML = '<i class="fas fa-plus-circle"></i> Insertar en ' + selectedEngine;
                 }
                 if (data.status === 'SUCCESS') {
-                    JettraFluxNotification.show('adaptiveRecordInsertNotification', '¡Inserción Exitosa!', data.message || 'Registro creado correctamente.', 'SUCCESS');
+                    if (window.JettraFluxNotification) {
+                        JettraFluxNotification.show('adaptiveRecordInsertNotification', '¡Inserción Exitosa!', data.message || 'Registro persistido correctamente.', 'SUCCESS');
+                    }
                     setTimeout(function() {
-                        JettraFluxModal.close('adaptiveRecordInsertModal');
-                        window.location.reload();
-                    }, 1200);
+                        if (window.JettraFluxModal) {
+                            JettraFluxModal.close('adaptiveRecordInsertModal');
+                        }
+                        var dbVal = data.database || (document.getElementById('adaptive_insert_target_db') ? document.getElementById('adaptive_insert_target_db').value : 'customers_db');
+                        var collVal = data.collection || 'default';
+                        var redirectUrl = window.location.pathname + '?engine=' + encodeURIComponent(selectedEngine)
+                            + '&target_db=' + encodeURIComponent(dbVal)
+                            + '&coll=' + encodeURIComponent(collVal);
+                        window.location.href = redirectUrl;
+                    }, 800);
                 } else {
-                    JettraFluxNotification.show('adaptiveRecordInsertNotification', 'Error al Insertar', data.message || 'La operación no pudo completarse.', 'ERROR');
+                    if (window.JettraFluxNotification) {
+                        JettraFluxNotification.show('adaptiveRecordInsertNotification', 'Error al Insertar', data.message || 'La operación no pudo completarse.', 'ERROR');
+                    }
                 }
             })
             .catch(function(err) {
@@ -339,12 +388,13 @@ public final class EngineRecordInsertionDialog {
                     submitBtn.disabled = false;
                     submitBtn.innerHTML = '<i class="fas fa-plus-circle"></i> Insertar en ' + selectedEngine;
                 }
-                JettraFluxNotification.show('adaptiveRecordInsertNotification', 'Fallo de Red / Servidor', err.message || 'Error en comunicación con el servidor.', 'ERROR');
+                if (window.JettraFluxNotification) {
+                    JettraFluxNotification.show('adaptiveRecordInsertNotification', 'Fallo de Red / Servidor', err.message || 'Error en comunicación con el servidor.', 'ERROR');
+                }
             });
         }
         """);
 
-        sb.append("</script>\n");
-        return RawHtml.of(sb.toString());
+        return RawScript.of(sb.toString());
     }
 }

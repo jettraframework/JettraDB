@@ -71,7 +71,10 @@ public class WideColumnInsertionStrategy implements EngineRecordInsertionStrateg
         if (colEngine == null) {
             return InsertionResult.ofError("COLUMN", database, payload.columnFamily(), payload.rowKey(), "ColumnEngine not registered in storage orchestrator");
         }
-        colEngine.insertRow(database, payload.rowKey(), payload.columns());
+        String family = (payload.columnFamily() != null && !payload.columnFamily().isBlank() && !payload.columnFamily().equalsIgnoreCase("default"))
+                ? database + ":" + payload.columnFamily().trim()
+                : database;
+        colEngine.insertRow(family, payload.rowKey(), payload.columns());
         return InsertionResult.ofSuccess("COLUMN", database, payload.columnFamily(), payload.rowKey(),
                 "Wide-column row '" + payload.rowKey() + "' saved under Family [" + payload.columnFamily() + "]", 1);
     }

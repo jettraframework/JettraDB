@@ -68,7 +68,10 @@ public class PureObjectInsertionStrategy implements EngineRecordInsertionStrateg
         state.addProperty("sizeBytes", payload.contentBytes().length);
         state.addProperty("content", payload.contentText());
 
-        objEngine.saveObject(database, payload.id(), payload.className(), state);
+        String bucket = (payload.bucket() != null && !payload.bucket().isBlank() && !payload.bucket().equalsIgnoreCase("default"))
+                ? database + ":" + payload.bucket().trim()
+                : database;
+        objEngine.saveObject(bucket, payload.id(), payload.className(), state);
         return InsertionResult.ofSuccess("OBJECT", database, payload.bucket(), payload.id(),
                 "Binary Object '" + payload.id() + "' (" + payload.contentBytes().length + " bytes) saved in bucket [" + payload.bucket() + "]", 1);
     }

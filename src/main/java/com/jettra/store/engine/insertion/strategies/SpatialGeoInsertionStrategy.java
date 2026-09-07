@@ -89,7 +89,10 @@ public class SpatialGeoInsertionStrategy implements EngineRecordInsertionStrateg
         if (geoEngine == null) {
             return InsertionResult.ofError("GEOSPATIAL", database, payload.layer(), payload.id(), "GeospatialEngine not registered in storage orchestrator");
         }
-        geoEngine.insertLocation(database, payload.id(), payload.latitude(), payload.longitude(), payload.properties());
+        String layerColl = (payload.layer() != null && !payload.layer().isBlank() && !payload.layer().equalsIgnoreCase("default"))
+                ? database + ":" + payload.layer().trim()
+                : database;
+        geoEngine.insertLocation(layerColl, payload.id(), payload.latitude(), payload.longitude(), payload.properties());
         return InsertionResult.ofSuccess("GEOSPATIAL", database, payload.layer(), payload.id(),
                 "Geo Feature '" + payload.id() + "' [" + payload.latitude() + ", " + payload.longitude() + "] saved into layer [" + payload.layer() + "]", 1);
     }
@@ -112,11 +115,11 @@ public class SpatialGeoInsertionStrategy implements EngineRecordInsertionStrateg
                 ).modifier(new Modifier().style("flex:1;")),
                 Div.of(
                     Label.of("Tipo de Geometría:").modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
-                    RawHtml.of("<select name=\"geo_type\" id=\"insert_geo_type\" style=\"width:100%; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:var(--j-text-primary); font-size:12.5px;\">" +
-                            "<option value=\"Point\" selected>Point (Coordenada)</option>" +
-                            "<option value=\"Polygon\">Polygon (Polígono)</option>" +
-                            "<option value=\"MultiPolygon\">MultiPolygon</option>" +
-                            "<option value=\"LineString\">LineString (Trayectoria)</option></select>")
+                    JettraFluxSelect.of("insert_geo_type", "geo_type")
+                        .addOption("Point", "Point (Coordenada)", true)
+                        .addOption("Polygon", "Polygon (Polígono)")
+                        .addOption("MultiPolygon", "MultiPolygon")
+                        .addOption("LineString", "LineString (Trayectoria)")
                 ).modifier(new Modifier().style("flex:1;"))
             ).modifier(new Modifier().style("display:flex; gap:12px; margin-bottom:12px;")),
 

@@ -85,7 +85,10 @@ public class TimeSeriesInsertionStrategy implements EngineRecordInsertionStrateg
         if (tsEngine == null) {
             return InsertionResult.ofError("TIMESERIES", database, payload.metric(), payload.entityId(), "TimeSeriesEngine not registered in storage orchestrator");
         }
-        tsEngine.insert(database, payload.timestamp(), payload.tags());
+        String measurement = (payload.metric() != null && !payload.metric().isBlank() && !payload.metric().equalsIgnoreCase("default"))
+                ? database + ":" + payload.metric().trim()
+                : database;
+        tsEngine.insert(measurement, payload.timestamp(), payload.tags());
         return InsertionResult.ofSuccess("TIMESERIES", database, payload.metric(), payload.entityId(),
                 "Time point recorded for [" + payload.metric() + "]: " + payload.value() + " " + payload.unit() + " @ " + payload.timestamp(), 1);
     }

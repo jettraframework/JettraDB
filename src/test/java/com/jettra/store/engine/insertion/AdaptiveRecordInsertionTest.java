@@ -353,10 +353,95 @@ public class AdaptiveRecordInsertionTest {
         // Verify action buttons
         assertTrue(html.contains("Cargar Plantilla de Ejemplo"));
         assertTrue(html.contains("Insertar Registro"));
+        assertTrue(html.contains("btnAdaptiveSubmitInsert"));
+        assertTrue(html.contains("form=\"adaptiveRecordInsertForm\""));
+        assertTrue(html.contains("submitAdaptiveRecordInsert()"));
+        assertTrue(html.contains("fas fa-plus-circle"));
+    }
+
+    @Test
+    @DisplayName("Verify submit button (+) form binding, JettraFluxSelect, and absence of RawHtml")
+    public void testAdaptiveInsertButtonActionBinding() {
+        Widget dialog = EngineRecordInsertionDialog.build("/engines", "DOCUMENT", "customers_db", "default");
+        String html = dialog.render(Themes.FlatTheme());
+
+        // 1. Verify submit button (+) functional binding
+        assertTrue(html.contains("id=\"btnAdaptiveSubmitInsert\""), "Must have unique button id");
+        assertTrue(html.contains("form=\"adaptiveRecordInsertForm\""), "Must have HTML5 form attribute binding to form");
+        assertTrue(html.contains("type=\"submit\""), "Must be a submit button");
+        assertTrue(html.contains("submitAdaptiveRecordInsert()"), "Must have onclick calling submitAdaptiveRecordInsert()");
+        assertTrue(html.contains("fas fa-plus-circle"), "Must have + plus circle icon");
+
+        // 2. Verify JettraFluxSelect component is used for ID mode
+        assertTrue(html.contains("id=\"adaptive_insert_id_mode\""), "Select component must be rendered");
+        assertTrue(html.contains("name=\"id_gen_mode\""), "Select must have name id_gen_mode");
+        assertTrue(html.contains("class=\"jettra-flux-select"), "Must use JettraFluxSelect CSS class");
+        assertTrue(html.contains("value=\"UUID\" selected"), "UUID must be selected by default");
+
+        // 3. Verify that script uses RawScript
+        assertTrue(html.contains("window.JettraAdaptiveSamples"), "Sample dictionary must be defined");
+        assertTrue(html.contains("openEngineInsertModal"), "openEngineInsertModal JS must be present");
+        assertTrue(html.contains("switchInsertEngine"), "switchInsertEngine JS must be present");
+    }
+
+    @Test
+    @DisplayName("Verify Java 25 Stream Gatherer validation pipeline and Pattern Matching")
+    public void testStreamGathererValidationAndPatternMatching() {
+        // 1. Gatherer parameter validation
+        Map<String, String> validParams = Map.of(
+            "target_db", "telemetry_db",
+            "target_id", "point_01",
+            "target_coll", "metrics"
+        );
+        var noErrors = EngineInsertionFactory.validateParametersWithGatherer(validParams, new EngineType.TimeSeries());
+        assertTrue(noErrors.isEmpty(), "Valid params must produce no gatherer errors");
+
+        Map<String, String> invalidParams = Map.of(
+            "target_db", "",
+            "target_id", "invalid/slash/id"
+        );
+        var errors = EngineInsertionFactory.validateParametersWithGatherer(invalidParams, new EngineType.TimeSeries());
+        assertEquals(2, errors.size(), "Should detect empty db and invalid slash in id");
+
+        // 2. Pattern Matching with compiler exhaustiveness
+        EngineRecordPayload kv = new EngineRecordPayload.KeyValuePayload("default", "k1", "v1", null);
+        EngineRecordPayload doc = new EngineRecordPayload.DocumentPayload("default", "c1", "d1", new io.jettra.json.JsonObject(), "{}");
+        EngineRecordPayload gr = new EngineRecordPayload.GraphPayload("node", "n1", "Person", null, null, new io.jettra.json.JsonObject(), "{}");
+        EngineRecordPayload vec = new EngineRecordPayload.VectorPayload("v1", "idx", 3, new float[]{0.1f, 0.2f, 0.3f}, "COSINE", "label", new io.jettra.json.JsonObject(), "{}");
+
+        assertTrue(EngineInsertionFactory.describePayloadModel(kv).contains("KeyValue"));
+        assertTrue(EngineInsertionFactory.describePayloadModel(doc).contains("Document"));
+        assertTrue(EngineInsertionFactory.describePayloadModel(gr).contains("Graph"));
+        assertTrue(EngineInsertionFactory.describePayloadModel(vec).contains("Vector"));
+    }
+
+    @Test
+    @DisplayName("Verify Storage Hierarchy Explorer Tree View renders [+] insert action buttons")
+    public void testHierarchyExplorerTreeActionButtons() {
+        // Insert a document so tree has nodes
+        DocumentEngine docEng = (DocumentEngine) storageEngine.getEngine("DOCUMENT");
+        io.jettra.json.JsonObject docObj = new io.jettra.json.JsonObject();
+        docObj.addProperty("test", "data");
+        docEng.insert("test_db", "orders", "ord_001", docObj);
+
+        com.jettra.store.engine.hierarchy.HierarchyExplorerService hierarchyService =
+                new com.jettra.store.engine.hierarchy.HierarchyExplorerService(storageEngine);
+
+        Widget treeWidget = com.jettra.store.engine.web.StorageTreeView.build(
+                "DOCUMENT", "test_db", "orders", "/engines?engine=DOCUMENT", Map.of(), hierarchyService
+        );
+        assertNotNull(treeWidget);
+
+        String html = treeWidget.render(Themes.FlatTheme());
+        assertNotNull(html);
+
+        // Verify [+] action button calling openEngineInsertModal on nodes
+        assertTrue(html.contains("openEngineInsertModal"), "Tree view must contain [+] insert action buttons");
+        assertTrue(html.contains("fas fa-plus"), "Must contain plus icon for insertion on tree nodes");
     }
 
     public static void main(String[] args) {
-        System.out.println("=== RUNNING AdaptiveRecordInsertionTest (12 Test Cases) ===");
+        System.out.println("=== RUNNING AdaptiveRecordInsertionTest (15 Test Cases) ===");
         AdaptiveRecordInsertionTest test = new AdaptiveRecordInsertionTest();
         int passed = 0;
         int failed = 0;
@@ -373,7 +458,10 @@ public class AdaptiveRecordInsertionTest {
             java.util.Map.entry("testSpatialGeoStrategy", test::testSpatialGeoStrategy),
             java.util.Map.entry("testPureObjectStrategy", test::testPureObjectStrategy),
             java.util.Map.entry("testVirtualThreadAsyncExecution", test::testVirtualThreadAsyncExecution),
-            java.util.Map.entry("testEngineRecordInsertionDialogRendering", test::testEngineRecordInsertionDialogRendering)
+            java.util.Map.entry("testEngineRecordInsertionDialogRendering", test::testEngineRecordInsertionDialogRendering),
+            java.util.Map.entry("testAdaptiveInsertButtonActionBinding", test::testAdaptiveInsertButtonActionBinding),
+            java.util.Map.entry("testStreamGathererValidationAndPatternMatching", test::testStreamGathererValidationAndPatternMatching),
+            java.util.Map.entry("testHierarchyExplorerTreeActionButtons", test::testHierarchyExplorerTreeActionButtons)
         );
 
         for (var tc : testCases) {

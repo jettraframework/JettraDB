@@ -95,14 +95,18 @@ public class GraphInsertionStrategy implements EngineRecordInsertionStrategy<Gra
                 Div.of(
                     Label.of("Tipo de Entidad Grafo:").modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
                     Div.of(
-                        Label.of(
-                            RawHtml.of("<input type=\"radio\" name=\"graph_mode\" value=\"node\" checked=\"checked\" onchange=\"document.getElementById('graph_node_fields').style.display='block';document.getElementById('graph_edge_fields').style.display='none';\" style=\"margin-right:6px;\">"),
-                            Text.of("Vértice / Nodo (Vertex)")
-                        ).modifier(new Modifier().style("font-size:12px; color:var(--j-text-primary); cursor:pointer; margin-right:16px; display:inline-flex; align-items:center;")),
-                        Label.of(
-                            RawHtml.of("<input type=\"radio\" name=\"graph_mode\" value=\"edge\" onchange=\"document.getElementById('graph_node_fields').style.display='none';document.getElementById('graph_edge_fields').style.display='block';\" style=\"margin-right:6px;\">"),
-                            Text.of("Arista / Relación (Edge)")
-                        ).modifier(new Modifier().style("font-size:12px; color:var(--j-text-primary); cursor:pointer; display:inline-flex; align-items:center;"))
+                        RadioButton.of("graph_mode_node", "Vértice / Nodo (Vertex)")
+                            .name("graph_mode")
+                            .value("node")
+                            .checked(true)
+                            .onChange("document.getElementById('graph_node_fields').style.display='block';document.getElementById('graph_edge_fields').style.display='none';")
+                            .modifier(new Modifier().style("margin-right:16px; font-size:12px; color:var(--j-text-primary); cursor:pointer;")),
+                        RadioButton.of("graph_mode_edge", "Arista / Relación (Edge)")
+                            .name("graph_mode")
+                            .value("edge")
+                            .checked(false)
+                            .onChange("document.getElementById('graph_node_fields').style.display='none';document.getElementById('graph_edge_fields').style.display='block';")
+                            .modifier(new Modifier().style("font-size:12px; color:var(--j-text-primary); cursor:pointer;"))
                     ).modifier(new Modifier().style("display:flex; align-items:center; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px;"))
                 ).modifier(new Modifier().style("flex:1;"))
             ).modifier(new Modifier().style("margin-bottom:12px;")),

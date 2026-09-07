@@ -72,7 +72,10 @@ public class VectorInsertionStrategy implements EngineRecordInsertionStrategy<Ve
         if (vecEngine == null) {
             return InsertionResult.ofError("VECTOR", database, payload.index(), payload.id(), "VectorEngine not registered in storage orchestrator");
         }
-        vecEngine.insertVector(database, payload.id(), payload.embeddings(), payload.metadata());
+        String indexColl = (payload.index() != null && !payload.index().isBlank() && !payload.index().equalsIgnoreCase("default"))
+                ? database + ":" + payload.index().trim()
+                : database;
+        vecEngine.insertVector(indexColl, payload.id(), payload.embeddings(), payload.metadata());
         return InsertionResult.ofSuccess("VECTOR", database, payload.index(), payload.id(),
                 "Vector embedding '" + payload.id() + "' (Dim: " + payload.dimension() + ", Metric: " + payload.distanceMetric() + ") indexed in [" + payload.index() + "]", 1);
     }
@@ -88,11 +91,11 @@ public class VectorInsertionStrategy implements EngineRecordInsertionStrategy<Ve
                 ).modifier(new Modifier().style("flex:1;")),
                 Div.of(
                     Label.of("Métrica de Distancia:").modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
-                    RawHtml.of("<select name=\"vector_metric\" id=\"insert_vec_metric\" style=\"width:100%; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:var(--j-text-primary); font-size:12.5px;\">" +
-                            "<option value=\"COSINE\" selected>Cosine Similarity</option>" +
-                            "<option value=\"EUCLIDEAN\">Euclidean (L2)</option>" +
-                            "<option value=\"DOT_PRODUCT\">Dot Product (Inner Product)</option>" +
-                            "<option value=\"MANHATTAN\">Manhattan (L1)</option></select>")
+                    JettraFluxSelect.of("insert_vec_metric", "vector_metric")
+                        .addOption("COSINE", "Cosine Similarity", true)
+                        .addOption("EUCLIDEAN", "Euclidean (L2)")
+                        .addOption("DOT_PRODUCT", "Dot Product (Inner Product)")
+                        .addOption("MANHATTAN", "Manhattan (L1)")
                 ).modifier(new Modifier().style("flex:1;")),
                 Div.of(
                     Label.of("Etiqueta / Clase Semántica:").modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),

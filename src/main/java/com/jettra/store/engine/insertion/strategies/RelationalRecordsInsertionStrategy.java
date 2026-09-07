@@ -68,7 +68,10 @@ public class RelationalRecordsInsertionStrategy implements EngineRecordInsertion
         if (recEngine == null) {
             return InsertionResult.ofError("RECORDS", database, payload.table(), payload.recordId(), "RecordsEngine not registered in storage orchestrator");
         }
-        recEngine.saveRecord(database, payload.recordId(), payload.recordClass(), payload.columns());
+        String table = (payload.table() != null && !payload.table().isBlank() && !payload.table().equalsIgnoreCase("default"))
+                ? database + ":" + payload.table().trim()
+                : database;
+        recEngine.saveRecord(table, payload.recordId(), payload.recordClass(), payload.columns());
         return InsertionResult.ofSuccess("RECORDS", database, payload.table(), payload.recordId(),
                 "Record '" + payload.recordId() + "' stored in relational table [" + payload.table() + "] (Type: " + payload.recordClass() + ")", 1);
     }

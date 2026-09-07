@@ -128,7 +128,15 @@ public final class StorageTreeView {
                     StorageHierarchyNodeData.forEngine(engName)
                 ).icon(engIcon)
                  .iconColor(engColor)
-                 .badge(engName, "store-badge");
+                 .badge(engName, "store-badge")
+                 .action(
+                     Button.of(Icon.of("fas fa-plus"))
+                         .modifier(new Modifier()
+                             .attribute("type", "button")
+                             .attribute("title", "Insertar Registro en " + engName)
+                             .attribute("onclick", "openEngineInsertModal('" + engName + "', 'default', '" + escapeJs(targetDb) + "')")
+                             .style("background:none; border:none; color:" + engColor + "; font-size:9.5px; cursor:pointer; padding:1px 4px;"))
+                 );
 
                 for (Map.Entry<String, List<String>> unitEntry : units.entrySet()) {
                     String uName = unitEntry.getKey();
@@ -140,7 +148,15 @@ public final class StorageTreeView {
                         StorageHierarchyNodeData.forUnit(engName, targetDb, uName, items.size())
                     ).icon(engIcon)
                      .iconColor(engColor)
-                     .badge(String.valueOf(items.size()), "store-badge");
+                     .badge(String.valueOf(items.size()), "store-badge")
+                     .action(
+                         Button.of(Icon.of("fas fa-plus"))
+                             .modifier(new Modifier()
+                                 .attribute("type", "button")
+                                 .attribute("title", "Insertar Registro en " + uName)
+                                 .attribute("onclick", "openEngineInsertModal('" + engName + "', '" + escapeJs(uName) + "', '" + escapeJs(targetDb) + "')")
+                                 .style("background:none; border:none; color:" + engColor + "; font-size:9.5px; cursor:pointer; padding:1px 4px;"))
+                     );
 
                     for (String itemId : items) {
                         int vCount = 1;
