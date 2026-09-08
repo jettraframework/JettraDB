@@ -163,12 +163,12 @@ public class StoreDatabasesPage extends StoreTemplatePage {
         // Discover all databases and their components from storage core
         Map<String, DatabaseMetadata> allDiscoveredDatabases = discoverDatabases();
 
-        if (allDiscoveredDatabases.isEmpty()) {
+        // Ensure system_db is always present as the default core database
+        allDiscoveredDatabases.computeIfAbsent("system_db", db -> {
             DatabaseMetadata defaultDb = new DatabaseMetadata("system_db");
-            defaultDb.addComponent("RECORDS", 1);
-            defaultDb.addComponent("DOCUMENT", 1);
-            allDiscoveredDatabases.put("system_db", defaultDb);
-        }
+            defaultDb.addComponent("RECORDS", 0);
+            return defaultDb;
+        });
 
         // Load all users for RBAC scoping and permissions check
         List<JUser> allUsers = userRepo.findAll();

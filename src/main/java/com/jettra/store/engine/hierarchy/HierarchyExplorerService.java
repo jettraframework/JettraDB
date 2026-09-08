@@ -47,7 +47,7 @@ public class HierarchyExplorerService {
 
     public HierarchyResult<HierarchyNode.DatabaseNode> resolveDatabaseHierarchy(String dbName) {
         if (dbName == null || dbName.isBlank()) {
-            dbName = "customers_db";
+            dbName = "system_db";
         }
         final String targetDb = resolveExistingDatabaseName(dbName.trim());
 
@@ -430,7 +430,7 @@ public class HierarchyExplorerService {
     }
 
     public String resolveExistingDatabaseName(String dbName) {
-        if (dbName == null || dbName.isBlank()) return "customers_db";
+        if (dbName == null || dbName.isBlank()) return "system_db";
         Set<String> allDbs = discoverAllDatabases();
         if (allDbs.contains(dbName)) return dbName;
         for (String d : allDbs) {

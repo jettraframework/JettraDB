@@ -32,7 +32,7 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
     protected abstract Widget buildContent(HttpExchange exchange, Map<String, String> params, String currentTheme);
 
     protected Set<String> getAvailableDatabases() {
-        return new TreeSet<>(Set.of("customers_db", "ExampleDBReferences", "ecommerce_db"));
+        return new TreeSet<>(Set.of("system_db"));
     }
 
     /**
@@ -54,7 +54,7 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
             } catch (Exception ignored) {}
         }
 
-        String targetDb = params != null && params.containsKey("target_db") ? params.get("target_db") : "customers_db";
+        String targetDb = params != null && params.containsKey("target_db") ? params.get("target_db") : "system_db";
         String currentTab = params != null ? params.getOrDefault("tab", "schema").toLowerCase() : "schema";
         String activeModule = params != null ? params.getOrDefault("module", "database").toLowerCase() : "database";
         String selectedEngine = params != null ? params.getOrDefault("engine", "DOCUMENT").toUpperCase() : "DOCUMENT";
@@ -64,7 +64,7 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
 
         Set<String> databases = getAvailableDatabases();
         if (databases == null || databases.isEmpty()) {
-            databases = new TreeSet<>(Set.of("customers_db", "ExampleDBReferences"));
+            databases = new TreeSet<>(Set.of("system_db"));
         }
         if (!databases.contains(targetDb)) {
             databases.add(targetDb);

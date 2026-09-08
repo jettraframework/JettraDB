@@ -35,7 +35,7 @@ public final class EngineRecordInsertionDialog {
 
     public static Widget build(String actionUrl, String defaultEngine, String defaultDb, String defaultColl) {
         String activeEngine = defaultEngine != null ? defaultEngine.toUpperCase() : "DOCUMENT";
-        String activeDb = defaultDb != null ? defaultDb : "customers_db";
+        String activeDb = defaultDb != null ? defaultDb : "system_db";
         String activeColl = defaultColl != null ? defaultColl : "default";
 
         // 1. Notification feedback banner inside modal
@@ -376,7 +376,7 @@ public final class EngineRecordInsertionDialog {
                     function(data) {
                         var engineInput = document.getElementById('adaptive_insert_engine_input');
                         var selectedEngine = engineInput ? engineInput.value : 'DOCUMENT';
-                        var dbVal = data.database || (document.getElementById('adaptive_insert_target_db') ? document.getElementById('adaptive_insert_target_db').value : 'customers_db');
+                        var dbVal = data.database || (document.getElementById('adaptive_insert_target_db') ? document.getElementById('adaptive_insert_target_db').value : 'system_db');
                         var collVal = data.collection || 'default';
                         var redirectUrl = window.location.pathname + '?engine=' + encodeURIComponent(selectedEngine)
                             + '&target_db=' + encodeURIComponent(dbVal)

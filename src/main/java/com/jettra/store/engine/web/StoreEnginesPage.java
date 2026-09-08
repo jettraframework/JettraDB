@@ -396,7 +396,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
             db = params != null ? params.get("db") : null;
         }
         if (db == null || db.isBlank()) {
-            db = "customers_db";
+            db = "system_db";
         }
         db = db.trim();
 
@@ -551,7 +551,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
     }
 
     private void handleExportData(HttpExchange exchange, Map<String, String> params) throws IOException {
-        String db = params.getOrDefault("target_db", "customers_db");
+        String db = params.getOrDefault("target_db", "system_db");
         String eng = params.getOrDefault("engine_type", params.getOrDefault("engine", "ALL")).toUpperCase();
         String coll = params.getOrDefault("target_coll", params.getOrDefault("coll", "")).trim();
         String format = params.getOrDefault("format", "json").toLowerCase();
@@ -4236,7 +4236,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
       params.append('is_ajax', 'true');
     }
 
-    var targetDb = params.get('target_db') || params.get('db') || 'customers_db';
+    var targetDb = params.get('target_db') || params.get('db') || 'system_db';
     var targetEngine = params.get('engine_type') || params.get('engine') || 'DOCUMENT';
     var targetUnit = params.get('target_coll') || params.get('coll') || params.get('unit_name') || 'default';
     var targetId = params.get('target_id') || params.get('id') || params.get('custom_id') || '';
