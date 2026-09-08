@@ -29,6 +29,7 @@ public sealed interface EngineType permits
     String itemLabel();
     String description();
     StorageEngineType toStorageEngineType();
+    default String badge() { return null; }
 
     record KeyValue() implements EngineType {
         @Override public String key() { return "KEYVALUE"; }
@@ -54,12 +55,13 @@ public sealed interface EngineType permits
 
     record RelationalRecords() implements EngineType {
         @Override public String key() { return "RECORDS"; }
-        @Override public String displayName() { return "Relational / Tabular"; }
-        @Override public String color() { return "#f43f5e"; }
-        @Override public String icon() { return "fas fa-table"; }
+        @Override public String displayName() { return "Record (Java 25)"; }
+        @Override public String color() { return "#10b981"; }
+        @Override public String icon() { return "fas fa-microchip"; }
         @Override public String unitName() { return "Table"; }
-        @Override public String itemLabel() { return "Record Row"; }
-        @Override public String description() { return "Java 25 Record & Immutable Schemas with typed columns and primary keys"; }
+        @Override public String itemLabel() { return "Record"; }
+        @Override public String badge() { return "ULTRA-FAST"; }
+        @Override public String description() { return "Java 25 Record & Immutable Schemas with high speed and low memory footprint"; }
         @Override public StorageEngineType toStorageEngineType() { return StorageEngineType.RELATIONAL_RECORDS; }
     }
 
@@ -149,7 +151,7 @@ public sealed interface EngineType permits
         return switch (normalized) {
             case "KEYVALUE", "KEY_VALUE", "KV" -> new KeyValue();
             case "DOCUMENT", "DOC", "JSON" -> new Document();
-            case "RECORDS", "RELATIONAL", "TABULAR", "REC" -> new RelationalRecords();
+            case "RECORD", "RECORDS", "RELATIONAL", "TABULAR", "REC" -> new RelationalRecords();
             case "GRAPH", "GRAPH_REFERENCES" -> new Graph();
             case "VECTOR", "EMBEDDINGS", "VEC" -> new Vector();
             case "TIMESERIES", "TIME_SERIES", "TS" -> new TimeSeries();

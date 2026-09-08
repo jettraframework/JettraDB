@@ -143,16 +143,27 @@ public final class EngineRecordInsertionDialog {
     private static Widget buildEngineSelectorBar(String initialEngine) {
         List<Widget> pills = new ArrayList<>();
         for (EngineType eng : EngineType.all()) {
-            boolean isActive = eng.key().equalsIgnoreCase(initialEngine);
+            boolean isActive = eng.key().equalsIgnoreCase(initialEngine)
+                    || (eng instanceof EngineType.RelationalRecords && "RECORD".equalsIgnoreCase(initialEngine));
             String borderStyle = isActive ? "2px solid " + eng.color() : "1px solid var(--j-border)";
             String bgStyle = isActive ? "rgba(255,255,255,0.08)" : "var(--j-bg-body)";
             String fontColor = isActive ? eng.color() : "var(--j-text-secondary)";
 
-            Widget pill = Div.of(
-                Icon.of(eng.icon()).modifier(new Modifier().style("color:" + eng.color() + "; font-size:12px; margin-right:6px;")),
-                Span.of(eng.displayName()).modifier(new Modifier().style("font-size:11.5px; font-weight:700; color:" + fontColor + ";"))
-            ).id("engine_tab_btn_" + eng.key())
-             .modifier(new Modifier()
+            List<Widget> pillChildren = new ArrayList<>();
+            pillChildren.add(Icon.of(eng.icon()).modifier(new Modifier().style("color:" + eng.color() + "; font-size:12px; margin-right:6px;")));
+            pillChildren.add(Span.of(eng.displayName()).modifier(new Modifier().style("font-size:11.5px; font-weight:700; color:" + fontColor + ";")));
+
+            if (eng.badge() != null && !eng.badge().isBlank()) {
+                pillChildren.add(Span.of(eng.badge()).modifier(new Modifier().style(
+                    "font-size:9px; font-weight:800; padding:1px 6px; border-radius:10px; " +
+                    "background:rgba(16,185,129,0.2); color:#10b981; border:1px solid rgba(16,185,129,0.35); " +
+                    "margin-left:6px; letter-spacing:0.5px; vertical-align:middle;"
+                )));
+            }
+
+            Widget pill = Div.of(pillChildren.toArray(new Widget[0]))
+              .id("engine_tab_btn_" + eng.key())
+              .modifier(new Modifier()
                 .attribute("data-engine", eng.key())
                 .attribute("data-color", eng.color())
                 .attribute("data-label", eng.displayName())
@@ -186,13 +197,17 @@ public final class EngineRecordInsertionDialog {
                 jo.addProperty(e.getKey(), e.getValue());
             }
             sb.append("  '").append(eng.key()).append("': ").append(jo.toString()).append(",\n");
+            if ("RECORDS".equals(eng.key())) {
+                sb.append("  'RECORD': ").append(jo.toString()).append(",\n");
+            }
         }
         sb.append("};\n\n");
 
         sb.append("""
         function openEngineInsertModal(engineKey, unitName, dbName) {
-            var eng = (engineKey || 'DOCUMENT').toUpperCase();
-            switchInsertEngine(eng);
+            var raw = (engineKey || 'DOCUMENT').toUpperCase();
+            var eng = (raw === 'RECORD') ? 'RECORDS' : raw;
+            switchInsertEngine(raw);
             if (dbName) {
                 var dbInput = document.getElementById('adaptive_insert_target_db');
                 if (dbInput) dbInput.value = dbName;
@@ -213,7 +228,8 @@ public final class EngineRecordInsertionDialog {
         }
 
         function switchInsertEngine(engineKey) {
-            var eng = (engineKey || 'DOCUMENT').toUpperCase();
+            var raw = (engineKey || 'DOCUMENT').toUpperCase();
+            var eng = (raw === 'RECORD') ? 'RECORDS' : raw;
             var engineInput = document.getElementById('adaptive_insert_engine_input');
             if (engineInput) engineInput.value = eng;
 
@@ -238,7 +254,8 @@ public final class EngineRecordInsertionDialog {
                 var pillEngine = pill.getAttribute('data-engine');
                 var color = pill.getAttribute('data-color') || '#38bdf8';
                 var labelSpan = pill.querySelector('span');
-                if (pillEngine === eng) {
+                var isSelected = (pillEngine === eng || (pillEngine === 'RECORDS' && raw === 'RECORD'));
+                if (isSelected) {
                     pill.style.border = '2px solid ' + color;
                     pill.style.background = 'rgba(255,255,255,0.08)';
                     if (labelSpan) labelSpan.style.color = color;
@@ -253,7 +270,8 @@ public final class EngineRecordInsertionDialog {
             var submitBtn = document.getElementById('btnAdaptiveSubmitInsert');
             if (submitBtn) {
                 var labelSpan = submitBtn.querySelector('span');
-                if (labelSpan) labelSpan.textContent = 'Insertar en ' + eng;
+                var displayTitle = (eng === 'RECORDS' || raw === 'RECORD') ? 'RECORD' : eng;
+                if (labelSpan) labelSpan.textContent = 'Insertar en ' + displayTitle;
             }
         }
 
@@ -293,8 +311,13 @@ public final class EngineRecordInsertionDialog {
                 }
             }
 
+            if ((activeEng === 'RECORDS' || activeEng === 'RECORD') && window.JettraFluxRecordForm) {
+                window.JettraFluxRecordForm.loadEmployeeSample('insert_rec');
+            }
+
             if (window.JettraFluxNotification) {
-                JettraFluxNotification.show('adaptiveRecordInsertNotification', 'Plantilla Cargada', 'Se han cargado datos de ejemplo válidos para el motor ' + activeEng + '.', 'INFO');
+                var disp = (activeEng === 'RECORDS' || activeEng === 'RECORD') ? 'RECORD' : activeEng;
+                JettraFluxNotification.show('adaptiveRecordInsertNotification', 'Plantilla Cargada', 'Se han cargado datos de ejemplo válidos para el motor ' + disp + '.', 'INFO');
             }
         }
 

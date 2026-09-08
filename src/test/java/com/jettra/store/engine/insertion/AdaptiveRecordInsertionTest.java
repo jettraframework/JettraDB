@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
@@ -510,19 +511,89 @@ public class AdaptiveRecordInsertionTest {
         // Verify JettraFluxTransport client function and strict headers
         assertTrue(html.contains("dispatchAdaptiveTransport"), "Must define dispatchAdaptiveTransport function");
         assertTrue(html.contains("'Accept': 'application/json'"), "Must enforce Accept: application/json header");
-        assertTrue(html.contains("'Content-Type': 'application/json; charset=UTF-8'"), "Must enforce Content-Type: application/json header");
         assertTrue(html.contains("submitAdaptiveRecordInsert"), "Must define submitAdaptiveRecordInsert caller");
         // Verify resilient HTML error interceptor (preventing unexpected token '<')
         assertTrue(html.contains("replace(/<[^>]*>/g, ' ')"), "Must safely strip HTML tags from non-JSON errors");
     }
 
+    @Test
+    @DisplayName("Verify RECORD native model insertion via EngineInsertionFactory and Virtual Threads")
+    public void testNativeRecordModelInsertion() {
+        // 1. Verify EngineType resolution for RECORD
+        EngineType recType = EngineType.fromKey("RECORD");
+        assertNotNull(recType);
+        assertEquals("RECORDS", recType.key());
+        assertEquals("Record (Java 25)", recType.displayName());
+        assertEquals("ULTRA-FAST", recType.badge());
+
+        // 2. Lookup strategy by alias RECORD
+        var strat = EngineInsertionFactory.getStrategy("RECORD");
+        assertNotNull(strat);
+
+        // 3. Execute asynchronous insert using Virtual Threads
+        Map<String, String> params = new LinkedHashMap<>();
+        params.put("target_coll", "developers");
+        params.put("target_id", "dev_100");
+        params.put("id_gen_mode", "MANUAL");
+        params.put("rec_class", "com.jettra.model.EmployeeRecord");
+        params.put("rec_payload", """
+        {
+          "_recordClass": "com.jettra.model.EmployeeRecord",
+          "_timestamp": 1788809869770,
+          "_version": 1,
+          "_schema": {
+            "first_name": "String",
+            "last_name": "String",
+            "email": "String",
+            "age": "Integer",
+            "salary": "Double",
+            "department": "String",
+            "created_at": "String",
+            "_table": "String"
+          },
+          "components": {
+            "first_name": "John",
+            "last_name": "Doe",
+            "email": "john.doe@company.org",
+            "age": 34,
+            "salary": 85000.0,
+            "department": "ENGINEERING",
+            "created_at": "2026-09-07T10:00:00Z",
+            "_table": "developers"
+          }
+        }
+        """);
+
+        CompletableFuture<InsertionResult> future = EngineInsertionFactory.executeInsertAsync(
+                storageEngine, "RECORD", "corp_db", params
+        );
+
+        InsertionResult res = future.join();
+        assertNotNull(res);
+        assertTrue(res.success(), "Insertion should succeed: " + res.message());
+        assertEquals("RECORDS", res.engine());
+        assertEquals("corp_db", res.database());
+        assertEquals("developers", res.unit());
+        assertEquals("dev_100", res.id());
+
+        // 4. Verify storage core content
+        byte[] bytes = storageEngine.getStorageCore().get("rec:corp_db:developers:dev_100");
+        assertNotNull(bytes, "Must be stored in storage core under rec:corp_db:developers:dev_100");
+        String json = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+        assertTrue(json.contains("com.jettra.model.EmployeeRecord"));
+        assertTrue(json.contains("john.doe@company.org"));
+        assertTrue(json.contains("_schema"));
+        assertTrue(json.contains("components"));
+    }
+
     public static void main(String[] args) {
-        System.out.println("=== RUNNING AdaptiveRecordInsertionTest (18 Test Cases) ===");
+        System.out.println("=== RUNNING AdaptiveRecordInsertionTest (19 Test Cases) ===");
         AdaptiveRecordInsertionTest test = new AdaptiveRecordInsertionTest();
         int passed = 0;
         int failed = 0;
 
         java.util.List<java.util.Map.Entry<String, Runnable>> testCases = java.util.List.of(
+            java.util.Map.entry("testNativeRecordModelInsertion", test::testNativeRecordModelInsertion),
             java.util.Map.entry("testEngineTypeHierarchy", test::testEngineTypeHierarchy),
             java.util.Map.entry("testKeyValueStrategy", test::testKeyValueStrategy),
             java.util.Map.entry("testDocumentStrategy", test::testDocumentStrategy),

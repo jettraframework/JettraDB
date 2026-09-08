@@ -154,7 +154,9 @@ public enum StorageEngineType {
         if (raw == null || raw.isBlank()) return Optional.empty();
         String normalized = raw.trim().toUpperCase().replace("-", "_");
         return Arrays.stream(values())
-                .filter(t -> t.name().equals(normalized) || t.engineName.equalsIgnoreCase(raw.trim()))
+                .filter(t -> t.name().equals(normalized) 
+                        || t.engineName.equalsIgnoreCase(raw.trim())
+                        || (t == RELATIONAL_RECORDS && "RECORD".equalsIgnoreCase(raw.trim())))
                 .findFirst();
     }
 

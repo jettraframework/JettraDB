@@ -742,16 +742,23 @@ curl -X POST http://localhost:8086/api/model/object/save \
 
 ## 6.9 Records Engine (Java 25 Records, Component Validation & Schema Reflection)
 - **Use Case**: Native storage for immutable Java Records (`java.lang.Record`), domain event payloads, structural data transfer objects (DTOs), and schema-reflected entities with high-density Compact Object Headers.
+- **Supported Data Types**:
+  - **Temporal & Date Types**: `Date` (`java.util.Date`), `LocalDate`, `LocalTime`, `LocalDateTime`, `Instant`, `ZonedDateTime`, `OffsetDateTime` (`java.time.*`). Formatted canonically according to ISO-8601 strings.
+  - **Primitives & Wrappers**: `byte`/`Byte`, `short`/`Short`, `int`/`Integer`, `long`/`Long`, `float`/`Float`, `double`/`Double`, `boolean`/`Boolean`, `char`/`Character`.
+  - **Collections & Sequences**: `List<T>`, `Array<T>` / `T[]`, `Set<T>`, `Collection<T>` / `Collections<T>`.
+  - **Enumerations**: `Enum<T>` constants stored with name resolution.
+  - **Complex Objects & Nested Record References**: Direct nesting of domain records (e.g. `Persona` referencing `Pais pais`).
 - **Specific Object Representation**: Compact key-value record (`rec:collection:recordId`) storing:
   - `_recordClass`: Fully-qualified class name of the canonical Java Record.
   - `_timestamp`: Monotonic revision timestamp.
   - `_version`: Schema version number.
-  - `_schema`: Component name and type dictionary (e.g. `{"id": "String", "salary": "Double"}`).
-  - `components`: JSON map of record component values.
+  - `_schema`: Component name and type dictionary supporting primitives, temporals, collections, enums, and nested records.
+  - `components`: JSON map of record component values (including nested JSON objects and arrays).
 - **Administrative Operations**:
   - Insert / Save Record (`collection`, `id`, `recordClass`, `components`, optional `_schema`)
+  - Direct Java Object Reflection (`saveRecordObject(collection, id, record)`)
   - Query Record by ID
-  - Project specific component fields (`?fields=name,salary`)
+  - Project specific component fields (`?fields=name,salary,pais`)
   - Filter records by component field predicate
   - Partial component field update
   - Delete Record (Raft quorum tombstone)
@@ -762,31 +769,46 @@ curl -X POST http://localhost:8086/api/model/object/save \
   - `DELETE /api/model/records/{collection}/{id}` : Delete record.
 
 ```bash
-# 1. Insert a typed Java Record into the 'employees' collection
-curl -X POST http://localhost:8086/api/model/records/employees/emp_9001 \
+# 1. Insert a typed Java Record with nested Record reference (Pais inside Persona), dates, and collections
+curl -X POST http://localhost:8086/api/model/records/personas/per_1001 \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "_recordClass": "com.enterprise.model.EmployeeRecord",
+    "_recordClass": "com.enterprise.model.Persona",
+    "_schema": {
+      "id": "String",
+      "nombre": "String",
+      "pais": "Pais",
+      "fechaNacimiento": "LocalDate",
+      "creadoEn": "Instant",
+      "tags": "List<String>",
+      "estadoCivil": "Enum<EstadoCivil>"
+    },
     "components": {
-      "id": "emp_9001",
-      "fullName": "Carlos Mendez",
-      "department": "Engineering",
-      "active": true,
-      "salary": 85000.00
+      "id": "per_1001",
+      "nombre": "Aristides",
+      "pais": {
+        "_recordClass": "com.enterprise.model.Pais",
+        "codigo": "PA",
+        "nombre": "Panamá"
+      },
+      "fechaNacimiento": "1980-05-20",
+      "creadoEn": "2026-09-08T10:00:00Z",
+      "tags": ["java", "cloud", "databases"],
+      "estadoCivil": "CASADO"
     }
   }'
 
 # 2. Retrieve the complete record
-curl -X GET http://localhost:8086/api/model/records/employees/emp_9001 \
+curl -X GET http://localhost:8086/api/model/records/personas/per_1001 \
   -H "Authorization: Bearer $TOKEN"
 
-# 3. Retrieve only projected fields (fullName, department)
-curl -X GET "http://localhost:8086/api/model/records/employees/emp_9001?fields=fullName,department" \
+# 3. Retrieve only projected fields (nombre, pais, fechaNacimiento)
+curl -X GET "http://localhost:8086/api/model/records/personas/per_1001?fields=nombre,pais,fechaNacimiento" \
   -H "Authorization: Bearer $TOKEN"
 
 # 4. Delete record
-curl -X DELETE http://localhost:8086/api/model/records/employees/emp_9001 \
+curl -X DELETE http://localhost:8086/api/model/records/personas/per_1001 \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -865,12 +887,26 @@ mongo db.users.aggregate([{$match: {city: 'Panama'}}, {$group: {_id: null, avgAg
 ```
 
 #### Typed Repository with Immutable Java 25 Records
+#### Typed Repository with Immutable Java 25 Records
 ```java
 import com.jettra.driver.java.JettraClient;
 import com.jettra.driver.java.JettraRepository;
+import java.time.LocalDate;
+import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
-public record Persona(String id, String nombre, int edad, String role) {}
+public enum EstadoCivil { SOLTERO, CASADO, DIVORCIADO }
+public record Pais(String codigo, String nombre) {}
+public record Persona(
+    String id,
+    String nombre,
+    Pais pais,
+    LocalDate fechaNacimiento,
+    Instant creadoEn,
+    List<String> tags,
+    EstadoCivil estadoCivil
+) {}
 
 public class Main {
     public static void main(String[] args) throws Exception {
@@ -878,18 +914,25 @@ public class Main {
         client.connect();
         client.login("admin", "admin");
             
-        // Option A: Using recordRepository directly
+        // Option A: Direct Reflection saveRecord
+        Persona persona = new Persona(
+            "P001",
+            "Aristides",
+            new Pais("PA", "Panamá"),
+            LocalDate.of(1980, 5, 20),
+            Instant.now(),
+            List.of("java", "databases", "microservices"),
+            EstadoCivil.CASADO
+        );
+        client.saveRecord("personas", persona.id(), persona);
+        
+        // Option B: Using recordRepository directly
         JettraRepository<Persona> repo = client.recordRepository(Persona.class, "personas");
-        
-        // Save Java Record
-        repo.save("P001", new Persona("P001", "Alice", 28, "Architect"));
-        
-        // Find by ID and unwrap directly into Persona record
         Optional<Persona> p = repo.findById("P001");
-        p.ifPresent(persona -> System.out.println("Retrieved: " + persona.nombre() + " (" + persona.role() + ")"));
+        p.ifPresent(pers -> System.out.println("Retrieved: " + pers.nombre() + " [Pais: " + pers.pais().nombre() + "]"));
 
-        // Option B: Using Fluent Records API
-        client.records().collection("personas").insert("P002", "{\"_recordClass\":\"Persona\",\"components\":{\"nombre\":\"Bob\",\"edad\":35}}");
+        // Option C: Using Fluent Records API
+        client.records().collection("personas").insert("P002", "{\"_recordClass\":\"Persona\",\"components\":{\"nombre\":\"Bob\",\"fechaNacimiento\":\"1992-08-14\"}}");
         String recJson = client.records().collection("personas").get("P002");
         System.out.println("Raw Record: " + recJson);
     }
@@ -911,8 +954,8 @@ String userDoc = client.document().collection("users").get("U101");
 client.document().collection("facturas").insert("F-100", "{\"total\": 150.00}");
 
 // Save immutable audit record in RECORDS engine
-record AuditRecord(String txId, String user, long timestamp) {}
-client.saveRecord("audit_logs", "TX-9901", new AuditRecord("TX-9901", "admin", System.currentTimeMillis()));
+record AuditRecord(String txId, String user, java.time.Instant timestamp) {}
+client.saveRecord("audit_logs", "TX-9901", new AuditRecord("TX-9901", "admin", java.time.Instant.now()));
 
 // Update KeyValue cache
 client.keyvalue().collection("stats").insert("last_tx", "TX-9901");
@@ -927,28 +970,53 @@ pip install jettra-driver
 ```python
 from jettra_driver.client import JettraClient
 from dataclasses import dataclass
+import datetime
+from enum import Enum
+from typing import List
+
+class EstadoCivil(Enum):
+    SOLTERO = "SOLTERO"
+    CASADO = "CASADO"
+
+@dataclass
+class Pais:
+    codigo: str
+    nombre: str
 
 @dataclass
 class Persona:
     id: str
     nombre: str
-    edad: int
+    pais: Pais
+    fecha_nacimiento: datetime.date
+    creado_en: datetime.datetime
+    tags: List[str]
+    estado_civil: EstadoCivil
 
 client = JettraClient(host="localhost", port=8086)
 client.connect()
 client.login("admin", "admin")
 
-# 1. Native Records Engine helper
-client.save_record("personas", "P001", {"id": "P001", "nombre": "Alice", "edad": 28}, record_class="Persona")
+# 1. Native Records Engine helper with nested objects and temporals
+p = Persona(
+    id="P001",
+    nombre="Aristides",
+    pais=Pais(codigo="PA", nombre="Panamá"),
+    fecha_nacimiento=datetime.date(1980, 5, 20),
+    creado_en=datetime.datetime.now(datetime.timezone.utc),
+    tags=["python", "fastapi", "jettra"],
+    estado_civil=EstadoCivil.CASADO
+)
+client.save_record("personas", p.id, record_class="Persona", components=p.__dict__)
 
 record_data = client.get_record("personas", "P001")
 print("Retrieved record:", record_data)
 
 # 2. Typed Record Repository
 repo = client.record_repository(Persona, collection="personas")
-repo.save("P002", Persona(id="P002", nombre="Bob", edad=32))
-persona_obj = repo.find_by_id("P002")
-print("Found person:", persona_obj.nombre, persona_obj.edad)
+persona_obj = repo.find_by_id("P001")
+if persona_obj:
+    print("Found person:", persona_obj)
 ```
 
 ### 8.4 Go Driver (`github.com/jettra/jettra-driver-go`)
@@ -962,13 +1030,23 @@ package main
 
 import (
     "fmt"
+    "time"
     jettra "github.com/jettra/jettra-driver-go"
 )
 
-type PersonaRecord struct {
-    ID     string `json:"id"`
+type Pais struct {
+    Codigo string `json:"codigo"`
     Nombre string `json:"nombre"`
-    Edad   int    `json:"edad"`
+}
+
+type PersonaRecord struct {
+    ID              string    `json:"id"`
+    Nombre          string    `json:"nombre"`
+    Pais            Pais      `json:"pais"`
+    FechaNacimiento string    `json:"fechaNacimiento"`
+    CreadoEn        time.Time `json:"creadoEn"`
+    Tags            []string  `json:"tags"`
+    EstadoCivil     string    `json:"estadoCivil"`
 }
 
 func main() {
@@ -976,16 +1054,29 @@ func main() {
     client.Connect()
     client.Login("admin", "admin")
 
-    // 1. Save and Get Record
-    record := PersonaRecord{ID: "P001", Nombre: "Alice", Edad: 28}
-    client.SaveRecord("personas", "P001", record)
+    // 1. Save and Get Record with nested Pais and temporals
+    p := PersonaRecord{
+        ID:              "P001",
+        Nombre:          "Aristides",
+        Pais:            Pais{Codigo: "PA", Nombre: "Panamá"},
+        FechaNacimiento: "1980-05-20",
+        CreadoEn:        time.Now(),
+        Tags:            []string{"go", "distributed-systems"},
+        EstadoCivil:     "CASADO",
+    }
+    err := client.SaveRecord("personas", "P001", "Persona", p, nil)
+    if err != nil {
+        panic(err)
+    }
 
-    var retrieved PersonaRecord
-    client.GetRecord("personas", "P001", &retrieved)
+    retrieved, err := client.GetRecord("personas", "P001")
+    if err != nil {
+        panic(err)
+    }
     fmt.Printf("Retrieved Record in Go: %+v\n", retrieved)
 
     // 2. Fluent Records API
-    client.Records().Collection("personas").Insert("P002", `{"id":"P002","nombre":"Bob","edad":35}`)
+    client.Records().Collection("personas").Insert("P002", `{"id":"P002","nombre":"Bob","fechaNacimiento":"1992-08-14"}`)
     res, _ := client.Records().Collection("personas").Get("P002")
     fmt.Println("Raw JSON:", res)
 }

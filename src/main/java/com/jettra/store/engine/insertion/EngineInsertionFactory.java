@@ -43,7 +43,11 @@ public final class EngineInsertionFactory {
 
     public static void register(EngineRecordInsertionStrategy<?> strategy) {
         if (strategy != null) {
-            STRATEGIES.put(strategy.engineType().key().toUpperCase(), strategy);
+            String key = strategy.engineType().key().toUpperCase();
+            STRATEGIES.put(key, strategy);
+            if ("RECORDS".equals(key)) {
+                STRATEGIES.put("RECORD", strategy);
+            }
         }
     }
 

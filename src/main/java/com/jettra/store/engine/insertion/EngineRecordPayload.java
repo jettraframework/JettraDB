@@ -49,8 +49,15 @@ public sealed interface EngineRecordPayload permits
             String recordId,
             String recordClass,
             JsonObject columns,
-            String rawJson
+            JsonObject schema,
+            String rawJson,
+            long version,
+            long timestamp
     ) implements EngineRecordPayload {
+        public RelationalRecordPayload(String table, String recordId, String recordClass, JsonObject columns, String rawJson) {
+            this(table, recordId, recordClass, columns, new JsonObject(), rawJson, 1L, System.currentTimeMillis());
+        }
+        public JsonObject components() { return columns; }
         @Override public String entityId() { return recordId; }
         @Override public String unitName() { return table; }
         @Override public EngineType engineType() { return new EngineType.RelationalRecords(); }
