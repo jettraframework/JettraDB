@@ -373,12 +373,16 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
 
         Widget railTop = Div.of(
             railLogo,
-            Link.of(JettraServer.resolvePath("/engines?tab=query&target_db=" + targetDb),
+           
+            Link.of(JettraServer.resolvePath("/databases"),
+                Icon.of("fas fa-database")
+            ).modifier(new Modifier().cssClass("rail-item" + ("VECTOR".equalsIgnoreCase(selectedEngine) ? " active" : "")).attribute("title", "Databases")),
+            Link.of(JettraServer.resolvePath("/engines?tab=schema&engine=" + selectedEngine + "&target_db=" + targetDb),
+                Icon.of("fas fa-table")
+            ).modifier(new Modifier().cssClass("rail-item" + ("database".equals(activeModule) && !"query".equals(currentTab) ? " active" : "")).attribute("title", "DATABASE")),
+             Link.of(JettraServer.resolvePath("/engines?tab=query&target_db=" + targetDb),
                 Icon.of("fas fa-terminal")
             ).modifier(new Modifier().cssClass("rail-item" + ("query".equals(currentTab) ? " active" : "")).attribute("title", "Query")),
-            Link.of(JettraServer.resolvePath("/engines?tab=schema&engine=" + selectedEngine + "&target_db=" + targetDb),
-                Icon.of("fas fa-database")
-            ).modifier(new Modifier().cssClass("rail-item" + ("database".equals(activeModule) && !"query".equals(currentTab) ? " active" : "")).attribute("title", "DATABASE")),
             Link.of(JettraServer.resolvePath("/engines?engine=TIMESERIES&target_db=" + targetDb),
                 Icon.of("fas fa-chart-line")
             ).modifier(new Modifier().cssClass("rail-item" + ("TIMESERIES".equalsIgnoreCase(selectedEngine) ? " active" : "")).attribute("title", "MESERIES")),
@@ -388,7 +392,7 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
             Link.of(JettraServer.resolvePath("/engines?tab=metrics&target_db=" + targetDb),
                 Icon.of("fas fa-tachometer-alt")
             ).modifier(new Modifier().cssClass("rail-item" + ("metrics".equals(currentTab) ? " active" : "")).attribute("title", "PROFILE")),
-            Link.of(JettraServer.resolvePath("/users"),
+            Link.of(JettraServer.resolvePath("/users"), 
                 Icon.of("fas fa-shield-alt")
             ).modifier(new Modifier().cssClass("rail-item").attribute("title", "SECURITY")),
             Link.of(JettraServer.resolvePath("/swagger-ui"),
@@ -396,10 +400,8 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
             ).modifier(new Modifier().cssClass("rail-item").attribute("title", "API")),
             Link.of(JettraServer.resolvePath("/information"),
                 Icon.of("fas fa-info-circle")
-            ).modifier(new Modifier().cssClass("rail-item").attribute("title", "INFO")),
-            Link.of(JettraServer.resolvePath("/engines?engine=VECTOR&target_db=" + targetDb),
-                Icon.of("fas fa-robot")
-            ).modifier(new Modifier().cssClass("rail-item" + ("VECTOR".equalsIgnoreCase(selectedEngine) ? " active" : "")).attribute("title", "AI"))
+            ).modifier(new Modifier().cssClass("rail-item").attribute("title", "INFO"))
+            
         ).modifier(new Modifier().cssClass("rail-top-section"));
 
         Widget railBottom = Div.of(
