@@ -8,6 +8,9 @@ import jcf.annotation.PageWidgetAllow;
 import jcf.AppRole;
 import io.jettra.flux.core.Modifier;
 import io.jettra.flux.core.Widget;
+import io.jettra.flux.security.SecurityContext;
+import io.jettra.flux.security.SecurityContextHolder;
+import io.jettra.flux.security.SecurityPrincipal;
 import io.jettra.flux.widgets.*;
 import io.jettra.server.JettraServer;
 import io.jettra.server.autentification.entity.JCredential;
@@ -27,16 +30,18 @@ import java.util.UUID;
 import java.util.HashSet;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
-import java.util.TreeSet;
+import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
 /**
  * Visual Database and Component Management Console for JettraStoreEngine.
  * Features:
- * - Dynamic list of all created databases and their internal components/collections
- * - Full support for the Java 25 RECORDS engine
+ * - Unified JettraFlux panel integrating Multi-Model Components overview and Authorized Active Databases
+ * - Fine-grained access control and permission filtering (READ / ADMIN) based on active SecurityContext
+ * - Native JettraConfirmDialog for destructive database drop confirmations
+ * - Full support for Java 25 RECORDS engine and 9 multi-model storage backends
  * - Granular User & Role Administration per database
- * - Component inspector with item payloads, schema reflection, and deletion
- * Built with pure JettraFlux components.
+ * Built with 100% pure JettraFlux native components.
  */
 @PageWidgetAllow(role = { jcf.AppRole.ADMIN, jcf.AppRole.MANAGER, jcf.AppRole.USER })
 public class StoreDatabasesPage extends StoreTemplatePage {
@@ -65,7 +70,7 @@ public class StoreDatabasesPage extends StoreTemplatePage {
         String alertMessage = "";
         String alertType = "badge-active";
 
-        // Handle Actions: create_db, drop_db, add_component, assign_user, delete_entity
+        // Handle Actions: create_db, drop_db, rename_db, assign_user, delete_entity
         if ("POST".equalsIgnoreCase(exchange.getRequestMethod())) {
             try {
                 String action = params != null ? params.get("action") : null;
@@ -92,29 +97,26 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                     String oldDb = params.get("old_db");
                     String newDb = params.get("new_db");
                     if (oldDb != null && newDb != null && !newDb.isBlank()) {
-                        int migrated = renameDatabase(oldDb.trim(), newDb.trim());
-                        alertMessage = "Database '" + oldDb + "' renamed to '" + newDb + "' (" + migrated + " keys migrated).";
-                        alertType = "badge-active";
+                        if ("system_db".equalsIgnoreCase(oldDb.trim())) {
+                            alertMessage = "The system database 'system_db' is protected and cannot be renamed.";
+                            alertType = "badge-raft";
+                        } else {
+                            int migrated = renameDatabase(oldDb.trim(), newDb.trim());
+                            alertMessage = "Database '" + oldDb + "' renamed to '" + newDb + "' (" + migrated + " keys migrated).";
+                            alertType = "badge-active";
+                        }
                     }
                 } else if ("drop_db".equalsIgnoreCase(action)) {
                     String targetDb = params.get("target_db");
                     if (targetDb != null && !targetDb.isBlank()) {
-                        int purged = purgeDatabase(targetDb.trim());
-                        alertMessage = "Database '" + targetDb + "' dropped (" + purged + " components purged).";
-                        alertType = "badge-raft";
-                    }
-                } else if ("add_component".equalsIgnoreCase(action)) {
-                    String targetDb = params.get("target_db");
-                    String engineType = params.get("engine_type");
-                    String keyId = params.get("key_id");
-                    String payload = params.get("payload");
-
-                    if (targetDb != null && keyId != null && engineType != null) {
-                        String prefix = getPrefixForEngine(engineType);
-                        String internalKey = prefix + targetDb.trim() + ":" + keyId.trim();
-                        engine.getStorageCore().put(internalKey, payload.getBytes(StandardCharsets.UTF_8), System.currentTimeMillis());
-                        alertMessage = "Component [" + engineType + "] entity '" + keyId + "' added to database '" + targetDb + "'!";
-                        alertType = "badge-active";
+                        if ("system_db".equalsIgnoreCase(targetDb.trim())) {
+                            alertMessage = "The system database 'system_db' is protected and cannot be deleted.";
+                            alertType = "badge-raft";
+                        } else {
+                            int purged = purgeDatabase(targetDb.trim());
+                            alertMessage = "Database '" + targetDb + "' dropped (" + purged + " components purged).";
+                            alertType = "badge-raft";
+                        }
                     }
                 } else if ("delete_entity".equalsIgnoreCase(action)) {
                     String rawKey = params.get("raw_key");
@@ -158,15 +160,46 @@ public class StoreDatabasesPage extends StoreTemplatePage {
             }
         }
 
-        // Discover all databases and their components
-        Map<String, DatabaseMetadata> databases = discoverDatabases();
+        // Discover all databases and their components from storage core
+        Map<String, DatabaseMetadata> allDiscoveredDatabases = discoverDatabases();
 
-        if (databases.isEmpty()) {
+        if (allDiscoveredDatabases.isEmpty()) {
             DatabaseMetadata defaultDb = new DatabaseMetadata("system_db");
             defaultDb.addComponent("RECORDS", 1);
             defaultDb.addComponent("DOCUMENT", 1);
-            databases.put("system_db", defaultDb);
+            allDiscoveredDatabases.put("system_db", defaultDb);
         }
+
+        // Load all users for RBAC scoping and permissions check
+        List<JUser> allUsers = userRepo.findAll();
+
+        // Resolve Security Principal from SecurityContextHolder or session cookie
+        SecurityContext secContext = SecurityContextHolder.getContext();
+        SecurityPrincipal principal = (secContext != null && secContext.isAuthenticated())
+            ? secContext.principal()
+            : null;
+
+        if (principal == null) {
+            String u = getLoggedUser(exchange);
+            String r = getLoggedRole(exchange);
+            String d = getLoggedDepartment(exchange);
+            if (u != null && !u.isBlank()) {
+                principal = SecurityPrincipal.of(u, r != null ? r : "USER", d != null ? d : "");
+            }
+        }
+
+        // Functional Filtering via Java Streams & Predicates based on user permissions
+        final SecurityPrincipal activePrincipal = principal;
+        Predicate<String> hasDbPermission = dbName -> isAuthorizedForDatabase(activePrincipal, dbName, allUsers);
+
+        Map<String, DatabaseMetadata> databases = allDiscoveredDatabases.entrySet().stream()
+            .filter(entry -> hasDbPermission.test(entry.getKey()))
+            .collect(Collectors.toMap(
+                Map.Entry::getKey,
+                Map.Entry::getValue,
+                (e1, e2) -> e1,
+                LinkedHashMap::new
+            ));
 
         // Title Block
         Widget titleBlock = Row.of(
@@ -205,179 +238,239 @@ public class StoreDatabasesPage extends StoreTemplatePage {
             Span.of("SYNCHRONIZED").modifier(new Modifier().cssClass("store-badge " + alertType))
         ).modifier(new Modifier().style("background: rgba(30, 41, 59, 0.9); border: 1px solid rgba(59,130,246,0.4); padding: 14px 20px; border-radius: 10px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between;"));
 
-        // Stats Summary
+        // Stats Summary (computed over authorized databases)
         int totalDatabases = databases.size();
         int totalComponents = databases.values().stream().mapToInt(d -> d.getEngineCounts().size()).sum();
         int totalObjects = databases.values().stream().mapToInt(DatabaseMetadata::getTotalObjects).sum();
         int totalRecords = databases.values().stream().mapToInt(d -> d.getEngineCounts().getOrDefault("RECORDS", 0)).sum();
 
         Widget statGrid = Div.of(
-            createStatCard("fas fa-database", "#3b82f6", "Active Databases", totalDatabases + " Databases", "LSM / B-Tree Hybrid Storage", "badge-active"),
+            createStatCard("fas fa-database", "#3b82f6", "Active Databases", totalDatabases + " Databases", "LSM / B-Tree Storage", "badge-active"),
             createStatCard("fas fa-cubes", "#a855f7", "Multi-Model Components", totalComponents + " Active Engine Models", "9 Supported Engines", "badge-raft"),
             createStatCard("fas fa-id-card", "#f43f5e", "Java 25 Records", totalRecords + " Typed Records", "JEP 450 Compact Headers", "badge-records"),
             createStatCard("fas fa-layer-group", "#10b981", "Total Stored Entities", totalObjects + " Total Objects", "Raft State Synchronized", "badge-active")
         ).modifier(new Modifier().cssClass("store-stat-grid"));
 
-        // Load all users
-        List<JUser> allUsers = userRepo.findAll();
-
-        // Build Database Interactive Cards & Components Explorer
-        List<Widget> dbCardList = new ArrayList<>();
-
+        // Compute Multi-Model Components aggregation across authorized databases
+        Map<String, Integer> globalEngineCounts = new LinkedHashMap<>();
         for (DatabaseMetadata dbMeta : databases.values()) {
-            String dbName = dbMeta.getName();
-            int objCount = dbMeta.getTotalObjects();
-
-            // Users scoped to this db
-            List<JUser> dbUsers = allUsers.stream().filter(u -> dbName.equalsIgnoreCase(u.lastName()) || "*".equals(u.lastName())).toList();
-
-            // Header of each DB card
-            Widget dbHeaderLeft = Div.of(
-                Div.of(Icon.of("fas fa-database"))
-                    .modifier(new Modifier().style("width:46px; height:46px; border-radius:10px; background:rgba(56,189,248,0.15); display:flex; align-items:center; justify-content:center; color:#38bdf8; font-size:22px;")),
-                Div.of(
-                    Div.of(
-                        Header.of(2, Text.of(dbName)).modifier(new Modifier().style("margin:0; font-size:20px; font-weight:700; color:#f8fafc;")),
-                        Span.of(RawHtml.of("<span class='pulse-dot'></span> ONLINE")).modifier(new Modifier().cssClass("store-badge badge-active"))
-                    ).modifier(new Modifier().style("display:flex; align-items:center; gap:10px;")),
-                    Div.of(
-                        Text.of("Storage Engine: "),
-                        Span.of("LSM-BTree Hybrid Core").modifier(new Modifier().style("color:#38bdf8; font-weight:bold;")),
-                        Text.of(" | Raft Quorum Replication")
-                    ).modifier(new Modifier().style("font-size:13px; color:#94a3b8;"))
-                )
-            ).modifier(new Modifier().style("display:flex; align-items:center; gap:12px;"));
-
-            Widget dbHeaderRight = Div.of(
-                Button.of(Icon.of("fas fa-plus"), Text.of(" Add Component / Record"))
-                    .attribute("onclick", "openAddComponentModal('" + dbName + "')")
-                    .modifier(new Modifier().cssClass("btn-action btn-primary").style("padding:6px 12px; font-size:12px;")),
-                Button.of(Icon.of("fas fa-user-plus"), Text.of(" Assign User"))
-                    .attribute("onclick", "openAssignUserModal('" + dbName + "')")
-                    .modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:6px 12px; font-size:12px;")),
-                Button.of(Icon.of("fas fa-list"), Text.of(" Inspect Entities (" + objCount + ")"))
-                    .attribute("onclick", "toggleEntitiesViewer('" + dbName + "')")
-                    .modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:6px 12px; font-size:12px;")),
-                Link.of(JettraServer.resolvePath("/engines?engine=RECORDS&db=" + dbName),
-                    Icon.of("fas fa-search"),
-                    Text.of(" Explore Data")
-                ).modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:6px 12px; font-size:12px;")),
-                Button.of(Icon.of("fas fa-trash"), Text.of(""))
-                    .attribute("onclick", "confirmDropDb('" + dbName + "')")
-                    .attribute("title", "Drop Database")
-                    .modifier(new Modifier().cssClass("btn-action btn-danger").style("padding:6px 10px; font-size:12px;"))
-            ).modifier(new Modifier().style("display:flex; gap:8px; flex-wrap:wrap;"));
-
-            Widget dbTopRow = Row.of(dbHeaderLeft, dbHeaderRight)
-                .modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px; margin-bottom:16px;"));
-
-            // Multi-Model Components Inside This Database
-            List<Widget> compBoxes = new ArrayList<>();
             for (Map.Entry<String, Integer> comp : dbMeta.getEngineCounts().entrySet()) {
+                globalEngineCounts.put(comp.getKey(), globalEngineCounts.getOrDefault(comp.getKey(), 0) + comp.getValue());
+            }
+        }
+
+        // Section 1: Multi-Model Storage Components Overview Cards
+        Widget multiModelSectionHeader = Div.of(
+            Div.of(
+                Icon.of("fas fa-cubes").modifier(new Modifier().style("color:#a855f7; font-size:18px; margin-right:8px;")),
+                Span.of("Multi-Model Storage Components Overview").modifier(new Modifier().style("font-size:15px; font-weight:700; color:#f8fafc;"))
+            ).modifier(new Modifier().style("display:flex; align-items:center;")),
+            Span.of(globalEngineCounts.size() + " Active Storage Engines").modifier(new Modifier().cssClass("store-badge badge-raft"))
+        ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;"));
+
+        List<Widget> globalCompBoxes = new ArrayList<>();
+        if (globalEngineCounts.isEmpty()) {
+            globalCompBoxes.add(Div.of(
+                Icon.of("fas fa-info-circle").modifier(new Modifier().style("color:#94a3b8; margin-right:6px;")),
+                Span.of("No active storage components detected in authorized databases.").modifier(new Modifier().style("color:#94a3b8; font-size:13px;"))
+            ).modifier(new Modifier().style("padding:14px; background:rgba(15,23,42,0.5); border-radius:8px; width:100%;")));
+        } else {
+            for (Map.Entry<String, Integer> comp : globalEngineCounts.entrySet()) {
                 String eng = comp.getKey();
                 int cnt = comp.getValue();
                 String badgeStyle = getBadgeStyleForEngine(eng);
                 String icon = getIconForEngine(eng);
                 String desc = getDescForEngine(eng);
 
-                Widget compBox = Div.of(
+                Widget box = Div.of(
                     Div.of(
-                        Icon.of(icon).modifier(new Modifier().style("font-size:16px;")),
+                        Icon.of(icon).modifier(new Modifier().style("font-size:18px;")),
                         Div.of(
                             Div.of(Text.of(eng)).modifier(new Modifier().style("font-weight:700; font-size:13px;")),
                             Div.of(Text.of(desc)).modifier(new Modifier().style("font-size:11px; opacity:0.8;"))
                         )
-                    ).modifier(new Modifier().style("display:flex; align-items:center; gap:8px;")),
-                    Span.of(String.valueOf(cnt)).modifier(new Modifier().style("background:rgba(0,0,0,0.3); padding:2px 8px; border-radius:6px; font-weight:700; font-size:12px;"))
-                ).modifier(new Modifier().style(badgeStyle + " padding:10px 14px; border-radius:8px; display:flex; align-items:center; gap:10px; min-width:200px; justify-content:space-between;"));
+                    ).modifier(new Modifier().style("display:flex; align-items:center; gap:10px;")),
+                    Span.of(cnt + " keys").modifier(new Modifier().style("background:rgba(0,0,0,0.35); padding:3px 10px; border-radius:6px; font-weight:700; font-size:12px;"))
+                ).modifier(new Modifier().style(badgeStyle + " padding:12px 16px; border-radius:10px; display:flex; align-items:center; gap:12px; min-width:210px; flex:1; justify-content:space-between;"));
 
-                compBoxes.add(compBox);
+                globalCompBoxes.add(box);
             }
+        }
 
-            Widget internalComponentsBox = Div.of(
-                Div.of(
-                    Div.of(Icon.of("fas fa-cubes").modifier(new Modifier().style("color:#a855f7; margin-right:6px;")), Text.of("Internal Multi-Model Components (" + dbMeta.getEngineCounts().size() + " Engines Initialized)")),
-                    Div.of(Text.of("Total Keys: "), Span.of(String.valueOf(objCount)).modifier(new Modifier().style("color:#f8fafc; font-weight:bold;"))).modifier(new Modifier().style("font-size:12px; color:#94a3b8;"))
-                ).modifier(new Modifier().style("font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;")),
-                Div.of(compBoxes.toArray(new Widget[0])).modifier(new Modifier().style("display:flex; flex-wrap:wrap; gap:10px;"))
-            ).modifier(new Modifier().style("background:rgba(15,23,42,0.6); border-radius:10px; padding:16px; border:1px solid rgba(255,255,255,0.06); margin-bottom:16px;"));
+        Widget multiModelGrid = Div.of(globalCompBoxes.toArray(new Widget[0]))
+            .modifier(new Modifier().style("display:flex; flex-wrap:wrap; gap:12px; margin-bottom:18px;"));
 
-            // Expandable Entities Inspector Table for this database
-            List<EntityDetail> entities = getEntitiesForDatabase(dbName);
-            List<Widget> entityHeaders = List.of(
-                Text.of("Engine"),
-                Text.of("Entity Key"),
-                Text.of("Type / Class"),
-                Text.of("Payload Preview"),
-                Text.of("Action")
-            );
+        Widget sectionDivider = Div.of()
+            .modifier(new Modifier().style("height:1px; width:100%; background:rgba(255,255,255,0.08); margin:6px 0 16px 0;"));
 
-            List<List<Widget>> entityRows = new ArrayList<>();
-            for (EntityDetail ed : entities) {
-                String badgeClass = "RECORDS".equals(ed.engine) ? "badge-records" : "badge-engine";
-                Widget engCell = Span.of(ed.engine).modifier(new Modifier().cssClass("store-badge " + badgeClass));
-                Widget keyCell = RawHtml.of("<code style='color:#38bdf8; font-weight:600;'>" + ed.keyId + "</code>");
-                Widget typeCell = Span.of(ed.typeOrClass).modifier(new Modifier().style("color:#cbd5e1; font-size:12px;"));
-                Widget previewCell = RawHtml.of("<code class='mono' style='color:#94a3b8; font-size:11px; max-width:320px; display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;'>" + ed.payloadPreview + "</code>");
-                Button deleteBtn = Button.of(Icon.of("fas fa-trash"), Text.of(""));
-                deleteBtn.attribute("onclick", "deleteEntity('" + ed.rawKey + "')");
-                deleteBtn.attribute("title", "Delete Entity");
-                deleteBtn.modifier(new Modifier().cssClass("btn-action btn-danger").style("padding:4px 8px; font-size:11px;"));
+        // Section 2: Active Databases Cards & Controls
+        Widget activeDatabasesHeader = Div.of(
+            Div.of(
+                Icon.of("fas fa-database").modifier(new Modifier().style("color:#38bdf8; font-size:18px; margin-right:8px;")),
+                Span.of("Authorized Active Databases").modifier(new Modifier().style("font-size:15px; font-weight:700; color:#f8fafc;"))
+            ).modifier(new Modifier().style("display:flex; align-items:center;")),
+            Span.of("Scope: " + (activePrincipal != null ? activePrincipal.username() : "ANONYMOUS"))
+                .modifier(new Modifier().cssClass("store-badge badge-active"))
+        ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;"));
 
-                entityRows.add(List.of(engCell, keyCell, typeCell, previewCell, deleteBtn));
-            }
+        List<Widget> dbCardList = new ArrayList<>();
 
-            Widget entitiesTableWidget = entityRows.isEmpty()
-                ? Div.of(Text.of("No components or entities stored yet. Click 'Add Component / Record' to insert one.")).modifier(new Modifier().style("color:#94a3b8; font-size:13px; padding:12px; text-align:center;"))
-                : Div.of(Datatable.ofWidgets(entityHeaders, entityRows).modifier(new Modifier().cssClass("jettra-table"))).modifier(new Modifier().cssClass("table-responsive"));
+        if (databases.isEmpty()) {
+            // Friendly Empty State Component when user has no permissions on any database
+            Widget emptyState = EmptyStateComponent.of(
+                "No Authorized Databases",
+                "Your account (" + (activePrincipal != null ? activePrincipal.username() : "Guest") +
+                ") does not possess READ or ADMIN permissions for any database namespaces in this cluster. Contact your administrator."
+            ).icon("fas fa-shield-alt")
+             .action("Request Access / Refresh", "window.location.reload()");
+            dbCardList.add(emptyState);
+        } else {
+            for (DatabaseMetadata dbMeta : databases.values()) {
+                String dbName = dbMeta.getName();
+                int objCount = dbMeta.getTotalObjects();
 
-            Widget entitiesViewer = Div.of(
-                Div.of(
-                    Header.of(4,
-                        Icon.of("fas fa-layer-group"),
-                        Text.of(" Stored Components & Entities in '" + dbName + "'")
-                    ).modifier(new Modifier().style("margin:0; font-size:15px; font-weight:700; color:#38bdf8;")),
-                    Span.of("Showing " + entities.size() + " persisted items").modifier(new Modifier().style("font-size:12px; color:#94a3b8;"))
-                ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;")),
-                entitiesTableWidget
-            ).id("entities_" + dbName).modifier(new Modifier().style("display:none; background:rgba(15,23,42,0.8); border-radius:10px; padding:16px; border:1px solid rgba(255,255,255,0.08); margin-bottom:16px;"));
+                // Users scoped to this db
+                List<JUser> dbUsers = allUsers.stream()
+                    .filter(u -> dbName.equalsIgnoreCase(u.lastName()) || "*".equals(u.lastName()))
+                    .toList();
 
-            // Scoped Users
-            List<Widget> userBadges = new ArrayList<>();
-            if (dbUsers.isEmpty()) {
-                userBadges.add(Span.of("No users assigned specifically (inherited from global admin).").modifier(new Modifier().style("color:#64748b;")));
-            } else {
-                for (JUser u : dbUsers) {
-                    String role = u.jRoles() != null && !u.jRoles().isEmpty() ? u.jRoles().iterator().next().name() : "READ_WRITE";
-                    String roleBadge = "DB_ADMIN".equals(role) ? "badge-raft" : "badge-engine";
-                    userBadges.add(Span.of(u.firstName() + " (" + role + ")").modifier(new Modifier().cssClass("store-badge " + roleBadge).style("font-size:11px; margin-right:4px;")));
+                boolean isSystemDb = "system_db".equalsIgnoreCase(dbName);
+
+                // Header of each DB card
+                Widget dbStatusBadge = isSystemDb
+                    ? Span.of(RawHtml.of("<span class='pulse-dot'></span> SYSTEM CORE")).modifier(new Modifier().cssClass("store-badge badge-records"))
+                    : Span.of(RawHtml.of("<span class='pulse-dot'></span> ONLINE")).modifier(new Modifier().cssClass("store-badge badge-active"));
+
+                Widget dbHeaderLeft = Div.of(
+                    Div.of(Icon.of(isSystemDb ? "fas fa-shield-alt" : "fas fa-database"))
+                        .modifier(new Modifier().style("width:46px; height:46px; border-radius:10px; background:" + (isSystemDb ? "rgba(244,63,94,0.15)" : "rgba(56,189,248,0.15)") + "; display:flex; align-items:center; justify-content:center; color:" + (isSystemDb ? "#f43f5e" : "#38bdf8") + "; font-size:22px;")),
+                    Div.of(
+                        Div.of(
+                            Header.of(2, Text.of(dbName)).modifier(new Modifier().style("margin:0; font-size:20px; font-weight:700; color:#f8fafc;")),
+                            dbStatusBadge
+                        ).modifier(new Modifier().style("display:flex; align-items:center; gap:10px;")),
+                        Div.of(
+                            Text.of("Storage Engine: "),
+                            Span.of("LSM-BTree Hybrid Core").modifier(new Modifier().style("color:#38bdf8; font-weight:bold;")),
+                            Text.of(isSystemDb ? " | Protected Cluster System Namespace" : " | Raft Quorum Replication")
+                        ).modifier(new Modifier().style("font-size:13px; color:#94a3b8;"))
+                    )
+                ).modifier(new Modifier().style("display:flex; align-items:center; gap:12px;"));
+
+                // Clean actions: system_db cannot be renamed nor deleted
+                List<Widget> actionButtons = new ArrayList<>();
+                actionButtons.add(Link.of(JettraServer.resolvePath("/engines?engine=RECORDS&db=" + dbName),
+                    Icon.of("fas fa-search"),
+                    Text.of(" Explore Data")
+                ).modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:6px 12px; font-size:12px;")));
+
+                if (!isSystemDb) {
+                    actionButtons.add(Button.of(Icon.of("fas fa-pen"), Text.of(" Rename"))
+                        .attribute("onclick", "openRenameDbModal('" + dbName + "')")
+                        .modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:6px 12px; font-size:12px;")));
                 }
-            }
 
-            Widget scopedUsersBar = Div.of(
-                Div.of(
-                    Icon.of("fas fa-user-shield").modifier(new Modifier().style("color:#38bdf8;")),
-                    Span.of("Scoped Users (" + dbUsers.size() + "): "),
-                    Div.of(userBadges.toArray(new Widget[0]))
-                ).modifier(new Modifier().style("display:flex; align-items:center; gap:8px;")),
-                Button.of(Text.of("+ Assign User to " + dbName))
+                actionButtons.add(Button.of(Icon.of("fas fa-user-plus"), Text.of(" Assign User"))
                     .attribute("onclick", "openAssignUserModal('" + dbName + "')")
-                    .modifier(new Modifier().style("background:none; border:none; color:#38bdf8; font-size:12px; cursor:pointer; text-decoration:underline;"))
-            ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; font-size:13px; color:#94a3b8; padding-top:10px; border-top:1px solid rgba(255,255,255,0.06);"));
+                    .modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:6px 12px; font-size:12px;")));
 
-            Widget dbCard = Div.of(
-                RawHtml.of("<div style='position:absolute; top:0; left:0; width:4px; height:100%; background: linear-gradient(180deg, #38bdf8, #f43f5e);'></div>"),
-                dbTopRow,
-                internalComponentsBox,
-                entitiesViewer,
-                scopedUsersBar
-            ).modifier(new Modifier().cssClass("store-card").style("position:relative; overflow:hidden;"));
+                if (!isSystemDb) {
+                    actionButtons.add(Button.of(Icon.of("fas fa-trash-alt"), Text.of(" Delete Database"))
+                        .attribute("onclick", "JettraConfirmDialog.open('dropDbConfirmDialog', '" + dbName + "', '" + dbName + "')")
+                        .attribute("title", "Delete Database")
+                        .modifier(new Modifier().cssClass("btn-action btn-danger").style("padding:6px 12px; font-size:12px;")));
+                } else {
+                    actionButtons.add(Span.of(
+                        Icon.of("fas fa-lock").modifier(new Modifier().style("margin-right:4px;")),
+                        Text.of("SYSTEM PROTECTED")
+                    ).modifier(new Modifier().cssClass("store-badge badge-records").style("font-size:11px; padding:6px 10px;")));
+                }
 
-            dbCardList.add(dbCard);
+                Widget dbHeaderRight = Div.of(actionButtons.toArray(new Widget[0]))
+                    .modifier(new Modifier().style("display:flex; gap:8px; flex-wrap:wrap; align-items:center;"));
+
+                Widget dbTopRow = Row.of(dbHeaderLeft, dbHeaderRight)
+                    .modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px; margin-bottom:16px;"));
+
+                // Multi-Model Components Inside This Database
+                List<Widget> compBoxes = new ArrayList<>();
+                for (Map.Entry<String, Integer> comp : dbMeta.getEngineCounts().entrySet()) {
+                    String eng = comp.getKey();
+                    int cnt = comp.getValue();
+                    String badgeStyle = getBadgeStyleForEngine(eng);
+                    String icon = getIconForEngine(eng);
+                    String desc = getDescForEngine(eng);
+
+                    Widget compBox = Div.of(
+                        Div.of(
+                            Icon.of(icon).modifier(new Modifier().style("font-size:16px;")),
+                            Div.of(
+                                Div.of(Text.of(eng)).modifier(new Modifier().style("font-weight:700; font-size:13px;")),
+                                Div.of(Text.of(desc)).modifier(new Modifier().style("font-size:11px; opacity:0.8;"))
+                            )
+                        ).modifier(new Modifier().style("display:flex; align-items:center; gap:8px;")),
+                        Span.of(String.valueOf(cnt)).modifier(new Modifier().style("background:rgba(0,0,0,0.3); padding:2px 8px; border-radius:6px; font-weight:700; font-size:12px;"))
+                    ).modifier(new Modifier().style(badgeStyle + " padding:10px 14px; border-radius:8px; display:flex; align-items:center; gap:10px; min-width:200px; justify-content:space-between;"));
+
+                    compBoxes.add(compBox);
+                }
+
+                Widget internalComponentsBox = Div.of(
+                    Div.of(
+                        Div.of(Icon.of("fas fa-cubes").modifier(new Modifier().style("color:#a855f7; margin-right:6px;")), Text.of("Internal Multi-Model Components (" + dbMeta.getEngineCounts().size() + " Engines Initialized)")),
+                        Div.of(Text.of("Total Keys: "), Span.of(String.valueOf(objCount)).modifier(new Modifier().style("color:#f8fafc; font-weight:bold;"))).modifier(new Modifier().style("font-size:12px; color:#94a3b8;"))
+                    ).modifier(new Modifier().style("font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;")),
+                    Div.of(compBoxes.toArray(new Widget[0])).modifier(new Modifier().style("display:flex; flex-wrap:wrap; gap:10px;"))
+                ).modifier(new Modifier().style("background:rgba(15,23,42,0.6); border-radius:10px; padding:16px; border:1px solid rgba(255,255,255,0.06); margin-bottom:16px;"));
+
+                // Scoped Users
+                List<Widget> userBadges = new ArrayList<>();
+                if (dbUsers.isEmpty()) {
+                    userBadges.add(Span.of("No users assigned specifically (inherited from global admin).").modifier(new Modifier().style("color:#64748b;")));
+                } else {
+                    for (JUser u : dbUsers) {
+                        String role = u.jRoles() != null && !u.jRoles().isEmpty() ? u.jRoles().iterator().next().name() : "READ_WRITE";
+                        String roleBadge = "DB_ADMIN".equals(role) ? "badge-raft" : "badge-engine";
+                        userBadges.add(Span.of(u.firstName() + " (" + role + ")").modifier(new Modifier().cssClass("store-badge " + roleBadge).style("font-size:11px; margin-right:4px;")));
+                    }
+                }
+
+                Widget scopedUsersBar = Div.of(
+                    Div.of(
+                        Icon.of("fas fa-user-shield").modifier(new Modifier().style("color:#38bdf8;")),
+                        Span.of("Scoped Users (" + dbUsers.size() + "): "),
+                        Div.of(userBadges.toArray(new Widget[0]))
+                    ).modifier(new Modifier().style("display:flex; align-items:center; gap:8px; flex-wrap:wrap;")),
+                    Button.of(Text.of("+ Assign User to " + dbName))
+                        .attribute("onclick", "openAssignUserModal('" + dbName + "')")
+                        .modifier(new Modifier().style("background:none; border:none; color:#38bdf8; font-size:12px; cursor:pointer; text-decoration:underline;"))
+                ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; font-size:13px; color:#94a3b8; padding-top:10px; border-top:1px solid rgba(255,255,255,0.06);"));
+
+                Widget dbCard = Div.of(
+                    RawHtml.of("<div style='position:absolute; top:0; left:0; width:4px; height:100%; background: linear-gradient(180deg, #38bdf8, #f43f5e);'></div>"),
+                    dbTopRow,
+                    internalComponentsBox,
+                    scopedUsersBar
+                ).modifier(new Modifier().cssClass("store-card").style("position:relative; overflow:hidden; background:rgba(15,23,42,0.7); border:1px solid rgba(255,255,255,0.08);"));
+
+                dbCardList.add(dbCard);
+            }
         }
 
         Widget databasesContainer = Div.of(dbCardList.toArray(new Widget[0]))
-            .modifier(new Modifier().style("display: flex; flex-direction: column; gap: 24px; margin-bottom: 30px;"));
+            .modifier(new Modifier().style("display: flex; flex-direction: column; gap: 20px;"));
+
+        // Unified JettraFlux Panel consolidating Multi-Model Components and Active Databases
+        Widget unifiedPanel = JettraCardPanel.of("Multi-Model Database Workspace")
+            .subtitle("Consolidated panel for multi-model storage engine components and authorized active databases.")
+            .icon("fas fa-layer-group")
+            .iconColor("#38bdf8")
+            .badge(databases.size() + " Active Databases", "badge-active")
+            .add(multiModelSectionHeader)
+            .add(multiModelGrid)
+            .add(sectionDivider)
+            .add(activeDatabasesHeader)
+            .add(databasesContainer);
 
         // Modal 1: Create Database
         Widget createDbHeader = Row.of(
@@ -426,51 +519,7 @@ public class StoreDatabasesPage extends StoreTemplatePage {
             .id("createDbModal")
             .modifier(new Modifier().cssClass("store-card").style("width:540px; max-width:90%; background:#1e293b; border:1px solid rgba(255,255,255,0.15); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:28px; margin:auto;"));
 
-        // Modal 2: Add Component
-        Widget addComponentHeader = Row.of(
-            Row.of(
-                Icon.of("fas fa-plus-circle").modifier(new Modifier().style("color:#f43f5e; margin-right:8px;")),
-                RawHtml.of("<h3 style='margin:0; font-size:20px; font-weight:700; color:#f8fafc;'>Add Component to <span id='modalTargetDbLabel'></span></h3>")
-            ).modifier(new Modifier().style("display:flex; align-items:center;")),
-            Button.of(Icon.of("fas fa-times")).modifier(new Modifier().style("background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;").attribute("onclick", "document.getElementById('addComponentModal').close();"))
-        ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;"));
-
-        Widget addComponentForm = Form.of(
-            RawHtml.of("<input type='hidden' name='action' value='add_component'/>"),
-            RawHtml.of("<input type='hidden' name='target_db' id='modalTargetDbInput'/>"),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;'>Engine Component Type:</label>"),
-                RawHtml.of("<select name='engine_type' onchange='updatePayloadTemplate(this.value, \"addComponentPayload\")' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:8px; color:#f8fafc; font-size:14px; box-sizing:border-box;'>\n" +
-                    "          <option value='RECORDS' selected>RECORDS (Java 25 Immutable Records)</option>\n" +
-                    "          <option value='DOCUMENT'>DOCUMENT (NoSQL JSON Documents)</option>\n" +
-                    "          <option value='VECTOR'>VECTOR (AI Embeddings)</option>\n" +
-                    "          <option value='GRAPH'>GRAPH (Graph Node)</option>\n" +
-                    "          <option value='TIMESERIES'>TIMESERIES (Metric Point)</option>\n" +
-                    "          <option value='COLUMN'>COLUMN (Columnar Row)</option>\n" +
-                    "          <option value='KEYVALUE'>KEYVALUE (Cache Key)</option>\n" +
-                    "          <option value='GEOSPATIAL'>GEOSPATIAL (GIS Location)</option>\n" +
-                    "          <option value='OBJECT'>OBJECT (Binary Stream)</option>\n" +
-                    "        </select>")
-            ).modifier(new Modifier().style("margin-bottom:14px;")),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;'>Entity Key / ID:</label>"),
-                RawHtml.of("<input type='text' name='key_id' placeholder='e.g. record_101' required style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:8px; color:#f8fafc; font-size:14px; box-sizing:border-box;'/>")
-            ).modifier(new Modifier().style("margin-bottom:14px;")),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;'>Payload JSON:</label>"),
-                RawHtml.of("<textarea id='addComponentPayload' name='payload' rows='4' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:8px; color:#f8fafc; font-size:13px; font-family:monospace; box-sizing:border-box;'>{\"_recordClass\": \"com.enterprise.model.EmployeeRecord\", \"_schema\": {\"id\":\"String\", \"fullName\":\"String\", \"salary\":\"Double\"}, \"components\": {\"id\": \"emp_101\", \"fullName\": \"Carlos Mendez\", \"salary\": 95000.0}}</textarea>")
-            ).modifier(new Modifier().style("margin-bottom:20px;")),
-            Div.of(
-                Button.of(Text.of("Cancel")).modifier(new Modifier().cssClass("btn-action btn-secondary").attribute("type", "button").attribute("onclick", "document.getElementById('addComponentModal').close();")),
-                Button.of(Icon.of("fas fa-save"), Text.of(" Save Component")).modifier(new Modifier().cssClass("btn-action btn-primary").attribute("type", "submit"))
-            ).modifier(new Modifier().style("display:flex; justify-content:flex-end; gap:10px;"))
-        ).attribute("method", "POST").attribute("action", JettraServer.resolvePath("/databases"));
-
-        Widget addComponentModal = Dialog.of(addComponentHeader, addComponentForm)
-            .id("addComponentModal")
-            .modifier(new Modifier().cssClass("store-card").style("width:540px; max-width:90%; background:#1e293b; border:1px solid rgba(255,255,255,0.15); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:28px; margin:auto;"));
-
-        // Modal 3: Assign User
+        // Modal 2: Assign User
         Widget assignUserHeader = Row.of(
             Row.of(
                 Icon.of("fas fa-user-shield").modifier(new Modifier().style("color:#38bdf8; margin-right:8px;")),
@@ -513,7 +562,7 @@ public class StoreDatabasesPage extends StoreTemplatePage {
             .id("assignUserModal")
             .modifier(new Modifier().cssClass("store-card").style("width:520px; max-width:90%; background:#1e293b; border:1px solid rgba(255,255,255,0.15); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:28px; margin:auto;"));
 
-        // Modal 4: Rename Database
+        // Modal 3: Rename Database
         Widget renameDbHeader = Row.of(
             Row.of(
                 Icon.of("fas fa-pen").modifier(new Modifier().style("color:#38bdf8; margin-right:8px;")),
@@ -543,15 +592,21 @@ public class StoreDatabasesPage extends StoreTemplatePage {
             .id("renameDbModal")
             .modifier(new Modifier().cssClass("store-card").style("max-width:480px; width:90%; background:#0f172a; border:1px solid rgba(56,189,248,0.4); border-radius:14px; padding:24px; margin:auto;"));
 
+        // Modal 4: Native JettraConfirmDialog for Destructive Database Drop Confirmation
+        Widget dropDbModal = JettraConfirmDialog.of("dropDbConfirmDialog")
+            .title("Confirm Database Deletion")
+            .warningMessage("Are you sure you want to permanently delete and drop this database? All stored records, multi-model components, schema definitions, and storage partitions will be permanently purged.")
+            .targetItemLabel("Database to be dropped:")
+            .confirmText("Confirm Deletion")
+            .cancelText("Cancel")
+            .formAction(JettraServer.resolvePath("/databases"))
+            .actionName("drop_db")
+            .targetParamName("target_db");
+
         Widget scriptsWidget = RawHtml.of(
             "<script>\n" +
             "  function openModal(id) { document.getElementById(id).showModal(); }\n" +
             "  function openCreateDbModal() { openModal('createDbModal'); }\n" +
-            "  function openAddComponentModal(db) {\n" +
-            "    document.getElementById('modalTargetDbInput').value = db;\n" +
-            "    document.getElementById('modalTargetDbLabel').innerText = db;\n" +
-            "    openModal('addComponentModal');\n" +
-            "  }\n" +
             "  function openAssignUserModal(db) {\n" +
             "    document.getElementById('assignUserDbInput').value = db;\n" +
             "    document.getElementById('assignUserDbLabel').innerText = db;\n" +
@@ -562,9 +617,10 @@ public class StoreDatabasesPage extends StoreTemplatePage {
             "    document.getElementById('renameOldDbDisplay').value = oldDb;\n" +
             "    openModal('renameDbModal');\n" +
             "  }\n" +
-            "  function toggleEntities(id) {\n" +
-            "    var el = document.getElementById(id);\n" +
-            "    el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'block' : 'none';\n" +
+            "  function confirmDropDb(db) {\n" +
+            "    if (window.JettraConfirmDialog) {\n" +
+            "      window.JettraConfirmDialog.open('dropDbConfirmDialog', db, db);\n" +
+            "    }\n" +
             "  }\n" +
             "  function updatePayloadTemplate(engine, targetId) {\n" +
             "    var t = document.getElementById(targetId);\n" +
@@ -588,17 +644,79 @@ public class StoreDatabasesPage extends StoreTemplatePage {
             titleBlock,
             alertWidget,
             statGrid,
-            databasesContainer,
+            unifiedPanel,
             createDbModal,
-            addComponentModal,
             assignUserModal,
             renameDbModal,
+            dropDbModal,
             scriptsWidget
         );
     }
 
+    /**
+     * Evaluates whether the current security principal possesses access permissions (READ or ADMIN)
+     * over a specific database namespace.
+     */
+    public boolean isAuthorizedForDatabase(SecurityPrincipal principal, String dbName, List<JUser> allUsers) {
+        if (principal == null) {
+            return false;
+        }
+
+        // 1. Global Admin, SuperUser, or Manager roles have cluster-wide access
+        if (principal.hasRole("ADMIN") || principal.hasRole("SUPER_USER") || principal.hasRole("MANAGER")) {
+            return true;
+        }
+
+        // 2. Department or specific database roles matching database name
+        if (principal.department() != null && !principal.department().isBlank()) {
+            if ("*".equals(principal.department()) || principal.department().equalsIgnoreCase(dbName)) {
+                return true;
+            }
+        }
+        if (principal.hasRole("DB_" + dbName.toUpperCase()) ||
+            principal.hasRole("READ_" + dbName.toUpperCase()) ||
+            principal.hasRole("ADMIN_" + dbName.toUpperCase())) {
+            return true;
+        }
+
+        // 3. User entity database scoping and role validation
+        if (allUsers != null) {
+            for (JUser u : allUsers) {
+                boolean match = u.firstName().equalsIgnoreCase(principal.username()) ||
+                                (u.email() != null && u.email().equalsIgnoreCase(principal.username()));
+                if (match) {
+                    String dbScope = u.lastName();
+                    boolean scopeMatch = "*".equals(dbScope) || (dbScope != null && dbScope.equalsIgnoreCase(dbName));
+                    if (scopeMatch) {
+                        if (u.jRoles() != null && !u.jRoles().isEmpty()) {
+                            for (JRole r : u.jRoles()) {
+                                String rName = r.name().toUpperCase();
+                                if (rName.contains("READ") || rName.contains("ADMIN") ||
+                                    rName.contains("USER") || rName.contains("MANAGER")) {
+                                    return true;
+                                }
+                            }
+                        } else {
+                            // User scoped to this db with default permissions
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 4. Default user namespace matching
+        if (principal.hasRole("READ") || principal.hasRole("USER") || principal.hasRole("READ_WRITE") || principal.hasRole("READ_ONLY")) {
+            if (principal.username().equalsIgnoreCase(dbName)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private int renameDatabase(String oldDb, String newDb) {
-        if (oldDb == null || newDb == null || oldDb.equalsIgnoreCase(newDb)) return 0;
+        if (oldDb == null || newDb == null || oldDb.equalsIgnoreCase(newDb) || "system_db".equalsIgnoreCase(oldDb.trim())) return 0;
         String cleanNewDb = newDb.trim().toLowerCase().replaceAll("[^a-z0-9_]", "_");
         String[] prefixes = {"rec:", "doc:", "vec:", "graph:", "ts:", "col:", "kv:", "geo:", "obj:", ""};
         int count = 0;
@@ -637,36 +755,10 @@ public class StoreDatabasesPage extends StoreTemplatePage {
         return databases;
     }
 
-    private List<EntityDetail> getEntitiesForDatabase(String targetDb) {
-        List<EntityDetail> list = new ArrayList<>();
-        String[] prefixes = {"rec:", "doc:", "vec:", "graph:", "ts:", "col:", "kv:", "geo:", "obj:"};
-        for (String p : prefixes) {
-            String dbPrefix = p + targetDb + ":";
-            Map<String, byte[]> keys = engine.getStorageCore().scanPrefix(dbPrefix);
-            String eng = getEngineNameForPrefix(p);
-
-            for (Map.Entry<String, byte[]> e : keys.entrySet()) {
-                String fullKey = e.getKey();
-                String keyId = fullKey.substring(dbPrefix.length());
-                String rawData = new String(e.getValue(), StandardCharsets.UTF_8);
-
-                String typeClass = eng;
-                if ("RECORDS".equals(eng) && rawData.contains("\"_recordClass\"")) {
-                    int start = rawData.indexOf("\"_recordClass\":");
-                    int quote1 = rawData.indexOf('"', start + 15);
-                    int quote2 = rawData.indexOf('"', quote1 + 1);
-                    if (quote1 > 0 && quote2 > quote1) {
-                        typeClass = rawData.substring(quote1 + 1, quote2);
-                    }
-                }
-
-                list.add(new EntityDetail(eng, keyId, fullKey, typeClass, rawData));
-            }
-        }
-        return list;
-    }
-
     private int purgeDatabase(String targetDb) {
+        if (targetDb == null || "system_db".equalsIgnoreCase(targetDb.trim())) {
+            return 0;
+        }
         int count = 0;
         String[] prefixes = {"rec:", "doc:", "vec:", "graph:", "ts:", "col:", "kv:", "geo:", "obj:", ""};
         for (String p : prefixes) {
@@ -764,22 +856,6 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                 Span.of("ACTIVE").modifier(new Modifier().cssClass("store-badge " + badgeClass).style("font-size:10px;"))
             ).modifier(new Modifier().style("justify-content:space-between; align-items:center; margin-top:8px;"))
         ).modifier(new Modifier().cssClass("store-card"));
-    }
-
-    public static class EntityDetail {
-        public final String engine;
-        public final String keyId;
-        public final String rawKey;
-        public final String typeOrClass;
-        public final String payloadPreview;
-
-        public EntityDetail(String engine, String keyId, String rawKey, String typeOrClass, String payloadPreview) {
-            this.engine = engine;
-            this.keyId = keyId;
-            this.rawKey = rawKey;
-            this.typeOrClass = typeOrClass;
-            this.payloadPreview = payloadPreview;
-        }
     }
 
     public static class DatabaseMetadata {
