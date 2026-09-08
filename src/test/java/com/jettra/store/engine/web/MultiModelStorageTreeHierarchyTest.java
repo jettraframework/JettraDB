@@ -7,6 +7,10 @@ import io.jettra.flux.core.Widget;
 import io.jettra.flux.theme.Themes;
 import io.jettra.flux.widgets.FluxTree;
 import io.jettra.flux.widgets.FluxTreeNode;
+import io.jettra.flux.widgets.JettraTreeNode;
+import io.jettra.flux.widgets.JettraCollapsible;
+import io.jettra.flux.widgets.Div;
+import io.jettra.flux.widgets.Span;
 import io.jettra.flux.widgets.FluxTreeVisitor;
 import io.jettra.flux.widgets.NodeExpansionState;
 import io.jettra.test.annotation.JettraTest;
@@ -129,8 +133,16 @@ public class MultiModelStorageTreeHierarchyTest {
 
         // 6. Verify Deterministic Client Controller integration
         assertTrue(html.contains("FluxTree.toggle"), "Tree view must embed FluxTree.toggle controller");
+        assertTrue(html.contains("FluxTree.toggleDetails"), "Tree view must embed FluxTree.toggleDetails controller");
         assertTrue(html.contains("FluxTree.expandAll"), "Tree view must embed FluxTree.expandAll controller");
         assertTrue(html.contains("FluxTree.collapseAll"), "Tree view must embed FluxTree.collapseAll controller");
+
+        // 7. Verify Expandable Technical Details Panels and Leaf Toggles
+        assertTrue(html.contains("flux-tree-details-panel"), "Tree must contain collapsible technical details panels");
+        assertTrue(html.contains("btn_toggle_details_node_item_DOCUMENT_users_usr_101"), "Item node must have details toggle button");
+        assertTrue(html.contains("📍 doc:" + dbName + ":users:usr_101"), "Detail panel must render primary storage address");
+        assertTrue(html.contains("Alice") || html.contains("Admin"), "Detail panel must render record attributes preview");
+        assertTrue(html.contains("Mem:"), "Detail panel must render memory size badge");
     }
 
     @JettraTest
@@ -269,4 +281,44 @@ public class MultiModelStorageTreeHierarchyTest {
         assertTrue(expandHtml.contains("FluxTree.expandAll('storage-hierarchy-tree')"), "Expand All button must target tree ID");
         assertTrue(collapseHtml.contains("FluxTree.collapseToRoot('storage-hierarchy-tree')"), "Collapse button must target tree ID");
     }
+
+    @JettraTest
+    @DisplayName("Test JettraTreeNode and JettraCollapsible: technical detail binding and toggle state mutation")
+    public void testExpandableCollapsibleTreeDetailsAndState() {
+        Div detailsPanel = Div.of(
+            Span.of("Engine: VECTOR | Dimension: 128"),
+            Span.of("📍 vec:test_db:idx_vectors:v_001")
+        );
+
+        JettraTreeNode<StorageHierarchyNodeData> vectorNode = JettraTreeNode.<StorageHierarchyNodeData>of(
+            "node_vec_001",
+            "v_001",
+            StorageHierarchyNodeData.forItem("VECTOR", "test_db", "idx_vectors", "v_001", 1, 0, "", "{}", "", "")
+        ).icon("fas fa-project-diagram")
+         .badge("v1")
+         .withDetails(detailsPanel)
+         .detailsExpanded(false);
+
+        assertTrue(vectorNode.hasDetails(), "Node must have details registered");
+        assertNotNull(vectorNode.getDetails(), "Details widget must not be null");
+        assertFalse(vectorNode.isDetailsExpanded(), "Details must initially be collapsed");
+
+        // Test toggle state
+        vectorNode.toggleDetails();
+        assertTrue(vectorNode.isDetailsExpanded(), "Details must be expanded after toggle");
+
+        vectorNode.toggleDetails();
+        assertFalse(vectorNode.isDetailsExpanded(), "Details must be collapsed after second toggle");
+
+        // Verify HTML rendering with FluxTree
+        FluxTree<StorageHierarchyNodeData> tree = FluxTree.of(vectorNode);
+        String html = tree.render(Themes.FlatTheme());
+
+        assertTrue(html.contains("btn_toggle_details_node_vec_001"), "Tree must render leaf details toggle button");
+        assertTrue(html.contains("details_node_vec_001"), "Tree must render details panel container");
+        assertTrue(html.contains("Dimension: 128"), "Tree details panel must contain vector metrics");
+        assertTrue(html.contains("vec:test_db:idx_vectors:v_001"), "Tree details panel must contain address");
+        assertTrue(html.contains("FluxTree.toggleDetails"), "Tree must include toggleDetails client script");
+    }
 }
+

@@ -9,10 +9,14 @@ import io.jettra.flux.widgets.Button;
 import io.jettra.flux.widgets.Div;
 import io.jettra.flux.widgets.FluxTree;
 import io.jettra.flux.widgets.FluxTreeNode;
+import io.jettra.flux.widgets.JettraTreeNode;
+import io.jettra.flux.widgets.JettraCollapsible;
 import io.jettra.flux.widgets.Icon;
 import io.jettra.flux.widgets.RawHtml;
 import io.jettra.flux.widgets.Span;
 import io.jettra.flux.widgets.Text;
+import io.jettra.json.JsonObject;
+import io.jettra.json.JettraJson;
 
 import java.nio.charset.StandardCharsets;
 import java.util.*;
@@ -40,6 +44,8 @@ public final class StorageTreeView {
         {"OBJECT", "#a855f7", "fas fa-archive", "Buckets", "Bucket", "BLOB Object", "fas fa-box-archive"},
         {"RECORDS", "#f43f5e", "fas fa-id-card", "Record Tables", "Record Table", "Record", "fas fa-address-card"}
     };
+
+    private static final JettraJson JSON_PARSER = new JettraJson();
 
     private StorageTreeView() {}
 
@@ -117,13 +123,14 @@ public final class StorageTreeView {
                     totalEngineItems += list.size();
                 }
 
-                FluxTreeNode<StorageHierarchyNodeData> engNode = FluxTreeNode.of(
+                FluxTreeNode<StorageHierarchyNodeData> engNode = JettraTreeNode.of(
                     "node_eng_" + engName + "_" + targetDb,
                     engName + " (" + totalEngineItems + " items in " + units.size() + " " + pluralUnit + ")",
                     StorageHierarchyNodeData.forEngine(engName)
                 ).icon(engIcon)
                  .iconColor(engColor)
                  .badge(engName, "store-badge")
+                 .withDetails(buildEngineDetailPanel(engName, engColor, targetDb, units.size(), totalEngineItems, pluralUnit))
                  .action(
                      Button.of(Icon.of("fas fa-plus"))
                          .modifier(new Modifier()
@@ -137,13 +144,14 @@ public final class StorageTreeView {
                     String uName = unitEntry.getKey();
                     List<String> items = unitEntry.getValue();
 
-                    FluxTreeNode<StorageHierarchyNodeData> unitNode = FluxTreeNode.of(
+                    FluxTreeNode<StorageHierarchyNodeData> unitNode = JettraTreeNode.of(
                         "node_unit_" + engName + "_" + uName,
                         uName + " (" + items.size() + " " + (items.size() == 1 ? singularUnit : pluralUnit) + ")",
                         StorageHierarchyNodeData.forUnit(engName, targetDb, uName, items.size())
                     ).icon(engIcon)
                      .iconColor(engColor)
                      .badge(String.valueOf(items.size()), "store-badge")
+                     .withDetails(buildUnitDetailPanel(engName, engColor, targetDb, uName, items.size(), singularUnit, pluralUnit))
                      .action(
                          Button.of(Icon.of("fas fa-plus"))
                              .modifier(new Modifier()
@@ -205,14 +213,15 @@ public final class StorageTreeView {
                                     .style("background:none; border:none; color:#ef4444; font-size:9.5px; cursor:pointer; padding:1px 4px;"))
                         );
 
-                        FluxTreeNode<StorageHierarchyNodeData> itemNode = FluxTreeNode.of(
+                        FluxTreeNode<StorageHierarchyNodeData> itemNode = JettraTreeNode.of(
                             "node_item_" + engName + "_" + uName + "_" + itemId,
                             itemId,
                             StorageHierarchyNodeData.forItem(engName, targetDb, uName, itemId, vCount, System.currentTimeMillis(), "", payload, pB64, vB64)
                         ).icon(itemIcon)
                          .iconColor(engColor)
                          .badge("v" + vCount, "store-badge badge-records")
-                         .actions(actionButtons);
+                         .actions(actionButtons)
+                         .withDetails(buildItemDetailPanel(engName, engColor, targetDb, uName, itemId, vCount, payload, pB64, vB64));
 
                         unitNode.child(itemNode);
                     }
@@ -354,7 +363,200 @@ public final class StorageTreeView {
         return Div.of(treeBody, treeInitScript);
     }
 
+    private static Widget buildItemDetailPanel(
+        String engName,
+        String engColor,
+        String targetDb,
+        String uName,
+        String itemId,
+        int vCount,
+        String payload,
+        String pB64,
+        String vB64
+    ) {
+        String pfx = switch (engName.toUpperCase()) {
+            case "RECORDS" -> "rec:";
+            case "KEYVALUE" -> "kv:";
+            case "VECTOR" -> "vec:";
+            case "GRAPH" -> "graph:";
+            case "TIMESERIES" -> "ts:";
+            case "COLUMN" -> "col:";
+            case "GEOSPATIAL" -> "geo:";
+            case "OBJECT" -> "obj:";
+            default -> "doc:";
+        };
+        String primaryAddr = pfx + targetDb + ":" + (uName.equals("default") ? "" : uName + ":") + itemId;
+        byte[] payloadBytes = (payload != null ? payload : "{}").getBytes(StandardCharsets.UTF_8);
+        String sizeFormatted = payloadBytes.length >= 1024 ? String.format("%.1f KB", payloadBytes.length / 1024.0) : payloadBytes.length + " B";
+
+        JsonObject parsed;
+        try {
+            parsed = JSON_PARSER.fromJson(payload, JsonObject.class);
+            if (parsed == null) parsed = new JsonObject();
+        } catch (Exception e) {
+            parsed = new JsonObject();
+            parsed.addProperty("raw", payload != null ? payload : "{}");
+        }
+
+        List<Widget> detailElements = new ArrayList<>();
+
+        // 1. Technical Meta Header Bar: Address, Engine, Memory Size, Version
+        Widget metaHeader = Div.of(
+            Span.of("📍 " + primaryAddr).modifier(new Modifier().style("color:#4ade80; font-family:monospace; font-weight:600; font-size:9.5px;")),
+            Div.of(
+                Span.of(engName).modifier(new Modifier().cssClass("store-badge").style("font-size:8px; padding:1px 5px; color:" + engColor + "; border:1px solid " + engColor + "; margin-right:4px;")),
+                Span.of("v" + vCount).modifier(new Modifier().cssClass("store-badge badge-active").style("font-size:8px; padding:1px 5px; margin-right:4px;")),
+                Span.of("Mem: " + sizeFormatted).modifier(new Modifier().style("color:#38bdf8; font-size:8.5px; font-weight:500;"))
+            ).modifier(new Modifier().style("display:inline-flex; align-items:center;"))
+        ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:4px; margin-bottom:5px;"));
+        detailElements.add(metaHeader);
+
+        // 2. Engine-Specific Technical Inspection Badges
+        List<Widget> specBadges = new ArrayList<>();
+        switch (engName.toUpperCase()) {
+            case "VECTOR" -> {
+                specBadges.add(Span.of("🧠 Dimension: 128 (Float32)").modifier(new Modifier().style("color:#a78bfa; font-size:8.5px; margin-right:8px; font-weight:600;")));
+                specBadges.add(Span.of("📐 Metric: Cosine Similarity").modifier(new Modifier().style("color:#c084fc; font-size:8.5px; margin-right:8px; font-weight:500;")));
+                specBadges.add(Span.of("⚡ Index: HNSW M=16").modifier(new Modifier().style("color:#e9d5ff; font-size:8.5px; font-weight:500;")));
+            }
+            case "GRAPH" -> {
+                specBadges.add(Span.of("🕸️ Entity: Vertex / Node").modifier(new Modifier().style("color:#f472b6; font-size:8.5px; margin-right:8px; font-weight:600;")));
+                specBadges.add(Span.of("🔗 Adjacency: Directed Graph").modifier(new Modifier().style("color:#f9a8d4; font-size:8.5px; font-weight:500;")));
+            }
+            case "TIMESERIES" -> {
+                specBadges.add(Span.of("⏱️ Resolution: Raw 1ms").modifier(new Modifier().style("color:#22d3ee; font-size:8.5px; margin-right:8px; font-weight:600;")));
+                specBadges.add(Span.of("📊 Storage: Append-Only Columnar Block").modifier(new Modifier().style("color:#67e8f9; font-size:8.5px; font-weight:500;")));
+            }
+            case "KEYVALUE" -> {
+                specBadges.add(Span.of("🔑 Partition Key: Hash Bucket").modifier(new Modifier().style("color:#34d399; font-size:8.5px; margin-right:8px; font-weight:600;")));
+                specBadges.add(Span.of("💾 Format: " + (payload != null && payload.startsWith("{") ? "JSON Document" : "Binary/UTF-8")).modifier(new Modifier().style("color:#6ee7b7; font-size:8.5px; font-weight:500;")));
+            }
+            case "COLUMN" -> {
+                specBadges.add(Span.of("🏛️ Column Family: " + uName).modifier(new Modifier().style("color:#fb923c; font-size:8.5px; margin-right:8px; font-weight:600;")));
+                specBadges.add(Span.of("📑 Sparse Row Encoding").modifier(new Modifier().style("color:#fdba74; font-size:8.5px; font-weight:500;")));
+            }
+            case "GEOSPATIAL" -> {
+                specBadges.add(Span.of("🌍 CRS: EPSG:4326 (WGS 84)").modifier(new Modifier().style("color:#2dd4bf; font-size:8.5px; margin-right:8px; font-weight:600;")));
+                specBadges.add(Span.of("🗺️ Spatial Index: R-Tree").modifier(new Modifier().style("color:#5eead4; font-size:8.5px; font-weight:500;")));
+            }
+            case "OBJECT" -> {
+                specBadges.add(Span.of("📦 Bucket: " + uName).modifier(new Modifier().style("color:#c084fc; font-size:8.5px; margin-right:8px; font-weight:600;")));
+                specBadges.add(Span.of("🗄️ Chunked BLOB Storage").modifier(new Modifier().style("color:#d8b4fe; font-size:8.5px; font-weight:500;")));
+            }
+            default -> {
+                specBadges.add(Span.of("📄 Format: JSON Document").modifier(new Modifier().style("color:#38bdf8; font-size:8.5px; margin-right:8px; font-weight:600;")));
+                specBadges.add(Span.of("🔍 Schema: Dynamic BSON").modifier(new Modifier().style("color:#7dd3fc; font-size:8.5px; font-weight:500;")));
+            }
+        }
+        Widget specRow = Div.of(specBadges.toArray(new Widget[0]))
+            .modifier(new Modifier().style("display:flex; align-items:center; flex-wrap:wrap; margin-bottom:5px; background:rgba(0,0,0,0.15); padding:2px 6px; border-radius:3px;"));
+        detailElements.add(specRow);
+
+        // 3. Properties Preview Grid
+        List<Widget> propRows = new ArrayList<>();
+        int propCount = 0;
+        for (String key : parsed.keySet()) {
+            if (propCount >= 6) {
+                propRows.add(Span.of("... and " + (parsed.keySet().size() - propCount) + " more attribute(s)").modifier(new Modifier().style("color:#64748b; font-style:italic; font-size:8px;")));
+                break;
+            }
+            propCount++;
+            Object val = parsed.get(key);
+            String valStr = val != null ? val.toString() : "null";
+            if (valStr.length() > 65) valStr = valStr.substring(0, 65) + "...";
+
+            boolean isJref = valStr.contains("jref://");
+            Widget valWidget = Span.of(valStr).modifier(new Modifier().style("color:" + (isJref ? "#38bdf8" : "#f1f5f9") + "; font-family:monospace; font-size:8px;"));
+
+            Widget propRow = Div.of(
+                Span.of(key + ": ").modifier(new Modifier().style("color:#94a3b8; font-weight:600; font-size:8px; margin-right:4px;")),
+                valWidget
+            ).modifier(new Modifier().style("padding:1px 0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"));
+            propRows.add(propRow);
+        }
+
+        if (propRows.isEmpty()) {
+            propRows.add(Span.of("(No parsed JSON fields)").modifier(new Modifier().style("color:#64748b; font-style:italic; font-size:8px;")));
+        }
+
+        Widget propsContainer = Div.of(propRows.toArray(new Widget[0]))
+            .modifier(new Modifier().style("display:flex; flex-direction:column; gap:1px; background:rgba(0,0,0,0.22); padding:4px 6px; border-radius:4px; margin-bottom:5px;"));
+        detailElements.add(propsContainer);
+
+        // 4. Action Toolbar inside Detail Panel
+        Widget detailActions = Div.of(
+            Button.of(Icon.of("fas fa-search-plus"), Text.of(" Inspeccionar"))
+                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openInspectRecordModal('" + escapeJs(engName) + "', '" + escapeJs(targetDb) + "', '" + escapeJs(uName) + "', '" + escapeJs(itemId) + "', '" + pB64 + "', " + vCount + ")").style("background:rgba(56,189,248,0.12); border:1px solid rgba(56,189,248,0.3); color:#38bdf8; font-size:8.5px; cursor:pointer; padding:2px 6px; border-radius:3px; display:inline-flex; align-items:center; gap:3px;")),
+            Button.of(Icon.of("fas fa-edit"), Text.of(" Editar"))
+                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openUniversalEditModal('" + escapeJs(engName) + "', '" + escapeJs(targetDb) + "', '" + escapeJs(uName) + "', '" + escapeJs(itemId) + "', '" + pB64 + "')").style("background:rgba(251,191,36,0.12); border:1px solid rgba(251,191,36,0.3); color:#fbbf24; font-size:8.5px; cursor:pointer; padding:2px 6px; border-radius:3px; display:inline-flex; align-items:center; gap:3px;")),
+            Button.of(Icon.of("fas fa-history"), Text.of(" Versiones (v" + vCount + ")"))
+                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openUniversalRestoreModal('" + escapeJs(engName) + "', '" + escapeJs(targetDb) + "', '" + escapeJs(uName) + "', '" + escapeJs(itemId) + "', '" + vB64 + "')").style("background:rgba(168,85,247,0.12); border:1px solid rgba(168,85,247,0.3); color:#c084fc; font-size:8.5px; cursor:pointer; padding:2px 6px; border-radius:3px; display:inline-flex; align-items:center; gap:3px;")),
+            Button.of(Icon.of("fas fa-trash-alt"), Text.of(" Eliminar"))
+                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openUniversalDeleteModal('" + escapeJs(engName) + "', '" + escapeJs(targetDb) + "', '" + escapeJs(uName) + "', '" + escapeJs(itemId) + "')").style("background:rgba(239,68,68,0.12); border:1px solid rgba(239,68,68,0.3); color:#ef4444; font-size:8.5px; cursor:pointer; padding:2px 6px; border-radius:3px; display:inline-flex; align-items:center; gap:3px;"))
+        ).modifier(new Modifier().style("display:flex; gap:6px; align-items:center; flex-wrap:wrap; border-top:1px dashed rgba(255,255,255,0.08); padding-top:4px;"));
+        detailElements.add(detailActions);
+
+        return Div.of(detailElements.toArray(new Widget[0]))
+            .modifier(new Modifier().style("background:var(--j-bg-subsurface,#1e293b); border:1px solid rgba(56,189,248,0.2); border-left:3px solid " + engColor + "; padding:6px 10px; border-radius:0 0 6px 6px;"));
+    }
+
+    private static Widget buildUnitDetailPanel(
+        String engName,
+        String engColor,
+        String targetDb,
+        String uName,
+        int itemCount,
+        String singularUnit,
+        String pluralUnit
+    ) {
+        return Div.of(
+            Div.of(
+                Span.of("📁 " + uName).modifier(new Modifier().style("font-weight:700; color:var(--j-text-primary); font-size:9.5px;")),
+                Span.of(engName).modifier(new Modifier().cssClass("store-badge").style("font-size:8px; padding:1px 5px; color:" + engColor + "; border:1px solid " + engColor + ";"))
+            ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; margin-bottom:3px; border-bottom:1px solid rgba(255,255,255,0.06); padding-bottom:2px;")),
+            Div.of(
+                Span.of("Items: " + itemCount + " " + (itemCount == 1 ? singularUnit : pluralUnit)).modifier(new Modifier().style("color:#38bdf8; font-size:8.5px; margin-right:8px;")),
+                Span.of("Partition: Single-Partition Primary").modifier(new Modifier().style("color:#4ade80; font-size:8.5px; margin-right:8px;")),
+                Span.of("Storage Engine: " + engName).modifier(new Modifier().style("color:#94a3b8; font-size:8.5px;"))
+            ).modifier(new Modifier().style("display:flex; align-items:center; flex-wrap:wrap; gap:4px;"))
+        ).modifier(new Modifier().style("background:var(--j-bg-subsurface,#1e293b); border:1px solid rgba(56,189,248,0.15); border-left:2px solid " + engColor + "; padding:4px 8px; border-radius:4px; margin-top:2px; margin-bottom:2px;"));
+    }
+
+    private static Widget buildEngineDetailPanel(
+        String engName,
+        String engColor,
+        String targetDb,
+        int unitCount,
+        int totalItems,
+        String pluralUnit
+    ) {
+        String archDesc = switch (engName.toUpperCase()) {
+            case "KEYVALUE" -> "In-Memory LSM / High-Throughput Hash Index Engine";
+            case "VECTOR" -> "HNSW High-Dimensional Vector Search & Annoy Indexing Engine";
+            case "GRAPH" -> "Adjacency-List Directed Graph Engine with Traversal";
+            case "TIMESERIES" -> "Append-Only Windowed TimeSeries Metrics Engine";
+            case "COLUMN" -> "Sparse Wide-Column Family Store Engine";
+            case "GEOSPATIAL" -> "R-Tree Spatial Index & GIS Geometry Engine";
+            case "OBJECT" -> "BLOB & Object Bucket Storage Engine";
+            case "RECORDS" -> "Strict Java 25 Record & Immutable Schema Engine";
+            default -> "Hierarchical JSON Document Store with B-Tree Indexes";
+        };
+
+        return Div.of(
+            Div.of(
+                Span.of("⚙️ Engine Architecture: " + archDesc).modifier(new Modifier().style("color:#e2e8f0; font-weight:600; font-size:9px;")),
+                Span.of(engName).modifier(new Modifier().cssClass("store-badge").style("font-size:8px; padding:1px 5px; color:" + engColor + "; border:1px solid " + engColor + ";"))
+            ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; margin-bottom:2px; border-bottom:1px solid rgba(255,255,255,0.06); padding-bottom:2px;")),
+            Div.of(
+                Span.of("Units: " + unitCount + " " + pluralUnit).modifier(new Modifier().style("color:#38bdf8; font-size:8.5px; margin-right:8px;")),
+                Span.of("Total Records: " + totalItems).modifier(new Modifier().style("color:#4ade80; font-size:8.5px; margin-right:8px;")),
+                Span.of("Target Database: " + targetDb).modifier(new Modifier().style("color:#94a3b8; font-size:8.5px;"))
+            ).modifier(new Modifier().style("display:flex; align-items:center; flex-wrap:wrap; gap:4px;"))
+        ).modifier(new Modifier().style("background:var(--j-bg-subsurface,#1e293b); border:1px solid rgba(56,189,248,0.15); border-left:2px solid " + engColor + "; padding:4px 8px; border-radius:4px; margin-top:2px; margin-bottom:2px;"));
+    }
+
     private static String escapeJs(String s) {
         return FluxEscapers.escapeJs(s);
     }
 }
+
