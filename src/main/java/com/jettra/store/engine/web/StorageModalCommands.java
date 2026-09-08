@@ -86,125 +86,17 @@ public final class StorageModalCommands {
     }
 
     /**
-     * Builds the VER (Inspect Record) Modal with structured JSON / $jref inspection and auto-resolution.
+     * Builds the VER (Inspect Record) Modal with structured multi-model adaptive view and $jref resolution.
      */
     public static Widget buildInspectModal() {
-        Widget header = Div.of(
-            Div.of(
-                Icon.of("fas fa-search-plus").modifier(new Modifier().style("color:#38bdf8; font-size:16px; margin-right:8px;")),
-                Header.of(3, Text.of("Visor Estructurado de Registro (VER)"))
-                    .modifier(new Modifier().style("margin:0; font-size:15px; font-weight:700; color:var(--j-text-primary);")),
-                Span.of("").id("inspectRecordVersionDisplay").modifier(new Modifier().cssClass("store-badge badge-active").style("font-size:10px; margin-left:8px;"))
-            ).modifier(new Modifier().style("display:flex; align-items:center;")),
-            Button.of(Icon.of("fas fa-times"))
-                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "hideModal('inspectRecordModal')").style("background:none; border:none; color:var(--j-text-muted); font-size:16px; cursor:pointer; padding:4px;"))
-        ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; padding:14px 18px; border-bottom:1px solid var(--j-border); background:var(--j-bg-subsurface); border-radius:10px 10px 0 0;"));
-
-        Widget metaRow = Div.of(
-            Div.of(
-                Span.of("Engine: ").modifier(new Modifier().style("font-weight:bold; color:var(--j-text-muted); font-size:11px;")),
-                Span.of("DOCUMENT").id("inspectRecordEngineDisplay").modifier(new Modifier().style("color:#38bdf8; font-weight:700; font-size:11px; margin-right:12px;")),
-                Span.of("Database: ").modifier(new Modifier().style("font-weight:bold; color:var(--j-text-muted); font-size:11px;")),
-                Span.of("default").id("inspectRecordDbDisplay").modifier(new Modifier().style("color:var(--j-text-primary); font-weight:600; font-size:11px; margin-right:12px;")),
-                Span.of("Unit: ").modifier(new Modifier().style("font-weight:bold; color:var(--j-text-muted); font-size:11px;")),
-                Span.of("default").id("inspectRecordCollDisplay").modifier(new Modifier().style("color:var(--j-text-primary); font-weight:600; font-size:11px; margin-right:12px;")),
-                Span.of("ID: ").modifier(new Modifier().style("font-weight:bold; color:var(--j-text-muted); font-size:11px;")),
-                Span.of("").id("inspectRecordIdDisplay").modifier(new Modifier().style("color:#4ade80; font-family:monospace; font-weight:700; font-size:11px;"))
-            ).modifier(new Modifier().style("display:flex; align-items:center; flex-wrap:wrap; gap:4px;")),
-            Span.of("0 Ref(s)").id("inspectReferencesCountBadge").modifier(new Modifier().cssClass("store-badge").style("display:none; font-size:10px;"))
-        ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; padding:8px 12px; background:var(--j-bg-body); border-radius:6px; border:1px solid var(--j-border); margin-bottom:12px;"));
-
-        Widget toolbar = Div.of(
-            Label.of(
-                RawHtml.of("<input type=\"checkbox\" id=\"chkInspectResolveRefs\" checked onchange=\"toggleInspectReferenceResolution(this.checked)\" style=\"accent-color:var(--j-primary); width:13px; height:13px; cursor:pointer; margin-right:4px;\" />"),
-                Icon.of("fas fa-link").modifier(new Modifier().style("color:var(--j-primary); margin-right:4px; font-size:11px;")),
-                Span.of("Auto-Resolve Jref ($jref)").modifier(new Modifier().style("color:var(--j-text-secondary); font-size:11px; font-weight:600;"))
-            ).modifier(new Modifier().style("display:inline-flex; align-items:center; cursor:pointer; background:var(--j-bg-subsurface); border:1px solid var(--j-border); padding:3px 8px; border-radius:4px;")),
-            Div.of(
-                Button.of(Icon.of("fas fa-copy"), Text.of(" Copy Payload"))
-                    .id("btnCopyInspect")
-                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "copyInspectRecordPayload()").cssClass("btn-action btn-secondary").style("padding:3px 8px; font-size:10.5px; margin-right:4px;")),
-                Button.of(Icon.of("fas fa-edit"), Text.of(" Editar"))
-                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "editFromInspectModal()").cssClass("btn-action btn-primary").style("padding:3px 8px; font-size:10.5px; background:#fbbf24; border-color:#fbbf24; color:#0f172a; margin-right:4px; font-weight:700;")),
-                Button.of(Icon.of("fas fa-history"), Text.of(" Historial"))
-                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "historyFromInspectModal()").cssClass("btn-action btn-secondary").style("padding:3px 8px; font-size:10.5px; color:#c084fc; border-color:#c084fc;"))
-            ).modifier(new Modifier().style("display:flex; align-items:center;"))
-        ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;"));
-
-        Widget payloadArea = TextArea.create()
-            .name("inspect_payload")
-            .rows(14)
-            .id("inspectRecordPayloadDisplay")
-            .modifier(new Modifier()
-                .attribute("readonly", "true")
-                .style("width:100%; box-sizing:border-box; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:var(--j-text-primary); font-family:monospace; font-size:11.5px; padding:10px; line-height:1.4; resize:vertical;"));
-
-        Widget refContainer = Div.of(
-            Header.of(4, Text.of("Manual Exploration of Referenced Objects ($jref)"))
-                .modifier(new Modifier().style("margin:12px 0 6px 0; font-size:12px; font-weight:700; color:var(--j-text-secondary);")),
-            Div.of().id("inspectRecordReferencesList").modifier(new Modifier().style("display:flex; flex-direction:column; gap:6px; max-height:160px; overflow-y:auto;"))
-        ).id("inspectRecordReferencesContainer").modifier(new Modifier().style("display:none; margin-top:8px;"));
-
-        Widget body = Div.of(metaRow, toolbar, payloadArea, refContainer)
-            .modifier(new Modifier().style("padding:16px 18px;"));
-
-        return createModalOverlay("inspectRecordModal", "720px", "rgba(56,189,248,0.4)", header, body);
+        return EngineRecordInspectDialog.build();
     }
 
     /**
-     * Builds the EDITAR (Universal / Multi-Model Edit) Modal with reactive attributes form and schema validation.
+     * Builds the EDITAR (Universal / Multi-Model Edit) Modal with adaptive polymorphic forms per engine.
      */
     public static Widget buildUniversalEditModal(String actionUrl) {
-        Widget header = Div.of(
-            Div.of(
-                Icon.of("fas fa-edit").modifier(new Modifier().style("color:#fbbf24; font-size:16px; margin-right:8px;")),
-                Header.of(3, Text.of("Editar Registro Multi-Modelo (EDITAR)"))
-                    .modifier(new Modifier().style("margin:0; font-size:15px; font-weight:700; color:var(--j-text-primary);")),
-                Span.of("DOCUMENT").id("universalEditEngineDisplay").modifier(new Modifier().cssClass("store-badge").style("font-size:10px; margin-left:8px; background:rgba(251,191,36,0.15); color:#fbbf24; border:1px solid rgba(251,191,36,0.3);"))
-            ).modifier(new Modifier().style("display:flex; align-items:center;")),
-            Button.of(Icon.of("fas fa-times"))
-                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "hideModal('universalEditModal')").style("background:none; border:none; color:var(--j-text-muted); font-size:16px; cursor:pointer; padding:4px;"))
-        ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; padding:14px 18px; border-bottom:1px solid var(--j-border); background:var(--j-bg-subsurface); border-radius:10px 10px 0 0;"));
-
-        Widget form = Form.of(
-            InputHidden.of("action", "update_object"),
-            InputHidden.of("engine_type", "DOCUMENT").id("universalEditEngineInput"),
-            InputHidden.of("target_db", "default").id("universalEditDbInput"),
-            InputHidden.of("target_coll", "default").id("universalEditCollInput"),
-            InputHidden.of("target_id", "").id("universalEditIdInput"),
-
-            Div.of(
-                Div.of(
-                    Span.of("Database: ").modifier(new Modifier().style("font-weight:bold; color:var(--j-text-muted); font-size:11px;")),
-                    Span.of("default").id("universalEditDbDisplay").modifier(new Modifier().style("color:var(--j-text-primary); font-weight:600; font-size:11px; margin-right:12px;")),
-                    Span.of("Unit / Coll: ").modifier(new Modifier().style("font-weight:bold; color:var(--j-text-muted); font-size:11px;")),
-                    Span.of("default").id("universalEditCollDisplay").modifier(new Modifier().style("color:var(--j-text-primary); font-weight:600; font-size:11px; margin-right:12px;")),
-                    Span.of("Record ID: ").modifier(new Modifier().style("font-weight:bold; color:var(--j-text-muted); font-size:11px;")),
-                    Span.of("").id("universalEditIdDisplay").modifier(new Modifier().style("color:#4ade80; font-family:monospace; font-weight:700; font-size:11.5px;"))
-                ).modifier(new Modifier().style("display:flex; align-items:center; flex-wrap:wrap; gap:4px;"))
-            ).modifier(new Modifier().style("padding:8px 12px; background:var(--j-bg-body); border-radius:6px; border:1px solid var(--j-border); margin-bottom:12px;")),
-
-            Div.of(
-                Div.of(
-                    Label.of(Text.of("Record Payload (JSON / Key-Value / Attributes):")).modifier(new Modifier().style("font-size:12px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
-                    Span.of("Editing creates a zero-loss new version in the storage hierarchy.").modifier(new Modifier().style("font-size:10.5px; color:var(--j-text-muted);"))
-                ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;")),
-                TextArea.create()
-                    .name("record_payload")
-                    .rows(12)
-                    .id("universalEditPayloadInput")
-                    .modifier(new Modifier().style("width:100%; box-sizing:border-box; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:var(--j-text-primary); font-family:monospace; font-size:12px; padding:10px; line-height:1.4; resize:vertical;"))
-            ).modifier(new Modifier().style("margin-bottom:12px;")),
-
-            Div.of(
-                Button.of(Icon.of("fas fa-times"), Text.of(" Cancelar"))
-                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "hideModal('universalEditModal')").cssClass("btn-action btn-secondary").style("padding:6px 14px; font-size:12px; margin-right:8px;")),
-                Button.of(Icon.of("fas fa-save"), Text.of(" Guardar Cambios (v+1)"))
-                    .modifier(new Modifier().attribute("type", "submit").cssClass("btn-action btn-primary").style("padding:6px 18px; font-size:12px; font-weight:700; background:#0284c7;"))
-            ).modifier(new Modifier().style("display:flex; justify-content:flex-end; align-items:center; margin-top:8px;"))
-        ).action(actionUrl).method("POST").modifier(new Modifier().style("padding:16px 18px;"));
-
-        return createModalOverlay("universalEditModal", "700px", "rgba(251,191,36,0.4)", header, form);
+        return EngineRecordEditDialog.build(actionUrl);
     }
 
     /**
@@ -414,6 +306,7 @@ public final class StorageModalCommands {
             "    var parsed = null;\n" +
             "    try { parsed = JSON.parse(payload); } catch(e) {}\n" +
             "    var pretty = parsed ? JSON.stringify(parsed, null, 2) : (payload || '{}');\n" +
+            "    window.currentInspectRecord = { engine: engine, db: db, unit: unit || 'default', id: id, rawPayload: payload, parsed: parsed, payloadB64: payloadB64, vCount: vCount || 1 };\n" +
             "    window.setElementValues({\n" +
             "      inspectRecordEngineDisplay: engine,\n" +
             "      inspectRecordDbDisplay: db,\n" +
@@ -422,13 +315,16 @@ public final class StorageModalCommands {
             "      inspectRecordVersionDisplay: 'v' + (vCount || 1),\n" +
             "      inspectRecordPayloadDisplay: pretty\n" +
             "    });\n" +
-            "    window.showModal('inspectRecordModal');\n" +
+            "    if (typeof window.switchInspectEngine === 'function') window.switchInspectEngine(engine);\n" +
+            "    if (typeof window.renderAdaptiveInspectModelView === 'function') window.renderAdaptiveInspectModelView(engine, db, unit || 'default', id, parsed, payload);\n" +
+            "    if (window.JettraFluxModal) { window.JettraFluxModal.open('inspectRecordModal'); } else { window.showModal('inspectRecordModal'); }\n" +
             "  };\n" +
             "  window.openUniversalEditModal = function(engine, db, unit, id, payloadB64) {\n" +
             "    var payload = window.decodeUtf8Base64(payloadB64);\n" +
             "    var parsed = null;\n" +
             "    try { parsed = JSON.parse(payload); } catch(e) {}\n" +
             "    var pretty = parsed ? JSON.stringify(parsed, null, 2) : (payload || '{}');\n" +
+            "    var p = parsed || {};\n" +
             "    window.setElementValues({\n" +
             "      universalEditEngineInput: engine,\n" +
             "      universalEditEngineDisplay: engine,\n" +
@@ -438,9 +334,21 @@ public final class StorageModalCommands {
             "      universalEditCollDisplay: unit || 'default',\n" +
             "      universalEditIdInput: id,\n" +
             "      universalEditIdDisplay: id,\n" +
-            "      universalEditPayloadInput: pretty\n" +
+            "      universalEditPayloadInput: pretty,\n" +
+            "      editDocCollInput: unit || 'default',\n" +
+            "      editDocClassInput: p._class || '',\n" +
+            "      editDocPayloadInput: pretty,\n" +
+            "      editKvCollInput: unit || 'default',\n" +
+            "      editKvValueInput: (typeof payload === 'string') ? payload : pretty,\n" +
+            "      editRecCollInput: unit || 'default',\n" +
+            "      editRecClassInput: p._recordClass || p._class || 'com.jettra.model.Record',\n" +
+            "      editRecPayloadInput: pretty\n" +
             "    });\n" +
-            "    window.showModal('universalEditModal');\n" +
+            "    if ((engine === 'RECORDS' || engine === 'RECORD') && typeof window.populateRecordFieldsFromPayload === 'function') {\n" +
+            "      window.populateRecordFieldsFromPayload('edit_rec', p, pretty);\n" +
+            "    }\n" +
+            "    if (typeof window.switchEditEngine === 'function') window.switchEditEngine(engine);\n" +
+            "    if (window.JettraFluxModal) { window.JettraFluxModal.open('universalEditModal'); } else { window.showModal('universalEditModal'); }\n" +
             "  };\n" +
             "  window.openUniversalDeleteModal = function(engine, db, unit, id) {\n" +
             "    window.setElementValues({\n" +

@@ -181,12 +181,23 @@ public class SampleDatasetManager {
         // 2. Referenced Target: RECORDS Employees (Java 25 Records)
         String[] empNames = {"Carlos Mendez", "Sofia Alarcon", "Elena Rostova", "David Chen"};
         String[] empRoles = {"Principal Distributed Architect", "Lead AI Engineer", "Senior Infrastructure Specialist", "Logistics Operations Lead"};
+        String[] hireDates = {"2022-03-15", "2023-07-01", "2021-11-20", "2024-02-10"};
+        String[] shifts = {"08:00:00", "09:00:00", "07:30:00", "08:30:00"};
+        String[] contractTypes = {"FULL_TIME", "FULL_TIME", "PERMANENT", "CONTRACTOR"};
+        String[] skillsArr = {
+            "[\"Java 25\", \"Distributed Storage\", \"Raft Consensus\"]",
+            "[\"Python\", \"PyTorch\", \"Vector Embeddings\", \"Neural Search\"]",
+            "[\"Kubernetes\", \"Linux Kernel\", \"eBPF\", \"Cloud Infrastructure\"]",
+            "[\"Supply Chain Logistics\", \"GIS Tracking\", \"Operations Management\"]"
+        };
         for (int i = 1; i <= 4; i++) {
             String empId = "emp_" + (200 + i);
             String recKey = "rec:" + db + ":" + empId;
             String payload = String.format(
-                "{\"_recordClass\":\"com.enterprise.model.EmployeeProfileRecord\",\"id\":\"%s\",\"fullName\":\"%s\",\"role\":\"%s\",\"department\":\"Core Architecture\",\"salary\":%.2f,\"active\":true}",
-                empId, empNames[i - 1], empRoles[i - 1], 95000.0 + (i * 8000.0)
+                "{\"_recordClass\":\"com.enterprise.model.EmployeeProfileRecord\",\"_table\":\"employees\",\"_timestamp\":%d,\"_version\":1,\"id\":\"%s\"," +
+                "\"_schema\":{\"id\":\"String\",\"fullName\":\"String\",\"role\":\"String\",\"department\":\"String\",\"salary\":\"Double\",\"hireDate\":\"LocalDate\",\"shift\":\"LocalTime\",\"contractType\":\"Enum\",\"active\":\"Boolean\",\"skills\":\"List<String>\",\"residenceCountry\":\"Object\"}," +
+                "\"components\":{\"id\":\"%s\",\"fullName\":\"%s\",\"role\":\"%s\",\"department\":\"Core Architecture\",\"salary\":%.2f,\"hireDate\":\"%s\",\"shift\":\"%s\",\"contractType\":\"%s\",\"active\":true,\"skills\":%s,\"residenceCountry\":{\"code\":\"PA\",\"name\":\"Panama\"}}}",
+                now, empId, empId, empNames[i - 1], empRoles[i - 1], 95000.0 + (i * 8000.0), hireDates[i - 1], shifts[i - 1], contractTypes[i - 1], skillsArr[i - 1]
             );
             engine.getStorageCore().put(recKey, payload.getBytes(StandardCharsets.UTF_8), now);
             engine.getStorageCore().put(db + ":" + empId, payload.getBytes(StandardCharsets.UTF_8), now);
@@ -298,12 +309,14 @@ public class SampleDatasetManager {
         // 10. MASTER ENTITY 3 (RECORDS): Invoice Transaction Record (Clean Single Jref References)
         String invRecKey = "rec:" + db + ":rec_invoice_9001";
         String invPayload = String.format(
-            "{\"_recordClass\":\"com.enterprise.model.InvoiceTransactionRecord\",\"invoiceId\":\"INV-2026-9001\",\"billingDate\":\"2026-08-25\"," +
-            "\"subtotal\":22897.20,\"tax\":1602.80,\"total\":24500.00," +
+            "{\"_recordClass\":\"com.enterprise.model.InvoiceTransactionRecord\",\"_table\":\"invoices\",\"_timestamp\":%d,\"_version\":1,\"invoiceId\":\"INV-2026-9001\"," +
+            "\"_schema\":{\"invoiceId\":\"String\",\"billingDate\":\"LocalDate\",\"subtotal\":\"Double\",\"tax\":\"Double\",\"total\":\"Double\",\"status\":\"Enum\",\"billedCustomer\":\"String\",\"salesExecutive\":\"String\",\"dispatchHub\":\"String\",\"associatedOrderDoc\":\"String\"}," +
+            "\"components\":{\"invoiceId\":\"INV-2026-9001\",\"billingDate\":\"2026-08-25\",\"subtotal\":22897.20,\"tax\":1602.80,\"total\":24500.00,\"status\":\"PAID\"," +
             "\"billedCustomer\":\"jref://DOCUMENT:ExampleDBReferences/cust_101\"," +
             "\"salesExecutive\":\"jref://RECORDS:ExampleDBReferences/emp_201\"," +
             "\"dispatchHub\":\"jref://GEOSPATIAL:ExampleDBReferences/hub_panama\"," +
-            "\"associatedOrderDoc\":\"jref://DOCUMENT:ExampleDBReferences/order_master_7001\"}"
+            "\"associatedOrderDoc\":\"jref://DOCUMENT:ExampleDBReferences/order_master_7001\"}}",
+            now
         );
         engine.getStorageCore().put(invRecKey, invPayload.getBytes(StandardCharsets.UTF_8), now);
         count++;
@@ -365,10 +378,10 @@ public class SampleDatasetManager {
             double pressure = 1012.0 + ((i % 20) * 0.2);
             double uvIndex = (i % 11) * 1.0;
 
-            String payload = String.format(
+            String payload = String.format(Locale.US,
                 "{\"stationRef\":\"jref://GEOSPATIAL:smart_city_gis_db/station_%d\"," +
                 "\"sensorId\":\"%s\",\"station\":\"%s\",\"timestamp\":%d,\"temp_c\":%.2f," +
-                "\"humidity_pct\":%.2f,\"pressure_hpa\":%.2f,\"uv_index\":%.1f,\"quality\":\"OPTIMAL\"}",
+                "\"humidity_pct\":%.2f,\"pressure_hpa\":%.2f,\"uv_index\":%.1f,\"quality\":\"OPTIMAL\",\"operationalState\":\"ONLINE\"}",
                 (i % 5) + 1, sensor, station, timestamp, temp, humidity, pressure, uvIndex
             );
 
@@ -393,14 +406,22 @@ public class SampleDatasetManager {
             String dept = departments[i % departments.length];
             String role = roles[i % roles.length];
             double salary = 85000.0 + ((i % 30) * 2000.0);
+            String hireDate = String.format("202%d-%02d-%02d", (i % 4) + 1, (i % 12) + 1, (i % 28) + 1);
+            String shift = String.format("%02d:00:00", 8 + (i % 4));
+            String contractType = (i % 5 == 0) ? "CONTRACTOR" : "PERMANENT";
+            String country = (i % 3 == 0) ? "Panama" : ((i % 3 == 1) ? "Costa Rica" : "Colombia");
+            String countryCode = (i % 3 == 0) ? "PA" : ((i % 3 == 1) ? "CR" : "CO");
+            String skillsJson = String.format("[\"Java 25\", \"Virtual Threads\", \"%s\", \"Distributed Architecture\"]", (i % 2 == 0 ? "Raft Consensus" : "High-Performance I/O"));
 
-            String payload = String.format(
-                "{\"_recordClass\":\"com.jettra.model.EmployeeProfileRecord\",\"_schema\":{\"id\":\"String\",\"name\":\"String\",\"salary\":\"Double\"}," +
-                "\"components\":{\"id\":\"%s\",\"fullName\":\"Engineer #%d\",\"department\":\"%s\",\"role\":\"%s\"," +
-                "\"salary\":%.2f,\"active\":true," +
+            String payload = String.format(Locale.US,
+                "{\"_recordClass\":\"com.jettra.model.EmployeeProfileRecord\",\"_table\":\"employees\",\"_timestamp\":%d,\"_version\":1,\"id\":\"%s\"," +
+                "\"_schema\":{\"id\":\"String\",\"fullName\":\"String\",\"department\":\"String\",\"role\":\"String\",\"contractType\":\"Enum\",\"salary\":\"Double\",\"hireDate\":\"LocalDate\",\"shift\":\"LocalTime\",\"active\":\"Boolean\",\"skills\":\"List<String>\",\"country\":\"Object\",\"officeRef\":\"String\",\"biometricsRef\":\"String\"}," +
+                "\"components\":{\"id\":\"%s\",\"fullName\":\"Engineer #%d\",\"department\":\"%s\",\"role\":\"%s\",\"contractType\":\"%s\"," +
+                "\"salary\":%.2f,\"hireDate\":\"%s\",\"shift\":\"%s\",\"active\":true," +
+                "\"skills\":%s,\"country\":{\"code\":\"%s\",\"name\":\"%s\"}," +
                 "\"officeRef\":\"jref://GEOSPATIAL:smart_city_gis_db/hub_%d\"," +
                 "\"biometricsRef\":\"jref://VECTOR:ai_knowledge_db/vec_face_%d\"}}",
-                empId, i, dept, role, salary, (i % 20) + 1, i
+                now, empId, empId, i, dept, role, contractType, salary, hireDate, shift, skillsJson, countryCode, country, (i % 20) + 1, i
             );
 
             engine.getStorageCore().put(recKey, payload.getBytes(StandardCharsets.UTF_8), now);

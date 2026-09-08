@@ -118,10 +118,13 @@ public class StoreEnginesPage extends StoreTemplatePage {
         String contentType = exchange.getRequestHeaders() != null ? exchange.getRequestHeaders().getFirst("Content-Type") : null;
         boolean isJsonClient = (accept != null && accept.contains("application/json"))
                 || (contentType != null && contentType.contains("application/json"))
-                || "XMLHttpRequest".equalsIgnoreCase(reqWith);
+                || "XMLHttpRequest".equalsIgnoreCase(reqWith)
+                || "true".equalsIgnoreCase(params != null ? params.get("is_fetch") : null)
+                || "true".equalsIgnoreCase(params != null ? params.get("is_ajax") : null);
 
         if (action != null && (action.endsWith("_ajax") || "true".equalsIgnoreCase(params.get("is_ajax")) || isJsonClient
-            || "install_sample_db".equalsIgnoreCase(action) || "uninstall_sample_db".equalsIgnoreCase(action) || "list_sample_dbs".equalsIgnoreCase(action))) {
+            || "install_sample_db".equalsIgnoreCase(action) || "uninstall_sample_db".equalsIgnoreCase(action) || "list_sample_dbs".equalsIgnoreCase(action)
+            || "update_object".equalsIgnoreCase(action) || "edit_document".equalsIgnoreCase(action) || "edit_object".equalsIgnoreCase(action) || "edit_record".equalsIgnoreCase(action))) {
             handleAjaxPost(exchange, params);
             return true;
         }
@@ -232,6 +235,21 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     resp.addProperty("itemId", res.recordId());
                     resp.addProperty("message", res.error() != null ? res.error() : "Failed to update record");
                 }
+
+                String accept = exchange.getRequestHeaders() != null ? exchange.getRequestHeaders().getFirst("Accept") : null;
+                String reqWith = exchange.getRequestHeaders() != null ? exchange.getRequestHeaders().getFirst("X-Requested-With") : null;
+                boolean expectsJson = (accept != null && accept.contains("application/json"))
+                        || "XMLHttpRequest".equalsIgnoreCase(reqWith)
+                        || "true".equalsIgnoreCase(params.get("is_fetch"));
+
+                if (!expectsJson) {
+                    // Browser standard form navigation fallback: redirect back to web UI to keep user in interface!
+                    String redirectUrl = JettraServer.resolvePath("/engines?engine=" + engType + "&db=" + targetDb + "&coll=" + coll);
+                    exchange.getResponseHeaders().set("Location", redirectUrl);
+                    exchange.sendResponseHeaders(303, -1);
+                    return;
+                }
+
                 sendJsonResponse(exchange, resp, 200);
             } else if ("restore_version".equalsIgnoreCase(action) || "restore_version_ajax".equalsIgnoreCase(action)) {
                 long targetTs = Long.parseLong(params.getOrDefault("version_ts", "0"));
@@ -2057,6 +2075,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
         modals.add(buildCreateIndexModal(actionUrl));
         modals.add(buildCreateSchemaModal(actionUrl));
         modals.add(buildSampleDatabasesModal(actionUrl));
+        modals.add(buildConfirmUninstallSampleDbModal());
         modals.add(buildDatabaseSwitchModal(actionUrl, targetDb));
         modals.add(buildModalsScript());
 
@@ -3003,74 +3022,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
     }
 
     private Widget buildInspectRecordModal(String actionUrl) {
-        Widget header = createModalHeader("Inspect Record & Reference Details", "fas fa-eye", "#38bdf8", "inspectRecordModal");
-
-        Widget infoGrid = Div.of(
-            Div.of(
-                Span.of("Engine: ").modifier(new Modifier().style("color:#94a3b8; font-size:11px;")),
-                Span.of("").id("inspectRecordEngineDisplay").modifier(new Modifier().cssClass("store-badge badge-active").style("font-size:10px;"))
-            ).modifier(new Modifier().style("flex:1; min-width:110px;")),
-            Div.of(
-                Span.of("Database: ").modifier(new Modifier().style("color:#94a3b8; font-size:11px;")),
-                Span.of("").id("inspectRecordDbDisplay").modifier(new Modifier().style("color:#38bdf8; font-weight:bold; font-size:12px;"))
-            ).modifier(new Modifier().style("flex:1; min-width:110px;")),
-            Div.of(
-                Span.of("Unit/Coll: ").modifier(new Modifier().style("color:#94a3b8; font-size:11px;")),
-                Span.of("").id("inspectRecordCollDisplay").modifier(new Modifier().style("color:#cbd5e1; font-weight:bold; font-size:12px;"))
-            ).modifier(new Modifier().style("flex:1; min-width:110px;")),
-            Div.of(
-                Span.of("Record ID: ").modifier(new Modifier().style("color:#94a3b8; font-size:11px;")),
-                Span.of("").id("inspectRecordIdDisplay").modifier(new Modifier().style("color:#f8fafc; font-family:monospace; font-weight:bold; font-size:12px;"))
-            ).modifier(new Modifier().style("flex:1.5; min-width:140px;")),
-            Div.of(
-                Span.of("Version: ").modifier(new Modifier().style("color:#94a3b8; font-size:11px;")),
-                Span.of("").id("inspectRecordVersionDisplay").modifier(new Modifier().cssClass("store-badge badge-records").style("font-size:10px;"))
-            ).modifier(new Modifier().style("flex:0.8; min-width:80px;"))
-        ).modifier(new Modifier().style("display:flex; flex-wrap:wrap; gap:10px; background:rgba(15,23,42,0.8); border:1px solid rgba(56,189,248,0.2); padding:10px 14px; border-radius:6px; margin-bottom:12px; align-items:center;"));
-
-        Widget resolveRefToggle = Div.of(
-            Label.of(
-                RawHtml.of("<input type=\"checkbox\" id=\"chkInspectResolveRefs\" checked onchange=\"toggleInspectReferenceResolution(this.checked)\" style=\"accent-color:#38bdf8; width:15px; height:15px; cursor:pointer; margin-right:6px;\" />"),
-                Icon.of("fas fa-link").modifier(new Modifier().style("color:#38bdf8; margin-right:6px; font-size:12px;")),
-                Span.of("Cargar Objetos Referenciados (Auto-Resolve Jref)").modifier(new Modifier().style("color:#38bdf8; font-weight:600; font-size:11.5px;"))
-            ).modifier(new Modifier().style("display:inline-flex; align-items:center; cursor:pointer;")),
-            Span.of("").id("inspectReferencesCountBadge").modifier(new Modifier().cssClass("store-badge badge-active").style("font-size:10.5px; display:none;"))
-        ).modifier(new Modifier().style("display:flex; align-items:center; justify-content:space-between; background:rgba(56,189,248,0.12); border:1px solid rgba(56,189,248,0.3); padding:7px 12px; border-radius:6px; margin-bottom:12px;"));
-
-        Widget payloadLabel = createLabel("JSON Record Payload & Properties:");
-        Widget payloadArea = createTextArea("inspect_payload", 12, "", "{}")
-            .id("inspectRecordPayloadDisplay")
-            .modifier(new Modifier()
-                .attribute("readonly", "readonly")
-                .style("width:100%; height:250px; background:#0b1120; border:1px solid rgba(56,189,248,0.3); border-radius:6px; color:#38bdf8; font-family:monospace; font-size:12px; padding:12px; box-sizing:border-box; resize:vertical; line-height:1.4;"));
-
-        Widget refObjectsTitle = Div.of(
-            Icon.of("fas fa-project-diagram").modifier(new Modifier().style("color:#38bdf8; margin-right:6px; font-size:12px;")),
-            Span.of("Objetos Referenciados Detectados (Jref Operator):").modifier(new Modifier().style("color:#cbd5e1; font-size:11.5px; font-weight:700;"))
-        ).modifier(new Modifier().style("display:flex; align-items:center; margin-bottom:8px;"));
-
-        Widget refObjectsList = Div.of()
-            .id("inspectRecordReferencesList")
-            .modifier(new Modifier().style("display:flex; flex-direction:column; gap:6px;"));
-
-        Widget refObjectsContainer = Div.of(refObjectsTitle, refObjectsList)
-            .id("inspectRecordReferencesContainer")
-            .modifier(new Modifier().style("display:none; margin-top:12px; background:rgba(15,23,42,0.9); border:1px solid rgba(56,189,248,0.3); border-radius:8px; padding:12px; max-height:220px; overflow-y:auto;"));
-
-        Widget actionButtons = Div.of(
-            Button.of(Icon.of("fas fa-copy"), Text.of(" Copy JSON"))
-                .id("btnCopyInspect")
-                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "copyInspectRecordPayload()").cssClass("btn-action btn-secondary").style("font-size:12px; padding:6px 14px; background:rgba(56,189,248,0.15); border-color:rgba(56,189,248,0.4); color:#38bdf8; margin-right:8px;")),
-//            Button.of(Icon.of("fas fa-edit"), Text.of(" Edit Record"))
-//                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "editFromInspectModal()").cssClass("btn-action btn-primary").style("font-size:12px; padding:6px 14px; margin-right:8px;")),
-//            Button.of(Icon.of("fas fa-history"), Text.of(" Versions"))
-//                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "historyFromInspectModal()").cssClass("btn-action btn-secondary").style("font-size:12px; padding:6px 14px; background:rgba(168,85,247,0.15); border-color:rgba(168,85,247,0.4); color:#c084fc; margin-right:8px;")),
-            Button.of(Text.of("Close"))
-                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "document.getElementById('inspectRecordModal').style.display='none'").cssClass("btn-action btn-secondary").style("font-size:12px; padding:6px 14px;"))
-        ).modifier(new Modifier().style("display:flex; justify-content:flex-end; align-items:center; margin-top:14px; flex-wrap:wrap; gap:6px;"));
-
-        Widget content = Div.of(infoGrid, resolveRefToggle, payloadLabel, payloadArea, refObjectsContainer, actionButtons);
-        return createModalOverlay("inspectRecordModal", "750px", "rgba(56,189,248,0.4)", header, content);
+        return EngineRecordInspectDialog.build();
     }
 
     private Widget buildReferenceWarningModal() {
@@ -3678,6 +3630,45 @@ public class StoreEnginesPage extends StoreTemplatePage {
         return createModalOverlay("sampleDatabasesModal", "780px", "rgba(236,72,153,0.4)", header, body);
     }
 
+    private Widget buildConfirmUninstallSampleDbModal() {
+        Widget header = createModalHeader("Confirm Dataset Uninstallation", "fas fa-exclamation-triangle", "#ef4444", "confirmUninstallSampleDbModal");
+
+        Widget body = Div.of(
+            InputHidden.of("confirm_uninstall_target_db", "").id("confirmUninstallTargetDbInput"),
+            Div.of(
+                Icon.of("fas fa-trash-alt").modifier(new Modifier().style("color:#ef4444; font-size:32px; margin-bottom:12px; display:block; text-align:center;")),
+                Paragraph.of(
+                    Text.of("Are you sure you want to uninstall and purge sample database "),
+                    Span.of("\"meteorology_iot_db\"").id("confirmUninstallDbNameDisplay").modifier(new Modifier().style("color:#f87171; font-weight:700; font-family:monospace; background:rgba(239,68,68,0.12); padding:2px 8px; border-radius:4px; border:1px solid rgba(239,68,68,0.25);")),
+                    Text.of("? All stored records and components will be permanently deleted.")
+                ).modifier(new Modifier().style("font-weight:600; color:var(--j-text-primary,#f8fafc); font-size:13px; text-align:center; margin:0 0 12px 0; line-height:1.5;")),
+                Div.of(
+                    Icon.of("fas fa-exclamation-circle").modifier(new Modifier().style("color:#f59e0b; margin-right:8px; font-size:14px; flex-shrink:0; margin-top:2px;")),
+                    Span.of("All stored records, typed schema components, secondary indexes, and cross-engine pointers will be permanently purged from the storage core.")
+                        .modifier(new Modifier().style("font-size:11.5px; color:#cbd5e1; line-height:1.4;"))
+                ).modifier(new Modifier().style("display:flex; align-items:flex-start; background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.2); border-radius:8px; padding:10px 14px; margin-bottom:16px;"))
+            ),
+            Div.of(
+                Button.of(Icon.of("fas fa-times"), Text.of(" Cancelar"))
+                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "hideModal('confirmUninstallSampleDbModal')").cssClass("btn-action btn-secondary").style("padding:6px 14px; font-size:12px; margin-right:8px;")),
+                Button.of(Icon.of("fas fa-trash-alt"), Text.of(" Uninstall & Purge"))
+                    .id("btnConfirmUninstallSubmit")
+                    .modifier(new Modifier()
+                        .attribute("type", "button")
+                        .attribute("onclick", "executeUninstallSampleDb()")
+                        .cssClass("btn-action btn-primary")
+                        .style("padding:6px 16px; font-size:12px; font-weight:700; background:#ef4444; border-color:#ef4444; color:#fff; cursor:pointer;"))
+            ).modifier(new Modifier().style("display:flex; justify-content:flex-end; align-items:center; margin-top:8px;"))
+        ).modifier(new Modifier().style("padding:14px 4px 4px 4px;"));
+
+        return ModalDialog.of("confirmUninstallSampleDbModal")
+            .maxWidth("520px")
+            .borderColor("rgba(239,68,68,0.5)")
+            .header(header)
+            .body(body)
+            .modifier(new Modifier().style("z-index:100010;"));
+    }
+
     private Widget buildModalsScript() {
         String js1 = """
   function showModal(id) {
@@ -3886,28 +3877,95 @@ public class StoreEnginesPage extends StoreTemplatePage {
     if (normEngine === 'TIME_SERIES' || normEngine === 'TIMESERIE') normEngine = 'TIMESERIES';
     if (normEngine === 'GEO') normEngine = 'GEOSPATIAL';
 
-    var vecCoords = '0.12, 0.45, 0.88, 0.31';
-    if (Array.isArray(p.coordinates)) vecCoords = p.coordinates.join(', ');
-    else if (Array.isArray(p.embedding)) vecCoords = p.embedding.join(', ');
-    else if (Array.isArray(p.vector)) vecCoords = p.vector.join(', ');
-    else if (p.coordinates || p.embedding || p.vector) vecCoords = String(p.coordinates || p.embedding || p.vector);
+    // Set common display and input fields
+    setElementValues({
+      universalEditEngineInput: normEngine,
+      universalEditEngineDisplay: normEngine,
+      universalEditDbInput: db,
+      universalEditDbDisplay: db,
+      universalEditCollInput: unit || 'default',
+      universalEditCollDisplay: unit || 'default',
+      universalEditIdInput: id,
+      universalEditIdDisplay: id,
+      universalEditPayloadInput: pretty
+    });
 
-    var cfgMap = {
-      DOCUMENT:   { id: 'editDocumentModal',   vals: { editDocDbInput: db, editDocDbDisplay: db, editDocCollInput: unit || 'default', editDocIdInput: id, editDocIdDisplay: id, editDocClassInput: p._class || '', editDocPayloadInput: pretty } },
-      KEYVALUE:   { id: 'editKeyValueModal',   vals: { editKvDbInput: db, editKvDbDisplay: db, editKvCollInput: unit || 'default', editKvIdInput: id, editKvIdDisplay: id, editKvValueInput: payload || pretty } },
-      VECTOR:     { id: 'editVectorModal',     vals: { editVecDbInput: db, editVecDbDisplay: db, editVecCollInput: unit || 'default', editVecIdInput: id, editVecIdDisplay: id, editVecCoordsInput: vecCoords, editVecMetaInput: pretty } },
-      GRAPH:      { id: 'editGraphModal',      vals: { editGraphDbInput: db, editGraphDbDisplay: db, editGraphCollInput: p.label || unit || 'Vertex', editGraphIdInput: id, editGraphIdDisplay: id, editGraphPropsInput: pretty } },
-      TIMESERIES: { id: 'editTimeSeriesModal', vals: { editTsDbInput: db, editTsDbDisplay: db, editTsCollInput: p.metric || unit || 'telemetry', editTsIdInput: id, editTsIdDisplay: id, editTsTimestampInput: p.timestamp || id, editTsValueInput: p.value !== undefined ? p.value : '25.4', editTsUnitInput: p.unit || 'celsius', editTsTagsInput: pretty } },
-      COLUMN:     { id: 'editColumnModal',     vals: { editColDbInput: db, editColDbDisplay: db, editColCollInput: p._family || unit || 'analytics', editColIdInput: id, editColIdDisplay: id, editColDataInput: pretty } },
-      GEOSPATIAL: { id: 'editGeoModal',        vals: { editGeoDbInput: db, editGeoDbDisplay: db, editGeoCollInput: p._layer || unit || 'stores_layer', editGeoIdInput: id, editGeoIdDisplay: id, editGeoLatInput: p.lat !== undefined ? p.lat : (p.latitude !== undefined ? p.latitude : '8.9824'), editGeoLonInput: p.lon !== undefined ? p.lon : (p.longitude !== undefined ? p.longitude : '-79.5199'), editGeoNameInput: p.name || id } },
-      OBJECT:     { id: 'editObjectModal',     vals: { editObjDbInput: db, editObjDbDisplay: db, editObjCollInput: p.bucket || unit || 'media_bucket', editObjIdInput: id, editObjIdDisplay: id, editObjMimeInput: p.mimeType || 'application/json', editObjPayloadInput: p.content || payload || pretty } },
-      RECORDS:    { id: 'editRecordsModal',    vals: { editRecDbInput: db, editRecDbDisplay: db, editRecCollInput: p._table || unit || 'default', editRecIdInput: id, editRecIdDisplay: id, editRecClassInput: p._class || 'com.jettra.model.PersonRecord', editRecPayloadInput: pretty } }
-    };
-    var cfg = cfgMap[normEngine] || cfgMap.DOCUMENT;
+    // Populate engine-specific inputs in universalEditModal
+    if (normEngine === 'RECORDS') {
+      if (typeof populateRecordFieldsFromPayload === 'function') {
+        populateRecordFieldsFromPayload('edit_rec', p, pretty);
+      }
+      setElementValues({
+        editRecClassInput: p._recordClass || p._class || 'com.jettra.model.Record',
+        editRecCollInput: unit || 'default',
+        editRecPayloadInput: pretty
+      });
+    } else if (normEngine === 'DOCUMENT') {
+      setElementValues({
+        editDocCollInput: unit || 'default',
+        editDocClassInput: p._class || '',
+        editDocPayloadInput: pretty
+      });
+    } else if (normEngine === 'KEYVALUE') {
+      setElementValues({
+        editKvCollInput: unit || 'default',
+        editKvValueInput: (typeof payload === 'string') ? payload : pretty
+      });
+    } else if (normEngine === 'VECTOR') {
+      var vecCoords = '0.12, 0.45, 0.88, 0.31';
+      if (Array.isArray(p.coordinates)) vecCoords = p.coordinates.join(', ');
+      else if (Array.isArray(p.embedding)) vecCoords = p.embedding.join(', ');
+      else if (Array.isArray(p.vector)) vecCoords = p.vector.join(', ');
+      setElementValues({
+        editVecCollInput: unit || 'default',
+        editVecCoordsInput: vecCoords,
+        editVecMetaInput: pretty
+      });
+    } else if (normEngine === 'GRAPH') {
+      setElementValues({
+        editGraphCollInput: p.label || unit || 'Vertex',
+        editGraphPropsInput: pretty
+      });
+    } else if (normEngine === 'TIMESERIES') {
+      setElementValues({
+        editTsCollInput: p.metric || unit || 'telemetry',
+        editTsTimestampInput: p.timestamp || id,
+        editTsValueInput: (p.value !== undefined) ? p.value : '25.4',
+        editTsUnitInput: p.unit || 'celsius',
+        editTsTagsInput: pretty
+      });
+    } else if (normEngine === 'COLUMN') {
+      setElementValues({
+        editColCollInput: p._family || unit || 'analytics',
+        editColDataInput: pretty
+      });
+    } else if (normEngine === 'GEOSPATIAL') {
+      setElementValues({
+        editGeoCollInput: p._layer || unit || 'stores_layer',
+        editGeoLatInput: (p.lat !== undefined ? p.lat : (p.latitude !== undefined ? p.latitude : '8.9824')),
+        editGeoLonInput: (p.lon !== undefined ? p.lon : (p.longitude !== undefined ? p.longitude : '-79.5199')),
+        editGeoNameInput: p.name || id
+      });
+    } else if (normEngine === 'OBJECT') {
+      setElementValues({
+        editObjCollInput: p.bucket || unit || 'media_bucket',
+        editObjMimeInput: p.mimeType || 'application/json',
+        editObjPayloadInput: p.content || payload || pretty
+      });
+    }
 
-    if (cfg) {
-      setElementValues(cfg.vals);
-      showModal(cfg.id);
+    if (typeof switchEditEngine === 'function') {
+      switchEditEngine(normEngine);
+    }
+
+    if (window.JettraFluxNotification) {
+      JettraFluxNotification.hide('universalEditNotification');
+    }
+
+    if (window.JettraFluxModal) {
+      window.JettraFluxModal.open('universalEditModal');
+    } else {
+      showModal('universalEditModal');
     }
   }
 
@@ -5054,11 +5112,22 @@ public class StoreEnginesPage extends StoreTemplatePage {
       inspectRecordVersionDisplay: 'v' + (vCount || 1)
     });
 
+    if (typeof switchInspectEngine === 'function') {
+      switchInspectEngine(engine);
+    }
+    if (typeof renderAdaptiveInspectModelView === 'function') {
+      renderAdaptiveInspectModelView(engine, db, unit || 'default', id, parsed, payload);
+    }
+
     var chk = document.getElementById('chkInspectResolveRefs');
     var shouldResolve = chk ? chk.checked : true;
     toggleInspectReferenceResolution(shouldResolve);
 
-    showModal('inspectRecordModal');
+    if (window.JettraFluxModal) {
+      window.JettraFluxModal.open('inspectRecordModal');
+    } else {
+      showModal('inspectRecordModal');
+    }
   }
 
   function handleTreeKeyDown(e, elementId) {
@@ -5882,9 +5951,36 @@ public class StoreEnginesPage extends StoreTemplatePage {
     });
   }
 
+  function openConfirmUninstallSampleDbModal(dbName) {
+    if (!dbName) return;
+    var inp = document.getElementById('confirmUninstallTargetDbInput');
+    if (inp) inp.value = dbName;
+    var disp = document.getElementById('confirmUninstallDbNameDisplay');
+    if (disp) disp.innerText = '"' + dbName + '"';
+    var btn = document.getElementById('btnConfirmUninstallSubmit');
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fas fa-trash-alt" style="margin-right:4px;"></i> Uninstall & Purge';
+    }
+    showModal('confirmUninstallSampleDbModal');
+  }
+  window.openConfirmUninstallSampleDbModal = openConfirmUninstallSampleDbModal;
+
   function uninstallSampleDb(dbName) {
-    if (!confirm('Are you sure you want to uninstall and purge sample database "' + dbName + '"? All stored records and components will be permanently deleted.')) {
-      return;
+    openConfirmUninstallSampleDbModal(dbName);
+  }
+  window.uninstallSampleDb = uninstallSampleDb;
+
+  function executeUninstallSampleDb() {
+    var inp = document.getElementById('confirmUninstallTargetDbInput');
+    var dbName = inp ? inp.value : '';
+    if (!dbName) return;
+
+    var btn = document.getElementById('btnConfirmUninstallSubmit');
+    var origHtml = btn ? btn.innerHTML : '';
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fas fa-spinner fa-spin" style="margin-right:4px;"></i> Removing...';
     }
 
     var actionsEl = document.getElementById('sample-actions-' + dbName);
@@ -5905,6 +6001,11 @@ public class StoreEnginesPage extends StoreTemplatePage {
     })
     .then(function(res) { return res.json(); })
     .then(function(data) {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = origHtml;
+      }
+      hideModal('confirmUninstallSampleDbModal');
       if (data && data.status === 'SUCCESS') {
         if (typeof showTransientToast === 'function') {
           showTransientToast(data.message || ('Dataset ' + dbName + ' uninstalled!'), 'success');
@@ -5917,15 +6018,29 @@ public class StoreEnginesPage extends StoreTemplatePage {
           reloadExplorerHierarchy(dbName);
         }
       } else {
-        alert('Uninstallation failed: ' + (data ? data.message : 'Unknown error'));
+        if (typeof showTransientToast === 'function') {
+          showTransientToast('Uninstallation failed: ' + (data ? data.message : 'Unknown error'), 'error');
+        } else {
+          alert('Uninstallation failed: ' + (data ? data.message : 'Unknown error'));
+        }
         refreshSampleDatabasesList();
       }
     })
     .catch(function(err) {
-      alert('Uninstallation failed: ' + (err.message || err));
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = origHtml;
+      }
+      hideModal('confirmUninstallSampleDbModal');
+      if (typeof showTransientToast === 'function') {
+        showTransientToast('Uninstallation failed: ' + (err.message || err), 'error');
+      } else {
+        alert('Uninstallation failed: ' + (err.message || err));
+      }
       refreshSampleDatabasesList();
     });
   }
+  window.executeUninstallSampleDb = executeUninstallSampleDb;
 
   // Teleport all modals to document.body on load so they escape any CSS containing blocks
   document.addEventListener('DOMContentLoaded', function() {
