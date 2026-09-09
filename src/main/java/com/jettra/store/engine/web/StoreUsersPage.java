@@ -32,6 +32,7 @@ import java.util.Optional;
 import io.jettra.flux.security.SecurityContext;
 import io.jettra.flux.security.SecurityContextHolder;
 import io.jettra.server.autentification.repository.UserUpdateCommand;
+import com.jettra.store.engine.exception.ImmutableAccountException;
 
 /**
  * Visual User and RBAC Role Management Console for JettraStoreEngine.
@@ -52,6 +53,22 @@ public class StoreUsersPage extends StoreTemplatePage {
         this.credRepo = new JCredentialRepositoryImpl();
     }
 
+    protected String resolveCurrentUser(HttpExchange exchange) {
+        if (exchange != null) {
+            try {
+                String loggedUser = getLoggedUser(exchange);
+                if (loggedUser != null && !loggedUser.isBlank()) {
+                    return loggedUser;
+                }
+            } catch (Exception ignored) {}
+        }
+        SecurityContext sec = SecurityContextHolder.getContext();
+        if (sec != null && sec.principal() != null && sec.principal().username() != null) {
+            return sec.principal().username();
+        }
+        return "";
+    }
+
     @Override
     public void handle(HttpExchange exchange) throws IOException {
         String query = exchange.getRequestURI().getQuery();
@@ -68,6 +85,13 @@ public class StoreUsersPage extends StoreTemplatePage {
         if (username == null || username.isBlank()) {
             sendJsonResponse(exchange, 400, "{\"status\":\"ERROR\",\"message\":\"Username parameter is required\"}");
             return;
+        }
+        if ("admin".equalsIgnoreCase(username.trim())) {
+            String currentUser = resolveCurrentUser(exchange);
+            if (!"admin".equalsIgnoreCase(currentUser)) {
+                sendJsonResponse(exchange, 403, "{\"status\":\"ERROR\",\"message\":\"Acceso denegado: Solo el usuario admin puede consultar sus datos de edición.\"}");
+                return;
+            }
         }
         Optional<JUser> userOpt = userRepo.findByUsername(username.trim());
         if (userOpt.isEmpty()) {
@@ -179,6 +203,9 @@ public class StoreUsersPage extends StoreTemplatePage {
                         Optional<JUser> userOpt = userRepo.findById(uId);
                         if (userOpt.isPresent()) {
                             String uName = userOpt.get().firstName();
+                            if ("admin".equalsIgnoreCase(uName)) {
+                                throw new ImmutableAccountException("El usuario admin no puede ser revocado.");
+                            }
                             if (authManager != null) {
                                 authManager.unregister(uName);
                             }
@@ -225,14 +252,14 @@ public class StoreUsersPage extends StoreTemplatePage {
                         } else {
                             JUser existingUser = userOpt.get();
 
-                            // Self-lockout check: an admin editing their own account cannot remove their admin role or deactivate their account
-                            String loggedUser = getLoggedUser(exchange);
-                            if (loggedUser == null || loggedUser.isBlank()) {
-                                SecurityContext sec = SecurityContextHolder.getContext();
-                                if (sec != null && sec.principal() != null) {
-                                    loggedUser = sec.principal().username();
-                                }
+                            String loggedUser = resolveCurrentUser(exchange);
+
+                            // Strict immutability guard: Only active authenticated user 'admin' can edit the admin record
+                            if ("admin".equalsIgnoreCase(existingUser.firstName()) && !"admin".equalsIgnoreCase(loggedUser)) {
+                                throw new ImmutableAccountException("Operación denegada: Solo el usuario admin activo puede modificar el perfil de admin.");
                             }
+
+                            // Self-lockout check: an admin editing their own account cannot remove their admin role or deactivate their account
                             boolean isSelf = loggedUser != null && loggedUser.equalsIgnoreCase(username.trim());
                             boolean isDemotingSelf = isSelf && roleName != null && !"DB_ADMIN".equalsIgnoreCase(roleName) && !"ADMIN".equalsIgnoreCase(roleName) && !"SUPERADMIN".equalsIgnoreCase(roleName);
                             boolean isDeactivatingSelf = isSelf && "false".equalsIgnoreCase(activeStr);
@@ -314,6 +341,9 @@ public class StoreUsersPage extends StoreTemplatePage {
                         }
                     }
                 }
+            } catch (io.jettra.server.autentification.exception.ImmutableAccountException e) {
+                alertMessage = e.getMessage();
+                alertType = "badge-raft";
             } catch (Exception e) {
                 alertMessage = "Operation failed: " + e.getMessage();
                 alertType = "badge-raft";
@@ -426,21 +456,44 @@ public class StoreUsersPage extends StoreTemplatePage {
                     ? Span.of("ACTIVE").modifier(new Modifier().cssClass("store-badge badge-active"))
                     : Span.of("DISABLED").modifier(new Modifier().cssClass("store-badge").style("background:rgba(239,68,68,0.2); color:#f87171;"));
 
-                Button editBtn = Button.of(Icon.of("fas fa-user-edit"), Text.of(" Edit"));
-                String safeUsername = u.firstName().replace("'", "\\'");
-                String safeEmail = (u.email() != null ? u.email() : "").replace("'", "\\'");
-                String userRole = (u.jRoles() != null && !u.jRoles().isEmpty()) ? u.jRoles().iterator().next().name() : "READ_WRITE";
-                String userDbs = (u.assignedDatabases() != null && !u.assignedDatabases().isEmpty())
-                    ? String.join(",", u.assignedDatabases())
-                    : (u.lastName() != null ? u.lastName() : "*");
-                editBtn.attribute("onclick", "openEditUser('" + u.id() + "', '" + safeUsername + "', '" + safeEmail + "', '" + userRole + "', '" + userDbs + "', " + u.active() + ")");
-                editBtn.modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:4px 8px; font-size:11px; margin-right:6px;"));
+                String loggedInUser = resolveCurrentUser(exchange);
+                boolean isRowAdmin = "admin".equalsIgnoreCase(u.firstName());
+                boolean isCurrentSessionAdmin = "admin".equalsIgnoreCase(loggedInUser);
 
-                Button revokeBtn = Button.of(Icon.of("fas fa-trash"), Text.of(" Revoke"));
-                revokeBtn.attribute("onclick", "confirmRevokeUser('" + u.id() + "', '" + u.firstName() + "')");
-                revokeBtn.modifier(new Modifier().cssClass("btn-action btn-danger").style("padding:4px 8px; font-size:11px;"));
+                Widget editAction;
+                if (isRowAdmin && !isCurrentSessionAdmin) {
+                    editAction = Span.of(
+                        Icon.of("fas fa-lock").modifier(new Modifier().style("margin-right:4px;")),
+                        Text.of("Bloqueado")
+                    ).attribute("title", "Solo el usuario admin puede editar su propia cuenta")
+                     .modifier(new Modifier().cssClass("store-badge").style("background:rgba(148,163,184,0.15); color:#94a3b8; border:1px solid rgba(148,163,184,0.3); padding:4px 8px; font-size:11px; margin-right:6px; cursor:not-allowed; display:inline-flex; align-items:center;"));
+                } else {
+                    Button editBtn = Button.of(Icon.of("fas fa-user-edit"), Text.of(" Edit"));
+                    String safeUsername = u.firstName().replace("'", "\\'");
+                    String safeEmail = (u.email() != null ? u.email() : "").replace("'", "\\'");
+                    String userRole = (u.jRoles() != null && !u.jRoles().isEmpty()) ? u.jRoles().iterator().next().name() : "READ_WRITE";
+                    String userDbs = (u.assignedDatabases() != null && !u.assignedDatabases().isEmpty())
+                        ? String.join(",", u.assignedDatabases())
+                        : (u.lastName() != null ? u.lastName() : "*");
+                    editBtn.attribute("onclick", "openEditUser('" + u.id() + "', '" + safeUsername + "', '" + safeEmail + "', '" + userRole + "', '" + userDbs + "', " + u.active() + ")");
+                    editBtn.modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:4px 8px; font-size:11px; margin-right:6px;"));
+                    editAction = editBtn;
+                }
 
-                Widget actionsCell = Div.of(editBtn, revokeBtn).modifier(new Modifier().style("display:inline-flex; align-items:center;"));
+                Widget revokeAction;
+                if (isRowAdmin) {
+                    revokeAction = Button.of(Icon.of("fas fa-shield-alt"), Text.of(" Protegido"))
+                        .attribute("disabled", "disabled")
+                        .attribute("title", "Acción protegida")
+                        .modifier(new Modifier().cssClass("btn-action").style("padding:4px 8px; font-size:11px; background:rgba(148,163,184,0.15); color:#64748b; border:1px solid rgba(148,163,184,0.25); cursor:not-allowed; opacity:0.7;"));
+                } else {
+                    Button revokeBtn = Button.of(Icon.of("fas fa-trash"), Text.of(" Revoke"));
+                    revokeBtn.attribute("onclick", "confirmRevokeUser('" + u.id() + "', '" + u.firstName() + "')");
+                    revokeBtn.modifier(new Modifier().cssClass("btn-action btn-danger").style("padding:4px 8px; font-size:11px;"));
+                    revokeAction = revokeBtn;
+                }
+
+                Widget actionsCell = Div.of(editAction, revokeAction).modifier(new Modifier().style("display:inline-flex; align-items:center;"));
 
                 tableRows.add(List.of(userCell, emailCell, scopeCell, rolesCell, statusCell, actionsCell));
             }

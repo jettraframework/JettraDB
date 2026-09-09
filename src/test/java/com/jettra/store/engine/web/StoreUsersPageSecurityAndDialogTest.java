@@ -152,7 +152,7 @@ public class StoreUsersPageSecurityAndDialogTest {
         assertTrue(cred.active(), "Credential must be active");
 
         // Password hash must NOT match plaintext password
-        assertNotEquals(plainPassword, cred.passwordHash(), "Password must be hashed, never stored in plain text");
+        assertFalse(plainPassword.equals(cred.passwordHash()), "Password must be hashed, never stored in plain text");
         assertEquals(JettraSecurityDBInitializer.hashPassword(plainPassword), cred.passwordHash(),
                 "Password must be hashed with SHA-256 according to security standards");
 

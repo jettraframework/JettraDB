@@ -17,6 +17,7 @@ import io.jettra.server.autentification.repository.JCredentialRepositoryImpl;
 import io.jettra.server.autentification.repository.JUserRepository;
 import io.jettra.server.autentification.repository.JUserRepositoryImpl;
 import io.jettra.server.autentification.repository.JettraSecurityDBInitializer;
+import com.jettra.store.engine.exception.ImmutableAccountException;
 import io.jettra.test.annotation.AfterEach;
 import io.jettra.test.annotation.BeforeEach;
 import io.jettra.test.annotation.DisplayName;
@@ -344,6 +345,180 @@ public class StoreUsersPageEditTest {
 
         // Clean up
         userRepo.delete(uId);
+    }
+
+    private JUser ensureAdminUser() {
+        Optional<JUser> adminOpt = userRepo.findByUsername("admin");
+        if (adminOpt.isPresent()) {
+            return adminOpt.get();
+        }
+        UUID adminId = UUID.randomUUID();
+        JRole adminRole = new JRole(UUID.randomUUID(), "ADMIN", true);
+        JUser adminUser = new JUser(adminId, "admin", "*", "admin@jettra.io", "+000000", true, Set.of(adminRole), Set.of("*"));
+        userRepo.save(adminUser);
+        credRepo.save(new JCredential(UUID.randomUUID(), adminUser, "admin", JettraSecurityDBInitializer.hashPassword("admin123"), true, Instant.now()));
+        return adminUser;
+    }
+
+    @JettraTest
+    @DisplayName("Should strictly block revocation of the admin account in repository and web controller")
+    void testAdminAccountRevocationBlocked() {
+        JUser admin = ensureAdminUser();
+
+        // 1. Controller test: POST action=delete_user with admin id
+        MockHttpExchange postExchange = new MockHttpExchange("POST", "/users");
+        Map<String, String> formParams = Map.of(
+            "action", "delete_user",
+            "user_id", admin.id().toString()
+        );
+        var widget = usersPage.buildContent(postExchange, formParams, "dark");
+        String html = widget.render(io.jettra.flux.theme.Themes.FlatTheme());
+
+        assertTrue(html.contains("El usuario admin no puede ser revocado."), "Alert must state that admin cannot be revoked");
+        assertTrue(userRepo.findByUsername("admin").isPresent(), "Admin user must still exist in repository");
+
+        // 2. Repository-level test: userRepo.delete(adminId) must throw ImmutableAccountException
+        boolean exceptionThrown = false;
+        try {
+            userRepo.delete(admin.id());
+        } catch (io.jettra.server.autentification.exception.ImmutableAccountException e) {
+            exceptionThrown = true;
+            assertTrue(e.getMessage().contains("El usuario admin no puede ser revocado."));
+        }
+        assertTrue(exceptionThrown, "userRepo.delete must throw ImmutableAccountException when deleting admin");
+        assertTrue(userRepo.findByUsername("admin").isPresent(), "Admin user must remain in repository");
+    }
+
+    @JettraTest
+    @DisplayName("Should reject modification of admin account when caller is a different user")
+    void testAdminModificationByOtherAdminBlocked() {
+        JUser admin = ensureAdminUser();
+        String originalEmail = admin.email();
+
+        // Session caller is 'supervisor' (another administrator)
+        MockHttpExchange postExchange = new MockHttpExchange("POST", "/users");
+        postExchange.getRequestHeaders().set("Cookie", "username=supervisor");
+        SecurityContextHolder.setContext(new SecurityContext(
+            SecurityPrincipal.of("supervisor", "ADMIN", "Operations", Set.of("*")),
+            true
+        ));
+
+        Map<String, String> formParams = new HashMap<>();
+        formParams.put("action", "update_user");
+        formParams.put("user_id", admin.id().toString());
+        formParams.put("username", "admin");
+        formParams.put("email", "hacked_admin@test.com");
+        formParams.put("role", "READ_ONLY");
+
+        var widget = usersPage.buildContent(postExchange, formParams, "dark");
+        String html = widget.render(io.jettra.flux.theme.Themes.FlatTheme());
+
+        assertTrue(html.contains("Solo el usuario admin activo puede modificar el perfil de admin"),
+            "Alert must reject non-admin attempt to modify admin");
+
+        // Verify admin record remained unchanged
+        Optional<JUser> refreshedOpt = userRepo.findByUsername("admin");
+        assertTrue(refreshedOpt.isPresent());
+        assertEquals(originalEmail, refreshedOpt.get().email(), "Admin email must not be altered by other user");
+    }
+
+    @JettraTest
+    @DisplayName("Should permit admin user to modify own profile and assigned databases")
+    void testAdminModificationBySelfAllowed() {
+        ensureAdminUser();
+
+        // Session caller is 'admin'
+        MockHttpExchange postExchange = new MockHttpExchange("POST", "/users");
+        postExchange.getRequestHeaders().set("Cookie", "username=admin");
+        SecurityContextHolder.setContext(new SecurityContext(
+            SecurityPrincipal.of("admin", "ADMIN", "Security", Set.of("*")),
+            true
+        ));
+
+        Map<String, String> formParams = new HashMap<>();
+        formParams.put("action", "update_user");
+        formParams.put("username", "admin");
+        formParams.put("email", "root_admin@jettra.io");
+        formParams.put("role", "DB_ADMIN");
+        formParams.put("target_dbs", "master_db,audit_db");
+
+        var widget = usersPage.buildContent(postExchange, formParams, "dark");
+        String html = widget.render(io.jettra.flux.theme.Themes.FlatTheme());
+
+        assertTrue(html.contains("updated successfully"), "Alert must report successful update");
+
+        Optional<JUser> refreshedOpt = userRepo.findByUsername("admin");
+        assertTrue(refreshedOpt.isPresent());
+        assertEquals("root_admin@jettra.io", refreshedOpt.get().email(), "Email should be updated by admin itself");
+        assertTrue(refreshedOpt.get().isAuthorizedForDatabase("master_db"), "master_db should be authorized");
+        assertTrue(refreshedOpt.get().isAuthorizedForDatabase("audit_db"), "audit_db should be authorized");
+    }
+
+    @JettraTest
+    @DisplayName("Should render protected safeguards in UI: disabled revoke for admin and edit conditionally visible")
+    void testAdminRowProtectedUiRendering() {
+        ensureAdminUser();
+
+        // 1. Viewed by non-admin ('supervisor'): admin row shows Bloqueado and Protegido
+        MockHttpExchange exchangeOther = new MockHttpExchange("GET", "/users");
+        exchangeOther.getRequestHeaders().set("Cookie", "username=supervisor");
+        SecurityContextHolder.setContext(new SecurityContext(
+            SecurityPrincipal.of("supervisor", "ADMIN", "Operations", Set.of("*")),
+            true
+        ));
+
+        var widgetOther = usersPage.buildUI(exchangeOther, Map.of(), "dark");
+        String htmlOther = widgetOther.render(io.jettra.flux.theme.Themes.FlatTheme());
+
+        assertTrue(htmlOther.contains("Bloqueado"), "Admin row must render Bloqueado badge when viewed by other user");
+        assertTrue(htmlOther.contains("Solo el usuario admin puede editar su propia cuenta"), "Must have tooltip explaining admin edit lock");
+        assertTrue(htmlOther.contains("Protegido"), "Admin row must render Protegido button");
+        assertTrue(htmlOther.contains("Acción protegida"), "Must have tooltip explaining protected action");
+
+        // 2. Viewed by 'admin': admin row shows Edit and Protegido
+        MockHttpExchange exchangeAdmin = new MockHttpExchange("GET", "/users");
+        exchangeAdmin.getRequestHeaders().set("Cookie", "username=admin");
+        SecurityContextHolder.setContext(new SecurityContext(
+            SecurityPrincipal.of("admin", "ADMIN", "Security", Set.of("*")),
+            true
+        ));
+
+        var widgetAdmin = usersPage.buildUI(exchangeAdmin, Map.of(), "dark");
+        String htmlAdmin = widgetAdmin.render(io.jettra.flux.theme.Themes.FlatTheme());
+
+        assertTrue(htmlAdmin.contains("openEditUser"), "Admin row must render editable action when viewed by admin");
+        assertTrue(htmlAdmin.contains("Protegido"), "Admin row must still render Protegido button");
+        assertTrue(htmlAdmin.contains("disabled=\"disabled\""), "Protegido button must be disabled");
+    }
+
+    @JettraTest
+    @DisplayName("Should restrict GET action=get_user for admin profile to admin session only")
+    void testAdminGetUserRestrictedToSelf() throws IOException {
+        ensureAdminUser();
+
+        // 1. Unauthorized session trying to fetch admin JSON
+        MockHttpExchange exOther = new MockHttpExchange("GET", "/users?action=get_user&username=admin");
+        exOther.getRequestHeaders().set("Cookie", "username=supervisor");
+        SecurityContextHolder.setContext(new SecurityContext(
+            SecurityPrincipal.of("supervisor", "ADMIN", "Operations", Set.of("*")),
+            true
+        ));
+
+        usersPage.handle(exOther);
+        assertEquals(403, exOther.getResponseCode(), "Non-admin querying admin details must receive 403 Forbidden");
+        assertTrue(exOther.getResponseBodyAsString().contains("Acceso denegado"), "Response must indicate access denied");
+
+        // 2. Admin session querying admin details
+        MockHttpExchange exAdmin = new MockHttpExchange("GET", "/users?action=get_user&username=admin");
+        exAdmin.getRequestHeaders().set("Cookie", "username=admin");
+        SecurityContextHolder.setContext(new SecurityContext(
+            SecurityPrincipal.of("admin", "ADMIN", "Security", Set.of("*")),
+            true
+        ));
+
+        usersPage.handle(exAdmin);
+        assertEquals(200, exAdmin.getResponseCode(), "Admin querying own details must receive 200 OK");
+        assertTrue(exAdmin.getResponseBodyAsString().contains("\"username\":\"admin\""), "Response must contain admin user details");
     }
 
     // Mock HttpExchange
