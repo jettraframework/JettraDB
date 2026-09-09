@@ -83,4 +83,13 @@ public class AuthManager {
             requiresPasswordChange.remove(username);
         }
     }
+
+    /**
+     * Checks if credentials are valid without creating a session token.
+     */
+    public boolean authenticate(String username, String password) {
+        if (username == null || password == null) return false;
+        String stored = userPasswords.get(username);
+        return stored != null && stored.equals(password);
+    }
 }
