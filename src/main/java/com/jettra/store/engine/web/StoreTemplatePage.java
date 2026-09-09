@@ -393,7 +393,7 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
                 Icon.of("fas fa-tachometer-alt")
             ).modifier(new Modifier().cssClass("rail-item" + ("metrics".equals(currentTab) ? " active" : "")).attribute("title", "PROFILE")),
             Link.of(JettraServer.resolvePath("/users"), 
-                Icon.of("fas fa-shield-alt")
+                Icon.of("fas fa-solid fa-users")
             ).modifier(new Modifier().cssClass("rail-item").attribute("title", "SECURITY")),
             Link.of(JettraServer.resolvePath("/swagger-ui"),
                 Icon.of("fas fa-plug")

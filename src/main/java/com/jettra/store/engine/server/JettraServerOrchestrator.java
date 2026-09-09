@@ -66,6 +66,10 @@ public class JettraServerOrchestrator {
         StoreComponentsPage componentsPage = new StoreComponentsPage(engine);
         StoreLoginPage loginPage = new StoreLoginPage(authManager);
 
+        // OpenAPI Specification & Swagger UI Handlers
+        OpenApiSpecHandler openApiHandler = new OpenApiSpecHandler(restPort, guiPort);
+        io.jettra.server.openapi.SwaggerUIHandler swaggerUiHandler = new io.jettra.server.openapi.SwaggerUIHandler("/openapi.json");
+
         // 2. Initialize REST API Server instance
         jettraServer = new io.jettra.server.JettraServer();
         jettraServer.setPort(restPort);
@@ -82,6 +86,10 @@ public class JettraServerOrchestrator {
         // Backup API
         jettraServer.addHandler("/api/backup", new BackupHandler(engine));
         
+        // OpenAPI JSON spec & Swagger UI
+        jettraServer.addHandler("/openapi.json", openApiHandler);
+        jettraServer.addHandler("/swagger-ui/", swaggerUiHandler);
+
         // Also register Web Console on restPort
         jettraServer.addHandler("/", dashboardPage);
         jettraServer.addHandler("/dashboard", dashboardPage);
@@ -92,7 +100,6 @@ public class JettraServerOrchestrator {
         jettraServer.addHandler("/users", usersPage);
         jettraServer.addHandler("/components", componentsPage);
         jettraServer.addHandler("/login", loginPage);
-        jettraServer.addHandler("/swagger-ui", io.jettra.flux.complex.SwaggerUIPage.class);
 
         // Start REST API server
         jettraServer.start();
@@ -103,6 +110,8 @@ public class JettraServerOrchestrator {
         } else {
             jettraGuiServer = new io.jettra.server.JettraServer();
             jettraGuiServer.setPort(guiPort);
+            jettraGuiServer.addHandler("/openapi.json", openApiHandler);
+            jettraGuiServer.addHandler("/swagger-ui/", swaggerUiHandler);
             jettraGuiServer.addHandler("/", dashboardPage);
             jettraGuiServer.addHandler("/dashboard", dashboardPage);
             jettraGuiServer.addHandler("/wui", dashboardPage);
@@ -112,7 +121,6 @@ public class JettraServerOrchestrator {
             jettraGuiServer.addHandler("/users", usersPage);
             jettraGuiServer.addHandler("/components", componentsPage);
             jettraGuiServer.addHandler("/login", loginPage);
-            jettraGuiServer.addHandler("/swagger-ui", io.jettra.flux.complex.SwaggerUIPage.class);
             jettraGuiServer.start();
         }
         
