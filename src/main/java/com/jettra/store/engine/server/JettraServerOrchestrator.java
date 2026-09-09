@@ -83,6 +83,10 @@ public class JettraServerOrchestrator {
         // Universal Model endpoint
         jettraServer.addHandler("/api/model/", new ModelRestController(engine, authManager));
         
+        // Database CRUD Management API
+        DatabaseRestController databaseRestController = new DatabaseRestController(engine, authManager);
+        jettraServer.addHandler("/api/databases/", databaseRestController);
+
         // Backup API
         jettraServer.addHandler("/api/backup", new BackupHandler(engine));
         
@@ -116,6 +120,7 @@ public class JettraServerOrchestrator {
             jettraGuiServer.addHandler("/dashboard", dashboardPage);
             jettraGuiServer.addHandler("/wui", dashboardPage);
             jettraGuiServer.addHandler("/databases", databasesPage);
+            jettraGuiServer.addHandler("/api/databases/", databaseRestController);
             jettraGuiServer.addHandler("/engines", enginesPage);
             jettraGuiServer.addHandler("/information", informationPage);
             jettraGuiServer.addHandler("/users", usersPage);

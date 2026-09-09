@@ -108,6 +108,66 @@ public class OpenApiSpecHandler implements HttpHandler {
                 }
               }
             },
+            "/api/databases": {
+              "get": {
+                "tags": ["Database Management"],
+                "summary": "List all active databases",
+                "security": [{ "BearerAuth": [] }],
+                "responses": {
+                  "200": { "description": "List of databases returned" },
+                  "401": { "description": "Unauthorized" }
+                }
+              },
+              "post": {
+                "tags": ["Database Management"],
+                "summary": "Create a new database",
+                "security": [{ "BearerAuth": [] }],
+                "requestBody": {
+                  "required": true,
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "properties": { "name": { "type": "string", "example": "JMeterDB" } },
+                        "required": ["name"]
+                      }
+                    }
+                  }
+                },
+                "responses": {
+                  "201": { "description": "Database created successfully" },
+                  "400": { "description": "Invalid database name" },
+                  "401": { "description": "Unauthorized" }
+                }
+              }
+            },
+            "/api/databases/{name}": {
+              "post": {
+                "tags": ["Database Management"],
+                "summary": "Create a new database by name",
+                "security": [{ "BearerAuth": [] }],
+                "parameters": [
+                  { "name": "name", "in": "path", "required": true, "schema": { "type": "string", "example": "JMeterDB" } }
+                ],
+                "responses": {
+                  "201": { "description": "Database created successfully" },
+                  "401": { "description": "Unauthorized" }
+                }
+              },
+              "delete": {
+                "tags": ["Database Management"],
+                "summary": "Drop a database and purge all data",
+                "security": [{ "BearerAuth": [] }],
+                "parameters": [
+                  { "name": "name", "in": "path", "required": true, "schema": { "type": "string", "example": "JMeterDB" } }
+                ],
+                "responses": {
+                  "200": { "description": "Database deleted successfully" },
+                  "400": { "description": "Protected database or invalid name" },
+                  "401": { "description": "Unauthorized" }
+                }
+              }
+            },
             "/api/document/{collection}": {
               "post": {
                 "tags": ["Document Engine"],
