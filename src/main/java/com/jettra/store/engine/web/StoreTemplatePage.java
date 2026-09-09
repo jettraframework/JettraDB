@@ -36,6 +36,21 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
     }
 
     /**
+     * Determines whether global action buttons (+ DB, + UNIT, BACKUP, RESTORE, EXPORT, BÚSQUEDA AVANZADA, SAMPLE DBS)
+     * are rendered in the top bar. Defaults to true and can be overridden by subclasses (e.g. InformationPage).
+     */
+    protected boolean showGlobalActionButtons() {
+        return true;
+    }
+
+    /**
+     * Determines whether the top toolbar is visible. Defaults to true and can be overridden by subclasses.
+     */
+    protected boolean isTopToolbarVisible() {
+        return true;
+    }
+
+    /**
      * Determines navigation route visibility policy. Can be overridden by subclasses.
      */
     protected NavigationRouteConfig getRouteConfig(HttpExchange exchange, Map<String, String> params) {
@@ -61,6 +76,12 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
         String currentColl = params != null ? params.getOrDefault("coll", "default") : "default";
 
         NavigationRouteConfig routeConfig = getRouteConfig(exchange, params);
+        if (!showGlobalActionButtons()) {
+            routeConfig = routeConfig.withoutGlobalActionButtons();
+        }
+        if (!isTopToolbarVisible()) {
+            routeConfig = routeConfig.withTopToolbarVisible(false);
+        }
 
         Set<String> databases = getAvailableDatabases();
         if (databases == null || databases.isEmpty()) {
@@ -186,8 +207,14 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
         Widget topLeftGroup = buildTopLeftGroup(routeConfig, loggedUser, targetDb, selectedEngine, currentTab, databases);
         Widget topRightGroup = buildTopRightGroup(routeConfig, selectedEngine, targetDb, currentColl, currentTheme);
 
-        Widget topBar = Div.of(topLeftGroup, topRightGroup)
-            .modifier(new Modifier().cssClass("jettra-top-bar"));
+        Widget topBar = TopToolbar.of()
+            .withTopToolbarVisible(routeConfig.topToolbarVisible())
+            .withActionButtonsVisible(routeConfig.showGlobalActionButtons())
+            .withDatabaseSelectorVisible(routeConfig.showDatabaseSelector())
+            .withNavigationTabsVisible(routeConfig.showTopNavigationTabs())
+            .withThemeToggleVisible(routeConfig.showThemeToggle())
+            .addLeft(topLeftGroup)
+            .addRight(topRightGroup);
 
         // Content Area
         Widget content = buildContent(exchange, params, currentTheme);

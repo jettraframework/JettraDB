@@ -31,6 +31,19 @@ public class InformationPage extends StoreTemplatePage {
     }
 
     @Override
+    protected boolean showGlobalActionButtons() {
+        return false;
+    }
+
+    @Override
+    protected RouteVisibilityGuard.NavigationRouteConfig getRouteConfig(HttpExchange exchange, Map<String, String> params) {
+        String path = (exchange != null && exchange.getRequestURI() != null)
+            ? exchange.getRequestURI().getPath()
+            : "/information";
+        return RouteVisibilityGuard.NavigationRouteConfig.informationConfig(path);
+    }
+
+    @Override
     protected Widget buildContent(HttpExchange exchange, Map<String, String> params, String currentTheme) {
         // Title Header Block
         Widget titleBlock = Row.of(

@@ -37,26 +37,50 @@ public final class RouteVisibilityGuard {
         boolean showDatabaseSelector,
         boolean showTopNavigationTabs,
         boolean showGlobalActionButtons,
-        boolean showThemeToggle
+        boolean showThemeToggle,
+        boolean topToolbarVisible
     ) {
+        public NavigationRouteConfig(
+            RouteType routeType,
+            String requestPath,
+            boolean showDatabaseSelector,
+            boolean showTopNavigationTabs,
+            boolean showGlobalActionButtons,
+            boolean showThemeToggle
+        ) {
+            this(routeType, requestPath, showDatabaseSelector, showTopNavigationTabs, showGlobalActionButtons, showThemeToggle, true);
+        }
+
         public static NavigationRouteConfig dashboardConfig() {
-            return new NavigationRouteConfig(RouteType.DASHBOARD, "/dashboard", false, false, false, true);
+            return new NavigationRouteConfig(RouteType.DASHBOARD, "/dashboard", false, false, false, true, true);
         }
 
         public static NavigationRouteConfig explorerConfig(String path) {
-            return new NavigationRouteConfig(RouteType.MANAGEMENT_EXPLORER, path, true, true, true, true);
+            return new NavigationRouteConfig(RouteType.MANAGEMENT_EXPLORER, path, true, true, true, true, true);
         }
 
         public static NavigationRouteConfig databasesConfig(String path) {
-            return new NavigationRouteConfig(RouteType.DATABASES, path, true, false, true, true);
+            return new NavigationRouteConfig(RouteType.DATABASES, path, true, false, true, true, true);
         }
 
         public static NavigationRouteConfig securityConfig(String path) {
-            return new NavigationRouteConfig(RouteType.SECURITY, path, false, false, false, true);
+            return new NavigationRouteConfig(RouteType.SECURITY, path, false, false, false, true, true);
+        }
+
+        public static NavigationRouteConfig informationConfig(String path) {
+            return new NavigationRouteConfig(RouteType.INFORMATION, path, false, false, false, true, true);
         }
 
         public static NavigationRouteConfig defaultManagementConfig(String path) {
-            return new NavigationRouteConfig(RouteType.OTHER, path, true, true, true, true);
+            return new NavigationRouteConfig(RouteType.OTHER, path, true, true, true, true, true);
+        }
+
+        public NavigationRouteConfig withoutGlobalActionButtons() {
+            return new NavigationRouteConfig(routeType, requestPath, showDatabaseSelector, showTopNavigationTabs, false, showThemeToggle, topToolbarVisible);
+        }
+
+        public NavigationRouteConfig withTopToolbarVisible(boolean visible) {
+            return new NavigationRouteConfig(routeType, requestPath, showDatabaseSelector, showTopNavigationTabs, showGlobalActionButtons, showThemeToggle, visible);
         }
     }
 
@@ -70,7 +94,8 @@ public final class RouteVisibilityGuard {
             case MANAGEMENT_EXPLORER -> NavigationRouteConfig.explorerConfig(path);
             case DATABASES -> NavigationRouteConfig.databasesConfig(path);
             case SECURITY -> NavigationRouteConfig.securityConfig(path);
-            case LOGIN -> new NavigationRouteConfig(RouteType.LOGIN, path, false, false, false, false);
+            case INFORMATION -> NavigationRouteConfig.informationConfig(path);
+            case LOGIN -> new NavigationRouteConfig(RouteType.LOGIN, path, false, false, false, false, false);
             default -> NavigationRouteConfig.defaultManagementConfig(path);
         };
     }
@@ -87,11 +112,15 @@ public final class RouteVisibilityGuard {
             path = params.get("route");
         }
         if (path == null && defaultTitle != null) {
-            if (defaultTitle.toLowerCase().contains("dashboard")) {
+            String lowerTitle = defaultTitle.toLowerCase();
+            if (lowerTitle.contains("dashboard")) {
                 return NavigationRouteConfig.dashboardConfig();
             }
-            if (defaultTitle.toLowerCase().contains("user") || defaultTitle.toLowerCase().contains("security")) {
+            if (lowerTitle.contains("user") || lowerTitle.contains("security")) {
                 return NavigationRouteConfig.securityConfig("/users");
+            }
+            if (lowerTitle.contains("information") || lowerTitle.contains("información")) {
+                return NavigationRouteConfig.informationConfig("/information");
             }
         }
         return resolveConfig(path != null ? path : "/dashboard");
@@ -120,7 +149,7 @@ public final class RouteVisibilityGuard {
         if (clean.startsWith("/components")) {
             return RouteType.COMPONENTS;
         }
-        if (clean.startsWith("/information")) {
+        if (clean.startsWith("/information") || clean.startsWith("/informations")) {
             return RouteType.INFORMATION;
         }
         if (clean.startsWith("/login")) {

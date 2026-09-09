@@ -101,6 +101,7 @@ public class JettraServerOrchestrator {
         jettraServer.addHandler("/databases", databasesPage);
         jettraServer.addHandler("/engines", enginesPage);
         jettraServer.addHandler("/information", informationPage);
+        jettraServer.addHandler("/informations", informationPage);
         jettraServer.addHandler("/users", usersPage);
         jettraServer.addHandler("/components", componentsPage);
         jettraServer.addHandler("/login", loginPage);
@@ -123,6 +124,7 @@ public class JettraServerOrchestrator {
             jettraGuiServer.addHandler("/api/databases/", databaseRestController);
             jettraGuiServer.addHandler("/engines", enginesPage);
             jettraGuiServer.addHandler("/information", informationPage);
+            jettraGuiServer.addHandler("/informations", informationPage);
             jettraGuiServer.addHandler("/users", usersPage);
             jettraGuiServer.addHandler("/components", componentsPage);
             jettraGuiServer.addHandler("/login", loginPage);
