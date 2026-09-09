@@ -66,6 +66,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
     private final SampleDatabaseService sampleDbService;
     private final RestoreActionHandler restoreHandler;
     private final EditActionHandler editActionHandler;
+    private final io.jettra.server.autentification.repository.JUserRepository userRepo;
 
     public StoreEnginesPage(JettraStorageEngine engine) {
         this.engine = engine;
@@ -74,6 +75,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
         this.sampleDbService = new SampleDatabaseService(engine);
         this.restoreHandler = new RestoreActionHandler(engine);
         this.editActionHandler = new EditActionHandler(engine, hierarchyService);
+        this.userRepo = new io.jettra.server.autentification.repository.JUserRepositoryImpl();
     }
 
     @Override
@@ -654,6 +656,48 @@ public class StoreEnginesPage extends StoreTemplatePage {
         String alertType = "badge-active";
         String queryResultDisplay = "";
         String targetDb = params != null && params.containsKey("target_db") ? params.get("target_db") : getDefaultDbForEngine(selectedEngine);
+
+        // Security Authorization Check: verify user is assigned to targetDb
+        String loggedUser = "root";
+        String loggedRole = "ADMIN";
+        if (exchange != null) {
+            try {
+                String u = getLoggedUser(exchange);
+                if (u != null && !u.isBlank()) loggedUser = u;
+                String r = getLoggedRole(exchange);
+                if (r != null && !r.isBlank()) loggedRole = r;
+            } catch (Exception ignored) {}
+        }
+
+        boolean isAdmin = "admin".equalsIgnoreCase(loggedUser) || "root".equalsIgnoreCase(loggedUser) ||
+                          "ADMIN".equalsIgnoreCase(loggedRole) || "SUPER_USER".equalsIgnoreCase(loggedRole);
+
+        if (!isAdmin && targetDb != null && !targetDb.isBlank()) {
+            boolean authorized = false;
+            try {
+                java.util.List<io.jettra.server.autentification.entity.JUser> allUsers = userRepo.findAll();
+                for (io.jettra.server.autentification.entity.JUser u : allUsers) {
+                    if (u.firstName().equalsIgnoreCase(loggedUser) || (u.email() != null && u.email().equalsIgnoreCase(loggedUser))) {
+                        if (u.isAuthorizedForDatabase(targetDb)) {
+                            authorized = true;
+                            break;
+                        }
+                    }
+                }
+            } catch (Exception ignored) {}
+
+            if (!authorized) {
+                alertMessage = "Access Denied: User '" + loggedUser + "' is not authorized to access or modify database '" + targetDb + "'!";
+                alertType = "badge-raft";
+                if ((exchange != null && "POST".equalsIgnoreCase(exchange.getRequestMethod())) || (params != null && params.containsKey("action"))) {
+                    Widget accessDeniedBanner = Div.of(
+                        Icon.of("fas fa-lock").modifier(new Modifier().style("color:#f43f5e; margin-right:8px; font-size:18px;")),
+                        Span.of(alertMessage).modifier(new Modifier().style("color:#f8fafc; font-weight:600; font-size:14px;"))
+                    ).modifier(new Modifier().style("background:rgba(244,63,94,0.15); border:1px solid rgba(244,63,94,0.3); padding:16px 20px; border-radius:8px; margin-bottom:16px; display:flex; align-items:center;"));
+                    return accessDeniedBanner;
+                }
+            }
+        }
 
         // Handle POST Operations or Direct Actions
         if ((exchange != null && "POST".equalsIgnoreCase(exchange.getRequestMethod())) || (params != null && params.containsKey("action"))) {

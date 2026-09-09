@@ -20,16 +20,19 @@ import io.jettra.server.autentification.repository.JCredentialRepository;
 import io.jettra.server.autentification.repository.JCredentialRepositoryImpl;
 import io.jettra.server.autentification.repository.JUserRepository;
 import io.jettra.server.autentification.repository.JUserRepositoryImpl;
+import io.jettra.server.autentification.repository.JettraSecurityDBInitializer;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Map;
 import java.util.List;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
 import java.util.HashSet;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.Optional;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
@@ -143,12 +146,35 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                         Set<JRole> roles = new HashSet<>();
                         roles.add(role);
 
-                        String dbScope = targetDb != null && !targetDb.isBlank() ? targetDb : "*";
-                        JUser newUser = new JUser(newId, username, dbScope, email != null ? email : username + "@jettra.io", "+123456", true, roles);
-                        userRepo.save(newUser);
+                        String dbToAssign = targetDb != null && !targetDb.isBlank() ? targetDb : "*";
+                        Optional<JUser> existingOpt = userRepo.findAll().stream()
+                            .filter(u -> u.firstName().equalsIgnoreCase(username))
+                            .findFirst();
 
-                        JCredential cred = new JCredential(UUID.randomUUID(), newUser, username, password != null && !password.isBlank() ? password : "password123", true, Instant.now());
+                        JUser userToSave;
+                        String dbScope;
+                        if (existingOpt.isPresent()) {
+                            JUser eu = existingOpt.get();
+                            Set<String> mergedDbs = new TreeSet<>(eu.assignedDatabases());
+                            mergedDbs.add(dbToAssign);
+                            dbScope = String.join(", ", mergedDbs);
+                            userToSave = new JUser(eu.id(), eu.firstName(), dbScope, eu.email(), eu.phone(), eu.active(), eu.jRoles(), mergedDbs);
+                        } else {
+                            Set<String> dbs = new TreeSet<>();
+                            dbs.add(dbToAssign);
+                            dbScope = dbToAssign;
+                            userToSave = new JUser(newId, username, dbScope, email != null ? email : username + "@jettra.io", "+123456", true, roles, dbs);
+                        }
+                        userRepo.save(userToSave);
+
+                        String rawPassword = password != null && !password.isBlank() ? password : "password123";
+                        String hashedPassword = JettraSecurityDBInitializer.hashPassword(rawPassword);
+                        JCredential cred = new JCredential(UUID.randomUUID(), userToSave, username, hashedPassword, true, Instant.now());
                         credRepo.save(cred);
+
+                        if (authManager != null) {
+                            authManager.register(username, rawPassword);
+                        }
 
                         alertMessage = "User '" + username + "' provisioned with role [" + roleName + "] for database scope '" + dbScope + "'!";
                         alertType = "badge-active";
@@ -364,7 +390,7 @@ public class StoreDatabasesPage extends StoreTemplatePage {
 
                 // Users scoped to this db
                 List<JUser> dbUsers = allUsers.stream()
-                    .filter(u -> dbName.equalsIgnoreCase(u.lastName()) || "*".equals(u.lastName()))
+                    .filter(u -> u.isAuthorizedForDatabase(dbName))
                     .toList();
 
                 boolean isSystemDb = "system_db".equalsIgnoreCase(dbName);
@@ -700,7 +726,12 @@ public class StoreDatabasesPage extends StoreTemplatePage {
             return true;
         }
 
-        // 2. Department or specific database roles matching database name
+        // 2. Direct SecurityPrincipal assignedDatabases validation
+        if (principal.isAuthorizedForDatabase(dbName)) {
+            return true;
+        }
+
+        // 3. Department or specific database roles matching database name
         if (principal.department() != null && !principal.department().isBlank()) {
             if ("*".equals(principal.department()) || principal.department().equalsIgnoreCase(dbName)) {
                 return true;
@@ -712,12 +743,15 @@ public class StoreDatabasesPage extends StoreTemplatePage {
             return true;
         }
 
-        // 3. User entity database scoping and role validation
+        // 4. User entity database scoping and role validation
         if (allUsers != null) {
             for (JUser u : allUsers) {
                 boolean match = u.firstName().equalsIgnoreCase(principal.username()) ||
                                 (u.email() != null && u.email().equalsIgnoreCase(principal.username()));
                 if (match) {
+                    if (u.isAuthorizedForDatabase(dbName)) {
+                        return true;
+                    }
                     String dbScope = u.lastName();
                     boolean scopeMatch = "*".equals(dbScope) || (dbScope != null && dbScope.equalsIgnoreCase(dbName));
                     if (scopeMatch) {

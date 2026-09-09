@@ -64,4 +64,23 @@ public class AuthManager {
     public boolean validateToken(String token) {
         return activeTokens.containsKey(token);
     }
+
+    /**
+     * Registers a new user with password into active authentication map.
+     */
+    public void register(String username, String password) {
+        if (username != null && password != null) {
+            userPasswords.put(username, password);
+        }
+    }
+
+    /**
+     * Unregisters a user from active authentication map.
+     */
+    public void unregister(String username) {
+        if (username != null) {
+            userPasswords.remove(username);
+            requiresPasswordChange.remove(username);
+        }
+    }
 }

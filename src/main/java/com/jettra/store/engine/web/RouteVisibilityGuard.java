@@ -51,6 +51,10 @@ public final class RouteVisibilityGuard {
             return new NavigationRouteConfig(RouteType.DATABASES, path, true, false, true, true);
         }
 
+        public static NavigationRouteConfig securityConfig(String path) {
+            return new NavigationRouteConfig(RouteType.SECURITY, path, false, false, false, true);
+        }
+
         public static NavigationRouteConfig defaultManagementConfig(String path) {
             return new NavigationRouteConfig(RouteType.OTHER, path, true, true, true, true);
         }
@@ -65,6 +69,7 @@ public final class RouteVisibilityGuard {
             case DASHBOARD -> NavigationRouteConfig.dashboardConfig();
             case MANAGEMENT_EXPLORER -> NavigationRouteConfig.explorerConfig(path);
             case DATABASES -> NavigationRouteConfig.databasesConfig(path);
+            case SECURITY -> NavigationRouteConfig.securityConfig(path);
             case LOGIN -> new NavigationRouteConfig(RouteType.LOGIN, path, false, false, false, false);
             default -> NavigationRouteConfig.defaultManagementConfig(path);
         };
@@ -84,6 +89,9 @@ public final class RouteVisibilityGuard {
         if (path == null && defaultTitle != null) {
             if (defaultTitle.toLowerCase().contains("dashboard")) {
                 return NavigationRouteConfig.dashboardConfig();
+            }
+            if (defaultTitle.toLowerCase().contains("user") || defaultTitle.toLowerCase().contains("security")) {
+                return NavigationRouteConfig.securityConfig("/users");
             }
         }
         return resolveConfig(path != null ? path : "/dashboard");

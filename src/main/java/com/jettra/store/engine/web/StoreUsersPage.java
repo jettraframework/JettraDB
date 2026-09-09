@@ -16,6 +16,7 @@ import io.jettra.server.autentification.repository.JCredentialRepository;
 import io.jettra.server.autentification.repository.JCredentialRepositoryImpl;
 import io.jettra.server.autentification.repository.JUserRepository;
 import io.jettra.server.autentification.repository.JUserRepositoryImpl;
+import io.jettra.server.autentification.repository.JettraSecurityDBInitializer;
 
 import java.time.Instant;
 import java.util.Map;
@@ -25,10 +26,11 @@ import java.util.List;
 import java.util.UUID;
 import java.util.HashSet;
 import java.util.ArrayList;
+import java.util.Optional;
 
 /**
  * Visual User and RBAC Role Management Console for JettraStoreEngine.
- * Built with pure JettraFlux components.
+ * Built with pure JettraFlux components and encapsulated native confirmation dialogs.
  */
 @PageWidgetAllow(role = { jcf.AppRole.ADMIN })
 public class StoreUsersPage extends StoreTemplatePage {
@@ -51,6 +53,11 @@ public class StoreUsersPage extends StoreTemplatePage {
     }
 
     @Override
+    protected RouteVisibilityGuard.NavigationRouteConfig getRouteConfig(HttpExchange exchange, Map<String, String> params) {
+        return RouteVisibilityGuard.NavigationRouteConfig.securityConfig(JettraServer.resolvePath("/users"));
+    }
+
+    @Override
     protected Widget buildContent(HttpExchange exchange, Map<String, String> params, String currentTheme) {
         String alertMessage = "";
         String alertType = "badge-active";
@@ -64,6 +71,8 @@ public class StoreUsersPage extends StoreTemplatePage {
                     String email = params.get("email");
                     String password = params.get("password");
                     String targetDb = params.get("target_db");
+                    String targetDbs = params.get("target_dbs");
+                    String assignedDbsParam = params.get("assigned_databases");
                     String roleName = params.get("role");
 
                     if (username != null && !username.isBlank()) {
@@ -72,12 +81,33 @@ public class StoreUsersPage extends StoreTemplatePage {
                         Set<JRole> roles = new HashSet<>();
                         roles.add(role);
 
-                        String dbScope = targetDb != null && !targetDb.isBlank() ? targetDb : "*";
-                        JUser newUser = new JUser(newId, username, dbScope, email != null ? email : username + "@jettra.io", "+123456", true, roles);
+                        String rawDbParam = targetDbs != null && !targetDbs.isBlank() ? targetDbs
+                                          : (targetDb != null && !targetDb.isBlank() ? targetDb
+                                          : (assignedDbsParam != null && !assignedDbsParam.isBlank() ? assignedDbsParam : "*"));
+
+                        Set<String> assignedDatabases = new TreeSet<>();
+                        for (String part : rawDbParam.split(",")) {
+                            String trimmed = part.trim();
+                            if (!trimmed.isEmpty()) {
+                                assignedDatabases.add(trimmed);
+                            }
+                        }
+                        if (assignedDatabases.isEmpty()) {
+                            assignedDatabases.add("*");
+                        }
+
+                        String dbScope = String.join(", ", assignedDatabases);
+                        JUser newUser = new JUser(newId, username, dbScope, email != null ? email : username + "@jettra.io", "+123456", true, roles, assignedDatabases);
                         userRepo.save(newUser);
 
-                        JCredential cred = new JCredential(UUID.randomUUID(), newUser, username, password != null && !password.isBlank() ? password : "password123", true, Instant.now());
+                        String rawPassword = password != null && !password.isBlank() ? password : "password123";
+                        String hashedPassword = JettraSecurityDBInitializer.hashPassword(rawPassword);
+                        JCredential cred = new JCredential(UUID.randomUUID(), newUser, username, hashedPassword, true, Instant.now());
                         credRepo.save(cred);
+
+                        if (authManager != null) {
+                            authManager.register(username, rawPassword);
+                        }
 
                         alertMessage = "User '" + username + "' provisioned with role [" + roleName + "] for database scope '" + dbScope + "'!";
                         alertType = "badge-active";
@@ -85,7 +115,21 @@ public class StoreUsersPage extends StoreTemplatePage {
                 } else if ("delete_user".equalsIgnoreCase(action)) {
                     String userId = params.get("user_id");
                     if (userId != null && !userId.isBlank()) {
-                        userRepo.delete(UUID.fromString(userId));
+                        UUID uId = UUID.fromString(userId);
+                        Optional<JUser> userOpt = userRepo.findById(uId);
+                        if (userOpt.isPresent()) {
+                            String uName = userOpt.get().firstName();
+                            if (authManager != null) {
+                                authManager.unregister(uName);
+                            }
+                        }
+                        List<JCredential> allCreds = credRepo.findAll();
+                        for (JCredential c : allCreds) {
+                            if (c.jUser() != null && uId.equals(c.jUser().id())) {
+                                credRepo.delete(c.id());
+                            }
+                        }
+                        userRepo.delete(uId);
                         alertMessage = "User account revoked and access removed.";
                         alertType = "badge-raft";
                     }
@@ -149,13 +193,13 @@ public class StoreUsersPage extends StoreTemplatePage {
 
         // Load users from JettraSecurityDB
         List<JUser> allUsers = userRepo.findAll();
-        List<JUser> users = "*".equals(filterDb) ? allUsers : allUsers.stream().filter(u -> filterDb.equalsIgnoreCase(u.lastName()) || "*".equals(u.lastName())).toList();
+        List<JUser> users = "*".equals(filterDb) ? allUsers : allUsers.stream().filter(u -> u.isAuthorizedForDatabase(filterDb)).toList();
 
         // Build Users Table
         List<Widget> tableHeaders = List.of(
             Text.of("Username"),
             Text.of("Email"),
-            Text.of("Database Scope"),
+            Text.of("Assigned Databases"),
             Text.of("Assigned Role"),
             Text.of("Account Status"),
             Text.of("Actions")
@@ -170,7 +214,6 @@ public class StoreUsersPage extends StoreTemplatePage {
             ));
         } else {
             for (JUser u : users) {
-                String dbScope = u.lastName() != null && !u.lastName().isBlank() ? u.lastName() : "* (ALL)";
                 List<Widget> roleBadges = new ArrayList<>();
                 if (u.jRoles() != null && !u.jRoles().isEmpty()) {
                     for (JRole r : u.jRoles()) {
@@ -191,17 +234,16 @@ public class StoreUsersPage extends StoreTemplatePage {
                     Span.of(u.firstName()).modifier(new Modifier().style("font-weight:bold;"))
                 );
                 Widget emailCell = RawHtml.of("<code style='color:#38bdf8;'>" + (u.email() != null ? u.email() : "-") + "</code>");
-                Widget scopeCell = Span.of(
-                    Icon.of("fas fa-database").modifier(new Modifier().style("margin-right:4px;")),
-                    Text.of(" " + dbScope)
-                ).modifier(new Modifier().cssClass("store-badge badge-engine"));
+                Widget scopeCell = BadgeList.of(u.assignedDatabases())
+                    .defaultSeverity("info")
+                    .wildcardSeverity("active");
                 Widget rolesCell = Div.of(roleBadges.toArray(new Widget[0]));
                 Widget statusCell = u.active()
                     ? Span.of("ACTIVE").modifier(new Modifier().cssClass("store-badge badge-active"))
                     : Span.of("DISABLED").modifier(new Modifier().cssClass("store-badge").style("background:rgba(239,68,68,0.2); color:#f87171;"));
 
                 Button revokeBtn = Button.of(Icon.of("fas fa-trash"), Text.of(" Revoke"));
-                revokeBtn.attribute("onclick", "deleteUser('" + u.id() + "')");
+                revokeBtn.attribute("onclick", "confirmRevokeUser('" + u.id() + "', '" + u.firstName() + "')");
                 revokeBtn.modifier(new Modifier().cssClass("btn-action btn-danger").style("padding:4px 8px; font-size:11px;"));
 
                 tableRows.add(List.of(userCell, emailCell, scopeCell, rolesCell, statusCell, revokeBtn));
@@ -241,14 +283,14 @@ public class StoreUsersPage extends StoreTemplatePage {
             Div.of(datatable).modifier(new Modifier().cssClass("table-responsive"))
         ).modifier(new Modifier().cssClass("store-card").style("margin-bottom: 24px;"));
 
-        // Build Database options for user creation
-        List<String> userDbOptions = new ArrayList<>();
-        userDbOptions.add("*");
-        userDbOptions.addAll(discoveredDbs);
-
-        Dropdown userDbDropdown = Dropdown.of(userDbOptions).selected("*").placeholder(null);
-        userDbDropdown.attribute("name", "target_db");
-        userDbDropdown.modifier(new Modifier().style("width:100%; padding:8px 10px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; box-sizing:border-box;"));
+        // Build MultiSelect Database options for user creation
+        MultiSelect userDbMultiSelect = MultiSelect.of("userTargetDbs", "target_dbs")
+            .label("Target Databases Access")
+            .selectAllOption(true, "* (All Databases)")
+            .options(discoveredDbs)
+            .selectedValues("*")
+            .placeholder("Select one or more databases...")
+            .quickActions(true);
 
         Dropdown roleDropdown = Dropdown.of("DB_ADMIN", "READ_WRITE", "READ_ONLY", "MANAGER").selected("READ_WRITE").placeholder(null);
         roleDropdown.attribute("name", "role");
@@ -258,9 +300,9 @@ public class StoreUsersPage extends StoreTemplatePage {
         Widget createUserCard = Div.of(
             Header.of(3,
                 Icon.of("fas fa-user-plus").modifier(new Modifier().style("color:#4ade80; margin-right:8px;")),
-                Text.of("Provision New User for Database")
+                Text.of("Provision New User for Databases")
             ).modifier(new Modifier().style("margin: 0 0 12px 0; font-size: 16px; font-weight: 600;")),
-            Paragraph.of(Text.of("Assign user permissions scoped directly to a specific database namespace or globally across all 9 engines."))
+            Paragraph.of(Text.of("Assign user permissions scoped directly to one or multiple databases or globally across all 9 engines."))
                 .modifier(new Modifier().style("font-size: 13px; color: #94a3b8; margin-bottom: 16px;")),
             Form.of(
                 Hidden.of("action", "create_user"),
@@ -280,30 +322,17 @@ public class StoreUsersPage extends StoreTemplatePage {
                         RawHtml.of("<input class='form-input' type='password' name='password' placeholder='••••••••' required style='width:100%; padding:8px 10px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; box-sizing:border-box;'/>")
                     ),
                     Div.of(
-                        Label.of("Database Scope").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600; display:block; margin-bottom:4px;")),
-                        userDbDropdown
-                    ),
-                    Div.of(
                         Label.of("Assigned Role").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600; display:block; margin-bottom:4px;")),
                         roleDropdown
                     )
                 ).modifier(new Modifier().style("display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:12px; margin-bottom:14px;")),
+                Div.of(
+                    userDbMultiSelect
+                ).modifier(new Modifier().style("margin-bottom:16px;")),
                 Button.of(Icon.of("fas fa-user-plus"), Text.of(" Provision User"))
                     .attribute("type", "submit")
                     .modifier(new Modifier().cssClass("btn-action btn-primary"))
-            ).action(JettraServer.resolvePath("/users")).method("POST"),
-            Form.of(
-                Hidden.of("action", "delete_user"),
-                Hidden.of("user_id").id("delUserId")
-            ).action(JettraServer.resolvePath("/users")).method("POST").id("deleteUserForm").modifier(new Modifier().style("display:none;")),
-            RawScript.of(
-                "function deleteUser(uid) {\n" +
-                "  if (confirm('Revoke access for this user account?')) {\n" +
-                "    document.getElementById('delUserId').value = uid;\n" +
-                "    document.getElementById('deleteUserForm').submit();\n" +
-                "  }\n" +
-                "}"
-            )
+            ).action(JettraServer.resolvePath("/users")).method("POST")
         ).modifier(new Modifier().cssClass("store-card").style("margin-bottom: 24px;"));
 
         // Roles & Policy Grid
@@ -360,12 +389,37 @@ public class StoreUsersPage extends StoreTemplatePage {
         Widget bottomGrid = Div.of(rolesCard, tokenPolicyCard)
             .modifier(new Modifier().style("display: grid; grid-template-columns: 1fr 1fr; gap: 20px;"));
 
+        // Native JettraFlux Confirmation Dialog for User Revocation
+        Widget revokeUserConfirmModal = JettraConfirmDialog.of("revokeUserConfirmDialog")
+            .title("Confirm User Access Revocation")
+            .warningMessage("Are you sure you want to revoke this user account? The user credentials and assigned RBAC permissions will be permanently removed.")
+            .targetItemLabel("Target User Account:")
+            .targetItemIcon("fas fa-user-slash")
+            .confirmText("Revoke Access")
+            .confirmIcon("fas fa-user-slash")
+            .cancelText("Cancel")
+            .formAction(JettraServer.resolvePath("/users"))
+            .actionName("delete_user")
+            .targetParamName("user_id");
+
+        Widget scriptsWidget = RawHtml.of(
+            "<script>\n" +
+            "  function confirmRevokeUser(userId, username) {\n" +
+            "    if (window.JettraConfirmDialog) {\n" +
+            "      window.JettraConfirmDialog.open('revokeUserConfirmDialog', userId, username);\n" +
+            "    }\n" +
+            "  }\n" +
+            "</script>\n"
+        );
+
         return Column.of(
             titleBlock,
             alertWidget,
             usersCard,
             createUserCard,
-            bottomGrid
+            bottomGrid,
+            revokeUserConfirmModal,
+            scriptsWidget
         );
     }
 }
