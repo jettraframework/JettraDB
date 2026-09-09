@@ -244,12 +244,45 @@ public class StoreDatabasesPage extends StoreTemplatePage {
         int totalObjects = databases.values().stream().mapToInt(DatabaseMetadata::getTotalObjects).sum();
         int totalRecords = databases.values().stream().mapToInt(d -> d.getEngineCounts().getOrDefault("RECORDS", 0)).sum();
 
-        Widget statGrid = Div.of(
-            createStatCard("fas fa-database", "#3b82f6", "Active Databases", totalDatabases + " Databases", "LSM / B-Tree Storage", "badge-active"),
-            createStatCard("fas fa-cubes", "#a855f7", "Multi-Model Components", totalComponents + " Active Engine Models", "9 Supported Engines", "badge-raft"),
-            createStatCard("fas fa-id-card", "#f43f5e", "Java 25 Records", totalRecords + " Typed Records", "JEP 450 Compact Headers", "badge-records"),
-            createStatCard("fas fa-layer-group", "#10b981", "Total Stored Entities", totalObjects + " Total Objects", "Raft State Synchronized", "badge-active")
-        ).modifier(new Modifier().cssClass("store-stat-grid"));
+        // Encapsulated Engine & Cluster Metrics Panel using JettraFlux
+        Widget metricsPanel = Panel.builder()
+            .header(PanelHeader.builder()
+                .title("Engine & Cluster Operational Metrics")
+                .subtitle("Real-time distributed telemetry across authorized database namespaces and storage engines")
+                .icon("fas fa-chart-line", "#38bdf8")
+                .badge(Badge.active("ACTIVE"))
+                .build())
+            .body(PanelBody.grid(4,
+                MetricCard.builder()
+                    .title("Active Databases")
+                    .value(totalDatabases + " Databases")
+                    .subtext("LSM / B-Tree Storage")
+                    .icon("fas fa-database", "#3b82f6")
+                    .badge(Badge.active("ACTIVE"))
+                    .build(),
+                MetricCard.builder()
+                    .title("Multi-Model Components")
+                    .value(totalComponents + " Active Engine Models")
+                    .subtext("9 Supported Engines")
+                    .icon("fas fa-cubes", "#a855f7")
+                    .badge(Badge.info("ACTIVE"))
+                    .build(),
+                MetricCard.builder()
+                    .title("Java 25 Records")
+                    .value(totalRecords + " Typed Records")
+                    .subtext("JEP 450 Compact Headers")
+                    .icon("fas fa-id-card", "#f43f5e")
+                    .badge(Badge.warning("ACTIVE"))
+                    .build(),
+                MetricCard.builder()
+                    .title("Total Stored Entities")
+                    .value(totalObjects + " Total Objects")
+                    .subtext("Raft State Synchronized")
+                    .icon("fas fa-layer-group", "#10b981")
+                    .badge(Badge.success("ACTIVE"))
+                    .build()
+            ))
+            .build();
 
         // Compute Multi-Model Components aggregation across authorized databases
         Map<String, Integer> globalEngineCounts = new LinkedHashMap<>();
@@ -643,7 +676,7 @@ public class StoreDatabasesPage extends StoreTemplatePage {
         return Column.of(
             titleBlock,
             alertWidget,
-            statGrid,
+            metricsPanel,
             unifiedPanel,
             createDbModal,
             assignUserModal,
@@ -841,21 +874,6 @@ public class StoreDatabasesPage extends StoreTemplatePage {
             case "GEOSPATIAL" -> "2D GIS Spatial";
             default -> "Binary BLOBs";
         };
-    }
-
-    private Widget createStatCard(String icon, String color, String title, String value, String sub, String badgeClass) {
-        return Div.of(
-            Row.of(
-                Div.of(Icon.of(icon).modifier(new Modifier().style("color:" + color + "; font-size:18px;")))
-                    .modifier(new Modifier().style("width:36px; height:36px; border-radius:8px; background:" + color + "20; display:flex; align-items:center; justify-content:center;")),
-                Span.of(title).modifier(new Modifier().style("font-size:13px; color:#94a3b8; font-weight:500;"))
-            ).modifier(new Modifier().style("align-items:center; gap:10px; margin-bottom:10px;")),
-            Div.of(Text.of(value)).modifier(new Modifier().style("font-size:22px; font-weight:700; color:#f8fafc; margin-bottom:4px;")),
-            Row.of(
-                Span.of(sub).modifier(new Modifier().style("font-size:12px; color:#cbd5e1;")),
-                Span.of("ACTIVE").modifier(new Modifier().cssClass("store-badge " + badgeClass).style("font-size:10px;"))
-            ).modifier(new Modifier().style("justify-content:space-between; align-items:center; margin-top:8px;"))
-        ).modifier(new Modifier().cssClass("store-card"));
     }
 
     public static class DatabaseMetadata {

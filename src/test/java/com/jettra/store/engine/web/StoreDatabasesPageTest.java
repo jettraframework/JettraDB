@@ -293,6 +293,41 @@ public class StoreDatabasesPageTest {
                 "Must reject drop attempt on system_db");
     }
 
+    @JettraTest
+    @DisplayName("9. Dashboard operational metrics are encapsulated inside JettraFlux Panel, PanelHeader, PanelBody, and MetricCards")
+    void testDashboardMetricsPanelEncapsulation() throws IOException {
+        TestHttpExchange exchange = new TestHttpExchange("GET", "/databases");
+        exchange.getRequestHeaders().set("Cookie", "username=adminUser; role=ADMIN");
+
+        databasesPage.handle(exchange);
+
+        assertEquals(200, exchange.getResponseCode());
+        String body = exchange.getResponseBodyAsString();
+
+        // Must render PanelHeader title and subtitle
+        assertTrue(body.contains("Engine & Cluster Operational Metrics"), "Must render PanelHeader title");
+        assertTrue(body.contains("Real-time distributed telemetry"), "Must render PanelHeader subtitle");
+
+        // Must render Panel container classes
+        assertTrue(body.contains("jettra-panel"), "Must include jettra-panel class");
+        assertTrue(body.contains("jettra-panel-header"), "Must include jettra-panel-header class");
+        assertTrue(body.contains("jettra-panel-body"), "Must include jettra-panel-body class");
+
+        // Must render encapsulated MetricCards
+        assertTrue(body.contains("jettra-metric-card"), "Must contain JettraFlux MetricCard elements");
+        assertTrue(body.contains("Active Databases"), "Must render Active Databases metric card");
+        assertTrue(body.contains("Multi-Model Components"), "Must render Multi-Model Components metric card");
+        assertTrue(body.contains("Java 25 Records"), "Must render Java 25 Records metric card");
+        assertTrue(body.contains("Total Stored Entities"), "Must render Total Stored Entities metric card");
+
+        // Must render badges and subtext
+        assertTrue(body.contains("LSM / B-Tree Storage"), "Must render storage engine subtext");
+        assertTrue(body.contains("9 Supported Engines"), "Must render engine models subtext");
+        assertTrue(body.contains("JEP 450 Compact Headers"), "Must render records subtext");
+        assertTrue(body.contains("Raft State Synchronized"), "Must render raft state subtext");
+        assertTrue(body.contains("espresso-badge"), "Must render JettraFlux Badge component");
+    }
+
     /**
      * In-memory test implementation of HttpExchange.
      */
