@@ -407,18 +407,20 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
             Link.of(JettraServer.resolvePath("/engines?tab=schema&engine=" + selectedEngine + "&target_db=" + targetDb),
                 Icon.of("fas fa-table")
             ).modifier(new Modifier().cssClass("rail-item" + ("database".equals(activeModule) && !"query".equals(currentTab) ? " active" : "")).attribute("title", "DATABASE")),
-             Link.of(JettraServer.resolvePath("/engines?tab=query&target_db=" + targetDb),
-                Icon.of("fas fa-terminal")
-            ).modifier(new Modifier().cssClass("rail-item" + ("query".equals(currentTab) ? " active" : "")).attribute("title", "Query")),
-            Link.of(JettraServer.resolvePath("/engines?engine=TIMESERIES&target_db=" + targetDb),
-                Icon.of("fas fa-chart-line")
-            ).modifier(new Modifier().cssClass("rail-item" + ("TIMESERIES".equalsIgnoreCase(selectedEngine) ? " active" : "")).attribute("title", "MESERIES")),
+//             Link.of(JettraServer.resolvePath("/engines?tab=query&target_db=" + targetDb),
+//                Icon.of("fas fa-terminal")
+//            ).modifier(new Modifier().cssClass("rail-item" + ("query".equals(currentTab) ? " active" : "")).attribute("title", "Query")),
+//            Link.of(JettraServer.resolvePath("/engines?engine=TIMESERIES&target_db=" + targetDb),
+//                Icon.of("fas fa-chart-line")
+//            ).modifier(new Modifier().cssClass("rail-item" + ("TIMESERIES".equalsIgnoreCase(selectedEngine) ? " active" : "")).attribute("title", "MESERIES")),
             Link.of(JettraServer.resolvePath("/components"),
                 Icon.of("fas fa-server")
             ).modifier(new Modifier().cssClass("rail-item").attribute("title", "SERVER")),
-            Link.of(JettraServer.resolvePath("/engines?tab=metrics&target_db=" + targetDb),
-                Icon.of("fas fa-tachometer-alt")
-            ).modifier(new Modifier().cssClass("rail-item" + ("metrics".equals(currentTab) ? " active" : "")).attribute("title", "PROFILE")),
+            
+//            Link.of(JettraServer.resolvePath("/engines?tab=metrics&target_db=" + targetDb),
+//                Icon.of("fas fa-tachometer-alt")
+//            ).modifier(new Modifier().cssClass("rail-item" + ("metrics".equals(currentTab) ? " active" : "")).attribute("title", "PROFILE")),
+//            
             Link.of(JettraServer.resolvePath("/users"), 
                 Icon.of("fas fa-solid fa-users")
             ).modifier(new Modifier().cssClass("rail-item").attribute("title", "SECURITY")),
