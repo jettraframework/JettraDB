@@ -74,6 +74,7 @@ public class StoreDatabasesPageTest {
 
     @AfterEach
     void tearDown() throws IOException {
+        SecurityDbTestCleanup.purgeNonAdminTestUsers(userRepo, null);
         SecurityContextHolder.clear();
         if (engine != null) {
             engine.stop();

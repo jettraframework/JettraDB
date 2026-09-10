@@ -1,5 +1,6 @@
 package com.jettra.store.engine.web.validation;
 
+import com.jettra.store.engine.users.SystemUserRepository;
 import io.jettra.server.autentification.repository.JUserRepository;
 import java.util.ArrayList;
 import java.util.List;
@@ -13,8 +14,14 @@ import java.util.concurrent.Executors;
 public class UserValidationService {
 
     private final List<UserValidationRule> rules = new ArrayList<>();
+    private final UserValidationChain chain;
+
+    public UserValidationService(SystemUserRepository systemUserRepository) {
+        this.chain = UserValidationChain.defaultChain(systemUserRepository);
+    }
 
     public UserValidationService(JUserRepository userRepository) {
+        this.chain = null;
         this.rules.add(new UsernameRequiredRule());
         this.rules.add(new UsernameFormatRule());
         this.rules.add(new UsernameUniquenessRule(userRepository));
@@ -28,6 +35,9 @@ public class UserValidationService {
     }
 
     public ValidationResult validate(UserValidationContext context) {
+        if (chain != null) {
+            return chain.validate(context);
+        }
         for (UserValidationRule rule : rules) {
             ValidationResult result = rule.validate(context);
             if (result.isInvalid()) {

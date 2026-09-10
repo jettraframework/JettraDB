@@ -83,6 +83,7 @@ public class StoreMultiDatabaseUserSecurityTest {
 
     @AfterEach
     void tearDown() throws IOException {
+        SecurityDbTestCleanup.purgeNonAdminTestUsers(userRepo, credRepo);
         SecurityContextHolder.clear();
         if (engine != null) {
             engine.stop();

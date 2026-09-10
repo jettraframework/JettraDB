@@ -36,6 +36,11 @@ import io.jettra.flux.security.SecurityContextHolder;
 import io.jettra.server.autentification.repository.UserUpdateCommand;
 import com.jettra.store.engine.exception.ImmutableAccountException;
 
+import com.jettra.store.engine.users.SystemUser;
+import com.jettra.store.engine.users.SystemUserRepository;
+import com.jettra.store.engine.users.SystemUserRepositoryImpl;
+import java.util.concurrent.locks.ReentrantLock;
+
 /**
  * Visual User and RBAC Role Management Console for JettraStoreEngine.
  * Built with pure JettraFlux components, integrated user editing modal, and encapsulated native confirmation dialogs.
@@ -45,20 +50,33 @@ public class StoreUsersPage extends StoreTemplatePage {
 
     private final JettraStorageEngine engine;
     private final AuthManager authManager;
+    private final SystemUserRepository systemUserRepo;
     private final JUserRepository userRepo;
     private final JCredentialRepository credRepo;
     private final UserValidationService validationService;
+    private final UserValidationChain validationChain;
+    private final ReentrantLock userMutationLock = new ReentrantLock(true);
 
     public StoreUsersPage(JettraStorageEngine engine, AuthManager authManager) {
-        this(engine, authManager, new JUserRepositoryImpl(), new JCredentialRepositoryImpl(), new UserValidationService(new JUserRepositoryImpl()));
+        this(engine, authManager, (authManager != null && authManager.getSystemUserRepository() != null) ? authManager.getSystemUserRepository() : new SystemUserRepositoryImpl(), new JUserRepositoryImpl(), new JCredentialRepositoryImpl(), null);
+    }
+
+    public StoreUsersPage(JettraStorageEngine engine, AuthManager authManager, SystemUserRepository systemUserRepo) {
+        this(engine, authManager, systemUserRepo, null, null, null);
     }
 
     public StoreUsersPage(JettraStorageEngine engine, AuthManager authManager, JUserRepository userRepo, JCredentialRepository credRepo, UserValidationService validationService) {
+        this(engine, authManager, (userRepo != null) ? new com.jettra.store.engine.users.JUserRepositoryAdapter(userRepo) : new SystemUserRepositoryImpl(), userRepo, credRepo, validationService);
+    }
+
+    public StoreUsersPage(JettraStorageEngine engine, AuthManager authManager, SystemUserRepository systemUserRepo, JUserRepository userRepo, JCredentialRepository credRepo, UserValidationService validationService) {
         this.engine = engine;
         this.authManager = authManager;
+        this.systemUserRepo = systemUserRepo != null ? systemUserRepo : ((userRepo != null) ? new com.jettra.store.engine.users.JUserRepositoryAdapter(userRepo) : new SystemUserRepositoryImpl());
         this.userRepo = userRepo;
         this.credRepo = credRepo;
-        this.validationService = validationService != null ? validationService : new UserValidationService(userRepo);
+        this.validationChain = UserValidationChain.defaultChain(this.systemUserRepo);
+        this.validationService = validationService != null ? validationService : new UserValidationService(this.systemUserRepo);
     }
 
     protected String resolveCurrentUser(HttpExchange exchange) {
@@ -77,8 +95,25 @@ public class StoreUsersPage extends StoreTemplatePage {
         return "";
     }
 
+    private void ensureAdminUserPresent() {
+        if (systemUserRepo != null) {
+            try {
+                if (!systemUserRepo.existsByUsername("admin")) {
+                    systemUserRepo.save(SystemUser.create(
+                        "admin",
+                        SystemUserRepositoryImpl.hashPassword("admin"),
+                        "admin@jettra.io",
+                        "DB_ADMIN",
+                        Set.of("*")
+                    ));
+                }
+            } catch (Exception ignored) {}
+        }
+    }
+
     @Override
     public void handle(HttpExchange exchange) throws IOException {
+        ensureAdminUserPresent();
         String query = exchange.getRequestURI().getQuery();
         Map<String, String> queryParams = parseQueryParams(query);
         if ("get_user".equalsIgnoreCase(queryParams.get("action")) || queryParams.containsKey("fetch_user")) {
@@ -92,7 +127,103 @@ public class StoreUsersPage extends StoreTemplatePage {
             handleCheckUsernameJson(exchange, targetUsername, excludeId);
             return;
         }
+
+        // Driver / REST direct JSON invocation
+        if ("POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            String accept = exchange.getRequestHeaders() != null ? exchange.getRequestHeaders().getFirst("Accept") : null;
+            String contentType = exchange.getRequestHeaders() != null ? exchange.getRequestHeaders().getFirst("Content-Type") : null;
+            boolean prefersJson = (accept != null && accept.contains("application/json"))
+                               || (contentType != null && contentType.contains("application/json"));
+            if (prefersJson) {
+                Map<String, String> bodyParams = parseRequestBody(exchange);
+                String action = bodyParams.get("action");
+                if ("create_user".equalsIgnoreCase(action) || "register".equalsIgnoreCase(action)) {
+                    handleDriverCreateUserJson(exchange, bodyParams);
+                    return;
+                }
+            }
+        }
+
         super.handle(exchange);
+    }
+
+    private void handleDriverCreateUserJson(HttpExchange exchange, Map<String, String> params) throws IOException {
+        userMutationLock.lock();
+        try {
+            String username = params.get("username");
+            String email = params.get("email");
+            String password = params.get("password");
+            String roleName = params.get("role");
+            String targetDbs = params.get("target_dbs");
+            String targetDb = params.get("target_db");
+
+            UserValidationContext validationCtx = UserValidationContext.forCreate(username, email, password);
+            ValidationResult validation = validationService.validate(validationCtx);
+            if (validation.isValid() && userRepo != null && username != null && !username.isBlank()) {
+                Optional<JUser> legacyExisting = userRepo.findByUsername(username.trim());
+                if (legacyExisting.isPresent()) {
+                    validation = ValidationResult.invalid("username", "USERNAME_DUPLICATE", "El nombre de usuario '" + username.trim() + "' ya está registrado.");
+                }
+            }
+
+            if (validation instanceof ValidationResult.Invalid invalid) {
+                String errJson = String.format("{\"status\":\"ERROR\",\"valid\":false,\"code\":\"%s\",\"message\":\"%s\"}",
+                    escapeJson(invalid.errorCode()), escapeJson(invalid.message()));
+                sendJsonResponse(exchange, 400, errJson);
+                return;
+            }
+
+            UUID newId = UUID.randomUUID();
+            String cleanUsername = username.trim();
+            String cleanEmail = email != null && !email.isBlank() ? email.trim() : cleanUsername + "@jettra.io";
+            String rawPassword = password != null && !password.isBlank() ? password : "password123";
+            String hashedPassword = SystemUserRepositoryImpl.hashPassword(rawPassword);
+            String effectiveRole = roleName != null && !roleName.isBlank() ? roleName : "READ_WRITE";
+
+            Set<String> assignedDatabases = new TreeSet<>();
+            String rawDbParam = targetDbs != null && !targetDbs.isBlank() ? targetDbs
+                              : (targetDb != null && !targetDb.isBlank() ? targetDb : "*");
+            for (String part : rawDbParam.split(",")) {
+                String trimmed = part.trim();
+                if (!trimmed.isEmpty()) assignedDatabases.add(trimmed);
+            }
+            if (assignedDatabases.isEmpty()) assignedDatabases.add("*");
+
+            SystemUser systemUser = new SystemUser(
+                newId,
+                cleanUsername,
+                hashedPassword,
+                cleanEmail,
+                effectiveRole,
+                true,
+                assignedDatabases,
+                Instant.now(),
+                Instant.now()
+            );
+            systemUserRepo.save(systemUser);
+
+            if (userRepo != null) {
+                JRole role = new JRole(UUID.randomUUID(), effectiveRole, true);
+                JUser newUser = new JUser(newId, cleanUsername, String.join(", ", assignedDatabases), cleanEmail, "+123456", true, Set.of(role), assignedDatabases);
+                userRepo.save(newUser);
+            }
+
+            if (credRepo != null) {
+                JUser refUser = new JUser(newId, cleanUsername, String.join(", ", assignedDatabases), cleanEmail, "+123456", true, Set.of(), assignedDatabases);
+                JCredential cred = new JCredential(UUID.randomUUID(), refUser, cleanUsername, hashedPassword, true, Instant.now());
+                credRepo.save(cred);
+            }
+
+            if (authManager != null) {
+                authManager.register(cleanUsername, rawPassword);
+            }
+
+            String successJson = String.format("{\"status\":\"SUCCESS\",\"valid\":true,\"userId\":\"%s\",\"username\":\"%s\",\"email\":\"%s\",\"role\":\"%s\",\"message\":\"User created successfully\"}",
+                newId, escapeJson(cleanUsername), escapeJson(cleanEmail), escapeJson(effectiveRole));
+            sendJsonResponse(exchange, 201, successJson);
+        } finally {
+            userMutationLock.unlock();
+        }
     }
 
     private void handleCheckUsernameJson(HttpExchange exchange, String username, String excludeUserId) throws IOException {
@@ -105,6 +236,12 @@ public class StoreUsersPage extends StoreTemplatePage {
         UserValidationContext ctx = UserValidationContext.forCheck(username, excludeId);
         // Execute asynchronously using Java 25 Virtual Threads via validationService
         ValidationResult res = validationService.validateAsync(ctx).join();
+        if (res.isValid() && userRepo != null && username != null && !username.isBlank()) {
+            Optional<JUser> leg = userRepo.findByUsername(username.trim());
+            if (leg.isPresent() && (excludeId == null || !excludeId.equals(leg.get().id()))) {
+                res = ValidationResult.invalid("username", "USERNAME_DUPLICATE", "El nombre de usuario '" + username.trim() + "' ya está registrado. Por favor elija un nombre diferente.");
+            }
+        }
 
         switch (res) {
             case ValidationResult.Valid v -> {
@@ -114,11 +251,9 @@ public class StoreUsersPage extends StoreTemplatePage {
                 sendJsonResponse(exchange, 200, json);
             }
             case ValidationResult.Invalid inv -> {
-                String json = String.format("{\"status\":\"%s\",\"valid\":false,\"errorCode\":\"%s\",\"field\":\"%s\",\"username\":\"%s\",\"message\":\"%s\"}",
-                    inv.isDuplicate() ? "DUPLICATE" : "INVALID",
-                    escapeJson(inv.errorCode()),
-                    escapeJson(inv.field()),
+                String json = String.format("{\"status\":\"DUPLICATE\",\"valid\":false,\"username\":\"%s\",\"code\":\"%s\",\"message\":\"%s\"}",
                     escapeJson(username != null ? username.trim() : ""),
+                    escapeJson(inv.errorCode()),
                     escapeJson(inv.message()));
                 sendJsonResponse(exchange, 200, json);
             }
@@ -137,24 +272,48 @@ public class StoreUsersPage extends StoreTemplatePage {
                 return;
             }
         }
-        Optional<JUser> userOpt = userRepo.findByUsername(username.trim());
-        if (userOpt.isEmpty()) {
+        Optional<SystemUser> suOpt = (systemUserRepo != null) ? systemUserRepo.findByUsername(username.trim()) : Optional.empty();
+        Optional<JUser> userOpt = (userRepo != null) ? userRepo.findByUsername(username.trim()) : Optional.empty();
+
+        if (suOpt.isEmpty() && userOpt.isEmpty()) {
             sendJsonResponse(exchange, 404, "{\"status\":\"ERROR\",\"message\":\"User not found\"}");
             return;
         }
-        JUser u = userOpt.get();
-        String roleName = (u.jRoles() != null && !u.jRoles().isEmpty()) ? u.jRoles().iterator().next().name() : "READ_WRITE";
-        String dbs = (u.assignedDatabases() != null && !u.assignedDatabases().isEmpty())
-            ? String.join(",", u.assignedDatabases())
-            : (u.lastName() != null ? u.lastName() : "*");
+
+        UUID userId;
+        String uName;
+        String uEmail;
+        String roleName;
+        boolean active;
+        String dbs;
+
+        if (suOpt.isPresent()) {
+            SystemUser su = suOpt.get();
+            userId = su.id();
+            uName = su.username();
+            uEmail = su.email();
+            roleName = su.role();
+            active = su.active();
+            dbs = String.join(",", su.assignedDatabases());
+        } else {
+            JUser u = userOpt.get();
+            userId = u.id();
+            uName = u.firstName();
+            uEmail = u.email() != null ? u.email() : "";
+            roleName = (u.jRoles() != null && !u.jRoles().isEmpty()) ? u.jRoles().iterator().next().name() : "READ_WRITE";
+            active = u.active() != null ? u.active() : true;
+            dbs = (u.assignedDatabases() != null && !u.assignedDatabases().isEmpty())
+                ? String.join(",", u.assignedDatabases())
+                : (u.lastName() != null ? u.lastName() : "*");
+        }
 
         String json = String.format(
             "{\"status\":\"SUCCESS\",\"userId\":\"%s\",\"username\":\"%s\",\"email\":\"%s\",\"role\":\"%s\",\"active\":%b,\"databases\":\"%s\"}",
-            u.id(),
-            escapeJson(u.firstName()),
-            escapeJson(u.email() != null ? u.email() : ""),
+            userId,
+            escapeJson(uName),
+            escapeJson(uEmail),
             escapeJson(roleName),
-            u.active() != null ? u.active() : true,
+            active,
             escapeJson(dbs)
         );
         sendJsonResponse(exchange, 200, json);
@@ -195,6 +354,7 @@ public class StoreUsersPage extends StoreTemplatePage {
 
         // Handle POST Operations
         if (exchange != null && "POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            userMutationLock.lock();
             try {
                 String action = params != null ? params.get("action") : null;
                 if ("create_user".equalsIgnoreCase(action)) {
@@ -208,6 +368,12 @@ public class StoreUsersPage extends StoreTemplatePage {
 
                     UserValidationContext validationCtx = UserValidationContext.forCreate(username, email, password);
                     ValidationResult validation = validationService.validate(validationCtx);
+                    if (validation.isValid() && userRepo != null && username != null && !username.isBlank()) {
+                        Optional<JUser> legacyExisting = userRepo.findByUsername(username.trim());
+                        if (legacyExisting.isPresent()) {
+                            validation = ValidationResult.invalid("username", "USERNAME_DUPLICATE", "El nombre de usuario '" + username.trim() + "' ya está registrado. Por favor elija un nombre diferente.");
+                        }
+                    }
 
                     if (validation instanceof ValidationResult.Invalid invalid) {
                         alertMessage = invalid.message();
@@ -237,43 +403,82 @@ public class StoreUsersPage extends StoreTemplatePage {
                         }
 
                         String dbScope = String.join(", ", assignedDatabases);
-                        JUser newUser = new JUser(newId, username.trim(), dbScope, email != null ? email.trim() : username.trim() + "@jettra.io", "+123456", true, roles, assignedDatabases);
-                        userRepo.save(newUser);
-
+                        String cleanUsername = username.trim();
+                        String cleanEmail = email != null && !email.isBlank() ? email.trim() : cleanUsername + "@jettra.io";
                         String rawPassword = password != null && !password.isBlank() ? password : "password123";
-                        String hashedPassword = JettraSecurityDBInitializer.hashPassword(rawPassword);
-                        JCredential cred = new JCredential(UUID.randomUUID(), newUser, username.trim(), hashedPassword, true, Instant.now());
-                        credRepo.save(cred);
+                        String hashedPassword = SystemUserRepositoryImpl.hashPassword(rawPassword);
 
-                        if (authManager != null) {
-                            authManager.register(username.trim(), rawPassword);
+                        // 1. Persist strictly in system_db via SystemUserRepository
+                        SystemUser systemUser = new SystemUser(
+                            newId,
+                            cleanUsername,
+                            hashedPassword,
+                            cleanEmail,
+                            roleName != null ? roleName : "READ_WRITE",
+                            true,
+                            assignedDatabases,
+                            Instant.now(),
+                            Instant.now()
+                        );
+                        systemUserRepo.save(systemUser);
+
+                        // 2. Synchronize legacy repositories and AuthManager
+                        JUser newUser = new JUser(newId, cleanUsername, dbScope, cleanEmail, "+123456", true, roles, assignedDatabases);
+                        if (userRepo != null) {
+                            userRepo.save(newUser);
                         }
 
-                        alertMessage = "User '" + username.trim() + "' provisioned with role [" + roleName + "] for database scope '" + dbScope + "'!";
+                        JCredential cred = new JCredential(UUID.randomUUID(), newUser, cleanUsername, hashedPassword, true, Instant.now());
+                        if (credRepo != null) {
+                            credRepo.save(cred);
+                        }
+
+                        if (authManager != null) {
+                            authManager.register(cleanUsername, rawPassword);
+                        }
+
+                        alertMessage = "User '" + cleanUsername + "' provisioned with role [" + roleName + "] for database scope '" + dbScope + "'!";
                         alertType = "badge-active";
-                        usernameValidationState = ValidationState.valid("Usuario '" + username.trim() + "' provisionado exitosamente.");
+                        usernameValidationState = ValidationState.valid("Usuario '" + cleanUsername + "' provisionado exitosamente.");
                     }
                 } else if ("delete_user".equalsIgnoreCase(action)) {
                     String userId = params.get("user_id");
                     if (userId != null && !userId.isBlank()) {
                         UUID uId = UUID.fromString(userId);
-                        Optional<JUser> userOpt = userRepo.findById(uId);
-                        if (userOpt.isPresent()) {
-                            String uName = userOpt.get().firstName();
-                            if ("admin".equalsIgnoreCase(uName)) {
-                                throw new ImmutableAccountException("El usuario admin no puede ser revocado.");
+                        String uName = "";
+                        Optional<SystemUser> suOpt = systemUserRepo.findById(uId);
+                        if (suOpt.isPresent()) {
+                            uName = suOpt.get().username();
+                        }
+                        if (uName.isBlank() && userRepo != null) {
+                            Optional<JUser> userOpt = userRepo.findById(uId);
+                            if (userOpt.isPresent()) {
+                                uName = userOpt.get().firstName();
                             }
+                        }
+                        if ("admin".equalsIgnoreCase(uName)) {
+                            throw new ImmutableAccountException("El usuario admin no puede ser revocado.");
+                        }
+
+                        systemUserRepo.delete(uId);
+                        if (!uName.isBlank()) {
+                            systemUserRepo.deleteByUsername(uName);
                             if (authManager != null) {
                                 authManager.unregister(uName);
                             }
                         }
-                        List<JCredential> allCreds = credRepo.findAll();
-                        for (JCredential c : allCreds) {
-                            if (c.jUser() != null && uId.equals(c.jUser().id())) {
-                                credRepo.delete(c.id());
+
+                        if (credRepo != null) {
+                            List<JCredential> allCreds = credRepo.findAll();
+                            for (JCredential c : allCreds) {
+                                if (c.jUser() != null && uId.equals(c.jUser().id())) {
+                                    credRepo.delete(c.id());
+                                }
                             }
                         }
-                        userRepo.delete(uId);
+                        if (userRepo != null) {
+                            userRepo.delete(uId);
+                        }
                         alertMessage = "User account revoked and access removed.";
                         alertType = "badge-raft";
                     }
@@ -291,9 +496,14 @@ public class StoreUsersPage extends StoreTemplatePage {
                     if ((username == null || username.isBlank()) && userIdStr != null && !userIdStr.isBlank()) {
                         try {
                             UUID uId = UUID.fromString(userIdStr.trim());
-                            Optional<JUser> byId = userRepo.findById(uId);
-                            if (byId.isPresent()) {
-                                username = byId.get().firstName();
+                            Optional<SystemUser> suById = systemUserRepo.findById(uId);
+                            if (suById.isPresent()) {
+                                username = suById.get().username();
+                            } else if (userRepo != null) {
+                                Optional<JUser> byId = userRepo.findById(uId);
+                                if (byId.isPresent()) {
+                                    username = byId.get().firstName();
+                                }
                             }
                         } catch (Exception ignored) {}
                     }
@@ -302,22 +512,23 @@ public class StoreUsersPage extends StoreTemplatePage {
                         alertMessage = "Update failed: Username is required.";
                         alertType = "badge-raft";
                     } else {
-                        Optional<JUser> userOpt = userRepo.findByUsername(username.trim());
-                        if (userOpt.isEmpty()) {
+                        String cleanUser = username.trim();
+                        Optional<SystemUser> suOpt = systemUserRepo.findByUsername(cleanUser);
+                        Optional<JUser> userOpt = (userRepo != null) ? userRepo.findByUsername(cleanUser) : Optional.empty();
+
+                        if (suOpt.isEmpty() && userOpt.isEmpty()) {
                             alertMessage = "Update failed: User '" + username + "' not found.";
                             alertType = "badge-raft";
                         } else {
-                            JUser existingUser = userOpt.get();
-
                             String loggedUser = resolveCurrentUser(exchange);
 
                             // Strict immutability guard: Only active authenticated user 'admin' can edit the admin record
-                            if ("admin".equalsIgnoreCase(existingUser.firstName()) && !"admin".equalsIgnoreCase(loggedUser)) {
+                            if ("admin".equalsIgnoreCase(cleanUser) && !"admin".equalsIgnoreCase(loggedUser)) {
                                 throw new ImmutableAccountException("Operación denegada: Solo el usuario admin activo puede modificar el perfil de admin.");
                             }
 
                             // Self-lockout check: an admin editing their own account cannot remove their admin role or deactivate their account
-                            boolean isSelf = loggedUser != null && loggedUser.equalsIgnoreCase(username.trim());
+                            boolean isSelf = loggedUser != null && loggedUser.equalsIgnoreCase(cleanUser);
                             boolean isDemotingSelf = isSelf && roleName != null && !"DB_ADMIN".equalsIgnoreCase(roleName) && !"ADMIN".equalsIgnoreCase(roleName) && !"SUPERADMIN".equalsIgnoreCase(roleName);
                             boolean isDeactivatingSelf = isSelf && "false".equalsIgnoreCase(activeStr);
 
@@ -342,30 +553,47 @@ public class StoreUsersPage extends StoreTemplatePage {
                                             newAssignedDbs.add(trimmed);
                                         }
                                     }
-                                } else if (existingUser.assignedDatabases() != null) {
-                                    newAssignedDbs.addAll(existingUser.assignedDatabases());
+                                } else if (suOpt.isPresent()) {
+                                    newAssignedDbs.addAll(suOpt.get().assignedDatabases());
+                                } else if (userOpt.isPresent() && userOpt.get().assignedDatabases() != null) {
+                                    newAssignedDbs.addAll(userOpt.get().assignedDatabases());
                                 }
                                 if (newAssignedDbs.isEmpty()) {
                                     newAssignedDbs.add("*");
                                 }
 
-                                Boolean active = (activeStr != null && !activeStr.isBlank()) ? Boolean.parseBoolean(activeStr) : existingUser.active();
-                                String updatedEmail = (email != null && !email.isBlank()) ? email.trim() : existingUser.email();
+                                Boolean active = (activeStr != null && !activeStr.isBlank())
+                                    ? Boolean.parseBoolean(activeStr)
+                                    : (suOpt.isPresent() ? suOpt.get().active() : (userOpt.map(JUser::active).orElse(true)));
+                                String updatedEmail = (email != null && !email.isBlank())
+                                    ? email.trim()
+                                    : (suOpt.isPresent() ? suOpt.get().email() : (userOpt.map(JUser::email).orElse(cleanUser + "@jettra.io")));
 
-                                UserUpdateCommand updateCmd = new UserUpdateCommand(
-                                    updatedEmail,
-                                    existingUser.phone(),
-                                    active,
-                                    newRoles,
-                                    newAssignedDbs,
-                                    newPassword
-                                );
+                                // Update system_db
+                                if (suOpt.isPresent()) {
+                                    SystemUser updatedSu = suOpt.get().withUpdatedProfile(updatedEmail, effectiveRole, active, newAssignedDbs);
+                                    if (newPassword != null && !newPassword.isBlank()) {
+                                        updatedSu = updatedSu.withPasswordHash(SystemUserRepositoryImpl.hashPassword(newPassword.trim()));
+                                    }
+                                    systemUserRepo.save(updatedSu);
+                                }
 
-                                Optional<JUser> updatedOpt = userRepo.updateUser(username.trim(), updateCmd);
-                                if (updatedOpt.isPresent()) {
-                                    JUser updatedUser = updatedOpt.get();
+                                JUser updatedUser = null;
+                                if (userRepo != null && userOpt.isPresent()) {
+                                    UserUpdateCommand updateCmd = new UserUpdateCommand(
+                                        updatedEmail,
+                                        userOpt.get().phone(),
+                                        active,
+                                        newRoles,
+                                        newAssignedDbs,
+                                        newPassword
+                                    );
+                                    Optional<JUser> updatedOpt = userRepo.updateUser(cleanUser, updateCmd);
+                                    updatedUser = updatedOpt.orElse(userOpt.get());
+                                }
 
-                                    // Synchronize credentials: preserve existing password hash unless explicit new password is provided
+                                if (credRepo != null && userOpt.isPresent()) {
+                                    JUser existingUser = userOpt.get();
                                     List<JCredential> allCreds = credRepo.findAll();
                                     for (JCredential c : allCreds) {
                                         if (c.jUser() != null && existingUser.id().equals(c.jUser().id())) {
@@ -383,17 +611,14 @@ public class StoreUsersPage extends StoreTemplatePage {
                                             credRepo.save(updatedCred);
                                         }
                                     }
-
-                                    if (authManager != null && newPassword != null && !newPassword.isBlank()) {
-                                        authManager.register(username.trim(), newPassword.trim());
-                                    }
-
-                                    alertMessage = "User '" + username + "' updated successfully! Role: [" + effectiveRole + "], Scoped DBs: [" + String.join(", ", newAssignedDbs) + "]";
-                                    alertType = "badge-active";
-                                } else {
-                                    alertMessage = "Update failed in persistence layer.";
-                                    alertType = "badge-raft";
                                 }
+
+                                if (authManager != null && newPassword != null && !newPassword.isBlank()) {
+                                    authManager.register(cleanUser, newPassword.trim());
+                                }
+
+                                alertMessage = "User '" + cleanUser + "' updated successfully! Role: [" + effectiveRole + "], Scoped DBs: [" + String.join(", ", newAssignedDbs) + "]";
+                                alertType = "badge-active";
                             }
                         }
                     }
@@ -404,6 +629,8 @@ public class StoreUsersPage extends StoreTemplatePage {
             } catch (Exception e) {
                 alertMessage = "Operation failed: " + e.getMessage();
                 alertType = "badge-raft";
+            } finally {
+                userMutationLock.unlock();
             }
         }
 
@@ -459,8 +686,20 @@ public class StoreUsersPage extends StoreTemplatePage {
         // Filter DB
         String filterDb = params != null && params.containsKey("filter_db") ? params.get("filter_db") : "*";
 
-        // Load users from JettraSecurityDB
-        List<JUser> allUsers = userRepo.findAll();
+        // Load users from system_db / JUserRepository
+        List<JUser> allUsers = new ArrayList<>(userRepo != null ? userRepo.findAll() : List.of());
+        if (systemUserRepo != null) {
+            Set<String> existingNames = new HashSet<>();
+            for (JUser u : allUsers) {
+                existingNames.add(u.firstName().toLowerCase());
+            }
+            for (SystemUser su : systemUserRepo.findAll()) {
+                if (!existingNames.contains(su.username().toLowerCase())) {
+                    Set<JRole> roles = Set.of(new JRole(UUID.randomUUID(), su.role(), true));
+                    allUsers.add(new JUser(su.id(), su.username(), String.join(", ", su.assignedDatabases()), su.email(), "+123456", su.active(), roles, su.assignedDatabases()));
+                }
+            }
+        }
         List<JUser> users = "*".equals(filterDb) ? allUsers : allUsers.stream().filter(u -> u.isAuthorizedForDatabase(filterDb)).toList();
 
         // Build Users Table
@@ -501,7 +740,8 @@ public class StoreUsersPage extends StoreTemplatePage {
                     Icon.of("fas fa-user").modifier(new Modifier().style("color:#38bdf8; margin-right:6px;")),
                     Span.of(u.firstName()).modifier(new Modifier().style("font-weight:bold;"))
                 );
-                Widget emailCell = RawHtml.of("<code style='color:#38bdf8;'>" + (u.email() != null ? u.email() : "-") + "</code>");
+                Widget emailCell = Span.of(u.email() != null ? u.email() : "-")
+                    .modifier(new Modifier().style("color:#38bdf8; font-family:monospace; font-size:12px;"));
                 Widget scopeCell = BadgeList.of(u.assignedDatabases())
                     .defaultSeverity("info")
                     .wildcardSeverity("active");
@@ -599,20 +839,32 @@ public class StoreUsersPage extends StoreTemplatePage {
         roleDropdown.attribute("name", "role");
         roleDropdown.modifier(new Modifier().style("width:100%; padding:8px 10px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; box-sizing:border-box;"));
 
-        // Create User Form Card
-        TextField usernameField = TextField.of("username", "e.g. carlos_mendez");
-        usernameField.id("input_username");
-        usernameField.value(enteredUsername);
-        usernameField.withValidationState(usernameValidationState);
-        usernameField.modifier(new Modifier().style("width:100%; padding:8px 10px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; box-sizing:border-box;"));
+        // Create User Form Card (Pure JettraFlux TextInput.builder() & ValidationFeedback)
+        TextInput usernameField = TextInput.builder()
+            .id("input_username")
+            .name("username")
+            .placeholder("e.g. carlos_mendez")
+            .value(enteredUsername)
+            .validationState(usernameValidationState)
+            .required(true)
+            .modifier(new Modifier().style("width:100%; padding:8px 10px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; box-sizing:border-box;"))
+            .build();
 
-        ValidationMessage usernameFeedback = ValidationMessage.forInput("username")
+        ValidationFeedback usernameFeedback = ValidationFeedback.forInput("username")
             .state(usernameValidationState);
         usernameFeedback.id("username-feedback");
 
-        TextField emailField = TextField.of("email", "carlos@company.com");
-        emailField.value(enteredEmail);
-        emailField.modifier(new Modifier().style("width:100%; padding:8px 10px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; box-sizing:border-box;"));
+        TextInput emailField = TextInput.builder()
+            .id("input_email")
+            .name("email")
+            .placeholder("carlos@company.com")
+            .value(enteredEmail)
+            .modifier(new Modifier().style("width:100%; padding:8px 10px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; box-sizing:border-box;"))
+            .build();
+
+        PasswordField passwordField = PasswordField.of("password", "••••••••");
+        passwordField.attribute("required", "required");
+        passwordField.modifier(new Modifier().style("width:100%; padding:8px 10px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; box-sizing:border-box;"));
 
         Widget createUserCard = Div.of(
             Header.of(3,
@@ -635,7 +887,7 @@ public class StoreUsersPage extends StoreTemplatePage {
                     ),
                     Div.of(
                         Label.of("Password").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600; display:block; margin-bottom:4px;")),
-                        RawHtml.of("<input class='form-input' type='password' name='password' placeholder='••••••••' required style='width:100%; padding:8px 10px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; box-sizing:border-box;'/>")
+                        passwordField
                     ),
                     Div.of(
                         Label.of("Assigned Role").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600; display:block; margin-bottom:4px;")),
@@ -685,19 +937,19 @@ public class StoreUsersPage extends StoreTemplatePage {
             Div.of(
                 Div.of(
                     Span.of("JWT Expiration:"),
-                    RawHtml.of("<code style='color:#f59e0b;'>3600000 ms (1 Hour)</code>")
+                    Span.of("3600000 ms (1 Hour)").modifier(new Modifier().style("color:#f59e0b; font-family:monospace; font-size:12px;"))
                 ).modifier(new Modifier().style("padding:8px 0; border-bottom:1px solid rgba(255,255,255,0.06); display:flex; justify-content:space-between;")),
                 Div.of(
                     Span.of("Algorithm:"),
-                    RawHtml.of("<code style='color:#38bdf8;'>HMAC-SHA256 (JettraJWT)</code>")
+                    Span.of("HMAC-SHA256 (JettraJWT)").modifier(new Modifier().style("color:#38bdf8; font-family:monospace; font-size:12px;"))
                 ).modifier(new Modifier().style("padding:8px 0; border-bottom:1px solid rgba(255,255,255,0.06); display:flex; justify-content:space-between;")),
                 Div.of(
                     Span.of("Credential Storage:"),
-                    RawHtml.of("<code style='color:#34d399;'>JettraSecurityDB SQLite / Memory</code>")
+                    Span.of("system_db (/data/system_db/)").modifier(new Modifier().style("color:#34d399; font-family:monospace; font-size:12px;"))
                 ).modifier(new Modifier().style("padding:8px 0; border-bottom:1px solid rgba(255,255,255,0.06); display:flex; justify-content:space-between;")),
                 Div.of(
                     Span.of("Password Hashing:"),
-                    RawHtml.of("<code style='color:#a78bfa;'>SHA-256 with Salt</code>")
+                    Span.of("SHA-256 with Salt").modifier(new Modifier().style("color:#a78bfa; font-family:monospace; font-size:12px;"))
                 ).modifier(new Modifier().style("padding:8px 0; display:flex; justify-content:space-between;"))
             ).modifier(new Modifier().style("font-size:13px; color:#cbd5e1;"))
         ).modifier(new Modifier().cssClass("store-card"));

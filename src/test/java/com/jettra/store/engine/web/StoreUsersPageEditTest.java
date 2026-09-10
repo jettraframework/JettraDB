@@ -86,6 +86,7 @@ public class StoreUsersPageEditTest {
 
     @AfterEach
     void tearDown() {
+        SecurityDbTestCleanup.purgeNonAdminTestUsers(userRepo, credRepo);
         SecurityContextHolder.clear();
         if (engine != null) {
             engine.stop();
