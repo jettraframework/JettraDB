@@ -40,6 +40,7 @@ import java.util.TreeSet;
 import java.util.UUID;
 import java.util.HashSet;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Optional;
 import java.util.function.Predicate;
@@ -127,6 +128,66 @@ public class StoreDatabasesPage extends StoreTemplatePage {
             }
         }
         return updatedUser;
+    }
+
+    public synchronized int syncDatabaseUsers(String targetDb, Set<String> selectedUsernames) {
+        if (targetDb == null || targetDb.isBlank()) {
+            throw new IllegalArgumentException("Target database name cannot be null or blank.");
+        }
+        String cleanDb = targetDb.trim();
+        List<SystemUser> allUsers = systemUserRepo.findAll();
+        int updatedCount = 0;
+
+        Set<String> cleanSelected = (selectedUsernames != null)
+            ? selectedUsernames.stream().map(String::trim).collect(Collectors.toSet())
+            : Collections.emptySet();
+
+        for (SystemUser user : allUsers) {
+            boolean shouldBeAuthorized = cleanSelected.contains(user.username());
+            Set<String> currentDbs = new TreeSet<>(user.assignedDatabases());
+            boolean hasWildcard = currentDbs.contains("*");
+            boolean hasTargetDb = currentDbs.contains(cleanDb);
+            boolean isAdmin = "admin".equalsIgnoreCase(user.username());
+
+            boolean modified = false;
+            if (shouldBeAuthorized) {
+                if (!hasTargetDb && !hasWildcard) {
+                    currentDbs.add(cleanDb);
+                    modified = true;
+                }
+            } else {
+                // Uncheck / Deselect: revoke targetDb access unless user is protected (admin or cluster wildcard '*')
+                if (!isAdmin && !hasWildcard && hasTargetDb) {
+                    currentDbs.remove(cleanDb);
+                    modified = true;
+                }
+            }
+
+            if (modified) {
+                SystemUser updated = user.withUpdatedProfile(user.email(), user.role(), user.active(), currentDbs);
+                systemUserRepo.save(updated);
+
+                if (userRepo != null) {
+                    Optional<JUser> legacyOpt = userRepo.findByUsername(user.username());
+                    if (legacyOpt.isPresent()) {
+                        JUser legacy = legacyOpt.get();
+                        JUser updatedLegacy = new JUser(
+                            legacy.id(),
+                            legacy.firstName(),
+                            String.join(", ", currentDbs),
+                            legacy.email(),
+                            legacy.phone(),
+                            legacy.active(),
+                            legacy.jRoles(),
+                            currentDbs
+                        );
+                        userRepo.save(updatedLegacy);
+                    }
+                }
+                updatedCount++;
+            }
+        }
+        return updatedCount;
     }
 
     public SystemUser createAndAssignNewUser(String targetDb, String username, String email, String password, String roleName) {
@@ -290,26 +351,14 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                     String targetDb = params.get("target_db");
                     String roleName = params.get("role");
                     String existingUsername = params.get("existing_username");
+                    String assignedUsersParam = params.get("assigned_users");
                     String newUsername = params.get("username");
                     String email = params.get("email");
                     String password = params.get("password");
 
-                    boolean isExistingMode = "existing".equalsIgnoreCase(assignMode)
-                        || (existingUsername != null && !existingUsername.isBlank() && !"new".equalsIgnoreCase(assignMode));
+                    boolean isNewMode = "new".equalsIgnoreCase(assignMode);
 
-                    if (isExistingMode) {
-                        String userToAssign = (existingUsername != null && !existingUsername.isBlank())
-                            ? existingUsername.trim()
-                            : (newUsername != null ? newUsername.trim() : "");
-                        if (userToAssign.isBlank()) {
-                            alertMessage = "Debe seleccionar un usuario existente para asignar a la base de datos.";
-                            alertType = "badge-raft";
-                        } else {
-                            SystemUser updated = assignExistingUser(targetDb, userToAssign, roleName);
-                            alertMessage = "Usuario existente '" + userToAssign + "' asignado exitosamente a la base de datos '" + targetDb + "' con rol [" + updated.role() + "]!";
-                            alertType = "badge-active";
-                        }
-                    } else {
+                    if (isNewMode) {
                         String cleanUsername = newUsername != null ? newUsername.trim() : "";
                         if (cleanUsername.isBlank()) {
                             alertMessage = "El nombre de usuario es obligatorio.";
@@ -318,6 +367,34 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                             SystemUser created = createAndAssignNewUser(targetDb, cleanUsername, email, password, roleName);
                             alertMessage = "Nuevo usuario '" + created.username() + "' registrado con unicidad garantizada y asignado a la base de datos '" + targetDb + "' con rol [" + created.role() + "]!";
                             alertType = "badge-active";
+                        }
+                    } else {
+                        // Multi-selection synchronization or direct single-user assignment
+                        if (assignedUsersParam != null) {
+                            Set<String> selectedUsernames = new TreeSet<>();
+                            if (!assignedUsersParam.isBlank()) {
+                                for (String u : assignedUsersParam.split(",")) {
+                                    if (!u.isBlank()) selectedUsernames.add(u.trim());
+                                }
+                            }
+                            if (existingUsername != null && !existingUsername.isBlank()) {
+                                selectedUsernames.add(existingUsername.trim());
+                            }
+                            int synced = syncDatabaseUsers(targetDb, selectedUsernames);
+                            alertMessage = "Sincronización de usuarios completada para la base de datos '" + targetDb + "': " + selectedUsernames.size() + " usuarios autorizados (" + synced + " cambios aplicados).";
+                            alertType = "badge-active";
+                        } else {
+                            String userToAssign = (existingUsername != null && !existingUsername.isBlank())
+                                ? existingUsername.trim()
+                                : (newUsername != null ? newUsername.trim() : "");
+                            if (userToAssign.isBlank()) {
+                                alertMessage = "Debe seleccionar un usuario existente para asignar a la base de datos.";
+                                alertType = "badge-raft";
+                            } else {
+                                SystemUser updated = assignExistingUser(targetDb, userToAssign, roleName);
+                                alertMessage = "Usuario existente '" + userToAssign + "' asignado exitosamente a la base de datos '" + targetDb + "' con rol [" + updated.role() + "]!";
+                                alertType = "badge-active";
+                            }
                         }
                     }
                 }
@@ -754,22 +831,33 @@ public class StoreDatabasesPage extends StoreTemplatePage {
         Widget modeTabsContainer = Div.of(modeTabs)
             .modifier(new Modifier().style("margin-bottom:18px; display:flex; justify-content:center;"));
 
-        // SelectFilter for Existing Users
-        SelectFilter existingUserFilter = SelectFilter.of("assignExistingUserFilter", "existing_username")
-            .placeholder("Search existing users by username, role, or email...")
-            .emptyMessage("No system users found matching search criteria");
+        // UserSelectionTable for mass selection and identity authorization synchronization
+        UserSelectionTable userSelectionTable = UserSelectionTable.of("assignUserSelectionTable", "assigned_users")
+            .searchPlaceholder("Filter system users by username, role, or email...")
+            .emptyMessage("No system users registered or matching search criteria")
+            .maxHeight("230px")
+            .quickActions(true);
 
         for (SystemUser su : systemUsers) {
+            boolean isAdmin = "admin".equalsIgnoreCase(su.username());
             String roleBadge = su.role() != null ? su.role() : "READ_WRITE";
             String desc = su.email() != null ? su.email() : su.username() + "@jettra.io";
-            existingUserFilter.addOption(su.username(), su.username(), desc, roleBadge);
+
+            ToggleSelectionItem item = ToggleSelectionItem.of(su.username(), su.username())
+                .id("user_toggle_" + su.username().replaceAll("[^a-zA-Z0-9_]", "_"))
+                .subtitle(desc)
+                .roleBadge(roleBadge)
+                .assignedDatabases(su.assignedDatabases())
+                .disabled(isAdmin);
+
+            userSelectionTable.addItem(item);
         }
 
         Widget existingSection = Div.of(
             Div.of(
-                Label.of("Select Registered System User:").modifier(new Modifier().style("display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;")),
-                existingUserFilter,
-                Paragraph.of(Text.of("Users queried directly from system_db. Selecting a user grants scoped access to the target database."))
+                Label.of("Registered System Users:").modifier(new Modifier().style("display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;")),
+                userSelectionTable,
+                Paragraph.of(Text.of("Select or deselect users to dynamically grant or revoke database authorization. Admin maintains cluster-wide access."))
                     .modifier(new Modifier().style("font-size:11.5px; color:#64748b; margin:6px 0 0 0;"))
             ).modifier(new Modifier().style("margin-bottom:16px;"))
         ).id("assignUserExistingSection");
@@ -850,7 +938,7 @@ public class StoreDatabasesPage extends StoreTemplatePage {
 
         Widget assignUserModal = Dialog.of(assignUserHeader, assignUserSubtitle, assignUserForm)
             .id("assignUserModal")
-            .modifier(new Modifier().cssClass("store-card").style("width:540px; max-width:92%; background:#1e293b; border:1px solid rgba(56,189,248,0.3); box-shadow:0 20px 50px rgba(0,0,0,0.7); border-radius:14px; padding:26px; margin:auto;"));
+            .modifier(new Modifier().cssClass("store-card").style("width:620px; max-width:94%; background:#1e293b; border:1px solid rgba(56,189,248,0.3); box-shadow:0 20px 50px rgba(0,0,0,0.7); border-radius:14px; padding:26px; margin:auto;"));
 
         // Modal 3: Rename Database
         Widget renameDbHeader = Row.of(
@@ -902,6 +990,9 @@ public class StoreDatabasesPage extends StoreTemplatePage {
             "    if (dbInp) dbInp.value = db;\n" +
             "    var dbLabel = document.getElementById('assignUserDbLabel');\n" +
             "    if (dbLabel) dbLabel.innerText = db;\n" +
+            "    if (window.UserSelectionTable) {\n" +
+            "      window.UserSelectionTable.syncForDatabase('assignUserSelectionTable', db);\n" +
+            "    }\n" +
             "    if (window.switchAssignUserMode) window.switchAssignUserMode('existing');\n" +
             "    openModal('assignUserModal');\n" +
             "  }\n" +

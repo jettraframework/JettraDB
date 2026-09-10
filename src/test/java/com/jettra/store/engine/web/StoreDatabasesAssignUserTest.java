@@ -274,11 +274,15 @@ public class StoreDatabasesAssignUserTest {
         assertTrue(html.contains("data-tab-id=\"new\""), "Must have tab for new user");
         assertTrue(html.contains("switchAssignUserMode"), "Must wire tab switcher script");
 
-        // 3. SelectFilter for existing users
-        assertTrue(html.contains("id=\"assignExistingUserFilter\""), "Must render SelectFilter component");
-        assertTrue(html.contains("id=\"assignExistingUserFilter_search\""), "Must render live filter search input");
-        assertTrue(html.contains("class=\"select-filter-item"), "Must render selectable user items");
-        assertTrue(html.contains("data-value=\"admin\""), "SelectFilter must list admin user");
+        // 3. UserSelectionTable for existing users mass selection & synchronization
+        assertTrue(html.contains("id=\"assignUserSelectionTable\""), "Must render UserSelectionTable component");
+        assertTrue(html.contains("id=\"assignUserSelectionTable_search\""), "Must render live filter search input");
+        assertTrue(html.contains("class=\"jettra-toggle-selection-item"), "Must render selectable user items");
+        assertTrue(html.contains("data-value=\"admin\""), "UserSelectionTable must list admin user");
+        assertTrue(html.contains("id=\"assignUserSelectionTable_counter\""), "Must render live counter badge");
+        assertTrue(html.contains("Select All"), "Must render quick action Select All button");
+        assertTrue(html.contains("Clear All"), "Must render quick action Clear All button");
+        assertTrue(html.contains("window.UserSelectionTable.syncForDatabase"), "Must wire database synchronization script");
 
         // 4. TextInput and ValidationFeedback for new user
         assertTrue(html.contains("id=\"new_username_input\""), "Must render username TextInput");
@@ -332,6 +336,56 @@ public class StoreDatabasesAssignUserTest {
             valService.validateAsync(brandNewCtx).join();
 
         assertTrue(brandNewRes.isValid(), "New unique username must be valid");
+    }
+
+    @JettraTest
+    @DisplayName("9. Mass user assignment and deselection synchronization persists additions and removals")
+    void testMassUserAssignmentAndDeselectionSynchronization() throws IOException {
+        String u1 = "mass_user_alpha";
+        String u2 = "mass_user_beta";
+
+        // Alpha initially has NO access to analytics_db
+        systemUserRepo.save(SystemUser.create(u1, "hash1", "alpha@jettra.io", "READ_WRITE", Set.of("other_db")));
+        // Beta initially HAS access to analytics_db and other_db
+        systemUserRepo.save(SystemUser.create(u2, "hash2", "beta@jettra.io", "READ_ONLY", Set.of("analytics_db", "other_db")));
+
+        // Perform mass sync: Alpha is checked, Beta is deselected
+        TestHttpExchange exchange = new TestHttpExchange("POST", "/databases");
+        exchange.getRequestHeaders().set("Cookie", "username=admin; role=ADMIN");
+        exchange.setRequestBody("action=assign_user&assign_mode=existing&target_db=analytics_db&assigned_users=admin," + u1);
+
+        databasesPage.handle(exchange);
+
+        assertEquals(200, exchange.getResponseCode());
+        String body = exchange.getResponseBodyAsString();
+        assertTrue(body.contains("Sincronización de usuarios completada"), "Must report sync success");
+
+        // Verify Alpha gained analytics_db access
+        SystemUser loadedAlpha = systemUserRepo.findByUsername(u1).orElseThrow();
+        assertTrue(loadedAlpha.hasDatabaseAccess("analytics_db"), "Alpha must have been assigned to analytics_db");
+        assertTrue(loadedAlpha.hasDatabaseAccess("other_db"), "Alpha must preserve other_db");
+
+        // Verify Beta lost analytics_db access (deselected) but retains other_db
+        SystemUser loadedBeta = systemUserRepo.findByUsername(u2).orElseThrow();
+        assertFalse(loadedBeta.assignedDatabases().contains("analytics_db"), "Beta must have been de-assigned from analytics_db");
+        assertTrue(loadedBeta.hasDatabaseAccess("other_db"), "Beta must preserve other_db");
+    }
+
+    @JettraTest
+    @DisplayName("10. Admin cluster-wide rights remain protected during mass user deselection")
+    void testAdminProtectionInMassAssignment() throws IOException {
+        // Deselect all users including admin attempt
+        TestHttpExchange exchange = new TestHttpExchange("POST", "/databases");
+        exchange.getRequestHeaders().set("Cookie", "username=admin; role=ADMIN");
+        exchange.setRequestBody("action=assign_user&assign_mode=existing&target_db=analytics_db&assigned_users=");
+
+        databasesPage.handle(exchange);
+
+        assertEquals(200, exchange.getResponseCode());
+
+        // Admin must still have access
+        SystemUser admin = systemUserRepo.findByUsername("admin").orElseThrow();
+        assertTrue(admin.hasDatabaseAccess("analytics_db"), "Admin access must never be revoked during mass synchronization");
     }
 
     private static class TestHttpExchange extends HttpExchange {
