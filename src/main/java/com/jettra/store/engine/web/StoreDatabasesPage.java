@@ -22,6 +22,15 @@ import io.jettra.server.autentification.repository.JUserRepository;
 import io.jettra.server.autentification.repository.JUserRepositoryImpl;
 import io.jettra.server.autentification.repository.JettraSecurityDBInitializer;
 
+import com.jettra.store.engine.exception.UserAlreadyExistsException;
+import com.jettra.store.engine.users.SystemUser;
+import com.jettra.store.engine.users.SystemUserRepository;
+import com.jettra.store.engine.users.SystemUserRepositoryImpl;
+import com.jettra.store.engine.web.validation.UserValidationChain;
+import com.jettra.store.engine.web.validation.UserValidationContext;
+import com.jettra.store.engine.web.validation.UserValidationService;
+import com.jettra.store.engine.web.validation.ValidationResult;
+
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Map;
@@ -43,7 +52,7 @@ import java.util.stream.Collectors;
  * - Fine-grained access control and permission filtering (READ / ADMIN) based on active SecurityContext
  * - Native JettraConfirmDialog for destructive database drop confirmations
  * - Full support for Java 25 RECORDS engine and 9 multi-model storage backends
- * - Granular User & Role Administration per database
+ * - Granular User & Role Administration per database backed strictly by system_db
  * Built with 100% pure JettraFlux native components.
  */
 @PageWidgetAllow(role = { jcf.AppRole.ADMIN, jcf.AppRole.MANAGER, jcf.AppRole.USER })
@@ -51,17 +60,137 @@ public class StoreDatabasesPage extends StoreTemplatePage {
 
     private final JettraStorageEngine engine;
     private final AuthManager authManager;
+    private final SystemUserRepository systemUserRepo;
     private final JUserRepository userRepo;
     private final JCredentialRepository credRepo;
     private final SampleDatasetManager sampleDatasetManager;
+    private final UserValidationChain validationChain;
+    private final UserValidationService validationService;
     private boolean showActionButtons = false;
 
     public StoreDatabasesPage(JettraStorageEngine engine, AuthManager authManager) {
+        this(engine, authManager, (authManager != null && authManager.getSystemUserRepository() != null)
+            ? authManager.getSystemUserRepository()
+            : new SystemUserRepositoryImpl(), new JUserRepositoryImpl(), new JCredentialRepositoryImpl());
+    }
+
+    public StoreDatabasesPage(JettraStorageEngine engine, AuthManager authManager, SystemUserRepository systemUserRepo) {
+        this(engine, authManager, systemUserRepo, new JUserRepositoryImpl(), new JCredentialRepositoryImpl());
+    }
+
+    public StoreDatabasesPage(JettraStorageEngine engine, AuthManager authManager, SystemUserRepository systemUserRepo, JUserRepository userRepo, JCredentialRepository credRepo) {
         this.engine = engine;
         this.authManager = authManager;
-        this.userRepo = new JUserRepositoryImpl();
-        this.credRepo = new JCredentialRepositoryImpl();
+        this.systemUserRepo = systemUserRepo != null ? systemUserRepo : new SystemUserRepositoryImpl();
+        this.userRepo = userRepo != null ? userRepo : new JUserRepositoryImpl();
+        this.credRepo = credRepo != null ? credRepo : new JCredentialRepositoryImpl();
         this.sampleDatasetManager = new SampleDatasetManager(engine);
+        this.validationChain = UserValidationChain.defaultChain(this.systemUserRepo);
+        this.validationService = new UserValidationService(this.systemUserRepo);
+    }
+
+    public SystemUserRepository getSystemUserRepository() {
+        return this.systemUserRepo;
+    }
+
+    public SystemUser assignExistingUser(String targetDb, String username, String roleName) {
+        if (username == null || username.isBlank()) {
+            throw new IllegalArgumentException("Debe seleccionar un usuario existente para asignar.");
+        }
+        String cleanUsername = username.trim();
+        Optional<SystemUser> existingOpt = systemUserRepo.findByUsername(cleanUsername);
+        if (existingOpt.isEmpty()) {
+            throw new IllegalArgumentException("El usuario '" + cleanUsername + "' no fue encontrado en system_db.");
+        }
+
+        SystemUser existing = existingOpt.get();
+        Set<String> updatedDbs = new TreeSet<>(existing.assignedDatabases());
+        if (targetDb != null && !targetDb.isBlank()) {
+            updatedDbs.add(targetDb.trim());
+        }
+        String effectiveRole = (roleName != null && !roleName.isBlank()) ? roleName.trim() : existing.role();
+        SystemUser updatedUser = existing.withUpdatedProfile(existing.email(), effectiveRole, existing.active(), updatedDbs);
+        systemUserRepo.save(updatedUser);
+
+        if (userRepo != null) {
+            Optional<JUser> legOpt = userRepo.findAll().stream()
+                .filter(u -> u.firstName().equalsIgnoreCase(cleanUsername))
+                .findFirst();
+            JRole role = new JRole(UUID.randomUUID(), effectiveRole, true);
+            if (legOpt.isPresent()) {
+                JUser lu = legOpt.get();
+                Set<String> legDbs = new TreeSet<>(lu.assignedDatabases());
+                if (targetDb != null && !targetDb.isBlank()) legDbs.add(targetDb.trim());
+                userRepo.save(new JUser(lu.id(), lu.firstName(), String.join(", ", legDbs), lu.email(), lu.phone(), lu.active(), Set.of(role), legDbs));
+            } else {
+                userRepo.save(new JUser(existing.id(), existing.username(), String.join(", ", updatedDbs), existing.email(), "+123456", true, Set.of(role), updatedDbs));
+            }
+        }
+        return updatedUser;
+    }
+
+    public SystemUser createAndAssignNewUser(String targetDb, String username, String email, String password, String roleName) {
+        if (username == null || username.isBlank()) {
+            throw new IllegalArgumentException("El nombre de usuario es obligatorio.");
+        }
+        String cleanUsername = username.trim();
+
+        // 1. Uniqueness pre-existence verification against system_db
+        if (systemUserRepo.findByUsername(cleanUsername).isPresent()) {
+            throw new UserAlreadyExistsException(cleanUsername);
+        }
+
+        // 2. Validation chain checking format, length, rules
+        String effectiveRole = (roleName != null && !roleName.isBlank()) ? roleName.trim() : "READ_WRITE";
+        UserValidationContext vCtx = UserValidationContext.forCreate(cleanUsername, email, effectiveRole);
+        ValidationResult vResult = validationService.validate(vCtx);
+        if (vResult.isInvalid()) {
+            throw new IllegalArgumentException(vResult.message());
+        }
+
+        // 3. Password hashing & persistence
+        UUID newUserId = UUID.randomUUID();
+        String rawPassword = (password != null && !password.isBlank()) ? password : "password123";
+        String hashedPassword = SystemUserRepositoryImpl.hashPassword(rawPassword);
+        String cleanEmail = (email != null && !email.isBlank()) ? email.trim() : cleanUsername + "@jettra.io";
+
+        Set<String> dbs = new TreeSet<>();
+        if (targetDb != null && !targetDb.isBlank()) {
+            dbs.add(targetDb.trim());
+        } else {
+            dbs.add("*");
+        }
+
+        SystemUser newSysUser = new SystemUser(
+            newUserId,
+            cleanUsername,
+            hashedPassword,
+            cleanEmail,
+            effectiveRole,
+            true,
+            dbs,
+            Instant.now(),
+            Instant.now()
+        );
+        systemUserRepo.save(newSysUser);
+
+        if (userRepo != null) {
+            JRole role = new JRole(UUID.randomUUID(), effectiveRole, true);
+            JUser newUser = new JUser(newUserId, cleanUsername, String.join(", ", dbs), cleanEmail, "+123456", true, Set.of(role), dbs);
+            userRepo.save(newUser);
+        }
+
+        if (credRepo != null) {
+            JUser refUser = new JUser(newUserId, cleanUsername, String.join(", ", dbs), cleanEmail, "+123456", true, Set.of(), dbs);
+            JCredential cred = new JCredential(UUID.randomUUID(), refUser, cleanUsername, hashedPassword, true, Instant.now());
+            credRepo.save(cred);
+        }
+
+        if (authManager != null) {
+            authManager.register(cleanUsername, rawPassword);
+        }
+
+        return newSysUser;
     }
 
     public StoreDatabasesPage withGlobalActionButtons(boolean show) {
@@ -157,52 +286,44 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                     alertMessage = "Sample Dataset [" + datasetKey + "] loaded successfully (" + loaded + " records populated across multi-model engines with cross-references)!";
                     alertType = "badge-active";
                 } else if ("assign_user".equalsIgnoreCase(action)) {
-                    String username = params.get("username");
-                    String email = params.get("email");
-                    String password = params.get("password");
+                    String assignMode = params.get("assign_mode");
                     String targetDb = params.get("target_db");
                     String roleName = params.get("role");
+                    String existingUsername = params.get("existing_username");
+                    String newUsername = params.get("username");
+                    String email = params.get("email");
+                    String password = params.get("password");
 
-                    if (username != null && !username.isBlank()) {
-                        UUID newId = UUID.randomUUID();
-                        JRole role = new JRole(UUID.randomUUID(), roleName != null ? roleName : "READ_WRITE", true);
-                        Set<JRole> roles = new HashSet<>();
-                        roles.add(role);
+                    boolean isExistingMode = "existing".equalsIgnoreCase(assignMode)
+                        || (existingUsername != null && !existingUsername.isBlank() && !"new".equalsIgnoreCase(assignMode));
 
-                        String dbToAssign = targetDb != null && !targetDb.isBlank() ? targetDb : "*";
-                        Optional<JUser> existingOpt = userRepo.findAll().stream()
-                            .filter(u -> u.firstName().equalsIgnoreCase(username))
-                            .findFirst();
-
-                        JUser userToSave;
-                        String dbScope;
-                        if (existingOpt.isPresent()) {
-                            JUser eu = existingOpt.get();
-                            Set<String> mergedDbs = new TreeSet<>(eu.assignedDatabases());
-                            mergedDbs.add(dbToAssign);
-                            dbScope = String.join(", ", mergedDbs);
-                            userToSave = new JUser(eu.id(), eu.firstName(), dbScope, eu.email(), eu.phone(), eu.active(), eu.jRoles(), mergedDbs);
+                    if (isExistingMode) {
+                        String userToAssign = (existingUsername != null && !existingUsername.isBlank())
+                            ? existingUsername.trim()
+                            : (newUsername != null ? newUsername.trim() : "");
+                        if (userToAssign.isBlank()) {
+                            alertMessage = "Debe seleccionar un usuario existente para asignar a la base de datos.";
+                            alertType = "badge-raft";
                         } else {
-                            Set<String> dbs = new TreeSet<>();
-                            dbs.add(dbToAssign);
-                            dbScope = dbToAssign;
-                            userToSave = new JUser(newId, username, dbScope, email != null ? email : username + "@jettra.io", "+123456", true, roles, dbs);
+                            SystemUser updated = assignExistingUser(targetDb, userToAssign, roleName);
+                            alertMessage = "Usuario existente '" + userToAssign + "' asignado exitosamente a la base de datos '" + targetDb + "' con rol [" + updated.role() + "]!";
+                            alertType = "badge-active";
                         }
-                        userRepo.save(userToSave);
-
-                        String rawPassword = password != null && !password.isBlank() ? password : "password123";
-                        String hashedPassword = JettraSecurityDBInitializer.hashPassword(rawPassword);
-                        JCredential cred = new JCredential(UUID.randomUUID(), userToSave, username, hashedPassword, true, Instant.now());
-                        credRepo.save(cred);
-
-                        if (authManager != null) {
-                            authManager.register(username, rawPassword);
+                    } else {
+                        String cleanUsername = newUsername != null ? newUsername.trim() : "";
+                        if (cleanUsername.isBlank()) {
+                            alertMessage = "El nombre de usuario es obligatorio.";
+                            alertType = "badge-raft";
+                        } else {
+                            SystemUser created = createAndAssignNewUser(targetDb, cleanUsername, email, password, roleName);
+                            alertMessage = "Nuevo usuario '" + created.username() + "' registrado con unicidad garantizada y asignado a la base de datos '" + targetDb + "' con rol [" + created.role() + "]!";
+                            alertType = "badge-active";
                         }
-
-                        alertMessage = "User '" + username + "' provisioned with role [" + roleName + "] for database scope '" + dbScope + "'!";
-                        alertType = "badge-active";
                     }
                 }
+            } catch (UserAlreadyExistsException e) {
+                alertMessage = "Error de unicidad: " + e.getMessage();
+                alertType = "badge-raft";
             } catch (Exception e) {
                 alertMessage = "Operation failed: " + e.getMessage();
                 alertType = "badge-raft";
@@ -219,7 +340,8 @@ public class StoreDatabasesPage extends StoreTemplatePage {
             return defaultDb;
         });
 
-        // Load all users for RBAC scoping and permissions check
+        // Load all users from system_db (single source of truth) and legacy userRepo
+        List<SystemUser> systemUsers = systemUserRepo.findAll();
         List<JUser> allUsers = userRepo.findAll();
 
         // Resolve Security Principal from SecurityContextHolder or session cookie
@@ -505,22 +627,26 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                     Div.of(compBoxes.toArray(new Widget[0])).modifier(new Modifier().style("display:flex; flex-wrap:wrap; gap:10px;"))
                 ).modifier(new Modifier().style("background:rgba(15,23,42,0.6); border-radius:10px; padding:16px; border:1px solid rgba(255,255,255,0.06); margin-bottom:16px;"));
 
-                // Scoped Users
+                // Scoped Users (loaded from system_db)
+                List<SystemUser> scopedSysUsers = systemUsers.stream()
+                    .filter(u -> u.hasDatabaseAccess(dbName))
+                    .toList();
+
                 List<Widget> userBadges = new ArrayList<>();
-                if (dbUsers.isEmpty()) {
+                if (scopedSysUsers.isEmpty()) {
                     userBadges.add(Span.of("No users assigned specifically (inherited from global admin).").modifier(new Modifier().style("color:#64748b;")));
                 } else {
-                    for (JUser u : dbUsers) {
-                        String role = u.jRoles() != null && !u.jRoles().isEmpty() ? u.jRoles().iterator().next().name() : "READ_WRITE";
-                        String roleBadge = "DB_ADMIN".equals(role) ? "badge-raft" : "badge-engine";
-                        userBadges.add(Span.of(u.firstName() + " (" + role + ")").modifier(new Modifier().cssClass("store-badge " + roleBadge).style("font-size:11px; margin-right:4px;")));
+                    for (SystemUser u : scopedSysUsers) {
+                        String role = u.role() != null ? u.role() : "READ_WRITE";
+                        String roleBadge = "DB_ADMIN".equalsIgnoreCase(role) ? "badge-raft" : "badge-engine";
+                        userBadges.add(Span.of(u.username() + " (" + role + ")").modifier(new Modifier().cssClass("store-badge " + roleBadge).style("font-size:11px; margin-right:4px;")));
                     }
                 }
 
                 Widget scopedUsersBar = Div.of(
                     Div.of(
                         Icon.of("fas fa-user-shield").modifier(new Modifier().style("color:#38bdf8;")),
-                        Span.of("Scoped Users (" + dbUsers.size() + "): "),
+                        Span.of("Scoped Users (" + scopedSysUsers.size() + "): "),
                         Div.of(userBadges.toArray(new Widget[0]))
                     ).modifier(new Modifier().style("display:flex; align-items:center; gap:8px; flex-wrap:wrap;")),
                     Button.of(Text.of("+ Assign User to " + dbName))
@@ -601,48 +727,130 @@ public class StoreDatabasesPage extends StoreTemplatePage {
             .id("createDbModal")
             .modifier(new Modifier().cssClass("store-card").style("width:540px; max-width:90%; background:#1e293b; border:1px solid rgba(255,255,255,0.15); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:28px; margin:auto;"));
 
-        // Modal 2: Assign User
+        // Modal 2: Assign User to Database (Pure JettraFlux Components)
         Widget assignUserHeader = Row.of(
             Row.of(
-                Icon.of("fas fa-user-shield").modifier(new Modifier().style("color:#38bdf8; margin-right:8px;")),
-                RawHtml.of("<h3 style='margin:0; font-size:20px; font-weight:700; color:#f8fafc;'>Assign User to <span id='assignUserDbLabel'></span></h3>")
+                Icon.of("fas fa-user-shield").modifier(new Modifier().style("color:#38bdf8; margin-right:8px; font-size:20px;")),
+                Header.of(3,
+                    Text.of("Assign User to "),
+                    Span.of("").id("assignUserDbLabel").modifier(new Modifier().style("color:#38bdf8; text-decoration:underline;"))
+                ).modifier(new Modifier().style("margin:0; font-size:20px; font-weight:700; color:#f8fafc;"))
             ).modifier(new Modifier().style("display:flex; align-items:center;")),
-            Button.of(Icon.of("fas fa-times")).modifier(new Modifier().style("background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer;").attribute("onclick", "document.getElementById('assignUserModal').close();"))
-        ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;"));
+            Button.of(Icon.of("fas fa-times"))
+                .modifier(new Modifier().style("background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer; padding:4px 8px;"))
+                .attribute("onclick", "document.getElementById('assignUserModal').close();")
+        ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;"));
+
+        Widget assignUserSubtitle = Paragraph.of(
+            Text.of("Select an existing identity from the internal system database (system_db) or provision a new account with guaranteed uniqueness.")
+        ).modifier(new Modifier().style("margin:0 0 16px 0; color:#94a3b8; font-size:13px; line-height:1.4;"));
+
+        // ToggleTabs: Existing User vs Create New User
+        ToggleTabs modeTabs = ToggleTabs.of("assignUserModeTabs")
+            .addTab("existing", "Existing System User", "fas fa-user-check", true)
+            .addTab("new", "Create New User", "fas fa-user-plus", false)
+            .onTabChange("switchAssignUserMode('{tabId}')");
+
+        Widget modeTabsContainer = Div.of(modeTabs)
+            .modifier(new Modifier().style("margin-bottom:18px; display:flex; justify-content:center;"));
+
+        // SelectFilter for Existing Users
+        SelectFilter existingUserFilter = SelectFilter.of("assignExistingUserFilter", "existing_username")
+            .placeholder("Search existing users by username, role, or email...")
+            .emptyMessage("No system users found matching search criteria");
+
+        for (SystemUser su : systemUsers) {
+            String roleBadge = su.role() != null ? su.role() : "READ_WRITE";
+            String desc = su.email() != null ? su.email() : su.username() + "@jettra.io";
+            existingUserFilter.addOption(su.username(), su.username(), desc, roleBadge);
+        }
+
+        Widget existingSection = Div.of(
+            Div.of(
+                Label.of("Select Registered System User:").modifier(new Modifier().style("display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;")),
+                existingUserFilter,
+                Paragraph.of(Text.of("Users queried directly from system_db. Selecting a user grants scoped access to the target database."))
+                    .modifier(new Modifier().style("font-size:11.5px; color:#64748b; margin:6px 0 0 0;"))
+            ).modifier(new Modifier().style("margin-bottom:16px;"))
+        ).id("assignUserExistingSection");
+
+        // New User Inputs with TextInput and ValidationFeedback
+        TextInput usernameInput = TextInput.builder()
+            .id("new_username_input")
+            .name("username")
+            .placeholder("e.g. dev_analyst")
+            .inputType("text")
+            .build();
+
+        TextInput emailInput = TextInput.builder()
+            .id("new_email_input")
+            .name("email")
+            .placeholder("analyst@company.com")
+            .inputType("email")
+            .build();
+
+        TextInput passwordInput = TextInput.builder()
+            .id("new_password_input")
+            .name("password")
+            .placeholder("••••••••")
+            .inputType("password")
+            .build();
+
+        Widget newSection = Div.of(
+            Div.of(
+                Label.of("Username:").modifier(new Modifier().style("display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;")),
+                usernameInput,
+                ValidationFeedback.forInput("username").id("new_username_feedback")
+            ).modifier(new Modifier().style("margin-bottom:14px;")),
+            Div.of(
+                Label.of("Email Address:").modifier(new Modifier().style("display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;")),
+                emailInput
+            ).modifier(new Modifier().style("margin-bottom:14px;")),
+            Div.of(
+                Label.of("Password:").modifier(new Modifier().style("display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;")),
+                passwordInput
+            ).modifier(new Modifier().style("margin-bottom:16px;"))
+        ).id("assignUserNewSection").modifier(new Modifier().style("display:none;"));
+
+        // Role Selector for target database assignment
+        JettraFluxSelect roleSelect = JettraFluxSelect.of("assignUserRoleSelect", "role")
+            .addOption("DB_ADMIN", "DB_ADMIN (Full DDL & Read/Write)")
+            .addOption("READ_WRITE", "READ_WRITE (Insert, Update, Query)", true)
+            .addOption("READ_ONLY", "READ_ONLY (Query Only)")
+            .addOption("MANAGER", "MANAGER (Backup & Operations)");
+
+        Widget roleSection = Div.of(
+            Label.of("Assigned RBAC Role:").modifier(new Modifier().style("display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;")),
+            roleSelect,
+            Paragraph.of(Text.of("Role determines database permissions. Admin roles inherit cluster-wide management rights."))
+                .modifier(new Modifier().style("font-size:11.5px; color:#64748b; margin:6px 0 0 0;"))
+        ).modifier(new Modifier().style("margin-bottom:22px;"));
+
+        Widget actionButtonsRow = Div.of(
+            Button.of(Text.of("Cancel"))
+                .modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:8px 16px;"))
+                .attribute("type", "button")
+                .attribute("onclick", "document.getElementById('assignUserModal').close();"),
+            Button.of(Icon.of("fas fa-user-check"), Text.of(" Assign User"))
+                .id("assignUserSubmitBtn")
+                .modifier(new Modifier().cssClass("btn-action btn-primary").style("padding:8px 18px;"))
+                .attribute("type", "submit")
+        ).modifier(new Modifier().style("display:flex; justify-content:flex-end; gap:10px;"));
 
         Widget assignUserForm = Form.of(
-            RawHtml.of("<input type='hidden' name='action' value='assign_user'/>"),
-            RawHtml.of("<input type='hidden' name='target_db' id='assignUserDbInput'/>"),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;'>Username:</label>"),
-                RawHtml.of("<input type='text' name='username' placeholder='e.g. dev_analyst' required style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:8px; color:#f8fafc; font-size:14px; box-sizing:border-box;'/>")
-            ).modifier(new Modifier().style("margin-bottom:14px;")),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;'>Email Address:</label>"),
-                RawHtml.of("<input type='email' name='email' placeholder='analyst@company.com' required style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:8px; color:#f8fafc; font-size:14px; box-sizing:border-box;'/>")
-            ).modifier(new Modifier().style("margin-bottom:14px;")),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;'>Password:</label>"),
-                RawHtml.of("<input type='password' name='password' placeholder='••••••••' required style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:8px; color:#f8fafc; font-size:14px; box-sizing:border-box;'/>")
-            ).modifier(new Modifier().style("margin-bottom:14px;")),
-            Div.of(
-                RawHtml.of("<label style='display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;'>Assigned RBAC Role:</label>"),
-                RawHtml.of("<select name='role' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:8px; color:#f8fafc; font-size:14px; box-sizing:border-box;'>\n" +
-                    "          <option value='DB_ADMIN'>DB_ADMIN (Full DDL & Read/Write)</option>\n" +
-                    "          <option value='READ_WRITE' selected>READ_WRITE (Insert, Update, Query)</option>\n" +
-                    "          <option value='READ_ONLY'>READ_ONLY (Query Only)</option>\n" +
-                    "          <option value='MANAGER'>MANAGER (Backup & Operations)</option>\n" +
-                    "        </select>")
-            ).modifier(new Modifier().style("margin-bottom:20px;")),
-            Div.of(
-                Button.of(Text.of("Cancel")).modifier(new Modifier().cssClass("btn-action btn-secondary").attribute("type", "button").attribute("onclick", "document.getElementById('assignUserModal').close();")),
-                Button.of(Icon.of("fas fa-user-check"), Text.of(" Provision User")).modifier(new Modifier().cssClass("btn-action btn-primary").attribute("type", "submit"))
-            ).modifier(new Modifier().style("display:flex; justify-content:flex-end; gap:10px;"))
+            InputHidden.of("action", "assign_user"),
+            InputHidden.of("target_db", "").id("assignUserDbInput"),
+            InputHidden.of("assign_mode", "existing").id("assignUserModeInput"),
+            modeTabsContainer,
+            existingSection,
+            newSection,
+            roleSection,
+            actionButtonsRow
         ).attribute("method", "POST").attribute("action", JettraServer.resolvePath("/databases"));
 
-        Widget assignUserModal = Dialog.of(assignUserHeader, assignUserForm)
+        Widget assignUserModal = Dialog.of(assignUserHeader, assignUserSubtitle, assignUserForm)
             .id("assignUserModal")
-            .modifier(new Modifier().cssClass("store-card").style("width:520px; max-width:90%; background:#1e293b; border:1px solid rgba(255,255,255,0.15); box-shadow:0 20px 50px rgba(0,0,0,0.6); padding:28px; margin:auto;"));
+            .modifier(new Modifier().cssClass("store-card").style("width:540px; max-width:92%; background:#1e293b; border:1px solid rgba(56,189,248,0.3); box-shadow:0 20px 50px rgba(0,0,0,0.7); border-radius:14px; padding:26px; margin:auto;"));
 
         // Modal 3: Rename Database
         Widget renameDbHeader = Row.of(
@@ -690,9 +898,37 @@ public class StoreDatabasesPage extends StoreTemplatePage {
             "  function openModal(id) { document.getElementById(id).showModal(); }\n" +
             "  function openCreateDbModal() { openModal('createDbModal'); }\n" +
             "  function openAssignUserModal(db) {\n" +
-            "    document.getElementById('assignUserDbInput').value = db;\n" +
-            "    document.getElementById('assignUserDbLabel').innerText = db;\n" +
+            "    var dbInp = document.getElementById('assignUserDbInput');\n" +
+            "    if (dbInp) dbInp.value = db;\n" +
+            "    var dbLabel = document.getElementById('assignUserDbLabel');\n" +
+            "    if (dbLabel) dbLabel.innerText = db;\n" +
+            "    if (window.switchAssignUserMode) window.switchAssignUserMode('existing');\n" +
             "    openModal('assignUserModal');\n" +
+            "  }\n" +
+            "  function switchAssignUserMode(mode) {\n" +
+            "    var modeInput = document.getElementById('assignUserModeInput');\n" +
+            "    if (modeInput) modeInput.value = mode;\n" +
+            "    var existingSec = document.getElementById('assignUserExistingSection');\n" +
+            "    var newSec = document.getElementById('assignUserNewSection');\n" +
+            "    var submitBtn = document.getElementById('assignUserSubmitBtn');\n" +
+            "    var newUsernameInp = document.getElementById('new_username_input');\n" +
+            "    var newEmailInp = document.getElementById('new_email_input');\n" +
+            "    var newPassInp = document.getElementById('new_password_input');\n" +
+            "    if (mode === 'existing') {\n" +
+            "      if (existingSec) existingSec.style.display = 'block';\n" +
+            "      if (newSec) newSec.style.display = 'none';\n" +
+            "      if (newUsernameInp) newUsernameInp.removeAttribute('required');\n" +
+            "      if (newEmailInp) newEmailInp.removeAttribute('required');\n" +
+            "      if (newPassInp) newPassInp.removeAttribute('required');\n" +
+            "      if (submitBtn) submitBtn.innerHTML = '<i class=\"fas fa-user-check\"></i> Assign User';\n" +
+            "    } else {\n" +
+            "      if (existingSec) existingSec.style.display = 'none';\n" +
+            "      if (newSec) newSec.style.display = 'block';\n" +
+            "      if (newUsernameInp) newUsernameInp.setAttribute('required', 'required');\n" +
+            "      if (newEmailInp) newEmailInp.setAttribute('required', 'required');\n" +
+            "      if (newPassInp) newPassInp.setAttribute('required', 'required');\n" +
+            "      if (submitBtn) submitBtn.innerHTML = '<i class=\"fas fa-plus-circle\"></i> Create & Assign User';\n" +
+            "    }\n" +
             "  }\n" +
             "  function openRenameDbModal(oldDb) {\n" +
             "    document.getElementById('renameOldDbInput').value = oldDb;\n" +
@@ -766,7 +1002,15 @@ public class StoreDatabasesPage extends StoreTemplatePage {
             return true;
         }
 
-        // 4. User entity database scoping and role validation
+        // 4. System user entity database scoping and role validation against system_db
+        if (systemUserRepo != null && principal.username() != null) {
+            Optional<SystemUser> sysOpt = systemUserRepo.findByUsername(principal.username());
+            if (sysOpt.isPresent() && sysOpt.get().hasDatabaseAccess(dbName)) {
+                return true;
+            }
+        }
+
+        // 5. User entity database scoping and role validation
         if (allUsers != null) {
             for (JUser u : allUsers) {
                 boolean match = u.firstName().equalsIgnoreCase(principal.username()) ||
