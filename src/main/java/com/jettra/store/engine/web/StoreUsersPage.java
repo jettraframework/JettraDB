@@ -18,6 +18,8 @@ import io.jettra.server.autentification.repository.JUserRepository;
 import io.jettra.server.autentification.repository.JUserRepositoryImpl;
 import io.jettra.server.autentification.repository.JettraSecurityDBInitializer;
 
+import com.jettra.store.engine.web.validation.*;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -45,12 +47,18 @@ public class StoreUsersPage extends StoreTemplatePage {
     private final AuthManager authManager;
     private final JUserRepository userRepo;
     private final JCredentialRepository credRepo;
+    private final UserValidationService validationService;
 
     public StoreUsersPage(JettraStorageEngine engine, AuthManager authManager) {
+        this(engine, authManager, new JUserRepositoryImpl(), new JCredentialRepositoryImpl(), new UserValidationService(new JUserRepositoryImpl()));
+    }
+
+    public StoreUsersPage(JettraStorageEngine engine, AuthManager authManager, JUserRepository userRepo, JCredentialRepository credRepo, UserValidationService validationService) {
         this.engine = engine;
         this.authManager = authManager;
-        this.userRepo = new JUserRepositoryImpl();
-        this.credRepo = new JCredentialRepositoryImpl();
+        this.userRepo = userRepo;
+        this.credRepo = credRepo;
+        this.validationService = validationService != null ? validationService : new UserValidationService(userRepo);
     }
 
     protected String resolveCurrentUser(HttpExchange exchange) {
@@ -78,7 +86,43 @@ public class StoreUsersPage extends StoreTemplatePage {
             handleGetUserJson(exchange, targetUsername);
             return;
         }
+        if ("check_username".equalsIgnoreCase(queryParams.get("action")) || "validate_username".equalsIgnoreCase(queryParams.get("action"))) {
+            String targetUsername = queryParams.get("username");
+            String excludeId = queryParams.get("exclude_user_id");
+            handleCheckUsernameJson(exchange, targetUsername, excludeId);
+            return;
+        }
         super.handle(exchange);
+    }
+
+    private void handleCheckUsernameJson(HttpExchange exchange, String username, String excludeUserId) throws IOException {
+        UUID excludeId = null;
+        if (excludeUserId != null && !excludeUserId.isBlank()) {
+            try {
+                excludeId = UUID.fromString(excludeUserId.trim());
+            } catch (Exception ignored) {}
+        }
+        UserValidationContext ctx = UserValidationContext.forCheck(username, excludeId);
+        // Execute asynchronously using Java 25 Virtual Threads via validationService
+        ValidationResult res = validationService.validateAsync(ctx).join();
+
+        switch (res) {
+            case ValidationResult.Valid v -> {
+                String json = String.format("{\"status\":\"AVAILABLE\",\"valid\":true,\"username\":\"%s\",\"message\":\"%s\"}",
+                    escapeJson(username != null ? username.trim() : ""),
+                    escapeJson("El nombre de usuario está disponible."));
+                sendJsonResponse(exchange, 200, json);
+            }
+            case ValidationResult.Invalid inv -> {
+                String json = String.format("{\"status\":\"%s\",\"valid\":false,\"errorCode\":\"%s\",\"field\":\"%s\",\"username\":\"%s\",\"message\":\"%s\"}",
+                    inv.isDuplicate() ? "DUPLICATE" : "INVALID",
+                    escapeJson(inv.errorCode()),
+                    escapeJson(inv.field()),
+                    escapeJson(username != null ? username.trim() : ""),
+                    escapeJson(inv.message()));
+                sendJsonResponse(exchange, 200, json);
+            }
+        }
     }
 
     private void handleGetUserJson(HttpExchange exchange, String username) throws IOException {
@@ -145,9 +189,12 @@ public class StoreUsersPage extends StoreTemplatePage {
     protected Widget buildContent(HttpExchange exchange, Map<String, String> params, String currentTheme) {
         String alertMessage = "";
         String alertType = "badge-active";
+        ValidationState usernameValidationState = ValidationState.none();
+        String enteredUsername = "";
+        String enteredEmail = "";
 
         // Handle POST Operations
-        if ("POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+        if (exchange != null && "POST".equalsIgnoreCase(exchange.getRequestMethod())) {
             try {
                 String action = params != null ? params.get("action") : null;
                 if ("create_user".equalsIgnoreCase(action)) {
@@ -159,7 +206,16 @@ public class StoreUsersPage extends StoreTemplatePage {
                     String assignedDbsParam = params.get("assigned_databases");
                     String roleName = params.get("role");
 
-                    if (username != null && !username.isBlank()) {
+                    UserValidationContext validationCtx = UserValidationContext.forCreate(username, email, password);
+                    ValidationResult validation = validationService.validate(validationCtx);
+
+                    if (validation instanceof ValidationResult.Invalid invalid) {
+                        alertMessage = invalid.message();
+                        alertType = "badge-raft";
+                        usernameValidationState = ValidationState.invalid(invalid.message());
+                        enteredUsername = username != null ? username : "";
+                        enteredEmail = email != null ? email : "";
+                    } else {
                         UUID newId = UUID.randomUUID();
                         JRole role = new JRole(UUID.randomUUID(), roleName != null ? roleName : "READ_WRITE", true);
                         Set<JRole> roles = new HashSet<>();
@@ -181,20 +237,21 @@ public class StoreUsersPage extends StoreTemplatePage {
                         }
 
                         String dbScope = String.join(", ", assignedDatabases);
-                        JUser newUser = new JUser(newId, username, dbScope, email != null ? email : username + "@jettra.io", "+123456", true, roles, assignedDatabases);
+                        JUser newUser = new JUser(newId, username.trim(), dbScope, email != null ? email.trim() : username.trim() + "@jettra.io", "+123456", true, roles, assignedDatabases);
                         userRepo.save(newUser);
 
                         String rawPassword = password != null && !password.isBlank() ? password : "password123";
                         String hashedPassword = JettraSecurityDBInitializer.hashPassword(rawPassword);
-                        JCredential cred = new JCredential(UUID.randomUUID(), newUser, username, hashedPassword, true, Instant.now());
+                        JCredential cred = new JCredential(UUID.randomUUID(), newUser, username.trim(), hashedPassword, true, Instant.now());
                         credRepo.save(cred);
 
                         if (authManager != null) {
-                            authManager.register(username, rawPassword);
+                            authManager.register(username.trim(), rawPassword);
                         }
 
-                        alertMessage = "User '" + username + "' provisioned with role [" + roleName + "] for database scope '" + dbScope + "'!";
+                        alertMessage = "User '" + username.trim() + "' provisioned with role [" + roleName + "] for database scope '" + dbScope + "'!";
                         alertType = "badge-active";
+                        usernameValidationState = ValidationState.valid("Usuario '" + username.trim() + "' provisionado exitosamente.");
                     }
                 } else if ("delete_user".equalsIgnoreCase(action)) {
                     String userId = params.get("user_id");
@@ -373,14 +430,11 @@ public class StoreUsersPage extends StoreTemplatePage {
             ).modifier(new Modifier().style("align-items: center;"))
         ).modifier(new Modifier().style("justify-content: space-between; align-items: center; margin-bottom: 24px;"));
 
-        // Alert Banner (if any)
-        Widget alertWidget = alertMessage.isEmpty() ? Div.of() : Div.of(
-            Div.of(
-                Icon.of("fas fa-user-check").modifier(new Modifier().style("color:#38bdf8; font-size:18px;")),
-                Span.of(alertMessage).modifier(new Modifier().style("font-size:14px; color:#f8fafc; font-weight:500;"))
-            ).modifier(new Modifier().style("display:flex; align-items:center; gap:10px;")),
-            Span.of("RBAC SYNCED").modifier(new Modifier().cssClass("store-badge " + alertType))
-        ).modifier(new Modifier().style("background: rgba(30, 41, 59, 0.9); border: 1px solid rgba(59,130,246,0.4); padding: 14px 20px; border-radius: 10px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between;"));
+        // Alert Banner (using JettraFlux FeedbackAlert)
+        Widget alertWidget = alertMessage.isEmpty() ? Div.of() :
+            "badge-raft".equals(alertType)
+                ? FeedbackAlert.error("Error de Validación de Usuario", alertMessage)
+                : FeedbackAlert.success("Operación Exitosa", alertMessage);
 
         // Discover active databases to populate select
         Set<String> discoveredDbs = new TreeSet<>();
@@ -546,6 +600,20 @@ public class StoreUsersPage extends StoreTemplatePage {
         roleDropdown.modifier(new Modifier().style("width:100%; padding:8px 10px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; box-sizing:border-box;"));
 
         // Create User Form Card
+        TextField usernameField = TextField.of("username", "e.g. carlos_mendez");
+        usernameField.id("input_username");
+        usernameField.value(enteredUsername);
+        usernameField.withValidationState(usernameValidationState);
+        usernameField.modifier(new Modifier().style("width:100%; padding:8px 10px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; box-sizing:border-box;"));
+
+        ValidationMessage usernameFeedback = ValidationMessage.forInput("username")
+            .state(usernameValidationState);
+        usernameFeedback.id("username-feedback");
+
+        TextField emailField = TextField.of("email", "carlos@company.com");
+        emailField.value(enteredEmail);
+        emailField.modifier(new Modifier().style("width:100%; padding:8px 10px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; box-sizing:border-box;"));
+
         Widget createUserCard = Div.of(
             Header.of(3,
                 Icon.of("fas fa-user-plus").modifier(new Modifier().style("color:#4ade80; margin-right:8px;")),
@@ -558,13 +626,12 @@ public class StoreUsersPage extends StoreTemplatePage {
                 Div.of(
                     Div.of(
                         Label.of("Username").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600; display:block; margin-bottom:4px;")),
-                        TextField.of("username", "e.g. carlos_mendez")
-                            .modifier(new Modifier().style("width:100%; padding:8px 10px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; box-sizing:border-box;"))
+                        usernameField,
+                        usernameFeedback
                     ),
                     Div.of(
                         Label.of("Email").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600; display:block; margin-bottom:4px;")),
-                        TextField.of("email", "carlos@company.com")
-                            .modifier(new Modifier().style("width:100%; padding:8px 10px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; box-sizing:border-box;"))
+                        emailField
                     ),
                     Div.of(
                         Label.of("Password").modifier(new Modifier().style("font-size:12px; color:#94a3b8; font-weight:600; display:block; margin-bottom:4px;")),
@@ -681,6 +748,83 @@ public class StoreUsersPage extends StoreTemplatePage {
             "      });\n" +
             "    }\n" +
             "  }\n" +
+            "  (function() {\n" +
+            "    const usernameInput = document.getElementById('input_username') || document.querySelector('input[name=\"username\"]');\n" +
+            "    const usernameFeedback = document.getElementById('username-feedback');\n" +
+            "    let debounceTimer = null;\n" +
+            "\n" +
+            "    function updateFeedbackUI(isValid, message) {\n" +
+            "      if (!usernameFeedback) return;\n" +
+            "      usernameFeedback.style.display = 'flex';\n" +
+            "      const textSpan = usernameFeedback.querySelector('.jettra-validation-text') || usernameFeedback;\n" +
+            "      const icon = usernameFeedback.querySelector('i');\n" +
+            "      if (!isValid) {\n" +
+            "        usernameFeedback.className = 'jettra-validation-message is-invalid error-feedback';\n" +
+            "        usernameFeedback.style.color = '#ef4444';\n" +
+            "        if (icon) icon.className = 'fas fa-circle-exclamation';\n" +
+            "        if (textSpan) textSpan.textContent = message;\n" +
+            "        if (usernameInput) {\n" +
+            "          usernameInput.classList.add('is-invalid');\n" +
+            "          usernameInput.classList.remove('is-valid');\n" +
+            "          usernameInput.setAttribute('aria-invalid', 'true');\n" +
+            "          usernameInput.style.borderColor = '#ef4444';\n" +
+            "        }\n" +
+            "      } else {\n" +
+            "        usernameFeedback.className = 'jettra-validation-message is-valid success-feedback';\n" +
+            "        usernameFeedback.style.color = '#22c55e';\n" +
+            "        if (icon) icon.className = 'fas fa-circle-check';\n" +
+            "        if (textSpan) textSpan.textContent = message;\n" +
+            "        if (usernameInput) {\n" +
+            "          usernameInput.classList.remove('is-invalid');\n" +
+            "          usernameInput.classList.add('is-valid');\n" +
+            "          usernameInput.setAttribute('aria-invalid', 'false');\n" +
+            "          usernameInput.style.borderColor = '#22c55e';\n" +
+            "        }\n" +
+            "      }\n" +
+            "    }\n" +
+            "\n" +
+            "    function clearFeedbackUI() {\n" +
+            "      if (usernameFeedback) usernameFeedback.style.display = 'none';\n" +
+            "      if (usernameInput) {\n" +
+            "        usernameInput.classList.remove('is-invalid', 'is-valid');\n" +
+            "        usernameInput.removeAttribute('aria-invalid');\n" +
+            "        usernameInput.style.borderColor = 'rgba(255,255,255,0.15)';\n" +
+            "      }\n" +
+            "    }\n" +
+            "\n" +
+            "    function checkUsernameAvailability(rawVal) {\n" +
+            "      const val = (rawVal || '').trim();\n" +
+            "      if (!val) {\n" +
+            "        clearFeedbackUI();\n" +
+            "        return;\n" +
+            "      }\n" +
+            "      if (val.length < 3) {\n" +
+            "        updateFeedbackUI(false, 'El nombre de usuario debe tener al menos 3 caracteres.');\n" +
+            "        return;\n" +
+            "      }\n" +
+            "      fetch('" + JettraServer.resolvePath("/users?action=check_username&username=") + "' + encodeURIComponent(val))\n" +
+            "        .then(res => res.json())\n" +
+            "        .then(data => {\n" +
+            "          if (data.valid) {\n" +
+            "            updateFeedbackUI(true, data.message || 'Nombre de usuario disponible.');\n" +
+            "          } else {\n" +
+            "            updateFeedbackUI(false, data.message || 'Nombre de usuario no disponible.');\n" +
+            "          }\n" +
+            "        })\n" +
+            "        .catch(() => {});\n" +
+            "    }\n" +
+            "\n" +
+            "    if (usernameInput) {\n" +
+            "      usernameInput.addEventListener('input', function() {\n" +
+            "        clearTimeout(debounceTimer);\n" +
+            "        debounceTimer = setTimeout(() => checkUsernameAvailability(usernameInput.value), 300);\n" +
+            "      });\n" +
+            "      usernameInput.addEventListener('blur', function() {\n" +
+            "        clearTimeout(debounceTimer);\n" +
+            "        checkUsernameAvailability(usernameInput.value);\n" +
+            "      });\n" +
+            "    }\n" +
+            "  })();\n" +
             "</script>\n"
         );
 
