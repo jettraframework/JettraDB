@@ -54,6 +54,7 @@ public class StoreDatabasesPage extends StoreTemplatePage {
     private final JUserRepository userRepo;
     private final JCredentialRepository credRepo;
     private final SampleDatasetManager sampleDatasetManager;
+    private boolean showActionButtons = false;
 
     public StoreDatabasesPage(JettraStorageEngine engine, AuthManager authManager) {
         this.engine = engine;
@@ -63,9 +64,31 @@ public class StoreDatabasesPage extends StoreTemplatePage {
         this.sampleDatasetManager = new SampleDatasetManager(engine);
     }
 
+    public StoreDatabasesPage withGlobalActionButtons(boolean show) {
+        this.showActionButtons = show;
+        return this;
+    }
+
     @Override
     protected String getPageTitle() {
         return "Databases & Components Console - JettraStoreEngine";
+    }
+
+    @Override
+    protected boolean showGlobalActionButtons() {
+        return this.showActionButtons;
+    }
+
+    @Override
+    protected RouteVisibilityGuard.NavigationRouteConfig getRouteConfig(HttpExchange exchange, Map<String, String> params) {
+        String path = (exchange != null && exchange.getRequestURI() != null)
+            ? exchange.getRequestURI().getPath()
+            : "/databases";
+        RouteVisibilityGuard.NavigationRouteConfig config = RouteVisibilityGuard.NavigationRouteConfig.databasesConfig(path);
+        if (this.showActionButtons) {
+            return config.withGlobalActionButtons(true);
+        }
+        return config;
     }
 
     @Override
@@ -74,7 +97,7 @@ public class StoreDatabasesPage extends StoreTemplatePage {
         String alertType = "badge-active";
 
         // Handle Actions: create_db, drop_db, rename_db, assign_user, delete_entity
-        if ("POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+        if (exchange != null && "POST".equalsIgnoreCase(exchange.getRequestMethod())) {
             try {
                 String action = params != null ? params.get("action") : null;
                 if ("create_db".equalsIgnoreCase(action)) {
@@ -205,7 +228,7 @@ public class StoreDatabasesPage extends StoreTemplatePage {
             ? secContext.principal()
             : null;
 
-        if (principal == null) {
+        if (principal == null && exchange != null) {
             String u = getLoggedUser(exchange);
             String r = getLoggedRole(exchange);
             String d = getLoggedDepartment(exchange);

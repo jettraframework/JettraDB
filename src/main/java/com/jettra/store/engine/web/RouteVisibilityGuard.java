@@ -60,7 +60,7 @@ public final class RouteVisibilityGuard {
         }
 
         public static NavigationRouteConfig databasesConfig(String path) {
-            return new NavigationRouteConfig(RouteType.DATABASES, path, true, false, true, true, true);
+            return new NavigationRouteConfig(RouteType.DATABASES, path, true, false, false, true, true);
         }
 
         public static NavigationRouteConfig securityConfig(String path) {
@@ -130,6 +130,9 @@ public final class RouteVisibilityGuard {
             }
             if (lowerTitle.contains("information") || lowerTitle.contains("información")) {
                 return NavigationRouteConfig.informationConfig("/information");
+            }
+            if (lowerTitle.contains("database") || lowerTitle.contains("base de datos")) {
+                return NavigationRouteConfig.databasesConfig("/databases");
             }
             if (lowerTitle.contains("component") || lowerTitle.contains("internal")) {
                 return NavigationRouteConfig.componentsConfig("/components");
