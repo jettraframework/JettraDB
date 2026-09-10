@@ -92,6 +92,14 @@ public class RouteVisibilityAndToolbarTest {
         assertEquals(RouteType.DATABASES, dbConfig.routeType());
         assertTrue(dbConfig.showDatabaseSelector());
         assertTrue(dbConfig.showGlobalActionButtons());
+
+        // 3. Components route -> Hidden database select, tabs, and global action buttons
+        NavigationRouteConfig componentsConfig = RouteVisibilityGuard.resolveConfig("/components");
+        assertEquals(RouteType.COMPONENTS, componentsConfig.routeType());
+        assertFalse(componentsConfig.showDatabaseSelector(), "Components must hide database select");
+        assertFalse(componentsConfig.showTopNavigationTabs(), "Components must hide top tabs");
+        assertFalse(componentsConfig.showGlobalActionButtons(), "Components must hide global action buttons");
+        assertTrue(componentsConfig.showThemeToggle(), "Components must retain theme toggle");
     }
 
     @JettraTest

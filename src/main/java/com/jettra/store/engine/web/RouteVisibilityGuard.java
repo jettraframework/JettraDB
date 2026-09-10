@@ -71,12 +71,20 @@ public final class RouteVisibilityGuard {
             return new NavigationRouteConfig(RouteType.INFORMATION, path, false, false, false, true, true);
         }
 
+        public static NavigationRouteConfig componentsConfig(String path) {
+            return new NavigationRouteConfig(RouteType.COMPONENTS, path, false, false, false, true, true);
+        }
+
         public static NavigationRouteConfig defaultManagementConfig(String path) {
             return new NavigationRouteConfig(RouteType.OTHER, path, true, true, true, true, true);
         }
 
         public NavigationRouteConfig withoutGlobalActionButtons() {
             return new NavigationRouteConfig(routeType, requestPath, showDatabaseSelector, showTopNavigationTabs, false, showThemeToggle, topToolbarVisible);
+        }
+
+        public NavigationRouteConfig withGlobalActionButtons(boolean visible) {
+            return new NavigationRouteConfig(routeType, requestPath, showDatabaseSelector, showTopNavigationTabs, visible, showThemeToggle, topToolbarVisible);
         }
 
         public NavigationRouteConfig withTopToolbarVisible(boolean visible) {
@@ -94,6 +102,7 @@ public final class RouteVisibilityGuard {
             case MANAGEMENT_EXPLORER -> NavigationRouteConfig.explorerConfig(path);
             case DATABASES -> NavigationRouteConfig.databasesConfig(path);
             case SECURITY -> NavigationRouteConfig.securityConfig(path);
+            case COMPONENTS -> NavigationRouteConfig.componentsConfig(path);
             case INFORMATION -> NavigationRouteConfig.informationConfig(path);
             case LOGIN -> new NavigationRouteConfig(RouteType.LOGIN, path, false, false, false, false, false);
             default -> NavigationRouteConfig.defaultManagementConfig(path);
@@ -121,6 +130,9 @@ public final class RouteVisibilityGuard {
             }
             if (lowerTitle.contains("information") || lowerTitle.contains("información")) {
                 return NavigationRouteConfig.informationConfig("/information");
+            }
+            if (lowerTitle.contains("component") || lowerTitle.contains("internal")) {
+                return NavigationRouteConfig.componentsConfig("/components");
             }
         }
         return resolveConfig(path != null ? path : "/dashboard");

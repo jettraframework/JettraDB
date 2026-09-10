@@ -21,14 +21,37 @@ import java.util.Map;
 public class StoreComponentsPage extends StoreTemplatePage {
 
     private final JettraStorageEngine engine;
+    private boolean showActionButtons = false;
 
     public StoreComponentsPage(JettraStorageEngine engine) {
         this.engine = engine;
     }
 
+    public StoreComponentsPage withGlobalActionButtons(boolean show) {
+        this.showActionButtons = show;
+        return this;
+    }
+
     @Override
     protected String getPageTitle() {
         return "Components & Internals - JettraStoreEngine";
+    }
+
+    @Override
+    protected boolean showGlobalActionButtons() {
+        return this.showActionButtons;
+    }
+
+    @Override
+    protected RouteVisibilityGuard.NavigationRouteConfig getRouteConfig(HttpExchange exchange, Map<String, String> params) {
+        String path = (exchange != null && exchange.getRequestURI() != null)
+            ? exchange.getRequestURI().getPath()
+            : "/components";
+        RouteVisibilityGuard.NavigationRouteConfig config = RouteVisibilityGuard.NavigationRouteConfig.componentsConfig(path);
+        if (this.showActionButtons) {
+            return config.withGlobalActionButtons(true);
+        }
+        return config;
     }
 
     @Override
