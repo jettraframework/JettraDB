@@ -95,6 +95,10 @@ public record SystemUser(
         );
     }
 
+    public SystemUser withActive(boolean active) {
+        return withUpdatedProfile(null, null, active, null);
+    }
+
     public boolean isAdmin() {
         return "admin".equalsIgnoreCase(username) || "DB_ADMIN".equalsIgnoreCase(role) || "SUPERADMIN".equalsIgnoreCase(role);
     }

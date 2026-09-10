@@ -53,7 +53,7 @@ public final class SecurityDbTestCleanup {
                 for (com.jettra.store.engine.users.SystemUser su : sysRepo.findAll()) {
                     if (!"admin".equalsIgnoreCase(su.username())) {
                         try {
-                            sysRepo.delete(su.id());
+                            sysRepo.purgeTestUserForTestingOnly(su.id());
                         } catch (Exception ignored) {}
                     }
                 }

@@ -213,7 +213,7 @@ public class StoreUsersPageSecurityAndDialogTest {
     }
 
     @JettraTest
-    @DisplayName("4. User revocation execution: Revoking user deletes account and credentials, blocking subsequent logins")
+    @DisplayName("4. User revocation execution: Attempted physical deletion is blocked and user identity is preserved")
     void testRevokeUserExecution() throws IOException {
         String testUser = "revoke_target_" + System.currentTimeMillis();
         String testPass = "PassTarget123!";
@@ -233,7 +233,7 @@ public class StoreUsersPageSecurityAndDialogTest {
                 .findFirst()
                 .orElseThrow(() -> new AssertionError("Target user must exist"));
 
-        // 2. Execute revoke via delete_user
+        // 2. Attempt execute revoke via delete_user -> must be blocked
         TestHttpExchange deleteExchange = new TestHttpExchange("POST", "/users");
         deleteExchange.getRequestHeaders().set("Cookie", "username=adminUser; role=ADMIN");
         deleteExchange.setRequestBody("action=delete_user&user_id=" + user.id().toString());
@@ -241,24 +241,12 @@ public class StoreUsersPageSecurityAndDialogTest {
         usersPage.handle(deleteExchange);
         assertEquals(200, deleteExchange.getResponseCode());
         String delBody = deleteExchange.getResponseBodyAsString();
-        assertTrue(delBody.contains("User account revoked and access removed."));
+        assertTrue(delBody.contains("La eliminación física de usuarios está estrictamente prohibida"),
+            "Alert must state that physical deletion is prohibited");
 
-        // 3. Verify user removed from repositories
+        // 3. Verify user identity is PRESERVED in repositories
         Optional<JUser> postDeleteUser = userRepo.findById(user.id());
-        assertTrue(postDeleteUser.isEmpty(), "User must be removed from repository");
-
-        Optional<JCredential> postDeleteCred = credRepo.findByUsername(testUser);
-        assertTrue(postDeleteCred.isEmpty(), "Credentials must be cleaned up from credential repository");
-
-        // 4. Attempt login with revoked user -> must fail
-        TestHttpExchange loginExchange = new TestHttpExchange("POST", "/login");
-        loginExchange.setRequestBody("username=" + testUser + "&password=" + testPass);
-
-        loginPage.handle(loginExchange);
-        assertEquals(302, loginExchange.getResponseCode());
-        String loc = loginExchange.getResponseHeaders().getFirst("Location");
-        assertNotNull(loc);
-        assertTrue(loc.contains("error=invalid_credentials"), "Revoked user must not be able to log in");
+        assertTrue(postDeleteUser.isPresent(), "User identity must be preserved in repository");
     }
 
     /**

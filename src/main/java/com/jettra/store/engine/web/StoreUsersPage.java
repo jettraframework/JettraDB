@@ -35,6 +35,11 @@ import io.jettra.flux.security.SecurityContext;
 import io.jettra.flux.security.SecurityContextHolder;
 import io.jettra.server.autentification.repository.UserUpdateCommand;
 import com.jettra.store.engine.exception.ImmutableAccountException;
+import com.jettra.store.engine.exception.UnsupportedUserDeletionException;
+import com.jettra.store.engine.users.commands.UserAdminCommand;
+import com.jettra.store.engine.users.commands.UserAdminCommand.CommandSource;
+import com.jettra.store.engine.users.commands.UserAdminPipeline;
+import io.jettra.flux.widgets.IdentityPreservationNotice;
 
 import com.jettra.store.engine.users.SystemUser;
 import com.jettra.store.engine.users.SystemUserRepository;
@@ -55,6 +60,7 @@ public class StoreUsersPage extends StoreTemplatePage {
     private final JCredentialRepository credRepo;
     private final UserValidationService validationService;
     private final UserValidationChain validationChain;
+    private final UserAdminPipeline userAdminPipeline;
     private final ReentrantLock userMutationLock = new ReentrantLock(true);
 
     public StoreUsersPage(JettraStorageEngine engine, AuthManager authManager) {
@@ -77,6 +83,7 @@ public class StoreUsersPage extends StoreTemplatePage {
         this.credRepo = credRepo;
         this.validationChain = UserValidationChain.defaultChain(this.systemUserRepo);
         this.validationService = validationService != null ? validationService : new UserValidationService(this.systemUserRepo);
+        this.userAdminPipeline = new UserAdminPipeline(this.systemUserRepo, this.userRepo);
     }
 
     protected String resolveCurrentUser(HttpExchange exchange) {
@@ -137,14 +144,50 @@ public class StoreUsersPage extends StoreTemplatePage {
             if (prefersJson) {
                 Map<String, String> bodyParams = parseRequestBody(exchange);
                 String action = bodyParams.get("action");
+                if (action == null && bodyParams.containsKey("_raw_body")) {
+                    String raw = bodyParams.get("_raw_body");
+                    if (raw != null && !raw.trim().startsWith("{")) {
+                        bodyParams.putAll(parseQueryParams(raw));
+                        action = bodyParams.get("action");
+                    }
+                }
                 if ("create_user".equalsIgnoreCase(action) || "register".equalsIgnoreCase(action)) {
                     handleDriverCreateUserJson(exchange, bodyParams);
+                    return;
+                }
+                if ("delete_user".equalsIgnoreCase(action) || "drop_user".equalsIgnoreCase(action) || "delete".equalsIgnoreCase(action)) {
+                    handleDriverDeleteUserJson(exchange, bodyParams);
                     return;
                 }
             }
         }
 
         super.handle(exchange);
+    }
+
+    private void handleDriverDeleteUserJson(HttpExchange exchange, Map<String, String> params) throws IOException {
+        String username = params.get("username");
+        String userId = params.get("user_id");
+        UUID uId = null;
+        if (userId != null && !userId.isBlank()) {
+            try { uId = UUID.fromString(userId.trim()); } catch (Exception ignored) {}
+        }
+        UserAdminCommand deleteCmd = new UserAdminCommand.DeleteUserAttemptCommand(
+            username != null ? username : (uId != null ? uId.toString() : "unknown"),
+            uId,
+            CommandSource.CLIENT_DRIVER,
+            "Driver deletion request"
+        );
+        try {
+            userAdminPipeline.execute(deleteCmd);
+        } catch (UnsupportedUserDeletionException e) {
+            String errJson = String.format(
+                "{\"status\":\"ERROR\",\"valid\":false,\"code\":\"%s\",\"message\":\"%s\"}",
+                escapeJson(e.getErrorCode()),
+                escapeJson(e.getMessage())
+            );
+            sendJsonResponse(exchange, 400, errJson);
+        }
     }
 
     private void handleDriverCreateUserJson(HttpExchange exchange, Map<String, String> params) throws IOException {
@@ -441,45 +484,44 @@ public class StoreUsersPage extends StoreTemplatePage {
                         alertType = "badge-active";
                         usernameValidationState = ValidationState.valid("Usuario '" + cleanUsername + "' provisionado exitosamente.");
                     }
-                } else if ("delete_user".equalsIgnoreCase(action)) {
+                } else if ("delete_user".equalsIgnoreCase(action) || "drop_user".equalsIgnoreCase(action)) {
                     String userId = params.get("user_id");
+                    String username = params.get("username");
+                    String uName = "";
+                    UUID uId = null;
                     if (userId != null && !userId.isBlank()) {
-                        UUID uId = UUID.fromString(userId);
-                        String uName = "";
-                        Optional<SystemUser> suOpt = systemUserRepo.findById(uId);
-                        if (suOpt.isPresent()) {
-                            uName = suOpt.get().username();
-                        }
-                        if (uName.isBlank() && userRepo != null) {
-                            Optional<JUser> userOpt = userRepo.findById(uId);
-                            if (userOpt.isPresent()) {
-                                uName = userOpt.get().firstName();
+                        try {
+                            uId = UUID.fromString(userId.trim());
+                            Optional<SystemUser> suOpt = systemUserRepo.findById(uId);
+                            if (suOpt.isPresent()) {
+                                uName = suOpt.get().username();
                             }
-                        }
-                        if ("admin".equalsIgnoreCase(uName)) {
-                            throw new ImmutableAccountException("El usuario admin no puede ser revocado.");
-                        }
-
-                        systemUserRepo.delete(uId);
-                        if (!uName.isBlank()) {
-                            systemUserRepo.deleteByUsername(uName);
-                            if (authManager != null) {
-                                authManager.unregister(uName);
-                            }
-                        }
-
-                        if (credRepo != null) {
-                            List<JCredential> allCreds = credRepo.findAll();
-                            for (JCredential c : allCreds) {
-                                if (c.jUser() != null && uId.equals(c.jUser().id())) {
-                                    credRepo.delete(c.id());
+                            if (uName.isBlank() && userRepo != null) {
+                                Optional<JUser> userOpt = userRepo.findById(uId);
+                                if (userOpt.isPresent()) {
+                                    uName = userOpt.get().firstName();
                                 }
                             }
-                        }
-                        if (userRepo != null) {
-                            userRepo.delete(uId);
-                        }
-                        alertMessage = "User account revoked and access removed.";
+                        } catch (Exception ignored) {}
+                    }
+                    if (uName.isBlank() && username != null) {
+                        uName = username.trim();
+                    }
+
+                    if ("admin".equalsIgnoreCase(uName)) {
+                        throw new ImmutableAccountException("El usuario admin no puede ser revocado.");
+                    }
+
+                    UserAdminCommand deleteCmd = new UserAdminCommand.DeleteUserAttemptCommand(
+                        uName,
+                        uId,
+                        CommandSource.WEB_UI,
+                        "Web UI deletion request"
+                    );
+                    try {
+                        userAdminPipeline.execute(deleteCmd);
+                    } catch (UnsupportedUserDeletionException e) {
+                        alertMessage = "Operación denegada: La eliminación física de usuarios está estrictamente prohibida en JettraDB para preservar la integridad histórica de identidades. Para revocar accesos a bases de datos, modifique sus autorizaciones desde el diálogo de edición o desactive la cuenta.";
                         alertType = "badge-raft";
                     }
                 } else if ("update_user".equalsIgnoreCase(action) || "edit_user".equalsIgnoreCase(action)) {
@@ -1082,6 +1124,7 @@ public class StoreUsersPage extends StoreTemplatePage {
 
         return Column.of(
             titleBlock,
+            IdentityPreservationNotice.create(),
             alertWidget,
             usersCard,
             createUserCard,

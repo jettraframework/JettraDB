@@ -156,13 +156,17 @@ public class AuthManager {
 
     /**
      * Unregisters a user from system_db and authentication cache.
+     * In accordance with JettraDB Identity Preservation Policy, physical deletion is prohibited:
+     * this deactivates the user record and clears memory caches.
      */
     public void unregister(String username) {
         if (username != null) {
             String clean = username.trim();
             userPasswords.remove(clean);
             requiresPasswordChange.remove(clean);
-            systemUserRepository.deleteByUsername(clean);
+            systemUserRepository.findByUsername(clean).ifPresent(user -> {
+                systemUserRepository.save(user.withActive(false));
+            });
         }
     }
 

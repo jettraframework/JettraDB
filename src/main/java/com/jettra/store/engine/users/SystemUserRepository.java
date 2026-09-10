@@ -44,20 +44,33 @@ public interface SystemUserRepository extends AutoCloseable {
 
     /**
      * Deletes a user by UUID.
-     * Cannot delete the protected 'admin' account.
+     * In accordance with JettraDB Identity Preservation Policy, physical deletion is prohibited.
      *
      * @param id the user id
      * @return true if deleted, false otherwise
+     * @throws com.jettra.store.engine.exception.UnsupportedUserDeletionException always
      */
     boolean delete(UUID id);
 
     /**
      * Deletes a user by username.
+     * In accordance with JettraDB Identity Preservation Policy, physical deletion is prohibited.
      *
      * @param username the username
      * @return true if deleted, false otherwise
+     * @throws com.jettra.store.engine.exception.UnsupportedUserDeletionException always
      */
     boolean deleteByUsername(String username);
+
+    /**
+     * Internal test harness purge method strictly for testing lifecycle teardowns.
+     *
+     * @param id the user id
+     * @return true if test file purged
+     */
+    default boolean purgeTestUserForTestingOnly(UUID id) {
+        return false;
+    }
 
     /**
      * Checks if a user exists with the given username (case-insensitive).

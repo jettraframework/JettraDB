@@ -1,6 +1,7 @@
 package com.jettra.store.engine.users;
 
 import com.jettra.store.engine.exception.ImmutableAccountException;
+import com.jettra.store.engine.exception.UnsupportedUserDeletionException;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -172,35 +173,35 @@ public class SystemUserRepositoryImpl implements SystemUserRepository {
     @Override
     public boolean delete(UUID id) {
         if (id == null) return false;
+        Optional<SystemUser> userOpt = findById(id);
+        String uName = userOpt.map(SystemUser::username).orElse(id.toString());
+        throw new UnsupportedUserDeletionException(uName, id, "SYSTEM_USER_REPOSITORY");
+    }
+
+    @Override
+    public boolean deleteByUsername(String username) {
+        if (username == null || username.isBlank()) return false;
+        Optional<SystemUser> userOpt = findByUsername(username);
+        UUID uId = userOpt.map(SystemUser::id).orElse(null);
+        throw new UnsupportedUserDeletionException(username, uId, "SYSTEM_USER_REPOSITORY");
+    }
+
+    @Override
+    public boolean purgeTestUserForTestingOnly(UUID id) {
+        if (id == null) return false;
         rwLock.writeLock().lock();
         try {
             Optional<SystemUser> userOpt = findById(id);
             if (userOpt.isEmpty()) {
                 return false;
             }
-            SystemUser user = userOpt.get();
-            if ("admin".equalsIgnoreCase(user.username())) {
-                throw new ImmutableAccountException("El usuario admin no puede ser revocado.");
+            if ("admin".equalsIgnoreCase(userOpt.get().username())) {
+                return false;
             }
             Path file = usersDirectory.resolve(id.toString() + ".jdb");
             return Files.deleteIfExists(file);
         } catch (IOException e) {
-            throw new UncheckedIOException("Error deleting system user with ID " + id, e);
-        } finally {
-            rwLock.writeLock().unlock();
-        }
-    }
-
-    @Override
-    public boolean deleteByUsername(String username) {
-        if (username == null || username.isBlank()) return false;
-        rwLock.writeLock().lock();
-        try {
-            Optional<SystemUser> userOpt = findByUsername(username);
-            if (userOpt.isEmpty()) {
-                return false;
-            }
-            return delete(userOpt.get().id());
+            throw new UncheckedIOException("Error purging test user with ID " + id, e);
         } finally {
             rwLock.writeLock().unlock();
         }
