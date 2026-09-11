@@ -2138,8 +2138,6 @@ public class StoreEnginesPage extends StoreTemplatePage {
         modals.add(buildReferenceWarningModal());
         modals.add(buildCreateIndexModal(actionUrl));
         modals.add(buildCreateSchemaModal(actionUrl));
-        modals.add(buildSampleDatabasesModal(actionUrl));
-        modals.add(buildConfirmUninstallSampleDbModal());
         modals.add(buildDatabaseSwitchModal(actionUrl, targetDb));
         modals.add(buildModalsScript());
 
@@ -2182,7 +2180,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
             Button.of(Icon.of("fas fa-plus"), Text.of(" Create New DB"))
                 .modifier(new Modifier().attribute("type", "button").attribute("onclick", "hideModal('switchDbModal'); showModal('createDbModal');").cssClass("btn-studio-secondary")),
             Button.of(Icon.of("fas fa-cubes"), Text.of(" Sample Catalog"))
-                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "hideModal('switchDbModal'); openSampleDatabasesModal();").cssClass("btn-studio-secondary").style("color:#ec4899;"))
+                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "hideModal('switchDbModal'); location.href='" + JettraServer.resolvePath("/databases") + "';").cssClass("btn-studio-secondary").style("color:#ec4899;"))
         ).modifier(new Modifier().style("display:flex; justify-content:flex-end; gap:8px; margin-top:16px; border-top:1px solid rgba(255,255,255,0.08); padding-top:14px;"));
 
         Widget body = Column.of(
@@ -3665,72 +3663,6 @@ public class StoreEnginesPage extends StoreTemplatePage {
         ).method("POST").action(actionUrl);
 
         return createModalOverlay("createSchemaModal", "560px", "rgba(56,189,248,0.4)", header, form);
-    }
-
-    private Widget buildSampleDatabasesModal(String actionUrl) {
-        Widget header = createModalHeader("Sample Databases & Datasets Catalog", "fas fa-cubes", "#ec4899", "sampleDatabasesModal");
-
-        Widget subtitle = Paragraph.of("Explore, install, and uninstall on-demand sample datasets across all 9 Multi-Model Storage Engines with atomic lifecycle operations.")
-            .modifier(new Modifier().style("font-size:12px; color:#94a3b8; margin:0 0 16px 0; line-height:1.4;"));
-
-        Widget loadingIndicator = Div.of(
-            Icon.of("fas fa-spinner fa-spin").modifier(new Modifier().style("font-size:24px; color:#ec4899; margin-bottom:8px;")),
-            Paragraph.of("Loading sample database catalog...").modifier(new Modifier().style("font-size:12px; color:#cbd5e1; margin:0;"))
-        ).id("sampleDbsLoadingContainer").modifier(new Modifier().style("display:flex; flex-direction:column; align-items:center; justify-content:center; padding:30px;"));
-
-        Widget gridContainer = Div.of()
-            .id("sampleDbsCatalogContainer")
-            .modifier(new Modifier().style("display:none; flex-direction:column; gap:12px; max-height:480px; overflow-y:auto; padding-right:4px;"));
-
-        Widget actions = Div.of(
-            Button.of(Icon.of("fas fa-sync-alt"), Text.of(" Refresh Catalog"))
-                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "refreshSampleDatabasesList()").cssClass("btn-action btn-secondary").style("padding:6px 14px; font-size:12px; margin-right:8px; background:rgba(56,189,248,0.1); border-color:rgba(56,189,248,0.3); color:#38bdf8;")),
-            Button.of(Icon.of("fas fa-times"), Text.of(" Close"))
-                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "hideModal('sampleDatabasesModal')").cssClass("btn-action btn-secondary").style("padding:6px 14px; font-size:12px; background:rgba(148,163,184,0.15); color:#cbd5e1;"))
-        ).modifier(new Modifier().style("display:flex; justify-content:flex-end; align-items:center; margin-top:16px; border-top:1px solid rgba(255,255,255,0.08); padding-top:12px;"));
-
-        Widget body = Div.of(subtitle, loadingIndicator, gridContainer, actions);
-
-        return createModalOverlay("sampleDatabasesModal", "780px", "rgba(236,72,153,0.4)", header, body);
-    }
-
-    private Widget buildConfirmUninstallSampleDbModal() {
-        Widget header = createModalHeader("Confirm Dataset Uninstallation", "fas fa-exclamation-triangle", "#ef4444", "confirmUninstallSampleDbModal");
-
-        Widget body = Div.of(
-            InputHidden.of("confirm_uninstall_target_db", "").id("confirmUninstallTargetDbInput"),
-            Div.of(
-                Icon.of("fas fa-trash-alt").modifier(new Modifier().style("color:#ef4444; font-size:32px; margin-bottom:12px; display:block; text-align:center;")),
-                Paragraph.of(
-                    Text.of("Are you sure you want to uninstall and purge sample database "),
-                    Span.of("\"meteorology_iot_db\"").id("confirmUninstallDbNameDisplay").modifier(new Modifier().style("color:#f87171; font-weight:700; font-family:monospace; background:rgba(239,68,68,0.12); padding:2px 8px; border-radius:4px; border:1px solid rgba(239,68,68,0.25);")),
-                    Text.of("? All stored records and components will be permanently deleted.")
-                ).modifier(new Modifier().style("font-weight:600; color:var(--j-text-primary,#f8fafc); font-size:13px; text-align:center; margin:0 0 12px 0; line-height:1.5;")),
-                Div.of(
-                    Icon.of("fas fa-exclamation-circle").modifier(new Modifier().style("color:#f59e0b; margin-right:8px; font-size:14px; flex-shrink:0; margin-top:2px;")),
-                    Span.of("All stored records, typed schema components, secondary indexes, and cross-engine pointers will be permanently purged from the storage core.")
-                        .modifier(new Modifier().style("font-size:11.5px; color:#cbd5e1; line-height:1.4;"))
-                ).modifier(new Modifier().style("display:flex; align-items:flex-start; background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.2); border-radius:8px; padding:10px 14px; margin-bottom:16px;"))
-            ),
-            Div.of(
-                Button.of(Icon.of("fas fa-times"), Text.of(" Cancelar"))
-                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "hideModal('confirmUninstallSampleDbModal')").cssClass("btn-action btn-secondary").style("padding:6px 14px; font-size:12px; margin-right:8px;")),
-                Button.of(Icon.of("fas fa-trash-alt"), Text.of(" Uninstall & Purge"))
-                    .id("btnConfirmUninstallSubmit")
-                    .modifier(new Modifier()
-                        .attribute("type", "button")
-                        .attribute("onclick", "executeUninstallSampleDb()")
-                        .cssClass("btn-action btn-primary")
-                        .style("padding:6px 16px; font-size:12px; font-weight:700; background:#ef4444; border-color:#ef4444; color:#fff; cursor:pointer;"))
-            ).modifier(new Modifier().style("display:flex; justify-content:flex-end; align-items:center; margin-top:8px;"))
-        ).modifier(new Modifier().style("padding:14px 4px 4px 4px;"));
-
-        return ModalDialog.of("confirmUninstallSampleDbModal")
-            .maxWidth("520px")
-            .borderColor("rgba(239,68,68,0.5)")
-            .header(header)
-            .body(body)
-            .modifier(new Modifier().style("z-index:100010;"));
     }
 
     private Widget buildModalsScript() {
@@ -5869,243 +5801,6 @@ public class StoreEnginesPage extends StoreTemplatePage {
     showModal('advancedSearchModal');
   }
 
-  function openSampleDatabasesModal() {
-    showModal('sampleDatabasesModal');
-    refreshSampleDatabasesList();
-  }
-
-  function refreshSampleDatabasesList() {
-    var loadEl = document.getElementById('sampleDbsLoadingContainer');
-    var listEl = document.getElementById('sampleDbsCatalogContainer');
-    if (loadEl) loadEl.style.display = 'flex';
-    if (listEl) listEl.style.display = 'none';
-
-    fetch('/engines?action=list_sample_dbs', {
-      headers: { 'X-Requested-With': 'XMLHttpRequest' }
-    })
-    .then(function(res) { return res.json(); })
-    .then(function(data) {
-      if (loadEl) loadEl.style.display = 'none';
-      if (!listEl) return;
-      listEl.innerHTML = '';
-      listEl.style.display = 'flex';
-
-      if (data && data.databases && data.databases.length > 0) {
-        data.databases.forEach(function(db) {
-          var isInst = db.isInstalled;
-          var card = document.createElement('div');
-          card.style.cssText = 'background:#1e293b; border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:12px 16px; display:flex; justify-content:space-between; align-items:center; gap:16px; transition:border-color 0.2s;';
-          card.id = 'sample-db-card-' + db.databaseName;
-
-          var left = document.createElement('div');
-          left.style.cssText = 'flex:1; min-width:0;';
-
-          var titleRow = document.createElement('div');
-          titleRow.style.cssText = 'display:flex; align-items:center; gap:8px; margin-bottom:4px; flex-wrap:wrap;';
-
-          var iconEl = document.createElement('i');
-          iconEl.className = db.icon || 'fas fa-database';
-          iconEl.style.cssText = 'color:#ec4899; font-size:14px;';
-
-          var nameEl = document.createElement('span');
-          nameEl.style.cssText = 'font-weight:700; color:#f8fafc; font-size:13px;';
-          nameEl.innerText = db.databaseName;
-
-          var engBadge = document.createElement('span');
-          engBadge.style.cssText = 'font-size:10px; font-weight:700; padding:2px 6px; border-radius:4px; background:rgba(56,189,248,0.15); color:#38bdf8; border:1px solid rgba(56,189,248,0.3);';
-          engBadge.innerText = db.engineType;
-
-          var statusBadge = document.createElement('span');
-          statusBadge.id = 'sample-status-' + db.databaseName;
-          if (isInst) {
-            statusBadge.style.cssText = 'font-size:10px; font-weight:700; padding:2px 8px; border-radius:12px; background:rgba(34,197,94,0.15); color:#4ade80; border:1px solid rgba(34,197,94,0.3); display:inline-flex; align-items:center; gap:4px;';
-            statusBadge.innerHTML = '<i class="fas fa-check-circle"></i> Installed (' + (db.recordCount || db.estimatedRecords) + ' records)';
-          } else {
-            statusBadge.style.cssText = 'font-size:10px; font-weight:600; padding:2px 8px; border-radius:12px; background:rgba(148,163,184,0.1); color:#94a3b8; border:1px solid rgba(148,163,184,0.25); display:inline-flex; align-items:center; gap:4px;';
-            statusBadge.innerHTML = '<i class="fas fa-download"></i> Available (~' + db.estimatedRecords + ' records)';
-          }
-
-          titleRow.appendChild(iconEl);
-          titleRow.appendChild(nameEl);
-          titleRow.appendChild(engBadge);
-          titleRow.appendChild(statusBadge);
-
-          var descEl = document.createElement('div');
-          descEl.style.cssText = 'font-size:11px; color:#cbd5e1; line-height:1.4; margin-bottom:2px;';
-          descEl.innerText = db.description;
-
-          left.appendChild(titleRow);
-          left.appendChild(descEl);
-
-          var right = document.createElement('div');
-          right.style.cssText = 'display:flex; align-items:center; gap:8px; flex-shrink:0;';
-          right.id = 'sample-actions-' + db.databaseName;
-
-          if (isInst) {
-            var uninstBtn = document.createElement('button');
-            uninstBtn.type = 'button';
-            uninstBtn.className = 'btn-action btn-secondary';
-            uninstBtn.style.cssText = 'padding:5px 12px; font-size:11px; background:rgba(239,68,68,0.15); border-color:rgba(239,68,68,0.3); color:#f87171; cursor:pointer;';
-            uninstBtn.innerHTML = '<i class="fas fa-trash-alt" style="margin-right:4px;"></i> Uninstall';
-            uninstBtn.onclick = function() { uninstallSampleDb(db.databaseName); };
-            right.appendChild(uninstBtn);
-          } else {
-            var instBtn = document.createElement('button');
-            instBtn.type = 'button';
-            instBtn.className = 'btn-action btn-primary';
-            instBtn.style.cssText = 'padding:5px 12px; font-size:11px; background:#ec4899; border-color:#ec4899; color:#fff; cursor:pointer;';
-            instBtn.innerHTML = '<i class="fas fa-download" style="margin-right:4px;"></i> Install Dataset';
-            instBtn.onclick = function() { installSampleDb(db.databaseName); };
-            right.appendChild(instBtn);
-          }
-
-          card.appendChild(left);
-          card.appendChild(right);
-          listEl.appendChild(card);
-        });
-      }
-    })
-    .catch(function(err) {
-      if (loadEl) loadEl.style.display = 'none';
-      if (listEl) {
-        listEl.style.display = 'block';
-        listEl.innerHTML = '<div style="color:#f87171; font-size:12px; padding:16px;">Failed to load catalog: ' + (err.message || err) + '</div>';
-      }
-    });
-  }
-
-  function installSampleDb(dbName) {
-    var actionsEl = document.getElementById('sample-actions-' + dbName);
-    var statusEl = document.getElementById('sample-status-' + dbName);
-    if (actionsEl) actionsEl.innerHTML = '<span style="color:#ec4899; font-size:11px; display:inline-flex; align-items:center; gap:6px;"><i class="fas fa-spinner fa-spin"></i> Installing...</span>';
-    if (statusEl) {
-      statusEl.style.cssText = 'font-size:10px; font-weight:700; padding:2px 8px; border-radius:12px; background:rgba(234,179,8,0.15); color:#facc15; border:1px solid rgba(234,179,8,0.3); display:inline-flex; align-items:center; gap:4px;';
-      statusEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Seeding database...';
-    }
-
-    fetch('/engines', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'X-Requested-With': 'XMLHttpRequest'
-      },
-      body: 'action=install_sample_db_ajax&target_db=' + encodeURIComponent(dbName)
-    })
-    .then(function(res) { return res.json(); })
-    .then(function(data) {
-      if (data && data.status === 'SUCCESS') {
-        if (typeof showTransientToast === 'function') {
-          showTransientToast(data.message || ('Dataset ' + dbName + ' installed!'), 'success');
-        }
-        if (typeof treeStateManager !== 'undefined' && treeStateManager.invalidateTreeCache) {
-          treeStateManager.invalidateTreeCache(dbName);
-        }
-        refreshSampleDatabasesList();
-        if (typeof reloadExplorerHierarchy === 'function') {
-          reloadExplorerHierarchy(dbName);
-        }
-      } else {
-        alert('Installation failed: ' + (data ? data.message : 'Unknown error'));
-        refreshSampleDatabasesList();
-      }
-    })
-    .catch(function(err) {
-      alert('Installation failed: ' + (err.message || err));
-      refreshSampleDatabasesList();
-    });
-  }
-
-  function openConfirmUninstallSampleDbModal(dbName) {
-    if (!dbName) return;
-    var inp = document.getElementById('confirmUninstallTargetDbInput');
-    if (inp) inp.value = dbName;
-    var disp = document.getElementById('confirmUninstallDbNameDisplay');
-    if (disp) disp.innerText = '"' + dbName + '"';
-    var btn = document.getElementById('btnConfirmUninstallSubmit');
-    if (btn) {
-      btn.disabled = false;
-      btn.innerHTML = '<i class="fas fa-trash-alt" style="margin-right:4px;"></i> Uninstall & Purge';
-    }
-    showModal('confirmUninstallSampleDbModal');
-  }
-  window.openConfirmUninstallSampleDbModal = openConfirmUninstallSampleDbModal;
-
-  function uninstallSampleDb(dbName) {
-    openConfirmUninstallSampleDbModal(dbName);
-  }
-  window.uninstallSampleDb = uninstallSampleDb;
-
-  function executeUninstallSampleDb() {
-    var inp = document.getElementById('confirmUninstallTargetDbInput');
-    var dbName = inp ? inp.value : '';
-    if (!dbName) return;
-
-    var btn = document.getElementById('btnConfirmUninstallSubmit');
-    var origHtml = btn ? btn.innerHTML : '';
-    if (btn) {
-      btn.disabled = true;
-      btn.innerHTML = '<i class="fas fa-spinner fa-spin" style="margin-right:4px;"></i> Removing...';
-    }
-
-    var actionsEl = document.getElementById('sample-actions-' + dbName);
-    var statusEl = document.getElementById('sample-status-' + dbName);
-    if (actionsEl) actionsEl.innerHTML = '<span style="color:#f87171; font-size:11px; display:inline-flex; align-items:center; gap:6px;"><i class="fas fa-spinner fa-spin"></i> Removing...</span>';
-    if (statusEl) {
-      statusEl.style.cssText = 'font-size:10px; font-weight:700; padding:2px 8px; border-radius:12px; background:rgba(239,68,68,0.15); color:#f87171; border:1px solid rgba(239,68,68,0.3); display:inline-flex; align-items:center; gap:4px;';
-      statusEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Purging keys...';
-    }
-
-    fetch('/engines', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'X-Requested-With': 'XMLHttpRequest'
-      },
-      body: 'action=uninstall_sample_db_ajax&target_db=' + encodeURIComponent(dbName)
-    })
-    .then(function(res) { return res.json(); })
-    .then(function(data) {
-      if (btn) {
-        btn.disabled = false;
-        btn.innerHTML = origHtml;
-      }
-      hideModal('confirmUninstallSampleDbModal');
-      if (data && data.status === 'SUCCESS') {
-        if (typeof showTransientToast === 'function') {
-          showTransientToast(data.message || ('Dataset ' + dbName + ' uninstalled!'), 'success');
-        }
-        if (typeof treeStateManager !== 'undefined' && treeStateManager.invalidateTreeCache) {
-          treeStateManager.invalidateTreeCache(dbName);
-        }
-        refreshSampleDatabasesList();
-        if (typeof reloadExplorerHierarchy === 'function') {
-          reloadExplorerHierarchy(dbName);
-        }
-      } else {
-        if (typeof showTransientToast === 'function') {
-          showTransientToast('Uninstallation failed: ' + (data ? data.message : 'Unknown error'), 'error');
-        } else {
-          alert('Uninstallation failed: ' + (data ? data.message : 'Unknown error'));
-        }
-        refreshSampleDatabasesList();
-      }
-    })
-    .catch(function(err) {
-      if (btn) {
-        btn.disabled = false;
-        btn.innerHTML = origHtml;
-      }
-      hideModal('confirmUninstallSampleDbModal');
-      if (typeof showTransientToast === 'function') {
-        showTransientToast('Uninstallation failed: ' + (err.message || err), 'error');
-      } else {
-        alert('Uninstallation failed: ' + (err.message || err));
-      }
-      refreshSampleDatabasesList();
-    });
-  }
-  window.executeUninstallSampleDb = executeUninstallSampleDb;
-
   // Teleport all modals to document.body on load so they escape any CSS containing blocks
   document.addEventListener('DOMContentLoaded', function() {
     var modalIds = [
@@ -6117,7 +5812,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
       'universalRestoreModal', 'confirmRestoreModal', 'confirmDeleteModal',
       'inspectRecordModal', 'referenceWarningModal', 'advancedSearchModal',
       'advSearchHelpModal', 'backupDbModal', 'restoreDbModal', 'confirmDbRestoreModal',
-      'exportDataModal', 'createIndexModal', 'createSchemaModal', 'sampleDatabasesModal',
+      'exportDataModal', 'createIndexModal', 'createSchemaModal',
       'adaptiveRecordInsertModal'
     ];
     modalIds.forEach(function(mid) {

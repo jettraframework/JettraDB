@@ -125,7 +125,7 @@ public class StoreComponentsPageActionsSuppressionTest {
         String html = customPage.buildUI(null, Collections.emptyMap(), "Matrix").render(Themes.Dark());
 
         assertTrue(html.contains("+ DB"), "When explicitly enabled with fluent API, + DB must be rendered");
-        assertTrue(html.contains("Sample DBs"), "When explicitly enabled with fluent API, Sample DBs must be rendered");
+        assertTrue(html.contains("Backup"), "When explicitly enabled with fluent API, Backup must be rendered");
     }
 
     private static class TestHttpExchange extends HttpExchange {

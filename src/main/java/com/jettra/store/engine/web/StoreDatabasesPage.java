@@ -32,6 +32,18 @@ import com.jettra.store.engine.web.validation.UserValidationContext;
 import com.jettra.store.engine.web.validation.UserValidationService;
 import com.jettra.store.engine.web.validation.ValidationResult;
 
+import com.jettra.store.engine.hierarchy.HierarchyResult;
+import com.jettra.store.engine.samples.lifecycle.InstallState;
+import com.jettra.store.engine.samples.lifecycle.SampleDatabaseDefinition;
+import com.jettra.store.engine.samples.lifecycle.SampleDatabaseService;
+import com.jettra.store.engine.samples.lifecycle.DatasetInstallInvoker;
+import com.jettra.store.engine.samples.lifecycle.InstallSingleDatasetCommand;
+import io.jettra.json.JettraJson;
+import io.jettra.json.JsonObject;
+import io.jettra.json.JsonArray;
+
+import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Map;
@@ -66,6 +78,9 @@ public class StoreDatabasesPage extends StoreTemplatePage {
     private final JUserRepository userRepo;
     private final JCredentialRepository credRepo;
     private final SampleDatasetManager sampleDatasetManager;
+    private final SampleDatabaseService sampleDbService;
+    private final DatasetInstallInvoker installInvoker;
+    private final JettraJson jsonParser = new JettraJson();
     private final UserValidationChain validationChain;
     private final UserValidationService validationService;
     private final DatabaseSecurityFilter securityFilter;
@@ -89,6 +104,8 @@ public class StoreDatabasesPage extends StoreTemplatePage {
         this.userRepo = userRepo != null ? userRepo : new JUserRepositoryImpl();
         this.credRepo = credRepo != null ? credRepo : new JCredentialRepositoryImpl();
         this.sampleDatasetManager = new SampleDatasetManager(engine);
+        this.sampleDbService = new SampleDatabaseService(engine);
+        this.installInvoker = this.sampleDbService.getInstallInvoker();
         this.validationChain = UserValidationChain.defaultChain(this.systemUserRepo);
         this.validationService = new UserValidationService(this.systemUserRepo);
         this.securityFilter = new DatabaseSecurityFilter(this.systemUserRepo, this.userRepo);
@@ -476,6 +493,11 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                     Text.of(" New Database")
                 ).attribute("onclick", "openCreateDbModal()")
                  .modifier(new Modifier().cssClass("btn-action btn-primary")),
+                Button.of(
+                    Icon.of("fas fa-database"),
+                    Text.of(" + Sample DBs")
+                ).attribute("onclick", "openSampleDatabasesModal()")
+                 .modifier(new Modifier().cssClass("btn-action btn-secondary").style("margin-left:8px;")),
                 Link.of(JettraServer.resolvePath("/users"),
                     Icon.of("fas fa-users-cog"),
                     Text.of(" User Security")
@@ -1242,8 +1264,207 @@ public class StoreDatabasesPage extends StoreTemplatePage {
             "      case 'OBJECT': t.value = '{\"class\": \"BlobObject\", \"data\": \"base64_or_stream\"}'; break;\n" +
             "    }\n" +
             "  }\n" +
+            "  function openSampleDatabasesModal() {\n" +
+            "    var modal = document.getElementById('sampleDatabasesModal');\n" +
+            "    if (modal) modal.showModal();\n" +
+            "    refreshSampleDatabasesList();\n" +
+            "  }\n" +
+            "  function refreshSampleDatabasesList() {\n" +
+            "    var loadEl = document.getElementById('sampleDbsLoadingContainer');\n" +
+            "    var listEl = document.getElementById('sampleDbsCatalogContainer');\n" +
+            "    if (loadEl) loadEl.style.display = 'flex';\n" +
+            "    if (listEl) listEl.style.display = 'none';\n" +
+            "\n" +
+            "    fetch('/databases?action=list_sample_dbs', {\n" +
+            "      headers: { 'X-Requested-With': 'XMLHttpRequest' }\n" +
+            "    })\n" +
+            "    .then(function(res) { return res.json(); })\n" +
+            "    .then(function(data) {\n" +
+            "      if (loadEl) loadEl.style.display = 'none';\n" +
+            "      if (!listEl) return;\n" +
+            "      listEl.innerHTML = '';\n" +
+            "      listEl.style.display = 'flex';\n" +
+            "\n" +
+            "      if (data && data.databases && data.databases.length > 0) {\n" +
+            "        data.databases.forEach(function(db) {\n" +
+            "          var isInst = db.isInstalled;\n" +
+            "          var card = document.createElement('div');\n" +
+            "          card.style.cssText = 'background:#1e293b; border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:12px 16px; display:flex; justify-content:space-between; align-items:center; gap:16px; transition:border-color 0.2s;';\n" +
+            "          card.id = 'sample-db-card-' + db.databaseName;\n" +
+            "\n" +
+            "          var left = document.createElement('div');\n" +
+            "          left.style.cssText = 'flex:1; min-width:0;';\n" +
+            "\n" +
+            "          var titleRow = document.createElement('div');\n" +
+            "          titleRow.style.cssText = 'display:flex; align-items:center; gap:8px; margin-bottom:4px; flex-wrap:wrap;';\n" +
+            "\n" +
+            "          var iconEl = document.createElement('i');\n" +
+            "          iconEl.className = db.icon || 'fas fa-database';\n" +
+            "          iconEl.style.cssText = 'color:#ec4899; font-size:14px;';\n" +
+            "\n" +
+            "          var nameEl = document.createElement('span');\n" +
+            "          nameEl.style.cssText = 'font-weight:700; color:#f8fafc; font-size:13px;';\n" +
+            "          nameEl.innerText = db.databaseName;\n" +
+            "\n" +
+            "          var engBadge = document.createElement('span');\n" +
+            "          engBadge.style.cssText = 'font-size:10px; font-weight:700; padding:2px 6px; border-radius:4px; background:rgba(56,189,248,0.15); color:#38bdf8; border:1px solid rgba(56,189,248,0.3);';\n" +
+            "          engBadge.innerText = db.engineType;\n" +
+            "\n" +
+            "          var statusBadge = document.createElement('span');\n" +
+            "          statusBadge.id = 'sample-status-' + db.databaseName;\n" +
+            "          if (isInst) {\n" +
+            "            statusBadge.style.cssText = 'font-size:10px; font-weight:700; padding:2px 8px; border-radius:12px; background:rgba(34,197,94,0.15); color:#4ade80; border:1px solid rgba(34,197,94,0.3); display:inline-flex; align-items:center; gap:4px;';\n" +
+            "            statusBadge.innerHTML = '<i class=\"fas fa-check-circle\"></i> Installed (' + (db.recordCount || db.estimatedRecords) + ' records)';\n" +
+            "          } else {\n" +
+            "            statusBadge.style.cssText = 'font-size:10px; font-weight:600; padding:2px 8px; border-radius:12px; background:rgba(148,163,184,0.1); color:#94a3b8; border:1px solid rgba(148,163,184,0.25); display:inline-flex; align-items:center; gap:4px;';\n" +
+            "            statusBadge.innerHTML = '<i class=\"fas fa-download\"></i> Available (~' + db.estimatedRecords + ' records)';\n" +
+            "          }\n" +
+            "\n" +
+            "          titleRow.appendChild(iconEl);\n" +
+            "          titleRow.appendChild(nameEl);\n" +
+            "          titleRow.appendChild(engBadge);\n" +
+            "          titleRow.appendChild(statusBadge);\n" +
+            "\n" +
+            "          var descEl = document.createElement('p');\n" +
+            "          descEl.style.cssText = 'font-size:11.5px; color:#94a3b8; margin:0; line-height:1.4;';\n" +
+            "          descEl.innerText = db.description;\n" +
+            "\n" +
+            "          left.appendChild(titleRow);\n" +
+            "          left.appendChild(descEl);\n" +
+            "\n" +
+            "          var right = document.createElement('div');\n" +
+            "          right.id = 'sample-actions-' + db.databaseName;\n" +
+            "          right.style.cssText = 'display:flex; align-items:center; gap:8px; flex-shrink:0;';\n" +
+            "\n" +
+            "          if (isInst) {\n" +
+            "            var exploreBtn = document.createElement('a');\n" +
+            "            exploreBtn.href = '/engines?target_db=' + encodeURIComponent(db.databaseName);\n" +
+            "            exploreBtn.className = 'btn-action btn-secondary';\n" +
+            "            exploreBtn.style.cssText = 'padding:5px 10px; font-size:11px; text-decoration:none; display:inline-flex; align-items:center; gap:4px;';\n" +
+            "            exploreBtn.innerHTML = '<i class=\"fas fa-external-link-alt\"></i> Explore';\n" +
+            "\n" +
+            "            var uninstBtn = document.createElement('button');\n" +
+            "            uninstBtn.type = 'button';\n" +
+            "            uninstBtn.className = 'btn-action';\n" +
+            "            uninstBtn.style.cssText = 'padding:5px 10px; font-size:11px; background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.3); color:#f87171; border-radius:6px; cursor:pointer; display:inline-flex; align-items:center; gap:4px;';\n" +
+            "            uninstBtn.innerHTML = '<i class=\"fas fa-trash-alt\"></i> Uninstall';\n" +
+            "            uninstBtn.onclick = function() { openConfirmUninstallSampleDbModal(db.databaseName); };\n" +
+            "\n" +
+            "            right.appendChild(exploreBtn);\n" +
+            "            right.appendChild(uninstBtn);\n" +
+            "          } else {\n" +
+            "            var instBtn = document.createElement('button');\n" +
+            "            instBtn.type = 'button';\n" +
+            "            instBtn.className = 'btn-action btn-primary';\n" +
+            "            instBtn.style.cssText = 'padding:6px 14px; font-size:11px; display:inline-flex; align-items:center; gap:6px;';\n" +
+            "            instBtn.innerHTML = '<i class=\"fas fa-download\"></i> Install DataSet';\n" +
+            "            instBtn.onclick = function() { installSampleDb(db.databaseName); };\n" +
+            "            right.appendChild(instBtn);\n" +
+            "          }\n" +
+            "\n" +
+            "          card.appendChild(left);\n" +
+            "          card.appendChild(right);\n" +
+            "          listEl.appendChild(card);\n" +
+            "        });\n" +
+            "      } else {\n" +
+            "        listEl.innerHTML = '<div style=\"text-align:center; padding:20px; color:#94a3b8; font-size:12px;\">No sample databases available in catalog.</div>';\n" +
+            "      }\n" +
+            "    })\n" +
+            "    .catch(function(err) {\n" +
+            "      if (loadEl) loadEl.style.display = 'none';\n" +
+            "      if (listEl) {\n" +
+            "        listEl.style.display = 'block';\n" +
+            "        listEl.innerHTML = '<div style=\"text-align:center; padding:20px; color:#ef4444; font-size:12px;\">Failed to load catalog: ' + (err.message || err) + '</div>';\n" +
+            "      }\n" +
+            "    });\n" +
+            "  }\n" +
+            "  function installSampleDb(dbName) {\n" +
+            "    var actionsEl = document.getElementById('sample-actions-' + dbName);\n" +
+            "    var statusEl = document.getElementById('sample-status-' + dbName);\n" +
+            "    if (actionsEl) actionsEl.innerHTML = '<span style=\"color:#ec4899; font-size:11px; display:inline-flex; align-items:center; gap:6px;\"><i class=\"fas fa-spinner fa-spin\"></i> Installing...</span>';\n" +
+            "    if (statusEl) {\n" +
+            "      statusEl.style.cssText = 'font-size:10px; font-weight:700; padding:2px 8px; border-radius:12px; background:rgba(234,179,8,0.15); color:#facc15; border:1px solid rgba(234,179,8,0.3); display:inline-flex; align-items:center; gap:4px;';\n" +
+            "      statusEl.innerHTML = '<i class=\"fas fa-spinner fa-spin\"></i> Seeding database...';\n" +
+            "    }\n" +
+            "\n" +
+            "    fetch('/databases', {\n" +
+            "      method: 'POST',\n" +
+            "      headers: {\n" +
+            "        'Content-Type': 'application/x-www-form-urlencoded',\n" +
+            "        'X-Requested-With': 'XMLHttpRequest'\n" +
+            "      },\n" +
+            "      body: 'action=install_sample_db_ajax&target_db=' + encodeURIComponent(dbName)\n" +
+            "    })\n" +
+            "    .then(function(res) { return res.json(); })\n" +
+            "    .then(function(data) {\n" +
+            "      if (data && data.status === 'SUCCESS') {\n" +
+            "        refreshSampleDatabasesList();\n" +
+            "        location.reload();\n" +
+            "      } else {\n" +
+            "        alert('Installation failed: ' + (data ? data.message : 'Unknown error'));\n" +
+            "        refreshSampleDatabasesList();\n" +
+            "      }\n" +
+            "    })\n" +
+            "    .catch(function(err) {\n" +
+            "      alert('Installation failed: ' + (err.message || err));\n" +
+            "      refreshSampleDatabasesList();\n" +
+            "    });\n" +
+            "  }\n" +
+            "  function openConfirmUninstallSampleDbModal(dbName) {\n" +
+            "    if (!dbName) return;\n" +
+            "    var inp = document.getElementById('confirmUninstallTargetDbInput');\n" +
+            "    if (inp) inp.value = dbName;\n" +
+            "    var disp = document.getElementById('confirmUninstallDbNameDisplay');\n" +
+            "    if (disp) disp.innerText = '\"' + dbName + '\"';\n" +
+            "    var btn = document.getElementById('btnConfirmUninstallSubmit');\n" +
+            "    if (btn) {\n" +
+            "      btn.disabled = false;\n" +
+            "      btn.innerHTML = '<i class=\"fas fa-trash-alt\" style=\"margin-right:4px;\"></i> Uninstall & Purge';\n" +
+            "    }\n" +
+            "    var modal = document.getElementById('confirmUninstallSampleDbModal');\n" +
+            "    if (modal) modal.showModal();\n" +
+            "  }\n" +
+            "  function executeUninstallSampleDb() {\n" +
+            "    var inp = document.getElementById('confirmUninstallTargetDbInput');\n" +
+            "    var dbName = inp ? inp.value : '';\n" +
+            "    if (!dbName) return;\n" +
+            "\n" +
+            "    var btn = document.getElementById('btnConfirmUninstallSubmit');\n" +
+            "    if (btn) {\n" +
+            "      btn.disabled = true;\n" +
+            "      btn.innerHTML = '<i class=\"fas fa-spinner fa-spin\" style=\"margin-right:4px;\"></i> Purging...';\n" +
+            "    }\n" +
+            "\n" +
+            "    fetch('/databases', {\n" +
+            "      method: 'POST',\n" +
+            "      headers: {\n" +
+            "        'Content-Type': 'application/x-www-form-urlencoded',\n" +
+            "        'X-Requested-With': 'XMLHttpRequest'\n" +
+            "      },\n" +
+            "      body: 'action=uninstall_sample_db_ajax&target_db=' + encodeURIComponent(dbName)\n" +
+            "    })\n" +
+            "    .then(function(res) { return res.json(); })\n" +
+            "    .then(function(data) {\n" +
+            "      var modal = document.getElementById('confirmUninstallSampleDbModal');\n" +
+            "      if (modal) modal.close();\n" +
+            "      if (data && data.status === 'SUCCESS') {\n" +
+            "        refreshSampleDatabasesList();\n" +
+            "        location.reload();\n" +
+            "      } else {\n" +
+            "        alert('Uninstall failed: ' + (data ? data.message : 'Unknown error'));\n" +
+            "      }\n" +
+            "    })\n" +
+            "    .catch(function(err) {\n" +
+            "      alert('Uninstall failed: ' + (err.message || err));\n" +
+            "      var modal = document.getElementById('confirmUninstallSampleDbModal');\n" +
+            "      if (modal) modal.close();\n" +
+            "    });\n" +
+            "  }\n" +
             "</script>\n"
         );
+
+        Widget sampleDatabasesModal = buildSampleDatabasesModal();
+        Widget confirmUninstallSampleDbModal = buildConfirmUninstallSampleDbModal();
 
         return Column.of(
             titleBlock,
@@ -1254,8 +1475,219 @@ public class StoreDatabasesPage extends StoreTemplatePage {
             assignUserModal,
             renameDbModal,
             dropDbModal,
+            sampleDatabasesModal,
+            confirmUninstallSampleDbModal,
             scriptsWidget
         );
+    }
+
+    private Widget buildSampleDatabasesModal() {
+        Widget header = Row.of(
+            Row.of(
+                Icon.of("fas fa-cubes").modifier(new Modifier().style("color:#ec4899; margin-right:8px; font-size:18px;")),
+                Header.of(3, Text.of("Sample Databases & Datasets Catalog")).modifier(new Modifier().style("margin:0; font-size:18px; font-weight:700; color:#f8fafc;"))
+            ).modifier(new Modifier().style("display:flex; align-items:center;")),
+            Button.of(Icon.of("fas fa-times"))
+                .modifier(new Modifier().style("background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer; padding:4px 8px;")
+                .attribute("onclick", "document.getElementById('sampleDatabasesModal').close();"))
+        ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;"));
+
+        Widget subtitle = Paragraph.of(Text.of("Explore, install, and uninstall on-demand sample datasets across authorized multi-model storage engines with atomic lifecycle operations."))
+            .modifier(new Modifier().style("font-size:12px; color:#94a3b8; margin:0 0 16px 0; line-height:1.4;"));
+
+        Widget loadingIndicator = Div.of(
+            Icon.of("fas fa-spinner fa-spin").modifier(new Modifier().style("font-size:24px; color:#ec4899; margin-bottom:8px;")),
+            Paragraph.of(Text.of("Loading sample database catalog...")).modifier(new Modifier().style("font-size:12px; color:#cbd5e1; margin:0;"))
+        ).id("sampleDbsLoadingContainer").modifier(new Modifier().style("display:flex; flex-direction:column; align-items:center; justify-content:center; padding:30px;"));
+
+        Widget gridContainer = Div.of()
+            .id("sampleDbsCatalogContainer")
+            .modifier(new Modifier().style("display:none; flex-direction:column; gap:12px; max-height:480px; overflow-y:auto; padding-right:4px;"));
+
+        Widget actions = Div.of(
+            Button.of(Icon.of("fas fa-sync-alt"), Text.of(" Refresh Catalog"))
+                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "refreshSampleDatabasesList()").cssClass("btn-action btn-secondary").style("padding:6px 14px; font-size:12px; margin-right:8px; background:rgba(56,189,248,0.1); border-color:rgba(56,189,248,0.3); color:#38bdf8;")),
+            Button.of(Icon.of("fas fa-times"), Text.of(" Close"))
+                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "document.getElementById('sampleDatabasesModal').close();").cssClass("btn-action btn-secondary").style("padding:6px 14px; font-size:12px; background:rgba(148,163,184,0.15); color:#cbd5e1;"))
+        ).modifier(new Modifier().style("display:flex; justify-content:flex-end; align-items:center; margin-top:16px; border-top:1px solid rgba(255,255,255,0.08); padding-top:12px;"));
+
+        Widget body = Div.of(subtitle, loadingIndicator, gridContainer, actions);
+
+        return Dialog.of(header, body)
+            .id("sampleDatabasesModal")
+            .modifier(new Modifier().cssClass("store-card").style("max-width:780px; width:92%; background:#0f172a; border:1px solid rgba(236,72,153,0.4); box-shadow:0 20px 50px rgba(0,0,0,0.7); border-radius:14px; padding:24px; margin:auto;"));
+    }
+
+    private Widget buildConfirmUninstallSampleDbModal() {
+        Widget header = Row.of(
+            Row.of(
+                Icon.of("fas fa-exclamation-triangle").modifier(new Modifier().style("color:#ef4444; margin-right:8px; font-size:18px;")),
+                Header.of(3, Text.of("Confirm Dataset Uninstallation")).modifier(new Modifier().style("margin:0; font-size:17px; font-weight:700; color:#f8fafc;"))
+            ).modifier(new Modifier().style("display:flex; align-items:center;")),
+            Button.of(Icon.of("fas fa-times"))
+                .modifier(new Modifier().style("background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer; padding:4px 8px;")
+                .attribute("onclick", "document.getElementById('confirmUninstallSampleDbModal').close();"))
+        ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;"));
+
+        Widget body = Div.of(
+            InputHidden.of("confirm_uninstall_target_db", "").id("confirmUninstallTargetDbInput"),
+            Div.of(
+                Icon.of("fas fa-trash-alt").modifier(new Modifier().style("color:#ef4444; font-size:32px; margin-bottom:12px; display:block; text-align:center;")),
+                Paragraph.of(
+                    Text.of("Are you sure you want to uninstall and purge sample database "),
+                    Span.of("\"sample_db\"").id("confirmUninstallDbNameDisplay").modifier(new Modifier().style("color:#f87171; font-weight:700; font-family:monospace; background:rgba(239,68,68,0.12); padding:2px 8px; border-radius:4px; border:1px solid rgba(239,68,68,0.25);")),
+                    Text.of("? All stored records and components will be permanently deleted.")
+                ).modifier(new Modifier().style("font-weight:600; color:#f8fafc; font-size:13px; text-align:center; margin:0 0 12px 0; line-height:1.5;")),
+                Div.of(
+                    Icon.of("fas fa-exclamation-circle").modifier(new Modifier().style("color:#f59e0b; margin-right:8px; font-size:14px; flex-shrink:0; margin-top:2px;")),
+                    Span.of("All stored records, typed schema components, and multi-model entities will be permanently purged from the storage core.")
+                        .modifier(new Modifier().style("font-size:11.5px; color:#cbd5e1; line-height:1.4;"))
+                ).modifier(new Modifier().style("display:flex; align-items:flex-start; padding:10px 14px; background:rgba(245,158,11,0.1); border:1px solid rgba(245,158,11,0.25); border-radius:6px; margin-bottom:18px;"))
+            ),
+            Div.of(
+                Button.of(Text.of("Cancel"))
+                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "document.getElementById('confirmUninstallSampleDbModal').close();").cssClass("btn-action btn-secondary").style("padding:6px 14px; font-size:12px; margin-right:8px;")),
+                Button.of(Icon.of("fas fa-trash-alt"), Text.of(" Uninstall & Purge"))
+                    .id("btnConfirmUninstallSubmit")
+                    .modifier(new Modifier().attribute("type", "button").attribute("onclick", "executeUninstallSampleDb()").cssClass("btn-action").style("padding:6px 16px; font-size:12px; background:#ef4444; color:#fff; border:none; border-radius:6px; font-weight:600; cursor:pointer;"))
+            ).modifier(new Modifier().style("display:flex; justify-content:flex-end; align-items:center; border-top:1px solid rgba(255,255,255,0.08); padding-top:14px;"))
+        );
+
+        return Dialog.of(header, body)
+            .id("confirmUninstallSampleDbModal")
+            .modifier(new Modifier().cssClass("store-card").style("max-width:500px; width:90%; background:#0f172a; border:1px solid rgba(239,68,68,0.4); box-shadow:0 20px 50px rgba(0,0,0,0.7); border-radius:14px; padding:24px; margin:auto;"));
+    }
+
+    public SampleDatabaseService getSampleDatabaseService() {
+        return this.sampleDbService;
+    }
+
+    @Override
+    protected boolean onGet(HttpExchange exchange, Map<String, String> params) throws IOException {
+        if (params != null && "list_sample_dbs".equalsIgnoreCase(params.get("action"))) {
+            handleListSampleDatabases(exchange, params);
+            return true;
+        }
+        if (params != null && "install_sample_db".equalsIgnoreCase(params.get("action"))) {
+            handleInstallSampleDatabase(exchange, params);
+            return true;
+        }
+        if (params != null && "uninstall_sample_db".equalsIgnoreCase(params.get("action"))) {
+            handleUninstallSampleDatabase(exchange, params);
+            return true;
+        }
+        return false;
+    }
+
+    @Override
+    protected boolean onPost(HttpExchange exchange, Map<String, String> params) throws IOException {
+        String action = params != null ? params.get("action") : null;
+        String reqWith = exchange.getRequestHeaders() != null ? exchange.getRequestHeaders().getFirst("X-Requested-With") : null;
+        String accept = exchange.getRequestHeaders() != null ? exchange.getRequestHeaders().getFirst("Accept") : null;
+        String contentType = exchange.getRequestHeaders() != null ? exchange.getRequestHeaders().getFirst("Content-Type") : null;
+        boolean isJsonClient = (accept != null && accept.contains("application/json"))
+                || (contentType != null && contentType.contains("application/json"))
+                || "XMLHttpRequest".equalsIgnoreCase(reqWith)
+                || "true".equalsIgnoreCase(params != null ? params.get("is_fetch") : null)
+                || "true".equalsIgnoreCase(params != null ? params.get("is_ajax") : null);
+
+        if (action != null && (action.endsWith("_ajax") || "true".equalsIgnoreCase(params.get("is_ajax")) || isJsonClient
+            || "install_sample_db".equalsIgnoreCase(action) || "install_sample_db_ajax".equalsIgnoreCase(action)
+            || "uninstall_sample_db".equalsIgnoreCase(action) || "uninstall_sample_db_ajax".equalsIgnoreCase(action)
+            || "list_sample_dbs".equalsIgnoreCase(action))) {
+            if ("install_sample_db".equalsIgnoreCase(action) || "install_sample_db_ajax".equalsIgnoreCase(action)) {
+                handleInstallSampleDatabase(exchange, params);
+                return true;
+            } else if ("uninstall_sample_db".equalsIgnoreCase(action) || "uninstall_sample_db_ajax".equalsIgnoreCase(action)) {
+                handleUninstallSampleDatabase(exchange, params);
+                return true;
+            } else if ("list_sample_dbs".equalsIgnoreCase(action)) {
+                handleListSampleDatabases(exchange, params);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public void handleListSampleDatabases(HttpExchange exchange, Map<String, String> params) throws IOException {
+        JsonArray arr = new JsonArray();
+        for (SampleDatabaseDefinition def : sampleDbService.getCatalog()) {
+            JsonObject obj = new JsonObject();
+            obj.addProperty("id", def.id());
+            obj.addProperty("engineType", def.engineType());
+            obj.addProperty("databaseName", def.databaseName());
+            obj.addProperty("displayName", def.displayName());
+            obj.addProperty("description", def.description());
+            obj.addProperty("estimatedRecords", def.estimatedRecords());
+            obj.addProperty("icon", def.icon());
+            InstallState state = sampleDbService.getInstallState(def.databaseName());
+            obj.addProperty("installState", state.name());
+            obj.addProperty("badgeCss", state.getBadgeCss());
+            obj.addProperty("badgeLabel", state.getLabel());
+            obj.addProperty("badgeIcon", state.getIcon());
+            obj.addProperty("isInstalled", state == InstallState.INSTALLED);
+            obj.addProperty("recordCount", sampleDbService.getInstalledRecordCount(def.databaseName()));
+            arr.add(obj);
+        }
+        JsonObject res = new JsonObject();
+        res.addProperty("status", "SUCCESS");
+        res.add("databases", arr);
+        sendJsonResponse(exchange, res, 200);
+    }
+
+    public void handleInstallSampleDatabase(HttpExchange exchange, Map<String, String> params) throws IOException {
+        String dbName = params != null ? (params.containsKey("target_db") ? params.get("target_db") : params.get("db_name")) : null;
+        if (dbName == null || dbName.isBlank()) {
+            sendJsonError(exchange, "Missing target_db parameter");
+            return;
+        }
+        HierarchyResult<Integer> res = sampleDbService.install(dbName.trim());
+        if (res.isSuccess()) {
+            JsonObject resp = new JsonObject();
+            resp.addProperty("status", "SUCCESS");
+            resp.addProperty("database", dbName);
+            resp.addProperty("installedRecords", res.getOrNull());
+            resp.addProperty("message", "Sample database '" + dbName + "' installed successfully (" + res.getOrNull() + " records created)!");
+            sendJsonResponse(exchange, resp, 200);
+        } else {
+            sendJsonError(exchange, res.errorMessage());
+        }
+    }
+
+    public void handleUninstallSampleDatabase(HttpExchange exchange, Map<String, String> params) throws IOException {
+        String dbName = params != null ? (params.containsKey("target_db") ? params.get("target_db") : params.get("db_name")) : null;
+        if (dbName == null || dbName.isBlank()) {
+            sendJsonError(exchange, "Missing target_db parameter");
+            return;
+        }
+        HierarchyResult<Integer> res = sampleDbService.uninstall(dbName.trim());
+        if (res.isSuccess()) {
+            JsonObject resp = new JsonObject();
+            resp.addProperty("status", "SUCCESS");
+            resp.addProperty("database", dbName);
+            resp.addProperty("deletedRecords", res.getOrNull());
+            resp.addProperty("message", "Sample database '" + dbName + "' uninstalled successfully (" + res.getOrNull() + " records purged)!");
+            sendJsonResponse(exchange, resp, 200);
+        } else {
+            sendJsonError(exchange, res.errorMessage());
+        }
+    }
+
+    private void sendJsonResponse(HttpExchange exchange, JsonObject obj, int status) throws IOException {
+        byte[] b = jsonParser.toJson(obj).getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
+        exchange.sendResponseHeaders(status, b.length);
+        try (OutputStream os = exchange.getResponseBody()) {
+            os.write(b);
+            os.flush();
+        }
+    }
+
+    private void sendJsonError(HttpExchange exchange, String errorMsg) throws IOException {
+        JsonObject err = new JsonObject();
+        err.addProperty("status", "ERROR");
+        err.addProperty("message", errorMsg);
+        sendJsonResponse(exchange, err, 400);
     }
 
     /**

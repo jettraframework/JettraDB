@@ -250,7 +250,7 @@ public class AdaptiveMultiModelRecordDialogsTest {
         params.put("engine", "DOCUMENT");
         params.put("target_db", "scrum_board_db");
 
-        Widget pageWidget = page.buildContent(null, params, "dark");
+        Widget pageWidget = new StoreDatabasesPage(engine, null).buildContent(null, params, "dark");
         String html = pageWidget.render(Themes.FlatTheme());
 
         // 1. Confirm Uninstall Modal exists with JettraFlux structure

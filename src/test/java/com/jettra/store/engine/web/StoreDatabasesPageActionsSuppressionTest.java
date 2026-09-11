@@ -89,14 +89,14 @@ public class StoreDatabasesPageActionsSuppressionTest {
         assertEquals(200, exchange.getResponseCode());
         String body = exchange.getResponseBodyAsString();
 
-        // Must NOT render any of the 7 top action buttons
-        assertFalse(body.contains("+ DB"), "DOM must not contain '+ DB' button on /databases");
-        assertFalse(body.contains("+ Unit"), "DOM must not contain '+ Unit' button on /databases");
-        assertFalse(body.contains("Backup Database"), "DOM must not contain 'Backup' button on /databases");
-        assertFalse(body.contains("Restore Database"), "DOM must not contain 'Restore' button on /databases");
-        assertFalse(body.contains("Export Data"), "DOM must not contain 'Export' button on /databases");
-        assertFalse(body.contains("Búsqueda Avanzada"), "DOM must not contain 'Búsqueda Avanzada' button on /databases");
-        assertFalse(body.contains("Sample DBs"), "DOM must not contain 'Sample DBs' button on /databases");
+        // Must NOT render top toolbar action buttons
+        assertFalse(body.contains("+ DB"), "DOM must not contain '+ DB' toolbar button on /databases");
+        assertFalse(body.contains("+ Unit"), "DOM must not contain '+ Unit' toolbar button on /databases");
+        assertFalse(body.contains("Backup Database"), "DOM must not contain 'Backup' toolbar button on /databases");
+        assertFalse(body.contains("Restore Database"), "DOM must not contain 'Restore' toolbar button on /databases");
+        assertFalse(body.contains("Export Data"), "DOM must not contain 'Export' toolbar button on /databases");
+        assertFalse(body.contains("Búsqueda Avanzada"), "DOM must not contain 'Búsqueda Avanzada' toolbar button on /databases");
+        assertTrue(body.contains("+ Sample DBs"), "DOM must contain relocated '+ Sample DBs' button on /databases");
 
         // Must NOT render database selector selectOne component
         assertFalse(body.contains("topDatabaseSelect"), "DOM must not contain database selectOne on /databases");
@@ -118,7 +118,7 @@ public class StoreDatabasesPageActionsSuppressionTest {
         assertFalse(html.contains("Restore Database"));
         assertFalse(html.contains("Export Data"));
         assertFalse(html.contains("Búsqueda Avanzada"));
-        assertFalse(html.contains("Sample DBs"));
+        assertTrue(html.contains("+ Sample DBs"), "Component tree must render relocated '+ Sample DBs' button on /databases");
         assertFalse(html.contains("topDatabaseSelect"), "Component tree must not render topDatabaseSelect on /databases");
 
         assertTrue(html.contains("Multi-Model Database Workspace"));

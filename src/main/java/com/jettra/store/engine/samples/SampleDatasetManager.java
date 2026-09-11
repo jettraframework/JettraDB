@@ -28,36 +28,12 @@ public class SampleDatasetManager {
 
     public static final List<DatasetInfo> AVAILABLE_DATASETS = List.of(
         new DatasetInfo(
-            "ALL",
-            "all_sample_databases",
-            "Complete Enterprise Multi-Model Suite",
-            "Loads all 9 databases simultaneously with over 10,000 interconnected records and cross-engine pointers.",
-            10400,
-            "fas fa-layer-group"
-        ),
-        new DatasetInfo(
-            "ALL",
+            "MULTI-MODEL",
             "ExampleDBReferences",
             "Cross-Engine & Multi-Cluster References Suite",
             "Demonstrates direct O(1) object references (jref://) with primary storage addresses, multi-cluster node pointers, and dynamic reference resolution across Document, Records, Geo, Vector, Object, KeyValue, and TimeSeries engines.",
             120,
             "fas fa-link"
-        ),
-        new DatasetInfo(
-            "DOCUMENT",
-            "scrum_board_db",
-            "Agile Scrum Project Management",
-            "Hierarchical User Stories, Sprints, Epics, and Tasks with cross-references to HR Assignees.",
-            1200,
-            "fas fa-tasks"
-        ),
-        new DatasetInfo(
-            "TIMESERIES",
-            "meteorology_iot_db",
-            "IoT Meteorological Weather Stations",
-            "High-frequency sensor telemetry (temperature, humidity, atmospheric pressure, solar irradiance, precipitation) across time intervals.",
-            2500,
-            "fas fa-cloud-sun-rain"
         ),
         new DatasetInfo(
             "RECORDS",
@@ -68,28 +44,12 @@ public class SampleDatasetManager {
             "fas fa-id-card-alt"
         ),
         new DatasetInfo(
-            "VECTOR",
-            "ai_knowledge_db",
-            "AI Neural Search & Cosine Embeddings",
-            "High-dimensional vector embeddings (128-d / 384-d) with cosine similarity indexes for semantic document retrieval and biometrics.",
-            800,
-            "fas fa-brain"
-        ),
-        new DatasetInfo(
-            "GRAPH",
-            "social_network_db",
-            "Organizational & Social LPG Graph",
-            "Labeled Property Graph vertices (Users, Teams, Projects) and directed relationships (REPORTS_TO, COLLABORATES_WITH, LEADS).",
-            1500,
-            "fas fa-project-diagram"
-        ),
-        new DatasetInfo(
-            "GEOSPATIAL",
-            "smart_city_gis_db",
-            "Smart City GIS & Fleet Logistics",
-            "2D Geographic coordinates, delivery fleet routes, distribution hubs, and real-time Haversine distance tracking.",
-            600,
-            "fas fa-map-marked-alt"
+            "TIMESERIES",
+            "meteorology_iot_db",
+            "IoT Meteorological Weather Stations",
+            "High-frequency sensor telemetry (temperature, humidity, atmospheric pressure, solar irradiance, precipitation) across time intervals.",
+            2500,
+            "fas fa-cloud-sun-rain"
         ),
         new DatasetInfo(
             "COLUMN",
@@ -98,22 +58,6 @@ public class SampleDatasetManager {
             "Wide-column analytical fact tables, quarterly revenue by region, customer cohort aggregations, and performance metrics.",
             1000,
             "fas fa-table"
-        ),
-        new DatasetInfo(
-            "KEYVALUE",
-            "distributed_cache_db",
-            "High-Speed Distributed Cache",
-            "Low-latency JWT session tokens, dynamic feature toggles, distributed rate limiters, and atomic counters.",
-            800,
-            "fas fa-bolt"
-        ),
-        new DatasetInfo(
-            "OBJECT",
-            "digital_assets_db",
-            "Binary BLOBs & Media Documents",
-            "Digital assets, invoices, PDF documents, media streams, and content-type metadata pointers.",
-            500,
-            "fas fa-file-invoice"
         )
     );
 
@@ -122,24 +66,26 @@ public class SampleDatasetManager {
     }
 
     /**
-     * Loads a specific dataset or all datasets.
+     * Loads exclusively one of the 4 authorized sample datasets.
      * Returns total records inserted.
      */
     public int loadDataset(String datasetKey) {
-        String key = (datasetKey != null) ? datasetKey.trim().toUpperCase() : "ALL";
+        if (datasetKey == null || datasetKey.isBlank()) {
+            throw new IllegalArgumentException("Dataset key must not be null or blank");
+        }
+        String key = datasetKey.trim().toUpperCase();
         return switch (key) {
-            case "ALL", "ALL_SAMPLE_DATABASES" -> loadAllDatasets();
-            case "EXAMPLEDBREFERENCES", "REFERENCES" -> loadExampleDBReferencesDataset();
-            case "DOCUMENT", "SCRUM_BOARD_DB" -> loadScrumBoardDataset();
-            case "TIMESERIES", "METEOROLOGY_IOT_DB" -> loadMeteorologyDataset();
-            case "RECORDS", "HR_ENTERPRISE_DB" -> loadHrEnterpriseDataset();
-            case "VECTOR", "AI_KNOWLEDGE_DB" -> loadVectorKnowledgeDataset();
-            case "GRAPH", "SOCIAL_NETWORK_DB" -> loadSocialGraphDataset();
-            case "GEOSPATIAL", "SMART_CITY_GIS_DB" -> loadSmartCityGisDataset();
-            case "COLUMN", "ECOMMERCE_OLAP_DB" -> loadEcommerceOlapDataset();
-            case "KEYVALUE", "DISTRIBUTED_CACHE_DB" -> loadDistributedCacheDataset();
-            case "OBJECT", "DIGITAL_ASSETS_DB" -> loadDigitalAssetsDataset();
-            default -> loadExampleDBReferencesDataset();
+            case "EXAMPLEDBREFERENCES", "REFERENCES", "EXAMPLE_DB_REFERENCES" -> loadExampleDBReferencesDataset();
+            case "HR_ENTERPRISE_DB", "RECORDS" -> loadHrEnterpriseDataset();
+            case "METEOROLOGY_IOT_DB", "TIMESERIES" -> loadMeteorologyDataset();
+            case "ECOMMERCE_OLAP_DB", "COLUMN" -> loadEcommerceOlapDataset();
+            case "SCRUM_BOARD_DB", "DOCUMENT" -> loadScrumBoardDataset();
+            case "SMART_CITY_GIS_DB", "GEOSPATIAL" -> loadSmartCityGisDataset();
+            case "AI_KNOWLEDGE_DB", "VECTOR" -> loadVectorKnowledgeDataset();
+            case "SOCIAL_NETWORK_DB", "GRAPH" -> loadSocialGraphDataset();
+            case "DISTRIBUTED_CACHE_DB", "KEYVALUE" -> loadDistributedCacheDataset();
+            case "DIGITAL_ASSETS_DB", "OBJECT" -> loadDigitalAssetsDataset();
+            default -> throw new IllegalArgumentException("Unsupported dataset: " + datasetKey);
         };
     }
 

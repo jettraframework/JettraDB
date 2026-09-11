@@ -366,10 +366,6 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
                 Button.of(Icon.of("fas fa-search-plus"), Text.of(" Búsqueda Avanzada"))
                     .modifier(new Modifier().attribute("type", "button").attribute("title", "Búsqueda Avanzada").attribute("onclick", "var db=getSelectedTopDatabase(); if(typeof openAdvancedSearchModal === 'function') openAdvancedSearchModal('" + selectedEngine + "', db, '" + currentColl + "'); else location.href='" + JettraServer.resolvePath("/engines?tab=schema&engine=" + selectedEngine + "&target_db=") + "' + encodeURIComponent(db);").cssClass("btn-studio-secondary").style("color:#0284c7; background:rgba(56,189,248,0.12); border-color:rgba(56,189,248,0.3);"))
             );
-            rightItems.add(
-                Button.of(Icon.of("fas fa-cubes"), Text.of(" Sample DBs"))
-                    .modifier(new Modifier().attribute("type", "button").attribute("title", "Sample DBs").attribute("onclick", "if(typeof openSampleDatabasesModal === 'function') openSampleDatabasesModal(); else location.href='" + JettraServer.resolvePath("/engines?target_db=" + targetDb) + "';").cssClass("btn-studio-secondary").style("color:#db2777; background:rgba(236,72,153,0.12); border-color:rgba(236,72,153,0.3);"))
-            );
         }
 
         if (config.showThemeToggle()) {

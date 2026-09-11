@@ -20,7 +20,7 @@ public class SampleDatabaseService {
 
     public static final List<SampleDatabaseDefinition> CATALOG = List.of(
         new SampleDatabaseDefinition(
-            "example_db_references",
+            "ExampleDBReferences",
             "MULTI-MODEL",
             "ExampleDBReferences",
             "Cross-Engine & Multi-Cluster References Suite",
@@ -28,26 +28,6 @@ public class SampleDatabaseService {
             120,
             "fas fa-link",
             List.of("References", "Jref", "Multi-Cluster", "Composite")
-        ),
-        new SampleDatabaseDefinition(
-            "scrum_board_db",
-            "DOCUMENT",
-            "scrum_board_db",
-            "Agile Scrum Project Management",
-            "Hierarchical User Stories, Sprints, Epics, and Tasks with cross-references to HR Assignees.",
-            1200,
-            "fas fa-tasks",
-            List.of("JSON", "Document", "Scrum", "Hierarchical")
-        ),
-        new SampleDatabaseDefinition(
-            "meteorology_iot_db",
-            "TIMESERIES",
-            "meteorology_iot_db",
-            "IoT Meteorological Weather Stations",
-            "High-frequency sensor telemetry (temperature, humidity, atmospheric pressure, solar irradiance, precipitation) across time intervals.",
-            2500,
-            "fas fa-cloud-sun-rain",
-            List.of("IoT", "Telemetry", "TimeSeries", "Sensors")
         ),
         new SampleDatabaseDefinition(
             "hr_enterprise_db",
@@ -60,34 +40,14 @@ public class SampleDatabaseService {
             List.of("Records", "Schema", "HR", "Immutable")
         ),
         new SampleDatabaseDefinition(
-            "ai_knowledge_db",
-            "VECTOR",
-            "ai_knowledge_db",
-            "AI Neural Search & Cosine Embeddings",
-            "High-dimensional vector embeddings (128-d / 384-d) with cosine similarity indexes for semantic document retrieval and biometrics.",
-            800,
-            "fas fa-brain",
-            List.of("Vector", "Embeddings", "AI", "Cosine")
-        ),
-        new SampleDatabaseDefinition(
-            "social_network_db",
-            "GRAPH",
-            "social_network_db",
-            "Organizational & Social LPG Graph",
-            "Labeled Property Graph vertices (Users, Teams, Projects) and directed relationships (REPORTS_TO, COLLABORATES_WITH, LEADS).",
-            1500,
-            "fas fa-project-diagram",
-            List.of("Graph", "LPG", "Vertices", "Edges")
-        ),
-        new SampleDatabaseDefinition(
-            "smart_city_gis_db",
-            "GEOSPATIAL",
-            "smart_city_gis_db",
-            "Smart City GIS & Fleet Logistics",
-            "2D Geographic coordinates, delivery fleet routes, distribution hubs, and real-time Haversine distance tracking.",
-            600,
-            "fas fa-map-marked-alt",
-            List.of("GIS", "Coordinates", "Spatial", "Fleet")
+            "meteorology_iot_db",
+            "TIMESERIES",
+            "meteorology_iot_db",
+            "IoT Meteorological Weather Stations",
+            "High-frequency sensor telemetry (temperature, humidity, atmospheric pressure, solar irradiance, precipitation) across time intervals.",
+            2500,
+            "fas fa-cloud-sun-rain",
+            List.of("IoT", "Telemetry", "TimeSeries", "Sensors")
         ),
         new SampleDatabaseDefinition(
             "ecommerce_olap_db",
@@ -98,32 +58,23 @@ public class SampleDatabaseService {
             1000,
             "fas fa-table",
             List.of("Column", "OLAP", "Analytics", "Wide-Table")
-        ),
-        new SampleDatabaseDefinition(
-            "distributed_cache_db",
-            "KEYVALUE",
-            "distributed_cache_db",
-            "High-Speed Distributed Cache",
-            "Low-latency JWT session tokens, dynamic feature toggles, distributed rate limiters, and atomic counters.",
-            800,
-            "fas fa-bolt",
-            List.of("KeyValue", "Cache", "Fast-Lookup", "Tokens")
-        ),
-        new SampleDatabaseDefinition(
-            "digital_assets_db",
-            "OBJECT",
-            "digital_assets_db",
-            "Binary BLOBs & Media Documents",
-            "Digital assets, invoices, PDF documents, media streams, and content-type metadata pointers.",
-            500,
-            "fas fa-file-invoice",
-            List.of("Object", "BLOB", "Binary", "Storage")
         )
     );
+
+    private final DatasetInstallInvoker installInvoker;
 
     public SampleDatabaseService(JettraStorageEngine engine) {
         this.engine = Objects.requireNonNull(engine, "StorageEngine must not be null");
         this.datasetManager = new SampleDatasetManager(engine);
+        this.installInvoker = new DatasetInstallInvoker(this.datasetManager);
+    }
+
+    public DatasetInstallInvoker getInstallInvoker() {
+        return installInvoker;
+    }
+
+    public SampleDatasetManager getDatasetManager() {
+        return datasetManager;
     }
 
     public List<SampleDatabaseDefinition> getCatalog() {
@@ -174,9 +125,12 @@ public class SampleDatabaseService {
         }
         transientStates.put(dbName, InstallState.INSTALLING);
         try {
-            int loaded = datasetManager.loadDataset(dbName);
+            HierarchyResult<Integer> result = installInvoker.executeInstall(dbName.trim());
             transientStates.remove(dbName);
-            return HierarchyResult.success(loaded);
+            if (!result.isSuccess()) {
+                uninstall(dbName);
+            }
+            return result;
         } catch (Exception e) {
             transientStates.remove(dbName);
             // Rollback on failure
