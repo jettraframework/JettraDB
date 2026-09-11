@@ -60,7 +60,7 @@ public final class RouteVisibilityGuard {
         }
 
         public static NavigationRouteConfig databasesConfig(String path) {
-            return new NavigationRouteConfig(RouteType.DATABASES, path, true, false, false, true, true);
+            return new NavigationRouteConfig(RouteType.DATABASES, path, false, false, false, true, true);
         }
 
         public static NavigationRouteConfig securityConfig(String path) {
@@ -85,6 +85,10 @@ public final class RouteVisibilityGuard {
 
         public NavigationRouteConfig withGlobalActionButtons(boolean visible) {
             return new NavigationRouteConfig(routeType, requestPath, showDatabaseSelector, showTopNavigationTabs, visible, showThemeToggle, topToolbarVisible);
+        }
+
+        public NavigationRouteConfig withDatabaseSelector(boolean visible) {
+            return new NavigationRouteConfig(routeType, requestPath, visible, showTopNavigationTabs, showGlobalActionButtons, showThemeToggle, topToolbarVisible);
         }
 
         public NavigationRouteConfig withTopToolbarVisible(boolean visible) {

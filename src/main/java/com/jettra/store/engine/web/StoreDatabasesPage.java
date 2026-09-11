@@ -68,6 +68,7 @@ public class StoreDatabasesPage extends StoreTemplatePage {
     private final UserValidationChain validationChain;
     private final UserValidationService validationService;
     private boolean showActionButtons = false;
+    private boolean showDatabaseSelector = false;
 
     public StoreDatabasesPage(JettraStorageEngine engine, AuthManager authManager) {
         this(engine, authManager, (authManager != null && authManager.getSystemUserRepository() != null)
@@ -259,6 +260,11 @@ public class StoreDatabasesPage extends StoreTemplatePage {
         return this;
     }
 
+    public StoreDatabasesPage withDatabaseSelector(boolean show) {
+        this.showDatabaseSelector = show;
+        return this;
+    }
+
     @Override
     protected String getPageTitle() {
         return "Databases & Components Console - JettraStoreEngine";
@@ -269,6 +275,10 @@ public class StoreDatabasesPage extends StoreTemplatePage {
         return this.showActionButtons;
     }
 
+    protected boolean showDatabaseSelector() {
+        return this.showDatabaseSelector;
+    }
+
     @Override
     protected RouteVisibilityGuard.NavigationRouteConfig getRouteConfig(HttpExchange exchange, Map<String, String> params) {
         String path = (exchange != null && exchange.getRequestURI() != null)
@@ -276,7 +286,10 @@ public class StoreDatabasesPage extends StoreTemplatePage {
             : "/databases";
         RouteVisibilityGuard.NavigationRouteConfig config = RouteVisibilityGuard.NavigationRouteConfig.databasesConfig(path);
         if (this.showActionButtons) {
-            return config.withGlobalActionButtons(true);
+            config = config.withGlobalActionButtons(true);
+        }
+        if (this.showDatabaseSelector) {
+            config = config.withDatabaseSelector(true);
         }
         return config;
     }

@@ -194,8 +194,9 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
             "</style>\n" +
             "<script>\n" +
             "  function getSelectedTopDatabase() {\n" +
-            "    var sel = document.getElementById('topDatabaseSelect');\n" +
-            "    return sel ? sel.value : '" + targetDb + "';\n" +
+            (routeConfig.showDatabaseSelector()
+                ? "    var sel = document.getElementById('topDatabaseSelect');\n    return sel ? sel.value : '" + targetDb + "';\n"
+                : "    return '" + targetDb + "';\n") +
             "  }\n" +
             "</script>\n"
         );

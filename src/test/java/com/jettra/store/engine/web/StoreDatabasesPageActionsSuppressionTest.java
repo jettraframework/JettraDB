@@ -67,19 +67,19 @@ public class StoreDatabasesPageActionsSuppressionTest {
     }
 
     @JettraTest
-    @DisplayName("1. RouteVisibilityGuard correctly assigns DATABASES route type and suppresses global action buttons")
+    @DisplayName("1. RouteVisibilityGuard correctly assigns DATABASES route type and suppresses global action buttons & database selector")
     void testRouteVisibilityGuardDatabasesPolicy() {
         RouteVisibilityGuard.NavigationRouteConfig dbConfig = RouteVisibilityGuard.resolveConfig("/databases");
         assertEquals(RouteVisibilityGuard.RouteType.DATABASES, dbConfig.routeType());
         assertFalse(dbConfig.showGlobalActionButtons(), "showGlobalActionButtons must be false for /databases");
-        assertTrue(dbConfig.showDatabaseSelector(), "showDatabaseSelector must remain true for /databases");
+        assertFalse(dbConfig.showDatabaseSelector(), "showDatabaseSelector must be false for /databases");
         assertFalse(dbConfig.showTopNavigationTabs(), "showTopNavigationTabs must be false for /databases");
         assertTrue(dbConfig.showThemeToggle(), "showThemeToggle must remain true for /databases");
         assertTrue(dbConfig.topToolbarVisible(), "topToolbarVisible must remain true for /databases");
     }
 
     @JettraTest
-    @DisplayName("2. StoreDatabasesPage at /databases suppresses all 7 top action buttons from rendered DOM")
+    @DisplayName("2. StoreDatabasesPage at /databases suppresses all 7 top action buttons and database selectOne from rendered DOM")
     void testDatabasesRouteSuppressesAllTopActionButtons() throws IOException {
         TestHttpExchange exchange = new TestHttpExchange("GET", "/databases");
         exchange.getRequestHeaders().set("Cookie", "username=admin; role=ADMIN");
@@ -98,13 +98,17 @@ public class StoreDatabasesPageActionsSuppressionTest {
         assertFalse(body.contains("Búsqueda Avanzada"), "DOM must not contain 'Búsqueda Avanzada' button on /databases");
         assertFalse(body.contains("Sample DBs"), "DOM must not contain 'Sample DBs' button on /databases");
 
+        // Must NOT render database selector selectOne component
+        assertFalse(body.contains("topDatabaseSelect"), "DOM must not contain database selectOne on /databases");
+        assertFalse(body.contains("id=\"topDatabaseSelect\""), "DOM must not contain id=\"topDatabaseSelect\" on /databases");
+
         // Must still render core informative / database management content
         assertTrue(body.contains("Multi-Model Database Workspace"), "Page title card header must be rendered");
         assertTrue(body.contains("Authorized Active Databases"), "Active databases section must be rendered");
     }
 
     @JettraTest
-    @DisplayName("3. StoreDatabasesPage buildUI suppresses action buttons directly in JettraFlux component tree")
+    @DisplayName("3. StoreDatabasesPage buildUI suppresses action buttons and database selectOne directly in JettraFlux component tree")
     void testDatabasesBuildUiSuppressesActionButtons() {
         String html = databasesPage.buildUI(null, Map.of("route", "/databases"), "Matrix").render(Themes.Dark());
 
@@ -115,6 +119,7 @@ public class StoreDatabasesPageActionsSuppressionTest {
         assertFalse(html.contains("Export Data"));
         assertFalse(html.contains("Búsqueda Avanzada"));
         assertFalse(html.contains("Sample DBs"));
+        assertFalse(html.contains("topDatabaseSelect"), "Component tree must not render topDatabaseSelect on /databases");
 
         assertTrue(html.contains("Multi-Model Database Workspace"));
         assertTrue(html.contains("Connected as"));
@@ -128,6 +133,15 @@ public class StoreDatabasesPageActionsSuppressionTest {
 
         assertTrue(html.contains("+ DB"), "When explicitly enabled with fluent API, + DB must be rendered");
         assertTrue(html.contains("Sample DBs"), "When explicitly enabled with fluent API, Sample DBs must be rendered");
+    }
+
+    @JettraTest
+    @DisplayName("5. Fluent override withDatabaseSelector allows conditional toggle of database selectOne on /databases")
+    void testFluentOverrideDatabaseSelector() {
+        StoreDatabasesPage customPage = new StoreDatabasesPage(engine, authManager).withDatabaseSelector(true);
+        String html = customPage.buildUI(null, Collections.emptyMap(), "Matrix").render(Themes.Dark());
+
+        assertTrue(html.contains("topDatabaseSelect"), "When explicitly enabled with fluent API, topDatabaseSelect must be rendered");
     }
 
     private static class TestHttpExchange extends HttpExchange {
