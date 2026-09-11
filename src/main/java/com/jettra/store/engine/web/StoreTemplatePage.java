@@ -35,6 +35,10 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
         return new TreeSet<>(Set.of("system_db"));
     }
 
+    protected Set<String> getAvailableDatabases(HttpExchange exchange, String loggedUser) {
+        return getAvailableDatabases();
+    }
+
     /**
      * Determines whether global action buttons (+ DB, + UNIT, BACKUP, RESTORE, EXPORT, BÚSQUEDA AVANZADA, SAMPLE DBS)
      * are rendered in the top bar. Defaults to true and can be overridden by subclasses (e.g. InformationPage).
@@ -83,12 +87,12 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
             routeConfig = routeConfig.withTopToolbarVisible(false);
         }
 
-        Set<String> databases = getAvailableDatabases();
+        Set<String> databases = getAvailableDatabases(exchange, loggedUser);
         if (databases == null || databases.isEmpty()) {
             databases = new TreeSet<>(Set.of("system_db"));
         }
-        if (!databases.contains(targetDb)) {
-            databases.add(targetDb);
+        if (!databases.contains(targetDb) && !databases.isEmpty()) {
+            targetDb = databases.iterator().next();
         }
 
         // Modern CSS styling system
@@ -274,26 +278,26 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
         List<Widget> leftItems = new ArrayList<>();
 
         if (config.showDatabaseSelector()) {
-            StringBuilder dbOptionsHtml = new StringBuilder();
+            String onchangeUrl = "location.href='" + JettraServer.resolvePath("/engines?target_db=") + "' + encodeURIComponent(this.value) + '&engine=" + selectedEngine + "&tab=" + currentTab + "';";
+
+            JettraFluxSelect dbSelect = JettraFluxSelect.of("topDatabaseSelect", "target_db")
+                .onChange(onchangeUrl)
+                .modifier(new Modifier()
+                    .style("background:var(--j-bg-subsurface); color:var(--j-primary); border:1px solid var(--j-border); padding:3px 8px; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer; outline:none; appearance:auto; width:auto; display:inline-block;")
+                );
+
             for (String db : databases) {
-                String sel = db.equalsIgnoreCase(targetDb) ? " selected" : "";
-                dbOptionsHtml.append("<option value='").append(db).append("'").append(sel).append(">")
-                    .append(db).append("</option>");
+                dbSelect.addOption(db, db, db.equalsIgnoreCase(targetDb));
             }
 
-            Widget dbSelector = RawHtml.of(
-                "<div style='display:inline-flex; align-items:center; gap:6px; margin-right:6px;'>" +
-                "<i class='fas fa-database' style='color:#0284c7; font-size:13px;'></i>" +
-                "<span style='font-size:12px; font-weight:500; color:var(--j-text-secondary);'>Connected as <strong style='color:var(--j-text-primary);'>" + loggedUser + "</strong> @</span>" +
-                "<div style='position:relative; display:inline-flex; align-items:center;'>" +
-                "<select id='topDatabaseSelect' onchange=\"location.href='" + JettraServer.resolvePath("/engines?target_db=") + "' + encodeURIComponent(this.value) + '&engine=" + selectedEngine + "&tab=" + currentTab + "';\" style='background:var(--j-bg-subsurface); color:var(--j-primary); border:1px solid var(--j-border); padding:3px 22px 3px 8px; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer; outline:none; appearance:none; -webkit-appearance:none;'>" +
-                dbOptionsHtml +
-                "</select>" +
-                "<i class='fas fa-caret-down' style='position:absolute; right:7px; pointer-events:none; font-size:10px; color:var(--j-text-muted);'></i>" +
-                "</div>" +
-                "<span style='font-size:11px; color:var(--j-text-muted); font-weight:500;'>(" + databases.size() + ")</span>" +
-                "</div>"
-            );
+            Widget dbSelector = Div.of(
+                Icon.of("fas fa-database").modifier(new Modifier().style("color:#0284c7; font-size:13px;")),
+                Span.of("Connected as ").modifier(new Modifier().style("font-size:12px; font-weight:500; color:var(--j-text-secondary);")),
+                Span.of(loggedUser).modifier(new Modifier().style("color:var(--j-text-primary); font-weight:700; font-size:12px; margin-right:4px;")),
+                Span.of("@").modifier(new Modifier().style("color:var(--j-text-secondary); font-size:12px; margin-right:6px;")),
+                dbSelect,
+                Span.of("(" + databases.size() + ")").modifier(new Modifier().style("font-size:11px; color:var(--j-text-muted); font-weight:500; margin-left:6px;"))
+            ).modifier(new Modifier().style("display:inline-flex; align-items:center; gap:4px; margin-right:6px;"));
             leftItems.add(dbSelector);
         } else {
             // Clean connection indicator for Global Dashboard route

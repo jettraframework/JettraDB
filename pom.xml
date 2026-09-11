@@ -152,6 +152,7 @@
                             <cleanupDaemonThreads>false</cleanupDaemonThreads>
                             <arguments>
                                 <argument>${project.build.testOutputDirectory}</argument>
+                                <argument>${project.build.outputDirectory}</argument>
                             </arguments>
                         </configuration>
                     </execution>

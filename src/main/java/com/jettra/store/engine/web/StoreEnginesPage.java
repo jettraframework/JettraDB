@@ -30,6 +30,9 @@ import io.jettra.json.JettraJson;
 import io.jettra.json.JsonObject;
 import io.jettra.json.JsonArray;
 import io.jettra.server.JettraServer;
+import com.jettra.store.engine.security.DatabaseSecurityFilter;
+import com.jettra.store.engine.users.SystemUserRepositoryImpl;
+import io.jettra.flux.security.SecurityPrincipal;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -43,6 +46,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -67,8 +71,13 @@ public class StoreEnginesPage extends StoreTemplatePage {
     private final RestoreActionHandler restoreHandler;
     private final EditActionHandler editActionHandler;
     private final io.jettra.server.autentification.repository.JUserRepository userRepo;
+    private final DatabaseSecurityFilter securityFilter;
 
     public StoreEnginesPage(JettraStorageEngine engine) {
+        this(engine, new DatabaseSecurityFilter(new SystemUserRepositoryImpl(), new io.jettra.server.autentification.repository.JUserRepositoryImpl()));
+    }
+
+    public StoreEnginesPage(JettraStorageEngine engine, DatabaseSecurityFilter securityFilter) {
         this.engine = engine;
         this.refResolver = new JettraReferenceResolver(engine);
         this.hierarchyService = new HierarchyExplorerService(engine);
@@ -76,6 +85,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
         this.restoreHandler = new RestoreActionHandler(engine);
         this.editActionHandler = new EditActionHandler(engine, hierarchyService);
         this.userRepo = new io.jettra.server.autentification.repository.JUserRepositoryImpl();
+        this.securityFilter = securityFilter != null ? securityFilter : new DatabaseSecurityFilter(new SystemUserRepositoryImpl(), this.userRepo);
     }
 
     @Override
@@ -475,8 +485,24 @@ public class StoreEnginesPage extends StoreTemplatePage {
         return discoverAllDatabases();
     }
 
+    @Override
+    protected Set<String> getAvailableDatabases(HttpExchange exchange, String loggedUser) {
+        Set<String> allDbs = discoverAllDatabases();
+        SecurityPrincipal principal = securityFilter.resolvePrincipal(exchange, loggedUser, "USER", "");
+        Set<String> filtered = securityFilter.filterDatabases(principal, allDbs);
+        if (filtered == null || filtered.isEmpty()) {
+            return Collections.emptySet();
+        }
+        return filtered;
+    }
+
     public Set<String> discoverAllDatabases() {
-        return hierarchyService.discoverAllDatabases();
+        Set<String> dbs = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+        dbs.addAll(hierarchyService.discoverAllDatabases());
+        if (securityFilter != null) {
+            dbs.addAll(securityFilter.discoverAllPhysicalDatabases(engine));
+        }
+        return dbs;
     }
 
     public String getPrefixForEngine(String engineKey) {
@@ -669,34 +695,28 @@ public class StoreEnginesPage extends StoreTemplatePage {
             } catch (Exception ignored) {}
         }
 
-        boolean isAdmin = "admin".equalsIgnoreCase(loggedUser) || "root".equalsIgnoreCase(loggedUser) ||
-                          "ADMIN".equalsIgnoreCase(loggedRole) || "SUPER_USER".equalsIgnoreCase(loggedRole);
+        SecurityPrincipal principal = securityFilter.resolvePrincipal(exchange, loggedUser, loggedRole, "");
 
-        if (!isAdmin && targetDb != null && !targetDb.isBlank()) {
-            boolean authorized = false;
-            try {
-                java.util.List<io.jettra.server.autentification.entity.JUser> allUsers = userRepo.findAll();
-                for (io.jettra.server.autentification.entity.JUser u : allUsers) {
-                    if (u.firstName().equalsIgnoreCase(loggedUser) || (u.email() != null && u.email().equalsIgnoreCase(loggedUser))) {
-                        if (u.isAuthorizedForDatabase(targetDb)) {
-                            authorized = true;
-                            break;
-                        }
-                    }
-                }
-            } catch (Exception ignored) {}
-
-            if (!authorized) {
-                alertMessage = "Access Denied: User '" + loggedUser + "' is not authorized to access or modify database '" + targetDb + "'!";
-                alertType = "badge-raft";
-                if ((exchange != null && "POST".equalsIgnoreCase(exchange.getRequestMethod())) || (params != null && params.containsKey("action"))) {
-                    Widget accessDeniedBanner = Div.of(
-                        Icon.of("fas fa-lock").modifier(new Modifier().style("color:#f43f5e; margin-right:8px; font-size:18px;")),
-                        Span.of(alertMessage).modifier(new Modifier().style("color:#f8fafc; font-weight:600; font-size:14px;"))
-                    ).modifier(new Modifier().style("background:rgba(244,63,94,0.15); border:1px solid rgba(244,63,94,0.3); padding:16px 20px; border-radius:8px; margin-bottom:16px; display:flex; align-items:center;"));
-                    return accessDeniedBanner;
-                }
+        // If targetDb is null or unassigned, try defaulting to the user's first authorized database
+        if (targetDb == null || targetDb.isBlank() || "_system".equalsIgnoreCase(targetDb)) {
+            Set<String> authDbs = getAvailableDatabases(exchange, loggedUser);
+            if (!authDbs.isEmpty()) {
+                targetDb = authDbs.iterator().next();
+            } else {
+                targetDb = getDefaultDbForEngine(selectedEngine);
             }
+        }
+
+        boolean authorized = securityFilter.isAuthorized(principal, targetDb);
+
+        if (!authorized && targetDb != null && !targetDb.isBlank()) {
+            alertMessage = "Access Denied: User '" + loggedUser + "' is not authorized to access or modify database '" + targetDb + "'!";
+            alertType = "badge-raft";
+            Widget accessDeniedBanner = Div.of(
+                Icon.of("fas fa-lock").modifier(new Modifier().style("color:#f43f5e; margin-right:8px; font-size:18px;")),
+                Span.of(alertMessage).modifier(new Modifier().style("color:#f8fafc; font-weight:600; font-size:14px;"))
+            ).modifier(new Modifier().style("background:rgba(244,63,94,0.15); border:1px solid rgba(244,63,94,0.3); padding:16px 20px; border-radius:8px; margin-bottom:16px; display:flex; align-items:center;"));
+            return accessDeniedBanner;
         }
 
         // Handle POST Operations or Direct Actions

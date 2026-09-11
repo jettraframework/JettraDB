@@ -26,6 +26,7 @@ import com.jettra.store.engine.exception.UserAlreadyExistsException;
 import com.jettra.store.engine.users.SystemUser;
 import com.jettra.store.engine.users.SystemUserRepository;
 import com.jettra.store.engine.users.SystemUserRepositoryImpl;
+import com.jettra.store.engine.security.DatabaseSecurityFilter;
 import com.jettra.store.engine.web.validation.UserValidationChain;
 import com.jettra.store.engine.web.validation.UserValidationContext;
 import com.jettra.store.engine.web.validation.UserValidationService;
@@ -67,6 +68,7 @@ public class StoreDatabasesPage extends StoreTemplatePage {
     private final SampleDatasetManager sampleDatasetManager;
     private final UserValidationChain validationChain;
     private final UserValidationService validationService;
+    private final DatabaseSecurityFilter securityFilter;
     private boolean showActionButtons = false;
     private boolean showDatabaseSelector = false;
 
@@ -89,6 +91,11 @@ public class StoreDatabasesPage extends StoreTemplatePage {
         this.sampleDatasetManager = new SampleDatasetManager(engine);
         this.validationChain = UserValidationChain.defaultChain(this.systemUserRepo);
         this.validationService = new UserValidationService(this.systemUserRepo);
+        this.securityFilter = new DatabaseSecurityFilter(this.systemUserRepo, this.userRepo);
+    }
+
+    public DatabaseSecurityFilter getDatabaseSecurityFilter() {
+        return this.securityFilter;
     }
 
     public SystemUserRepository getSystemUserRepository() {
@@ -434,24 +441,14 @@ public class StoreDatabasesPage extends StoreTemplatePage {
         List<SystemUser> systemUsers = systemUserRepo.findAll();
         List<JUser> allUsers = userRepo.findAll();
 
-        // Resolve Security Principal from SecurityContextHolder or session cookie
-        SecurityContext secContext = SecurityContextHolder.getContext();
-        SecurityPrincipal principal = (secContext != null && secContext.isAuthenticated())
-            ? secContext.principal()
-            : null;
-
-        if (principal == null && exchange != null) {
-            String u = getLoggedUser(exchange);
-            String r = getLoggedRole(exchange);
-            String d = getLoggedDepartment(exchange);
-            if (u != null && !u.isBlank()) {
-                principal = SecurityPrincipal.of(u, r != null ? r : "USER", d != null ? d : "");
-            }
-        }
+        // Resolve Security Principal with full database privileges enrichment
+        String loggedUser = (exchange != null) ? getLoggedUser(exchange) : "admin";
+        String loggedRole = (exchange != null) ? getLoggedRole(exchange) : "ADMIN";
+        String loggedDept = (exchange != null) ? getLoggedDepartment(exchange) : "*";
+        SecurityPrincipal activePrincipal = securityFilter.resolvePrincipal(exchange, loggedUser, loggedRole, loggedDept);
 
         // Functional Filtering via Java Streams & Predicates based on user permissions
-        final SecurityPrincipal activePrincipal = principal;
-        Predicate<String> hasDbPermission = dbName -> isAuthorizedForDatabase(activePrincipal, dbName, allUsers);
+        Predicate<String> hasDbPermission = dbName -> securityFilter.isAuthorized(activePrincipal, dbName);
 
         Map<String, DatabaseMetadata> databases = allDiscoveredDatabases.entrySet().stream()
             .filter(entry -> hasDbPermission.test(entry.getKey()))
@@ -1269,6 +1266,9 @@ public class StoreDatabasesPage extends StoreTemplatePage {
         if (principal == null) {
             return false;
         }
+        if (securityFilter != null) {
+            return securityFilter.isAuthorized(principal, dbName, allUsers);
+        }
 
         // 1. Global Admin, SuperUser, or Manager roles have cluster-wide access
         if (principal.hasRole("ADMIN") || principal.hasRole("SUPER_USER") || principal.hasRole("MANAGER")) {
@@ -1361,6 +1361,20 @@ public class StoreDatabasesPage extends StoreTemplatePage {
 
     private Map<String, DatabaseMetadata> discoverDatabases() {
         Map<String, DatabaseMetadata> databases = new LinkedHashMap<>();
+
+        // Discover physical databases from disk (/data/node1/databases) and in-memory partitions
+        if (engine != null && engine.getStorageCore() != null) {
+            try {
+                Set<String> physDbs = engine.getStorageCore().getDatabaseNames();
+                if (physDbs != null) {
+                    for (String db : physDbs) {
+                        if (db != null && !db.isBlank() && !"_system".equalsIgnoreCase(db)) {
+                            databases.computeIfAbsent(db.trim(), DatabaseMetadata::new);
+                        }
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
 
         String[] prefixes = {"rec:", "doc:", "vec:", "graph:", "ts:", "col:", "kv:", "geo:", "obj:"};
         for (String p : prefixes) {
