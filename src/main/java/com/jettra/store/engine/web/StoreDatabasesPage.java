@@ -651,7 +651,7 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                         .modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:6px 12px; font-size:12px;")));
                 }
 
-                actionButtons.add(Button.of(Icon.of("fas fa-user-plus"), Text.of(" Assign User"))
+                actionButtons.add(Button.of(Icon.of("fas fa-user-plus"), Text.of(" ASSIGN USER"))
                     .attribute("onclick", "openAssignUserModal('" + dbName + "')")
                     .modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:6px 12px; font-size:12px;")));
 
@@ -726,7 +726,7 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                         Span.of("Scoped Users (" + scopedSysUsers.size() + "): "),
                         Div.of(userBadges.toArray(new Widget[0]))
                     ).modifier(new Modifier().style("display:flex; align-items:center; gap:8px; flex-wrap:wrap;")),
-                    Button.of(Text.of("+ Assign User to " + dbName))
+                    Button.of(Text.of("+ ASSIGN USER to " + dbName))
                         .attribute("onclick", "openAssignUserModal('" + dbName + "')")
                         .modifier(new Modifier().style("background:none; border:none; color:#38bdf8; font-size:12px; cursor:pointer; text-decoration:underline;"))
                 ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; font-size:13px; color:#94a3b8; padding-top:10px; border-top:1px solid rgba(255,255,255,0.06);"));
@@ -745,6 +745,163 @@ public class StoreDatabasesPage extends StoreTemplatePage {
         Widget databasesContainer = Div.of(dbCardList.toArray(new Widget[0]))
             .modifier(new Modifier().style("display: flex; flex-direction: column; gap: 20px;"));
 
+        // Build Hierarchical Tree View for Multi-Model Database Workspace
+        Widget databasesTreeContainer;
+        if (databases.isEmpty()) {
+            Widget emptyTreeState = EmptyStateComponent.of(
+                "No Authorized Databases",
+                "Your account (" + (activePrincipal != null ? activePrincipal.username() : "Guest") +
+                ") does not possess READ or ADMIN permissions for any database namespaces in this cluster. Contact your administrator."
+            ).icon("fas fa-shield-alt")
+             .action("Request Access / Refresh", "window.location.reload()");
+            databasesTreeContainer = Div.of(emptyTreeState);
+        } else {
+            FluxTree<DatabaseMetadata> dbTree = FluxTree.of("databases-workspace-tree");
+            dbTree.ariaLabel("Multi-Model Database Workspace Hierarchical Tree");
+
+            for (DatabaseMetadata dbMeta : databases.values()) {
+                String dbName = dbMeta.getName();
+                int objCount = dbMeta.getTotalObjects();
+                boolean isSystemDb = "system_db".equalsIgnoreCase(dbName);
+
+                JettraTreeNode<DatabaseMetadata> dbNode = JettraTreeNode.of(
+                    "tree_node_db_" + dbName,
+                    dbName + " (" + objCount + " stored entities)",
+                    dbMeta
+                );
+                dbNode.icon(isSystemDb ? "fas fa-shield-alt" : "fas fa-database")
+                      .iconColor(isSystemDb ? "#f43f5e" : "#38bdf8")
+                      .badge(isSystemDb ? "SYSTEM CORE" : "ONLINE", isSystemDb ? "store-badge badge-records" : "store-badge badge-active");
+
+                // Tree Node Actions
+                dbNode.action(Link.of(JettraServer.resolvePath("/engines?engine=RECORDS&db=" + dbName),
+                    Icon.of("fas fa-search"),
+                    Text.of(" Explore Data")
+                ).modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:3px 8px; font-size:11px; margin-right:2px;")));
+
+                if (!isSystemDb) {
+                    dbNode.action(Button.of(Icon.of("fas fa-pen"), Text.of(" Rename"))
+                        .attribute("onclick", "openRenameDbModal('" + dbName + "')")
+                        .modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:3px 8px; font-size:11px; margin-right:2px;")));
+                }
+
+                dbNode.action(Button.of(Icon.of("fas fa-user-plus"), Text.of(" ASSIGN USER"))
+                    .attribute("onclick", "openAssignUserModal('" + dbName + "')")
+                    .modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:3px 8px; font-size:11px; margin-right:2px;")));
+
+                if (!isSystemDb) {
+                    dbNode.action(Button.of(Icon.of("fas fa-trash-alt"), Text.of(" Delete Database"))
+                        .attribute("onclick", "JettraConfirmDialog.open('dropDbConfirmDialog', '" + dbName + "', '" + dbName + "')")
+                        .attribute("title", "Delete Database")
+                        .modifier(new Modifier().cssClass("btn-action btn-danger").style("padding:3px 8px; font-size:11px;")));
+                } else {
+                    dbNode.action(Span.of(
+                        Icon.of("fas fa-lock").modifier(new Modifier().style("margin-right:3px;")),
+                        Text.of("PROTECTED")
+                    ).modifier(new Modifier().cssClass("store-badge badge-records").style("font-size:10px; padding:3px 8px;")));
+                }
+
+                // Child Branch 1: Multi-Model Storage Components
+                JettraTreeNode<DatabaseMetadata> enginesBranch = JettraTreeNode.of(
+                    "tree_node_db_" + dbName + "_engines",
+                    "Storage Components (" + dbMeta.getEngineCounts().size() + " Active Engines)",
+                    dbMeta
+                );
+                enginesBranch.icon("fas fa-cubes")
+                             .iconColor("#a855f7")
+                             .badge(dbMeta.getEngineCounts().size() + " Engines", "store-badge badge-raft");
+
+                for (Map.Entry<String, Integer> comp : dbMeta.getEngineCounts().entrySet()) {
+                    String eng = comp.getKey();
+                    int cnt = comp.getValue();
+                    String badgeClass = getEngineBadgeClass(eng);
+
+                    JettraTreeNode<DatabaseMetadata> engNode = JettraTreeNode.of(
+                        "tree_node_db_" + dbName + "_eng_" + eng,
+                        eng + " (" + cnt + " keys) — " + getDescForEngine(eng),
+                        dbMeta
+                    );
+                    engNode.icon(getIconForEngine(eng))
+                           .iconColor("#c084fc")
+                           .badge(cnt + " keys", "store-badge " + badgeClass)
+                           .action(Link.of(JettraServer.resolvePath("/engines?engine=" + eng + "&db=" + dbName),
+                               Icon.of("fas fa-search"),
+                               Text.of(" Inspect")
+                           ).modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:2px 6px; font-size:10px;")));
+
+                    enginesBranch.child(engNode);
+                }
+                dbNode.child(enginesBranch);
+
+                // Child Branch 2: Authorized Scoped Users
+                List<SystemUser> scopedSysUsers = systemUsers.stream()
+                    .filter(u -> u.hasDatabaseAccess(dbName))
+                    .toList();
+
+                JettraTreeNode<DatabaseMetadata> usersBranch = JettraTreeNode.of(
+                    "tree_node_db_" + dbName + "_users",
+                    "Authorized Scoped Users (" + scopedSysUsers.size() + ")",
+                    dbMeta
+                );
+                usersBranch.icon("fas fa-user-shield")
+                           .iconColor("#38bdf8")
+                           .badge(scopedSysUsers.size() + " Users", "store-badge badge-active")
+                           .action(Button.of(Icon.of("fas fa-user-plus"), Text.of(" ASSIGN USER"))
+                               .attribute("onclick", "openAssignUserModal('" + dbName + "')")
+                               .modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:2px 6px; font-size:10px;")));
+
+                if (scopedSysUsers.isEmpty()) {
+                    usersBranch.child(JettraTreeNode.of(
+                        "tree_node_db_" + dbName + "_no_users",
+                        "No users assigned specifically (inherited from global admin)",
+                        dbMeta
+                    ).icon("fas fa-info-circle").iconColor("#64748b"));
+                } else {
+                    for (SystemUser u : scopedSysUsers) {
+                        String role = u.role() != null ? u.role() : "READ_WRITE";
+                        String roleBadge = "DB_ADMIN".equalsIgnoreCase(role) ? "badge-raft" : "badge-engine";
+                        JettraTreeNode<DatabaseMetadata> userNode = JettraTreeNode.of(
+                            "tree_node_db_" + dbName + "_user_" + u.username(),
+                            u.username() + " (" + (u.email() != null ? u.email() : u.username() + "@jettra.io") + ")",
+                            dbMeta
+                        );
+                        userNode.icon("fas fa-user")
+                                .iconColor("#38bdf8")
+                                .badge(role, "store-badge " + roleBadge);
+                        usersBranch.child(userNode);
+                    }
+                }
+                dbNode.child(usersBranch);
+
+                dbTree.root(dbNode);
+            }
+
+            Widget treeToolbar = Div.of(
+                Div.of(
+                    Icon.of("fas fa-sitemap").modifier(new Modifier().style("color:#38bdf8; margin-right:8px; font-size:15px;")),
+                    Span.of("Hierarchical Storage Tree Explorer").modifier(new Modifier().style("font-size:13px; font-weight:600; color:#cbd5e1;")),
+                    Span.of(databases.size() + " Databases").modifier(new Modifier().cssClass("store-badge badge-active").style("margin-left:8px;"))
+                ).modifier(new Modifier().style("display:flex; align-items:center;")),
+                Div.of(
+                    dbTree.createExpandAllButton("Expand All", "fas fa-expand-alt"),
+                    dbTree.createCollapseAllButton("Collapse All", "fas fa-compress-alt")
+                ).modifier(new Modifier().style("display:flex; gap:6px; align-items:center;"))
+            ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; padding:10px 14px; background:rgba(15,23,42,0.65); border-radius:8px; border:1px solid rgba(255,255,255,0.08);"));
+
+            databasesTreeContainer = Div.of(treeToolbar, dbTree)
+                .modifier(new Modifier().style("display:flex; flex-direction:column; width:100%;"));
+        }
+
+        // ViewSwitcher to toggle dynamically between List View and Tree View
+        String requestedView = (params != null && params.get("view") != null) ? params.get("view").trim().toLowerCase() : "list";
+        boolean isTreeViewActive = "tree".equalsIgnoreCase(requestedView);
+
+        ViewSwitcher viewSwitcher = ViewSwitcher.of("dbWorkspaceViewSwitcher")
+            .ariaLabel("Multi-Model Database Workspace Perspectives")
+            .activeView(isTreeViewActive ? "tree" : "list")
+            .addView("list", "List View", "fas fa-th-list", String.valueOf(databases.size()), databasesContainer, !isTreeViewActive)
+            .addView("tree", "Tree View", "fas fa-project-diagram", String.valueOf(databases.size()), databasesTreeContainer, isTreeViewActive);
+
         // Unified JettraFlux Panel consolidating Multi-Model Components and Active Databases
         Widget unifiedPanel = JettraCardPanel.of("Multi-Model Database Workspace")
             .subtitle("Consolidated panel for multi-model storage engine components and authorized active databases.")
@@ -755,7 +912,7 @@ public class StoreDatabasesPage extends StoreTemplatePage {
             .add(multiModelGrid)
             .add(sectionDivider)
             .add(activeDatabasesHeader)
-            .add(databasesContainer);
+            .add(viewSwitcher);
 
         // Modal 1: Create Database
         Widget createDbHeader = Row.of(
@@ -838,7 +995,9 @@ public class StoreDatabasesPage extends StoreTemplatePage {
             .maxHeight("230px")
             .quickActions(true);
 
+        Set<String> seenUsernames = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
         for (SystemUser su : systemUsers) {
+            seenUsernames.add(su.username());
             boolean isAdmin = "admin".equalsIgnoreCase(su.username());
             String roleBadge = su.role() != null ? su.role() : "READ_WRITE";
             String desc = su.email() != null ? su.email() : su.username() + "@jettra.io";
@@ -851,6 +1010,28 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                 .disabled(isAdmin);
 
             userSelectionTable.addItem(item);
+        }
+
+        // Include any additional users from legacy userRepo if not already in system_db
+        for (JUser ju : allUsers) {
+            String uName = ju.firstName();
+            if (uName != null && !seenUsernames.contains(uName)) {
+                seenUsernames.add(uName);
+                boolean isAdmin = "admin".equalsIgnoreCase(uName);
+                String roleBadge = (ju.jRoles() != null && !ju.jRoles().isEmpty())
+                    ? ju.jRoles().iterator().next().name()
+                    : "USER";
+                String desc = ju.email() != null ? ju.email() : uName + "@jettra.io";
+
+                ToggleSelectionItem item = ToggleSelectionItem.of(uName, uName)
+                    .id("user_toggle_" + uName.replaceAll("[^a-zA-Z0-9_]", "_"))
+                    .subtitle(desc)
+                    .roleBadge(roleBadge)
+                    .assignedDatabases(ju.assignedDatabases())
+                    .disabled(isAdmin);
+
+                userSelectionTable.addItem(item);
+            }
         }
 
         Widget existingSection = Div.of(
@@ -919,7 +1100,7 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                 .modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:8px 16px;"))
                 .attribute("type", "button")
                 .attribute("onclick", "document.getElementById('assignUserModal').close();"),
-            Button.of(Icon.of("fas fa-user-check"), Text.of(" Assign User"))
+            Button.of(Icon.of("fas fa-user-check"), Text.of(" ASSIGN USER"))
                 .id("assignUserSubmitBtn")
                 .modifier(new Modifier().cssClass("btn-action btn-primary").style("padding:8px 18px;"))
                 .attribute("type", "submit")
@@ -990,6 +1171,11 @@ public class StoreDatabasesPage extends StoreTemplatePage {
             "    if (dbInp) dbInp.value = db;\n" +
             "    var dbLabel = document.getElementById('assignUserDbLabel');\n" +
             "    if (dbLabel) dbLabel.innerText = db;\n" +
+            "    var searchInp = document.getElementById('assignUserSelectionTable_search');\n" +
+            "    if (searchInp) {\n" +
+            "      searchInp.value = '';\n" +
+            "      if (window.UserSelectionTable) window.UserSelectionTable.filter('assignUserSelectionTable', '');\n" +
+            "    }\n" +
             "    if (window.UserSelectionTable) {\n" +
             "      window.UserSelectionTable.syncForDatabase('assignUserSelectionTable', db);\n" +
             "    }\n" +
@@ -1011,14 +1197,14 @@ public class StoreDatabasesPage extends StoreTemplatePage {
             "      if (newUsernameInp) newUsernameInp.removeAttribute('required');\n" +
             "      if (newEmailInp) newEmailInp.removeAttribute('required');\n" +
             "      if (newPassInp) newPassInp.removeAttribute('required');\n" +
-            "      if (submitBtn) submitBtn.innerHTML = '<i class=\"fas fa-user-check\"></i> Assign User';\n" +
+            "      if (submitBtn) submitBtn.innerHTML = '<i class=\"fas fa-user-check\"></i> ASSIGN USER';\n" +
             "    } else {\n" +
             "      if (existingSec) existingSec.style.display = 'none';\n" +
             "      if (newSec) newSec.style.display = 'block';\n" +
             "      if (newUsernameInp) newUsernameInp.setAttribute('required', 'required');\n" +
             "      if (newEmailInp) newEmailInp.setAttribute('required', 'required');\n" +
             "      if (newPassInp) newPassInp.setAttribute('required', 'required');\n" +
-            "      if (submitBtn) submitBtn.innerHTML = '<i class=\"fas fa-plus-circle\"></i> Create & Assign User';\n" +
+            "      if (submitBtn) submitBtn.innerHTML = '<i class=\"fas fa-plus-circle\"></i> CREATE & ASSIGN USER';\n" +
             "    }\n" +
             "  }\n" +
             "  function openRenameDbModal(oldDb) {\n" +
@@ -1237,6 +1423,20 @@ public class StoreDatabasesPage extends StoreTemplatePage {
             case "KEYVALUE" -> "background:rgba(34,197,94,0.15); color:#4ade80; border:1px solid rgba(34,197,94,0.3);";
             case "GEOSPATIAL" -> "background:rgba(249,115,22,0.15); color:#fb923c; border:1px solid rgba(249,115,22,0.3);";
             default -> "background:rgba(99,102,241,0.15); color:#818cf8; border:1px solid rgba(99,102,241,0.3);";
+        };
+    }
+
+    private String getEngineBadgeClass(String eng) {
+        return switch (eng.toUpperCase()) {
+            case "RECORDS" -> "badge-records";
+            case "DOCUMENT" -> "badge-active";
+            case "VECTOR" -> "badge-vector";
+            case "GRAPH" -> "badge-graph";
+            case "TIMESERIES" -> "badge-timeseries";
+            case "COLUMN" -> "badge-column";
+            case "KEYVALUE" -> "badge-keyvalue";
+            case "GEOSPATIAL" -> "badge-geo";
+            default -> "badge-engine";
         };
     }
 
