@@ -225,25 +225,6 @@ public class JettraReferenceResolver {
             }
         }
 
-        // 7. Lazy-load sample dataset if reference points to a known sample dataset
-        if (rawBytes == null || rawBytes.length == 0) {
-            try {
-                com.jettra.store.engine.samples.SampleDatasetManager sampleMgr = new com.jettra.store.engine.samples.SampleDatasetManager(storageEngine);
-                int loaded = sampleMgr.loadDataset(canonicalDb);
-                if (loaded > 0) {
-                    for (String k : candidateKeys) {
-                        rawBytes = storageEngine.getStorageCore().get(k);
-                        if (rawBytes != null && rawBytes.length > 0) {
-                            foundKey = k;
-                            break;
-                        }
-                    }
-                    if (rawBytes == null || rawBytes.length == 0) {
-                        rawBytes = searchByPrefixScan(pfx, dbLower, entIdLower, lastSegmentLower);
-                    }
-                }
-            } catch (Exception ignored) {}
-        }
 
         if (rawBytes == null || rawBytes.length == 0) {
             if (ref.node() != null && !ref.node().isBlank() && !clusterRegistry.isLocalNode(ref.node())) {

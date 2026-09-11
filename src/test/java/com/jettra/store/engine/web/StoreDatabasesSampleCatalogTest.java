@@ -78,7 +78,7 @@ public class StoreDatabasesSampleCatalogTest {
         engine.registerEngine("RECORDS", new RecordsEngine(engine));
         engine.start();
 
-        systemUserRepo = new SystemUserRepositoryImpl();
+        systemUserRepo = new SystemUserRepositoryImpl(tempDir.resolve("system_db"));
         userRepo = new JUserRepositoryImpl();
         credRepo = new JCredentialRepositoryImpl();
         authManager = new AuthManager(systemUserRepo);
@@ -108,11 +108,7 @@ public class StoreDatabasesSampleCatalogTest {
 
     @AfterEach
     void tearDown() throws IOException {
-        if (tempDir != null && Files.exists(tempDir)) {
-            try (var stream = Files.walk(tempDir)) {
-                stream.sorted(Comparator.reverseOrder()).map(Path::toFile).forEach(File::delete);
-            }
-        }
+        com.jettra.store.engine.test.TestDatabaseCleanup.cleanUp(engine, tempDir, sampleService);
     }
 
     @JettraTest

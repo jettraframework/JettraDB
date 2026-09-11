@@ -40,7 +40,16 @@ public class StorageEnginesFeaturesTest {
     void tearDown() throws IOException {
         com.jettra.store.engine.cluster.ClusterNodeRegistry.getInstance().initDefaultTopology();
         if (engine != null) {
-            engine.stop();
+            try {
+                if (engine.getStorageCore() != null) {
+                    for (String dbName : new java.util.HashSet<>(engine.getStorageCore().getDatabaseNames())) {
+                        try {
+                            engine.getStorageCore().dropDatabase(dbName);
+                        } catch (Exception ignored) {}
+                    }
+                }
+                engine.stop();
+            } catch (Exception ignored) {}
         }
         if (tempDir != null && Files.exists(tempDir)) {
             Files.walk(tempDir)
@@ -281,12 +290,14 @@ public class StorageEnginesFeaturesTest {
         var resQueryWrap = resolver.resolve("/engines?action=resolve_ref&uri=jref%3A%2F%2FDOCUMENT%3AExampleDBReferences%2Fcust_101");
         assertTrue(resQueryWrap.exists(), "URL query wrapped uri should resolve");
 
-        // 9. Test auto-loading of other sample datasets (e.g. scrum_board_db, hr_enterprise_db)
-        var resScrum = resolver.resolve("jref://DOCUMENT:scrum_board_db/tasks/TASK-0101");
-        assertTrue(resScrum.exists(), "Scrum board task with sub-collection slash path should resolve and auto-load");
+        // 9. Verify that uninstalled dataset does NOT auto-load (clean lifecycle)
+        var resUninstalled = resolver.resolve("jref://DOCUMENT:meteorology_iot_db/weather_stations/STAT-01");
+        assertFalse(resUninstalled.exists(), "Uninstalled sample dataset must not auto-load without explicit user action");
 
+        // When explicitly loaded, reference resolves successfully
+        sampleManager.loadHrEnterpriseDataset();
         var resHr = resolver.resolve("jref://RECORDS:hr_enterprise_db/employees/emp_201");
-        assertTrue(resHr.exists(), "HR employee with table slash path should resolve and auto-load");
+        assertTrue(resHr.exists(), "HR employee with table slash path should resolve once installed");
     }
 
     @JettraTest

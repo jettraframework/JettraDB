@@ -91,10 +91,14 @@ public class SampleDatabaseService {
     }
 
     public boolean isDatabasePresent(String dbName) {
-        if (engine == null || engine.getStorageCore() == null) return false;
+        if (engine == null || engine.getStorageCore() == null || dbName == null || dbName.isBlank()) return false;
+        String cleanDb = dbName.trim();
+        if (!engine.getStorageCore().getDatabaseNames().contains(cleanDb)) {
+            return false;
+        }
         String[] prefixes = {"doc:", "rec:", "kv:", "vec:", "graph:", "ts:", "col:", "geo:", "obj:", ""};
         for (String pfx : prefixes) {
-            String scanKey = pfx + dbName + ":";
+            String scanKey = pfx + cleanDb + ":";
             Map<String, byte[]> keys = engine.getStorageCore().scanPrefix(scanKey);
             if (!keys.isEmpty()) {
                 return true;
@@ -104,11 +108,15 @@ public class SampleDatabaseService {
     }
 
     public int getInstalledRecordCount(String dbName) {
-        if (engine == null || engine.getStorageCore() == null) return 0;
+        if (engine == null || engine.getStorageCore() == null || dbName == null || dbName.isBlank()) return 0;
+        String cleanDb = dbName.trim();
+        if (!engine.getStorageCore().getDatabaseNames().contains(cleanDb)) {
+            return 0;
+        }
         Set<String> uniqueIds = new HashSet<>();
         String[] prefixes = {"doc:", "rec:", "kv:", "vec:", "graph:", "ts:", "col:", "geo:", "obj:", ""};
         for (String pfx : prefixes) {
-            String scanKey = pfx + dbName + ":";
+            String scanKey = pfx + cleanDb + ":";
             Map<String, byte[]> keys = engine.getStorageCore().scanPrefix(scanKey);
             uniqueIds.addAll(keys.keySet());
         }
@@ -159,19 +167,20 @@ public class SampleDatabaseService {
     }
 
     public int purgeDatabase(String dbName) {
-        if (engine == null || engine.getStorageCore() == null) return 0;
+        if (engine == null || engine.getStorageCore() == null || dbName == null || dbName.isBlank()) return 0;
+        String cleanDb = dbName.trim();
         int count = 0;
         String[] prefixes = {
             "doc:", "rec:", "kv:", "vec:", "graph:", "ts:", "col:", "geo:", "obj:",
-            "meta:" + dbName + ":", "schema:" + dbName + ":", "rule:" + dbName + ":", "idx:" + dbName + ":",
-            dbName + ":"
+            "meta:" + cleanDb + ":", "schema:" + cleanDb + ":", "rule:" + cleanDb + ":", "idx:" + cleanDb + ":",
+            cleanDb + ":"
         };
 
         Set<String> keysToDelete = new HashSet<>();
         for (String pfx : prefixes) {
             String scanKey = pfx.contains(":") && !pfx.endsWith(":") ? pfx + ":" : pfx;
-            if (!pfx.startsWith("meta:") && !pfx.startsWith("schema:") && !pfx.startsWith("rule:") && !pfx.startsWith("idx:") && !pfx.equals(dbName + ":")) {
-                scanKey = pfx + dbName + ":";
+            if (!pfx.startsWith("meta:") && !pfx.startsWith("schema:") && !pfx.startsWith("rule:") && !pfx.startsWith("idx:") && !pfx.equals(cleanDb + ":")) {
+                scanKey = pfx + cleanDb + ":";
             }
             Map<String, byte[]> scan = engine.getStorageCore().scanPrefix(scanKey);
             keysToDelete.addAll(scan.keySet());
@@ -181,6 +190,7 @@ public class SampleDatabaseService {
             engine.getStorageCore().delete(k, System.currentTimeMillis());
             count++;
         }
+        engine.getStorageCore().dropDatabase(cleanDb);
         return count;
     }
 }

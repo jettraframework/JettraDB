@@ -506,6 +506,41 @@ public class LsmBTreeHybrid {
     }
 
     /**
+     * Finds an existing database partition if loaded in memory, or loads it from disk
+     * strictly if its physical directory exists under databases/.
+     * Read-only operations use this method to avoid inadvertently creating physical
+     * directories on disk for non-existent or uninstalled databases.
+     */
+    public DatabasePartition findPartition(String dbName) {
+        String cleanDb = (dbName != null && !dbName.isBlank()) ? dbName.trim() : "_system";
+        DatabasePartition exact = partitions.get(cleanDb);
+        if (exact != null) return exact;
+
+        for (Map.Entry<String, DatabasePartition> entry : partitions.entrySet()) {
+            if (entry.getKey().equalsIgnoreCase(cleanDb)) {
+                return entry.getValue();
+            }
+        }
+
+        for (Map.Entry<String, DatabasePartition> entry : partitions.entrySet()) {
+            String k = entry.getKey();
+            if (k.equalsIgnoreCase(cleanDb + "s") || (cleanDb.endsWith("s") && k.equalsIgnoreCase(cleanDb.substring(0, cleanDb.length() - 1)))) {
+                return entry.getValue();
+            }
+        }
+
+        // Check if directory physically exists on disk
+        Path targetDir = "_system".equalsIgnoreCase(cleanDb)
+            ? storageDirectory.resolve("system")
+            : storageDirectory.resolve("databases").resolve(cleanDb);
+        if (Files.exists(targetDir) && Files.isDirectory(targetDir)) {
+            return getPartition(cleanDb);
+        }
+
+        return null;
+    }
+
+    /**
      * Returns the dedicated database partition, instantiating it if not yet loaded.
      */
     public DatabasePartition getPartition(String dbName) {
@@ -556,6 +591,28 @@ public class LsmBTreeHybrid {
         }
     }
 
+    /**
+     * Drops all non-system databases and purges their physical directories from disk.
+     * Useful for test teardowns and lifecycle reset to eliminate overhead and lingering disk/memory states.
+     */
+    public void dropAllDatabases() {
+        for (String db : new LinkedHashSet<>(partitions.keySet())) {
+            if (!"_system".equalsIgnoreCase(db)) {
+                dropDatabase(db);
+            }
+        }
+        Path dbRootDir = storageDirectory.resolve("databases");
+        if (Files.exists(dbRootDir) && Files.isDirectory(dbRootDir)) {
+            try (DirectoryStream<Path> stream = Files.newDirectoryStream(dbRootDir)) {
+                for (Path entry : stream) {
+                    if (Files.isDirectory(entry)) {
+                        DatabasePartition.deleteDirectoryRecursively(entry);
+                    }
+                }
+            } catch (IOException ignored) {}
+        }
+    }
+
     public void put(String key, byte[] data, long timestamp) {
         if (key == null || data == null) return;
         String db = extractDatabaseFromKey(key);
@@ -565,9 +622,13 @@ public class LsmBTreeHybrid {
     public byte[] get(String key) {
         if (key == null) return null;
         String db = extractDatabaseFromKey(key);
-        byte[] val = getPartition(db).get(key);
+        DatabasePartition partition = findPartition(db);
+        byte[] val = partition != null ? partition.get(key) : null;
         if (val == null && !"_system".equals(db)) {
-            val = getPartition("_system").get(key);
+            DatabasePartition sys = findPartition("_system");
+            if (sys != null) {
+                val = sys.get(key);
+            }
         }
         return val;
     }
@@ -575,7 +636,10 @@ public class LsmBTreeHybrid {
     public void delete(String key, long timestamp) {
         if (key == null) return;
         String db = extractDatabaseFromKey(key);
-        getPartition(db).delete(key, timestamp);
+        DatabasePartition partition = findPartition(db);
+        if (partition != null) {
+            partition.delete(key, timestamp);
+        }
     }
 
     public Map<String, byte[]> scanPrefix(String prefix) {
@@ -590,7 +654,10 @@ public class LsmBTreeHybrid {
         String db = extractDatabaseFromKey(prefix);
         if (!"_system".equals(db)) {
             // Specific database prefix
-            results.putAll(getPartition(db).scanPrefix(prefix));
+            DatabasePartition partition = findPartition(db);
+            if (partition != null) {
+                results.putAll(partition.scanPrefix(prefix));
+            }
         } else {
             // Generic prefix (e.g. "doc:", "rec:") spanning across all database partitions
             for (DatabasePartition partition : partitions.values()) {
@@ -603,25 +670,29 @@ public class LsmBTreeHybrid {
     public List<RecordVersion> getVersionHistory(String key) {
         if (key == null) return Collections.emptyList();
         String db = extractDatabaseFromKey(key);
-        return getPartition(db).getVersionHistory(key);
+        DatabasePartition partition = findPartition(db);
+        return partition != null ? partition.getVersionHistory(key) : Collections.emptyList();
     }
 
     public int getVersionCount(String key) {
         if (key == null) return 1;
         String db = extractDatabaseFromKey(key);
-        return getPartition(db).getVersionCount(key);
+        DatabasePartition partition = findPartition(db);
+        return partition != null ? partition.getVersionCount(key) : 1;
     }
 
     public byte[] getVersion(String key, long timestamp) {
         if (key == null) return null;
         String db = extractDatabaseFromKey(key);
-        return getPartition(db).getVersion(key, timestamp);
+        DatabasePartition partition = findPartition(db);
+        return partition != null ? partition.getVersion(key, timestamp) : null;
     }
 
     public boolean restoreVersion(String key, long timestamp) {
         if (key == null) return false;
         String db = extractDatabaseFromKey(key);
-        return getPartition(db).restoreVersion(key, timestamp);
+        DatabasePartition partition = findPartition(db);
+        return partition != null && partition.restoreVersion(key, timestamp);
     }
 
     public void close() {

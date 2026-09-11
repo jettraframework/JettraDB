@@ -45,19 +45,7 @@ public class AdaptiveMultiModelRecordDialogsTest {
 
     @AfterEach
     public void tearDown() {
-        if (engine != null) {
-            try {
-                engine.stop();
-            } catch (Exception ignored) {}
-        }
-        if (tempDir != null && Files.exists(tempDir)) {
-            try {
-                Files.walk(tempDir)
-                    .sorted(Comparator.reverseOrder())
-                    .map(Path::toFile)
-                    .forEach(File::delete);
-            } catch (Exception ignored) {}
-        }
+        com.jettra.store.engine.test.TestDatabaseCleanup.cleanUp(engine, tempDir);
     }
 
     @JettraTest

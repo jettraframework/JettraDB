@@ -75,4 +75,14 @@ public class JettraStorageEngine {
     public Path getStorageDir() {
         return storageDir;
     }
+
+    /**
+     * Drops all non-system databases and cleans disk directories.
+     * Prevents database accumulation and overhead during test suites and reinitializations.
+     */
+    public void dropAllDatabases() {
+        if (storageCore != null) {
+            storageCore.dropAllDatabases();
+        }
+    }
 }
