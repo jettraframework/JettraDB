@@ -24,6 +24,7 @@ public final class RouteVisibilityGuard {
         SECURITY,
         COMPONENTS,
         INFORMATION,
+        SWAGGER,
         LOGIN,
         OTHER
     }
@@ -75,6 +76,10 @@ public final class RouteVisibilityGuard {
             return new NavigationRouteConfig(RouteType.COMPONENTS, path, false, false, false, true, true);
         }
 
+        public static NavigationRouteConfig swaggerConfig(String path) {
+            return new NavigationRouteConfig(RouteType.SWAGGER, path, false, false, false, true, true);
+        }
+
         public static NavigationRouteConfig defaultManagementConfig(String path) {
             return new NavigationRouteConfig(RouteType.OTHER, path, true, true, true, true, true);
         }
@@ -108,6 +113,7 @@ public final class RouteVisibilityGuard {
             case SECURITY -> NavigationRouteConfig.securityConfig(path);
             case COMPONENTS -> NavigationRouteConfig.componentsConfig(path);
             case INFORMATION -> NavigationRouteConfig.informationConfig(path);
+            case SWAGGER -> NavigationRouteConfig.swaggerConfig(path);
             case LOGIN -> new NavigationRouteConfig(RouteType.LOGIN, path, false, false, false, false, false);
             default -> NavigationRouteConfig.defaultManagementConfig(path);
         };
@@ -141,6 +147,9 @@ public final class RouteVisibilityGuard {
             if (lowerTitle.contains("component") || lowerTitle.contains("internal")) {
                 return NavigationRouteConfig.componentsConfig("/components");
             }
+            if (lowerTitle.contains("swagger") || lowerTitle.contains("api") || lowerTitle.contains("openapi")) {
+                return NavigationRouteConfig.swaggerConfig("/swagger-ui");
+            }
         }
         return resolveConfig(path != null ? path : "/dashboard");
     }
@@ -170,6 +179,9 @@ public final class RouteVisibilityGuard {
         }
         if (clean.startsWith("/information") || clean.startsWith("/informations")) {
             return RouteType.INFORMATION;
+        }
+        if (clean.startsWith("/swagger")) {
+            return RouteType.SWAGGER;
         }
         if (clean.startsWith("/login")) {
             return RouteType.LOGIN;

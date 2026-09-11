@@ -202,7 +202,7 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
         );
 
         // Build Left Slim Icon Rail
-        Widget iconRail = buildIconRail(targetDb, selectedEngine, currentTab, activeModule);
+        Widget iconRail = buildIconRail(routeConfig, targetDb, selectedEngine, currentTab, activeModule);
 
         // Build Top Bar Left & Right Groups Conditionally
         Widget topLeftGroup = buildTopLeftGroup(routeConfig, loggedUser, targetDb, selectedEngine, currentTab, databases);
@@ -382,13 +382,17 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
     }
 
     private Widget buildIconRail(String targetDb, String selectedEngine, String currentTab, String activeModule) {
+        return buildIconRail(null, targetDb, selectedEngine, currentTab, activeModule);
+    }
+
+    private Widget buildIconRail(NavigationRouteConfig routeConfig, String targetDb, String selectedEngine, String currentTab, String activeModule) {
         Widget railLogo = Link.of(JettraServer.resolvePath("/dashboard"),
             RawHtml.of(
                 "<svg width='32' height='32' viewBox='0 0 40 40' fill='none' xmlns='http://www.w3.org/2000/svg' style='filter: drop-shadow(0 2px 4px rgba(0,0,0,0.15));'>" +
                 "<path d='M20 4L36 32H4L20 4Z' fill='url(#jdbGrad)'/>" +
                 "<path d='M20 14L28 28H12L20 14Z' fill='white' fill-opacity='0.92'/>" +
                 "<defs>" +
-                "<linearGradient id='jdbGrad' x1='4' y1='4' x2='36' y2='32' gradientUnits='userSpaceOnUse'>" +
+                "<linearGradient id='jdbGrad' x1='4' x2='36' y2='32' gradientUnits='userSpaceOnUse'>" +
                 "<stop stop-color='#f97316'/>" +
                 "<stop offset='0.45' stop-color='#eab308'/>" +
                 "<stop offset='0.75' stop-color='#22c55e'/>" +
@@ -399,51 +403,63 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
             )
         ).modifier(new Modifier().cssClass("rail-logo-container").attribute("title", "JettraDB Studio"));
 
-        Widget railTop = Div.of(
-            railLogo,
-           
-            Link.of(JettraServer.resolvePath("/databases"),
-                Icon.of("fas fa-database")
-            ).modifier(new Modifier().cssClass("rail-item" + ("VECTOR".equalsIgnoreCase(selectedEngine) ? " active" : "")).attribute("title", "Databases")),
-            Link.of(JettraServer.resolvePath("/engines?tab=schema&engine=" + selectedEngine + "&target_db=" + targetDb),
-                Icon.of("fas fa-table")
-            ).modifier(new Modifier().cssClass("rail-item" + ("database".equals(activeModule) && !"query".equals(currentTab) ? " active" : "")).attribute("title", "DATABASE")),
-//             Link.of(JettraServer.resolvePath("/engines?tab=query&target_db=" + targetDb),
-//                Icon.of("fas fa-terminal")
-//            ).modifier(new Modifier().cssClass("rail-item" + ("query".equals(currentTab) ? " active" : "")).attribute("title", "Query")),
-//            Link.of(JettraServer.resolvePath("/engines?engine=TIMESERIES&target_db=" + targetDb),
-//                Icon.of("fas fa-chart-line")
-//            ).modifier(new Modifier().cssClass("rail-item" + ("TIMESERIES".equalsIgnoreCase(selectedEngine) ? " active" : "")).attribute("title", "MESERIES")),
-            Link.of(JettraServer.resolvePath("/components"),
-                Icon.of("fas fa-server")
-            ).modifier(new Modifier().cssClass("rail-item").attribute("title", "SERVER")),
-            
-//            Link.of(JettraServer.resolvePath("/engines?tab=metrics&target_db=" + targetDb),
-//                Icon.of("fas fa-tachometer-alt")
-//            ).modifier(new Modifier().cssClass("rail-item" + ("metrics".equals(currentTab) ? " active" : "")).attribute("title", "PROFILE")),
-//            
-            Link.of(JettraServer.resolvePath("/users"), 
-                Icon.of("fas fa-solid fa-users")
-            ).modifier(new Modifier().cssClass("rail-item").attribute("title", "SECURITY")),
-            Link.of(JettraServer.resolvePath("/swagger-ui"),
-                Icon.of("fas fa-plug")
-            ).modifier(new Modifier().cssClass("rail-item").attribute("title", "API")),
-            Link.of(JettraServer.resolvePath("/information"),
-                Icon.of("fas fa-info-circle")
-            ).modifier(new Modifier().cssClass("rail-item").attribute("title", "INFO"))
-            
-        ).modifier(new Modifier().cssClass("rail-top-section"));
+        IconRail rail = IconRail.of()
+            .logo(railLogo)
+            .addTopItems(
+                IconRailItem.of("databases", JettraServer.resolvePath("/databases"),
+                    Icon.of("fas fa-database"), "Databases"),
+                IconRailItem.of("engines", JettraServer.resolvePath("/engines?tab=schema&engine=" + selectedEngine + "&target_db=" + targetDb),
+                    Icon.of("fas fa-table"), "DATABASE"),
+                IconRailItem.of("components", JettraServer.resolvePath("/components"),
+                    Icon.of("fas fa-server"), "SERVER"),
+                IconRailItem.of("users", JettraServer.resolvePath("/users"),
+                    Icon.of("fas fa-solid fa-users"), "SECURITY"),
+                IconRailItem.of("swagger", JettraServer.resolvePath("/swagger-ui"),
+                    Icon.of("fas fa-plug"), "API"),
+                IconRailItem.of("information", JettraServer.resolvePath("/information"),
+                    Icon.of("fas fa-info-circle"), "INFO")
+            )
+            .addBottomItems(
+                IconRailItem.of("settings", JettraServer.resolvePath("/engines?tab=settings&target_db=" + targetDb),
+                    Icon.of("fas fa-cog"), "Settings"),
+                IconRailItem.of("signout", JettraServer.resolvePath("/login?logout=true"),
+                    Icon.of("fas fa-power-off"), "Sign Out")
+            );
 
-        Widget railBottom = Div.of(
-            Link.of(JettraServer.resolvePath("/engines?tab=settings&target_db=" + targetDb),
-                Icon.of("fas fa-cog")
-            ).modifier(new Modifier().cssClass("rail-item" + ("settings".equals(currentTab) ? " active" : "")).attribute("title", "Settings")),
-            Link.of(JettraServer.resolvePath("/login?logout=true"),
-                Icon.of("fas fa-power-off")
-            ).modifier(new Modifier().cssClass("rail-item").attribute("title", "Sign Out"))
-        ).modifier(new Modifier().cssClass("rail-bottom-section"));
+        String activeKey = resolveActiveRailKey(routeConfig, currentTab);
+        if (activeKey != null && !activeKey.isBlank()) {
+            rail.selectItem(activeKey);
+        } else if (routeConfig != null && routeConfig.requestPath() != null) {
+            rail.selectByRoute(routeConfig.requestPath());
+        }
 
-        return Div.of(railTop, railBottom)
-            .modifier(new Modifier().cssClass("jettra-icon-rail"));
+        return rail;
+    }
+
+    protected String resolveActiveRailKey(NavigationRouteConfig routeConfig, String currentTab) {
+        if ("settings".equalsIgnoreCase(currentTab)) {
+            return "settings";
+        }
+        if (routeConfig != null && routeConfig.routeType() != null) {
+            return switch (routeConfig.routeType()) {
+                case DATABASES -> "databases";
+                case MANAGEMENT_EXPLORER -> "engines";
+                case COMPONENTS -> "components";
+                case SECURITY -> "users";
+                case SWAGGER -> "swagger";
+                case INFORMATION -> "information";
+                default -> {
+                    String path = routeConfig.requestPath() != null ? routeConfig.requestPath().toLowerCase() : "";
+                    if (path.contains("/databases")) yield "databases";
+                    if (path.contains("/engines")) yield "engines";
+                    if (path.contains("/components")) yield "components";
+                    if (path.contains("/users")) yield "users";
+                    if (path.contains("/swagger")) yield "swagger";
+                    if (path.contains("/information")) yield "information";
+                    yield null;
+                }
+            };
+        }
+        return null;
     }
 }
