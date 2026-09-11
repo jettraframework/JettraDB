@@ -169,6 +169,15 @@ public class StoreDatabasesSampleCatalogTest {
                         || body.contains("Sample Databases & Datasets Catalog"),
                 "Modal header title must be present");
         assertTrue(body.contains("sampleDbsCatalogContainer"), "Dynamic catalog container must be present");
+
+        // Must render pure JettraFlux components: form, radio buttons, and the Install DataSet action button
+        assertTrue(body.contains("id=\"sampleDatabasesForm\""), "Must render sampleDatabasesForm Form");
+        assertTrue(body.contains("id=\"btnInstallSampleDataSet\""), "Must render btnInstallSampleDataSet button");
+        assertTrue(body.contains("Install DataSet"), "Must render 'Install DataSet' button text");
+        assertTrue(body.contains("radio_sample_ExampleDBReferences"), "Must render radio for ExampleDBReferences");
+        assertTrue(body.contains("radio_sample_hr_enterprise_db"), "Must render radio for hr_enterprise_db");
+        assertTrue(body.contains("radio_sample_meteorology_iot_db"), "Must render radio for meteorology_iot_db");
+        assertTrue(body.contains("radio_sample_ecommerce_olap_db"), "Must render radio for ecommerce_olap_db");
     }
 
     @JettraTest
@@ -303,6 +312,80 @@ public class StoreDatabasesSampleCatalogTest {
         assertEquals("SUCCESS", uninstallObj.getAsString("status"));
         assertEquals(targetDb, uninstallObj.getAsString("database"));
         assertEquals(InstallState.NOT_INSTALLED, sampleService.getInstallState(targetDb));
+    }
+
+    @JettraTest
+    @DisplayName("8. Form POST action=install_sample_db with selected target_db installs strictly that single database")
+    void testFormPostInstallsStrictlySelectedSampleDatabase() throws IOException {
+        String targetDb = "hr_enterprise_db";
+
+        TestHttpExchange formExchange = new TestHttpExchange("POST", "/databases");
+        formExchange.getRequestHeaders().set("Cookie", "username=admin; role=ADMIN");
+        formExchange.getRequestHeaders().set("Content-Type", "application/x-www-form-urlencoded");
+        formExchange.setRequestBody("action=install_sample_db&target_db=" + targetDb);
+
+        databasesPage.handle(formExchange);
+
+        assertEquals(200, formExchange.getResponseCode());
+        String body = formExchange.getResponseBodyAsString();
+        assertTrue(body.contains("instalada exitosamente"), "Page response must contain success message");
+        assertTrue(body.contains(targetDb), "Response must mention target database");
+
+        // Verify target database is installed
+        assertEquals(InstallState.INSTALLED, sampleService.getInstallState(targetDb));
+        assertTrue(sampleService.getInstalledRecordCount(targetDb) > 0);
+
+        // Verify strictly that the other 3 authorized databases are NOT installed (isolation guarantee)
+        assertEquals(InstallState.NOT_INSTALLED, sampleService.getInstallState("ExampleDBReferences"));
+        assertEquals(0, sampleService.getInstalledRecordCount("ExampleDBReferences"));
+
+        assertEquals(InstallState.NOT_INSTALLED, sampleService.getInstallState("meteorology_iot_db"));
+        assertEquals(0, sampleService.getInstalledRecordCount("meteorology_iot_db"));
+
+        assertEquals(InstallState.NOT_INSTALLED, sampleService.getInstallState("ecommerce_olap_db"));
+        assertEquals(0, sampleService.getInstalledRecordCount("ecommerce_olap_db"));
+    }
+
+    @JettraTest
+    @DisplayName("9. Form POST action=install_sample_db without target_db is rejected without installing any database")
+    void testFormPostWithoutTargetDbIsRejectedWithoutMassInstallation() throws IOException {
+        TestHttpExchange emptyExchange = new TestHttpExchange("POST", "/databases");
+        emptyExchange.getRequestHeaders().set("Cookie", "username=admin; role=ADMIN");
+        emptyExchange.getRequestHeaders().set("Content-Type", "application/x-www-form-urlencoded");
+        emptyExchange.setRequestBody("action=install_sample_db");
+
+        databasesPage.handle(emptyExchange);
+
+        assertEquals(200, emptyExchange.getResponseCode());
+        String body = emptyExchange.getResponseBodyAsString();
+        assertTrue(body.contains("Debe seleccionar una base de datos de ejemplo"), "Validation message must be shown");
+
+        // Verify that NO database was installed
+        assertEquals(InstallState.NOT_INSTALLED, sampleService.getInstallState("ExampleDBReferences"));
+        assertEquals(InstallState.NOT_INSTALLED, sampleService.getInstallState("hr_enterprise_db"));
+        assertEquals(InstallState.NOT_INSTALLED, sampleService.getInstallState("meteorology_iot_db"));
+        assertEquals(InstallState.NOT_INSTALLED, sampleService.getInstallState("ecommerce_olap_db"));
+    }
+
+    @JettraTest
+    @DisplayName("10. AJAX POST install_sample_db_ajax without target_db returns 400 error without installing any database")
+    void testAjaxInstallWithoutTargetDbReturnsError() throws IOException {
+        TestHttpExchange emptyAjaxExchange = new TestHttpExchange("POST", "/databases");
+        emptyAjaxExchange.getRequestHeaders().set("Cookie", "username=admin; role=ADMIN");
+        emptyAjaxExchange.getRequestHeaders().set("X-Requested-With", "XMLHttpRequest");
+        emptyAjaxExchange.setRequestBody("action=install_sample_db_ajax");
+
+        databasesPage.handle(emptyAjaxExchange);
+
+        assertEquals(400, emptyAjaxExchange.getResponseCode());
+        String resp = emptyAjaxExchange.getResponseBodyAsString();
+        assertTrue(resp.contains("Missing target_db parameter"), "Must return error message for missing target_db");
+
+        // Verify that NO database was installed
+        assertEquals(InstallState.NOT_INSTALLED, sampleService.getInstallState("ExampleDBReferences"));
+        assertEquals(InstallState.NOT_INSTALLED, sampleService.getInstallState("hr_enterprise_db"));
+        assertEquals(InstallState.NOT_INSTALLED, sampleService.getInstallState("meteorology_iot_db"));
+        assertEquals(InstallState.NOT_INSTALLED, sampleService.getInstallState("ecommerce_olap_db"));
     }
 
     private static class TestHttpExchange extends HttpExchange {
