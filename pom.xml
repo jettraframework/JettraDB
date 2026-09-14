@@ -15,13 +15,16 @@
         <jettra.jwt.version>1.0.0-SNAPSHOT</jettra.jwt.version>
         <jettra.gprc.version>1.0.0-SNAPSHOT</jettra.gprc.version>
         <jettra.rules.version>1.0.0-SNAPSHOT</jettra.rules.version>
-        <jettra.appserver.version>1.0.0-SNAPSHOT</jettra.appserver.version>
+        <jettra.ee.version>1.0.0-SNAPSHOT</jettra.ee.version>
         <jettra.flux.version>1.0.0-SNAPSHOT</jettra.flux.version>
         <jettra.report.version>1.0.0-SNAPSHOT</jettra.report.version>
         <jettra.rest.version>1.0.0-SNAPSHOT</jettra.rest.version>
         <jettra.json.version>1.0.0-SNAPSHOT</jettra.json.version>
         <jettra.test.version>1.0.0-SNAPSHOT</jettra.test.version>
-         <maven.compiler.compilerArgs>--enable-preview</maven.compiler.compilerArgs>
+        <mainClass>com.jettra.store.engine.App</mainClass>
+        <exec.mainClass>com.jettra.store.engine.App</exec.mainClass>
+        <exec.executable>java</exec.executable>
+        <maven.compiler.compilerArgs>--enable-preview</maven.compiler.compilerArgs>
     </properties>
     <dependencies>
         <!-- JSON parsing -->
@@ -31,11 +34,11 @@
             <version>${jettra.json.version}</version>
  
         </dependency>
-        <!-- Servidor backend subyacente -->
+        <!-- Servidor backend JettraEE (MicroProfile, Jakarta EE, Project Loom) -->
         <dependency>
             <groupId>io.jettra</groupId>
-            <artifactId>JettraAppServer</artifactId>
-            <version>${jettra.appserver.version}</version>
+            <artifactId>JettraEE</artifactId>
+            <version>${jettra.ee.version}</version>
         </dependency>
         
         <dependency>
@@ -53,16 +56,16 @@
             <artifactId>JettraRules</artifactId>
             <version>${jettra.rules.version}</version>
         </dependency>
-        <dependency>
+<!--        <dependency>
             <groupId>io.jettra</groupId>
             <artifactId>JettraJWT</artifactId>
             <version>${jettra.jwt.version}</version>
-        </dependency>
-        <dependency>
+        </dependency>-->
+<!--        <dependency>
             <groupId>io.jettra</groupId>
             <artifactId>JettraRest</artifactId>
             <version>${jettra.rest.version}</version>
-        </dependency>
+        </dependency>-->
         <dependency>
             <groupId>io.jettra</groupId>
             <artifactId>JettraAnnotation</artifactId>
@@ -138,8 +141,24 @@
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
-                <version>3.1.0</version>
+                <version>3.1.1</version>
                 <executions>
+                    <execution>
+                        <id>default-cli</id>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <mainClass>${mainClass}</mainClass>
+                            <executable>java</executable>
+                            <arguments>
+                                <argument>--enable-preview</argument>
+                                <argument>-classpath</argument>
+                                <classpath/>
+                                <argument>${mainClass}</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
                     <execution>
                         <id>jettra-test</id>
                         <phase>test</phase>

@@ -52,7 +52,7 @@ public class JettraServerOrchestrator {
     }
     
     public void start() {
-        System.out.println("Starting JettraServerOrchestrator...");
+        System.out.println("Starting JettraServerOrchestrator (Powered by JettraEE - Java 25 Virtual Threads Loom)...");
         System.out.println("REST API Port: " + restPort);
         System.out.println("GUI Web Port:  " + guiPort);
         System.out.println("gRPC Port:     " + grpcPort);
@@ -140,7 +140,8 @@ public class JettraServerOrchestrator {
         String backupInterval = props.getProperty("store.backup.interval.minutes", "60");
 
         System.out.println("==================================================================================");
-        System.out.println("                   JETTRA STORAGE ENGINE - DISTRIBUTED NODE                       ");
+        System.out.println("          JETTRA STORAGE ENGINE - DISTRIBUTED NODE (POWERED BY JETTRAEE)         ");
+        System.out.println("                Java 25 Virtual Threads Engine (Project Loom)                     ");
         System.out.println("==================================================================================");
         System.out.printf("  • Node Identifier (jettra.node.id):         %s%n", nodeId);
         System.out.printf("  • Storage Directory (jettra.data.dir):      %s%n", dataDir);
