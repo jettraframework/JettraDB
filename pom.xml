@@ -5,13 +5,13 @@
     <artifactId>JettraDB</artifactId>
     <version>1.0-SNAPSHOT</version>
     <packaging>jar</packaging>
-
-     <properties>
+    <name>JettraDB</name>
+    <properties>
         <maven.compiler.source>25</maven.compiler.source>
         <maven.compiler.target>25</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <skipTests>true</skipTests>
-        <jettra.annotation.version>1.0.0-SNAPSHOT</jettra.annotation.version>
+        <jettra.annotation.version>1.0.0</jettra.annotation.version>
         <jettra.jwt.version>1.0.0-SNAPSHOT</jettra.jwt.version>
         <jettra.gprc.version>1.0.0-SNAPSHOT</jettra.gprc.version>
         <jettra.rules.version>1.0.0-SNAPSHOT</jettra.rules.version>
@@ -56,18 +56,9 @@
             <artifactId>JettraRules</artifactId>
             <version>${jettra.rules.version}</version>
         </dependency>
-<!--        <dependency>
-            <groupId>io.jettra</groupId>
-            <artifactId>JettraJWT</artifactId>
-            <version>${jettra.jwt.version}</version>
-        </dependency>-->
-<!--        <dependency>
-            <groupId>io.jettra</groupId>
-            <artifactId>JettraRest</artifactId>
-            <version>${jettra.rest.version}</version>
-        </dependency>-->
+
         <dependency>
-            <groupId>io.jettra</groupId>
+            <groupId>com.github.jettraframework</groupId>
             <artifactId>JettraAnnotation</artifactId>
             <version>${jettra.annotation.version}</version>
         </dependency>
@@ -81,7 +72,7 @@
         <!-- Vector Search -->
 
     </dependencies>
-<build>
+    <build>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -187,5 +178,13 @@
             </plugin>
         </plugins>
     </build>
-    <name>JettraDB</name>
+
+    
+    
+    <repositories>
+        <repository>
+            <id>jitpack.io</id>
+            <url>https://jitpack.io</url>
+        </repository>
+    </repositories>
 </project>
