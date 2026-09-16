@@ -17,7 +17,7 @@
         <jettra.rules.version>1.0.0</jettra.rules.version>
         <jettra.ee.version>1.0.0-SNAPSHOT</jettra.ee.version>
         <jettra.flux.version>1.0.0-SNAPSHOT</jettra.flux.version>
-        <jettra.report.version>1.0.0-SNAPSHOT</jettra.report.version>
+        <jettra.report.version>1.0.0</jettra.report.version>
         <jettra.rest.version>1.0.0-SNAPSHOT</jettra.rest.version>
         <jettra.json.version>1.0.0</jettra.json.version>
         <jettra.test.version>1.0.0</jettra.test.version>
@@ -47,12 +47,12 @@
             <version>${jettra.flux.version}</version>
         </dependency>
         <dependency>
-            <groupId>io.jettra</groupId>
+            <groupId>com.github.jettraframework</groupId>
             <artifactId>JettraReport</artifactId>
             <version>${jettra.report.version}</version>
         </dependency>
         <dependency>
-         	    <groupId>com.github.jettraframework</groupId>
+            <groupId>com.github.jettraframework</groupId>
             <artifactId>JettraRules</artifactId>
             <version>${jettra.rules.version}</version>
         </dependency>
