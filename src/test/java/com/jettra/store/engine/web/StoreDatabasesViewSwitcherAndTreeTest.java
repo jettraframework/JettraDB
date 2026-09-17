@@ -131,9 +131,15 @@ public class StoreDatabasesViewSwitcherAndTreeTest {
         assertTrue(html.contains("id=\"dbWorkspaceViewSwitcher_panel_list\""), "Must render List View panel");
         assertTrue(html.contains("id=\"dbWorkspaceViewSwitcher_panel_tree\""), "Must render Tree View panel");
 
-        // 5. Default perspective is List View
-        assertTrue(html.contains("id=\"dbWorkspaceViewSwitcher_tab_list\" class=\"view-switcher-btn active\"")
-            || html.contains("aria-selected=\"true\""), "List View tab must be active by default");
+        // 5. Default perspective is Tree View
+        assertTrue(html.contains("id=\"dbWorkspaceViewSwitcher_tab_tree\" type=\"button\" role=\"tab\" aria-selected=\"true\""),
+            "Tree View tab must be active by default");
+        assertTrue(html.contains("id=\"dbWorkspaceViewSwitcher_tab_list\" type=\"button\" role=\"tab\" aria-selected=\"false\""),
+            "List View tab must be inactive by default");
+        assertTrue(html.contains("id=\"dbWorkspaceViewSwitcher_panel_tree\" role=\"tabpanel\" aria-labelledby=\"dbWorkspaceViewSwitcher_tab_tree\" class=\"view-switcher-panel\" style=\"display:block; width:100%;\""),
+            "Tree View panel must have display:block by default");
+        assertTrue(html.contains("id=\"dbWorkspaceViewSwitcher_panel_list\" role=\"tabpanel\" aria-labelledby=\"dbWorkspaceViewSwitcher_tab_list\" class=\"view-switcher-panel\" style=\"display:none; width:100%;\""),
+            "List View panel must have display:none by default");
     }
 
     @JettraTest
@@ -194,6 +200,53 @@ public class StoreDatabasesViewSwitcherAndTreeTest {
             "Tree View panel must have display:block when requested via ?view=tree");
         assertTrue(html.contains("id=\"dbWorkspaceViewSwitcher_panel_list\" role=\"tabpanel\" aria-labelledby=\"dbWorkspaceViewSwitcher_tab_list\" class=\"view-switcher-panel\" style=\"display:none; width:100%;\""),
             "List View panel must have display:none when requested via ?view=tree");
+    }
+
+    @JettraTest
+    @DisplayName("3b. Request parameter ?view=list dynamically sets List View as active")
+    void testListViewParamActivation() throws IOException {
+        TestHttpExchange exchange = new TestHttpExchange("GET", "/databases?view=list");
+        exchange.getRequestHeaders().set("Cookie", "username=admin; role=ADMIN");
+
+        databasesPage.handle(exchange);
+
+        assertEquals(200, exchange.getResponseCode());
+        String html = exchange.getResponseBodyAsString();
+
+        assertTrue(html.contains("id=\"dbWorkspaceViewSwitcher_tab_list\"") && html.contains("aria-selected=\"true\""),
+            "List View tab must be aria-selected=true when requested via ?view=list");
+        assertTrue(html.contains("id=\"dbWorkspaceViewSwitcher_panel_list\" role=\"tabpanel\" aria-labelledby=\"dbWorkspaceViewSwitcher_tab_list\" class=\"view-switcher-panel\" style=\"display:block; width:100%;\""),
+            "List View panel must have display:block when requested via ?view=list");
+        assertTrue(html.contains("id=\"dbWorkspaceViewSwitcher_panel_tree\" role=\"tabpanel\" aria-labelledby=\"dbWorkspaceViewSwitcher_tab_tree\" class=\"view-switcher-panel\" style=\"display:none; width:100%;\""),
+            "Tree View panel must have display:none when requested via ?view=list");
+    }
+
+    @JettraTest
+    @DisplayName("3c. Fluent configuration withDefaultView allows changing default perspective")
+    void testFluentWithDefaultView() throws IOException {
+        assertEquals("tree", databasesPage.getDefaultView(), "Default view must be tree");
+        databasesPage.withDefaultView("list");
+        assertEquals("list", databasesPage.getDefaultView());
+
+        TestHttpExchange exchange = new TestHttpExchange("GET", "/databases");
+        exchange.getRequestHeaders().set("Cookie", "username=admin; role=ADMIN");
+
+        databasesPage.handle(exchange);
+
+        assertEquals(200, exchange.getResponseCode());
+        String html = exchange.getResponseBodyAsString();
+
+        assertTrue(html.contains("id=\"dbWorkspaceViewSwitcher_tab_list\" type=\"button\" role=\"tab\" aria-selected=\"true\""),
+            "List View tab must be active when configured as default");
+        assertTrue(html.contains("id=\"dbWorkspaceViewSwitcher_tab_tree\" type=\"button\" role=\"tab\" aria-selected=\"false\""),
+            "Tree View tab must be inactive when configured as default");
+        assertTrue(html.contains("id=\"dbWorkspaceViewSwitcher_panel_list\" role=\"tabpanel\" aria-labelledby=\"dbWorkspaceViewSwitcher_tab_list\" class=\"view-switcher-panel\" style=\"display:block; width:100%;\""),
+            "List View panel must have display:block when configured as default");
+        assertTrue(html.contains("id=\"dbWorkspaceViewSwitcher_panel_tree\" role=\"tabpanel\" aria-labelledby=\"dbWorkspaceViewSwitcher_tab_tree\" class=\"view-switcher-panel\" style=\"display:none; width:100%;\""),
+            "Tree View panel must have display:none when configured as default");
+
+        // Reset back to tree
+        databasesPage.withDefaultView("tree");
     }
 
     @JettraTest

@@ -86,6 +86,10 @@ public class StoreDatabasesPage extends StoreTemplatePage {
     private final DatabaseSecurityFilter securityFilter;
     private boolean showActionButtons = false;
     private boolean showDatabaseSelector = false;
+    public static final String DEFAULT_VIEW = "tree";
+    public static final String VIEW_TREE = "tree";
+    public static final String VIEW_LIST = "list";
+    private String defaultView = DEFAULT_VIEW;
 
     public StoreDatabasesPage(JettraStorageEngine engine, AuthManager authManager) {
         this(engine, authManager, (authManager != null && authManager.getSystemUserRepository() != null)
@@ -287,6 +291,17 @@ public class StoreDatabasesPage extends StoreTemplatePage {
     public StoreDatabasesPage withDatabaseSelector(boolean show) {
         this.showDatabaseSelector = show;
         return this;
+    }
+
+    public StoreDatabasesPage withDefaultView(String defaultView) {
+        if (defaultView != null && !defaultView.isBlank()) {
+            this.defaultView = defaultView.trim().toLowerCase();
+        }
+        return this;
+    }
+
+    public String getDefaultView() {
+        return this.defaultView;
     }
 
     @Override
@@ -958,15 +973,18 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                 .modifier(new Modifier().style("display:flex; flex-direction:column; width:100%;"));
         }
 
-        // ViewSwitcher to toggle dynamically between List View and Tree View
-        String requestedView = (params != null && params.get("view") != null) ? params.get("view").trim().toLowerCase() : "list";
-        boolean isTreeViewActive = "tree".equalsIgnoreCase(requestedView);
+        // ViewSwitcher to toggle dynamically between Tree View and List View (Tree View default)
+        String requestedView = (params != null && params.get("view") != null && !params.get("view").isBlank())
+            ? params.get("view").trim().toLowerCase()
+            : this.defaultView;
+        boolean isTreeViewActive = VIEW_TREE.equalsIgnoreCase(requestedView)
+            || (!VIEW_LIST.equalsIgnoreCase(requestedView) && VIEW_TREE.equalsIgnoreCase(this.defaultView));
 
         ViewSwitcher viewSwitcher = ViewSwitcher.of("dbWorkspaceViewSwitcher")
             .ariaLabel("Multi-Model Database Workspace Perspectives")
-            .activeView(isTreeViewActive ? "tree" : "list")
-            .addView("list", "List View", "fas fa-th-list", String.valueOf(databases.size()), databasesContainer, !isTreeViewActive)
-            .addView("tree", "Tree View", "fas fa-project-diagram", String.valueOf(databases.size()), databasesTreeContainer, isTreeViewActive);
+            .activeView(isTreeViewActive ? VIEW_TREE : VIEW_LIST)
+            .addView(VIEW_TREE, "Tree View", "fas fa-project-diagram", String.valueOf(databases.size()), databasesTreeContainer, isTreeViewActive)
+            .addView(VIEW_LIST, "List View", "fas fa-th-list", String.valueOf(databases.size()), databasesContainer, !isTreeViewActive);
 
         // Unified JettraFlux Panel consolidating Multi-Model Components and Active Databases
         Widget unifiedPanel = JettraCardPanel.of("Multi-Model Database Workspace")
