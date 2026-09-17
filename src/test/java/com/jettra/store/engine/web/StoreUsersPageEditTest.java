@@ -88,17 +88,7 @@ public class StoreUsersPageEditTest {
     void tearDown() {
         SecurityDbTestCleanup.purgeNonAdminTestUsers(userRepo, credRepo);
         SecurityContextHolder.clear();
-        if (engine != null) {
-            engine.stop();
-        }
-        if (tempDir != null && Files.exists(tempDir)) {
-            try {
-                Files.walk(tempDir)
-                    .sorted(Comparator.reverseOrder())
-                    .map(Path::toFile)
-                    .forEach(File::delete);
-            } catch (Exception ignored) {}
-        }
+        com.jettra.store.engine.test.TestDatabaseCleanup.cleanUp(engine, tempDir);
     }
 
     @JettraTest

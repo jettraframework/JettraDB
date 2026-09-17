@@ -82,7 +82,7 @@ public class IdentityPreservationTest {
         engine.registerEngine("RECORDS", new RecordsEngine(engine));
         engine.start();
 
-        systemUserRepo = new SystemUserRepositoryImpl();
+        systemUserRepo = new SystemUserRepositoryImpl(tempDir.resolve("system_db"));
         userRepo = new JUserRepositoryImpl();
         credRepo = new JCredentialRepositoryImpl();
         authManager = new AuthManager(systemUserRepo);
@@ -113,15 +113,7 @@ public class IdentityPreservationTest {
     void tearDown() throws IOException {
         SecurityDbTestCleanup.purgeNonAdminTestUsers(userRepo, credRepo, systemUserRepo);
         SecurityContextHolder.clear();
-        if (engine != null) {
-            engine.stop();
-        }
-        if (tempDir != null && Files.exists(tempDir)) {
-            Files.walk(tempDir)
-                .sorted(Comparator.reverseOrder())
-                .map(Path::toFile)
-                .forEach(File::delete);
-        }
+        com.jettra.store.engine.test.TestDatabaseCleanup.cleanUp(engine, tempDir);
     }
 
     @JettraTest

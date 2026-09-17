@@ -52,17 +52,7 @@ public class RecordModelPayloadHandlerTest {
 
     @AfterEach
     public void tearDown() {
-        if (storageEngine != null) {
-            storageEngine.stop();
-        }
-        if (tempDir != null && Files.exists(tempDir)) {
-            try {
-                Files.walk(tempDir)
-                        .sorted(Comparator.reverseOrder())
-                        .map(Path::toFile)
-                        .forEach(File::delete);
-            } catch (Exception ignored) {}
-        }
+        com.jettra.store.engine.test.TestDatabaseCleanup.cleanUp(storageEngine, tempDir);
     }
 
     @Test

@@ -59,15 +59,7 @@ public class DashboardModularPanelsTest {
 
     @AfterEach
     void tearDown() throws IOException {
-        if (engine != null) {
-            engine.stop();
-        }
-        if (tempDir != null && Files.exists(tempDir)) {
-            Files.walk(tempDir)
-                .sorted(Comparator.reverseOrder())
-                .map(Path::toFile)
-                .forEach(File::delete);
-        }
+        com.jettra.store.engine.test.TestDatabaseCleanup.cleanUp(engine, tempDir);
     }
 
     @JettraTest

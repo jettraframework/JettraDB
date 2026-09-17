@@ -63,7 +63,7 @@ public class StoreDatabasesAssignUserTest {
         engine.registerEngine("RECORDS", new RecordsEngine(engine));
         engine.start();
 
-        systemUserRepo = new SystemUserRepositoryImpl();
+        systemUserRepo = new SystemUserRepositoryImpl(tempDir.resolve("system_db"));
         userRepo = new JUserRepositoryImpl();
         credRepo = new JCredentialRepositoryImpl();
         authManager = new AuthManager(systemUserRepo);
@@ -289,6 +289,43 @@ public class StoreDatabasesAssignUserTest {
 
         // 6. Action button
         assertTrue(html.contains("id=\"assignUserSubmitBtn\""), "Must render typed submit button");
+        assertTrue(html.contains("id=\"assignUserDenegateBtn\""), "Must render DENEGATE USER button");
+        assertTrue(html.contains("DENEGATE USER"), "Must render DENEGATE USER text");
+        assertTrue(html.contains("submitDenegateUser"), "Must wire submitDenegateUser script");
+        assertTrue(html.contains("max-height:85vh"), "Modal must declare max-height for vertical centering");
+    }
+
+    @JettraTest
+    @DisplayName("6b. DENEGATE USER action revokes database permission from target database")
+    void testDenegateUserRevocation() throws IOException {
+        // Pre-create user with access to analytics_db
+        SystemUser user = SystemUser.create(
+            "dev_to_deny",
+            SystemUserRepositoryImpl.hashPassword("pass123"),
+            "deny@jettra.io",
+            "READ_WRITE",
+            Set.of("analytics_db", "other_db")
+        );
+        systemUserRepo.save(user);
+
+        assertTrue(systemUserRepo.findByUsername("dev_to_deny").get().hasDatabaseAccess("analytics_db"));
+
+        // Execute denegate_user
+        TestHttpExchange exchange = new TestHttpExchange("POST", "/databases");
+        exchange.getRequestHeaders().set("Cookie", "username=admin; role=ADMIN");
+        exchange.setRequestBody("action=denegate_user&target_db=analytics_db&assigned_users=dev_to_deny");
+
+        databasesPage.handle(exchange);
+
+        assertEquals(200, exchange.getResponseCode());
+        String body = exchange.getResponseBodyAsString();
+        assertTrue(body.contains("Permisos denegados para la base de datos 'analytics_db'"),
+            "Must report permission denegated successfully");
+
+        // Verify permission was revoked for analytics_db but other_db preserved
+        SystemUser updated = systemUserRepo.findByUsername("dev_to_deny").get();
+        assertFalse(updated.hasDatabaseAccess("analytics_db"), "Must no longer have access to analytics_db");
+        assertTrue(updated.hasDatabaseAccess("other_db"), "Must retain other_db access");
     }
 
     @JettraTest

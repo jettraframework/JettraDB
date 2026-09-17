@@ -175,6 +175,17 @@ public class DashboardMetricsCollector {
             return dbMap;
         }
 
+        try {
+            Set<String> physDbs = engine.getStorageCore().getDatabaseNames();
+            if (physDbs != null) {
+                for (String db : physDbs) {
+                    if (db != null && !db.isBlank() && !"_system".equalsIgnoreCase(db)) {
+                        dbMap.computeIfAbsent(db.trim(), d -> new LinkedHashMap<>()).putIfAbsent("DOCUMENT", 0);
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+
         for (String[] mapping : PREFIX_MAPPINGS) {
             String prefix = mapping[0];
             String engineName = categorizePrefix(prefix);
@@ -183,15 +194,18 @@ public class DashboardMetricsCollector {
                 for (String k : keys.keySet()) {
                     String rest = k.substring(prefix.length());
                     int colonIdx = rest.indexOf(':');
-                    String dbName = colonIdx > 0 ? rest.substring(0, colonIdx) : "default";
-                    dbMap.computeIfAbsent(dbName, d -> new LinkedHashMap<>()).merge(engineName, 1, Integer::sum);
+                    if (colonIdx > 0) {
+                        String dbName = rest.substring(0, colonIdx).trim();
+                        if (!dbName.isBlank() && !"_system".equalsIgnoreCase(dbName)) {
+                            dbMap.computeIfAbsent(dbName, d -> new LinkedHashMap<>()).merge(engineName, 1, Integer::sum);
+                        }
+                    }
                 }
             }
         }
 
         if (dbMap.isEmpty()) {
-            dbMap.computeIfAbsent("customers_db", d -> new LinkedHashMap<>()).put("DOCUMENT", 0);
-            dbMap.computeIfAbsent("analytics_store", d -> new LinkedHashMap<>()).put("COLUMN", 0);
+            dbMap.computeIfAbsent("system_db", d -> new LinkedHashMap<>()).put("DOCUMENT", 0);
         }
 
         return dbMap;

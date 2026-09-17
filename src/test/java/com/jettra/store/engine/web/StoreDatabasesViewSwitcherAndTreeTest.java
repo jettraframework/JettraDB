@@ -65,7 +65,7 @@ public class StoreDatabasesViewSwitcherAndTreeTest {
         engine.registerEngine("RECORDS", new RecordsEngine(engine));
         engine.start();
 
-        systemUserRepo = new SystemUserRepositoryImpl();
+        systemUserRepo = new SystemUserRepositoryImpl(tempDir.resolve("system_db"));
         userRepo = new JUserRepositoryImpl();
         credRepo = new JCredentialRepositoryImpl();
         authManager = new AuthManager(systemUserRepo);
@@ -280,6 +280,9 @@ public class StoreDatabasesViewSwitcherAndTreeTest {
         assertTrue(html.contains("Clear All"), "Must render Clear All quick control");
         assertTrue(html.contains("id=\"assignUserSelectionTable_counter\""), "Must render live selection counter badge");
         assertTrue(html.contains("id=\"assignUserSubmitBtn\""), "Must render ASSIGN USER submit button");
+        assertTrue(html.contains("id=\"assignUserDenegateBtn\""), "Must render DENEGATE USER button");
+        assertTrue(html.contains("DENEGATE USER"), "Must render DENEGATE USER text");
+        assertTrue(html.contains("max-height:85vh"), "Must have max-height constraint for centered dialog");
     }
 
     @JettraTest
@@ -314,6 +317,30 @@ public class StoreDatabasesViewSwitcherAndTreeTest {
         // inv_operator lost access to inventory_db (deselected)
         SystemUser postInv = systemUserRepo.findByUsername("inv_operator").orElseThrow();
         assertFalse(postInv.hasDatabaseAccess("inventory_db"), "inv_operator must have been revoked from inventory_db");
+        assertTrue(postInv.hasDatabaseAccess("warehouse_db"), "inv_operator must retain warehouse_db");
+    }
+
+    @JettraTest
+    @DisplayName("6. DENEGATE USER action revokes database permission for selected users")
+    void testDenegateUserAction() throws IOException {
+        // Pre-state: inv_operator has access to inventory_db
+        SystemUser preInv = systemUserRepo.findByUsername("inv_operator").orElseThrow();
+        assertTrue(preInv.hasDatabaseAccess("inventory_db"));
+
+        // Action: Denegate permission for inv_operator on inventory_db
+        TestHttpExchange exchange = new TestHttpExchange("POST", "/databases");
+        exchange.getRequestHeaders().set("Cookie", "username=admin; role=ADMIN");
+        exchange.setRequestBody("action=denegate_user&target_db=inventory_db&assigned_users=inv_operator");
+
+        databasesPage.handle(exchange);
+
+        assertEquals(200, exchange.getResponseCode());
+        String body = exchange.getResponseBodyAsString();
+        assertTrue(body.contains("Permisos denegados para la base de datos 'inventory_db'"), "Response must report denegation success");
+
+        // Post-state: inv_operator lost access to inventory_db
+        SystemUser postInv = systemUserRepo.findByUsername("inv_operator").orElseThrow();
+        assertFalse(postInv.hasDatabaseAccess("inventory_db"), "inv_operator must have been denegated from inventory_db");
         assertTrue(postInv.hasDatabaseAccess("warehouse_db"), "inv_operator must retain warehouse_db");
     }
 

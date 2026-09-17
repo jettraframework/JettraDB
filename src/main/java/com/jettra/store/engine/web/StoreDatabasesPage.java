@@ -219,6 +219,83 @@ public class StoreDatabasesPage extends StoreTemplatePage {
         return updatedCount;
     }
 
+    public synchronized int denegateDatabaseUsers(String targetDb, Set<String> targetUsernames) {
+        if (targetDb == null || targetDb.isBlank()) {
+            throw new IllegalArgumentException("Target database name cannot be null or blank.");
+        }
+        if (targetUsernames == null || targetUsernames.isEmpty()) {
+            throw new IllegalArgumentException("Debe seleccionar al menos un usuario para denegar el permiso.");
+        }
+        String cleanDb = targetDb.trim();
+        List<SystemUser> allUsers = systemUserRepo.findAll();
+        int revokedCount = 0;
+
+        Set<String> cleanTargets = targetUsernames.stream()
+            .map(String::trim)
+            .collect(Collectors.toSet());
+
+        for (SystemUser user : allUsers) {
+            if (cleanTargets.contains(user.username())) {
+                boolean isAdmin = "admin".equalsIgnoreCase(user.username());
+                Set<String> currentDbs = new TreeSet<>(user.assignedDatabases());
+                boolean hasWildcard = currentDbs.contains("*");
+                boolean hasTargetDb = currentDbs.contains(cleanDb);
+
+                if (!isAdmin && !hasWildcard && hasTargetDb) {
+                    currentDbs.remove(cleanDb);
+                    SystemUser updated = user.withUpdatedProfile(user.email(), user.role(), user.active(), currentDbs);
+                    systemUserRepo.save(updated);
+
+                    if (userRepo != null) {
+                        Optional<JUser> legacyOpt = userRepo.findByUsername(user.username());
+                        if (legacyOpt.isPresent()) {
+                            JUser legacy = legacyOpt.get();
+                            JUser updatedLegacy = new JUser(
+                                legacy.id(),
+                                legacy.firstName(),
+                                String.join(", ", currentDbs),
+                                legacy.email(),
+                                legacy.phone(),
+                                legacy.active(),
+                                legacy.jRoles(),
+                                currentDbs
+                            );
+                            userRepo.save(updatedLegacy);
+                        }
+                    }
+                    revokedCount++;
+                }
+            }
+        }
+        if (userRepo != null) {
+            for (String uname : cleanTargets) {
+                if ("admin".equalsIgnoreCase(uname)) continue;
+                Optional<JUser> legacyOpt = userRepo.findByUsername(uname);
+                if (legacyOpt.isPresent()) {
+                    JUser legacy = legacyOpt.get();
+                    Set<String> legDbs = new TreeSet<>(legacy.assignedDatabases());
+                    if (legDbs.remove(cleanDb)) {
+                        JUser updatedLegacy = new JUser(
+                            legacy.id(),
+                            legacy.firstName(),
+                            String.join(", ", legDbs),
+                            legacy.email(),
+                            legacy.phone(),
+                            legacy.active(),
+                            legacy.jRoles(),
+                            legDbs
+                        );
+                        userRepo.save(updatedLegacy);
+                        if (allUsers.stream().noneMatch(u -> u.username().equalsIgnoreCase(uname))) {
+                            revokedCount++;
+                        }
+                    }
+                }
+            }
+        }
+        return revokedCount;
+    }
+
     public SystemUser createAndAssignNewUser(String targetDb, String username, String email, String password, String roleName) {
         if (username == null || username.isBlank()) {
             throw new IllegalArgumentException("El nombre de usuario es obligatorio.");
@@ -482,6 +559,27 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                                 alertType = "badge-active";
                             }
                         }
+                    }
+                } else if ("denegate_user".equalsIgnoreCase(action) || "deny_user".equalsIgnoreCase(action)) {
+                    String targetDb = params.get("target_db");
+                    String assignedUsersParam = params.get("assigned_users");
+                    String existingUsername = params.get("existing_username");
+                    Set<String> targetUsers = new TreeSet<>();
+                    if (assignedUsersParam != null && !assignedUsersParam.isBlank()) {
+                        for (String u : assignedUsersParam.split(",")) {
+                            if (!u.isBlank()) targetUsers.add(u.trim());
+                        }
+                    }
+                    if (existingUsername != null && !existingUsername.isBlank()) {
+                        targetUsers.add(existingUsername.trim());
+                    }
+                    if (targetUsers.isEmpty()) {
+                        alertMessage = "Debe seleccionar al menos un usuario para denegar el permiso a la base de datos.";
+                        alertType = "badge-raft";
+                    } else {
+                        int revoked = denegateDatabaseUsers(targetDb, targetUsers);
+                        alertMessage = "Permisos denegados para la base de datos '" + targetDb + "': " + revoked + " usuario(s) desautorizado(s).";
+                        alertType = "badge-active";
                     }
                 }
             } catch (UserAlreadyExistsException e) {
@@ -1076,7 +1174,7 @@ public class StoreDatabasesPage extends StoreTemplatePage {
         UserSelectionTable userSelectionTable = UserSelectionTable.of("assignUserSelectionTable", "assigned_users")
             .searchPlaceholder("Filter system users by username, role, or email...")
             .emptyMessage("No system users registered or matching search criteria")
-            .maxHeight("230px")
+            .maxHeight("190px")
             .quickActions(true);
 
         Set<String> seenUsernames = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
@@ -1184,14 +1282,20 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                 .modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:8px 16px;"))
                 .attribute("type", "button")
                 .attribute("onclick", "document.getElementById('assignUserModal').close();"),
+            Button.of(Icon.of("fas fa-user-slash"), Text.of(" DENEGATE USER"))
+                .id("assignUserDenegateBtn")
+                .modifier(new Modifier().cssClass("btn-action btn-danger").style("padding:8px 18px; background:rgba(239,68,68,0.2); border:1px solid rgba(239,68,68,0.5); color:#fca5a5; cursor:pointer; font-weight:600;"))
+                .attribute("type", "button")
+                .attribute("onclick", "submitDenegateUser();"),
             Button.of(Icon.of("fas fa-user-check"), Text.of(" ASSIGN USER"))
                 .id("assignUserSubmitBtn")
                 .modifier(new Modifier().cssClass("btn-action btn-primary").style("padding:8px 18px;"))
                 .attribute("type", "submit")
-        ).modifier(new Modifier().style("display:flex; justify-content:flex-end; gap:10px;"));
+                .attribute("onclick", "document.getElementById('assignUserActionInput').value = 'assign_user';")
+        ).modifier(new Modifier().style("display:flex; justify-content:flex-end; gap:10px; align-items:center;"));
 
         Widget assignUserForm = Form.of(
-            InputHidden.of("action", "assign_user"),
+            InputHidden.of("action", "assign_user").id("assignUserActionInput"),
             InputHidden.of("target_db", "").id("assignUserDbInput"),
             InputHidden.of("assign_mode", "existing").id("assignUserModeInput"),
             modeTabsContainer,
@@ -1199,11 +1303,13 @@ public class StoreDatabasesPage extends StoreTemplatePage {
             newSection,
             roleSection,
             actionButtonsRow
-        ).attribute("method", "POST").attribute("action", JettraServer.resolvePath("/databases"));
+        ).id("assignUserForm")
+         .attribute("method", "POST")
+         .attribute("action", JettraServer.resolvePath("/databases"));
 
         Widget assignUserModal = Dialog.of(assignUserHeader, assignUserSubtitle, assignUserForm)
             .id("assignUserModal")
-            .modifier(new Modifier().cssClass("store-card").style("width:620px; max-width:94%; background:#1e293b; border:1px solid rgba(56,189,248,0.3); box-shadow:0 20px 50px rgba(0,0,0,0.7); border-radius:14px; padding:26px; margin:auto;"));
+            .modifier(new Modifier().cssClass("store-card").style("position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); width:620px; max-width:94%; max-height:85vh; overflow-y:auto; box-sizing:border-box; background:#1e293b; border:1px solid rgba(56,189,248,0.3); box-shadow:0 20px 50px rgba(0,0,0,0.7); border-radius:14px; padding:22px 26px; margin:0;"));
 
         // Modal 3: Rename Database
         Widget renameDbHeader = Row.of(
@@ -1255,6 +1361,8 @@ public class StoreDatabasesPage extends StoreTemplatePage {
             "    if (dbInp) dbInp.value = db;\n" +
             "    var dbLabel = document.getElementById('assignUserDbLabel');\n" +
             "    if (dbLabel) dbLabel.innerText = db;\n" +
+            "    var actionInp = document.getElementById('assignUserActionInput');\n" +
+            "    if (actionInp) actionInp.value = 'assign_user';\n" +
             "    var searchInp = document.getElementById('assignUserSelectionTable_search');\n" +
             "    if (searchInp) {\n" +
             "      searchInp.value = '';\n" +
@@ -1264,7 +1372,29 @@ public class StoreDatabasesPage extends StoreTemplatePage {
             "      window.UserSelectionTable.syncForDatabase('assignUserSelectionTable', db);\n" +
             "    }\n" +
             "    if (window.switchAssignUserMode) window.switchAssignUserMode('existing');\n" +
-            "    openModal('assignUserModal');\n" +
+            "    var modal = document.getElementById('assignUserModal');\n" +
+            "    if (modal) {\n" +
+            "      modal.scrollTop = 0;\n" +
+            "      modal.showModal();\n" +
+            "    }\n" +
+            "  }\n" +
+            "  function submitDenegateUser() {\n" +
+            "    var dbInp = document.getElementById('assignUserDbInput');\n" +
+            "    var targetDb = dbInp ? dbInp.value : '';\n" +
+            "    if (!targetDb) {\n" +
+            "      alert('No se ha especificado la base de datos.');\n" +
+            "      return;\n" +
+            "    }\n" +
+            "    var valInput = document.getElementById('assignUserSelectionTable_value');\n" +
+            "    var selected = valInput ? valInput.value : '';\n" +
+            "    if (!selected || selected.trim() === '') {\n" +
+            "      alert('Debe seleccionar al menos un usuario para denegar el permiso a la base de datos.');\n" +
+            "      return;\n" +
+            "    }\n" +
+            "    var actionInp = document.getElementById('assignUserActionInput');\n" +
+            "    if (actionInp) actionInp.value = 'denegate_user';\n" +
+            "    var form = document.getElementById('assignUserForm');\n" +
+            "    if (form) form.submit();\n" +
             "  }\n" +
             "  function switchAssignUserMode(mode) {\n" +
             "    var modeInput = document.getElementById('assignUserModeInput');\n" +
@@ -1272,6 +1402,7 @@ public class StoreDatabasesPage extends StoreTemplatePage {
             "    var existingSec = document.getElementById('assignUserExistingSection');\n" +
             "    var newSec = document.getElementById('assignUserNewSection');\n" +
             "    var submitBtn = document.getElementById('assignUserSubmitBtn');\n" +
+            "    var denegateBtn = document.getElementById('assignUserDenegateBtn');\n" +
             "    var newUsernameInp = document.getElementById('new_username_input');\n" +
             "    var newEmailInp = document.getElementById('new_email_input');\n" +
             "    var newPassInp = document.getElementById('new_password_input');\n" +
@@ -1282,6 +1413,7 @@ public class StoreDatabasesPage extends StoreTemplatePage {
             "      if (newEmailInp) newEmailInp.removeAttribute('required');\n" +
             "      if (newPassInp) newPassInp.removeAttribute('required');\n" +
             "      if (submitBtn) submitBtn.innerHTML = '<i class=\"fas fa-user-check\"></i> ASSIGN USER';\n" +
+            "      if (denegateBtn) denegateBtn.style.display = 'inline-flex';\n" +
             "    } else {\n" +
             "      if (existingSec) existingSec.style.display = 'none';\n" +
             "      if (newSec) newSec.style.display = 'block';\n" +
@@ -1289,6 +1421,7 @@ public class StoreDatabasesPage extends StoreTemplatePage {
             "      if (newEmailInp) newEmailInp.setAttribute('required', 'required');\n" +
             "      if (newPassInp) newPassInp.setAttribute('required', 'required');\n" +
             "      if (submitBtn) submitBtn.innerHTML = '<i class=\"fas fa-plus-circle\"></i> CREATE & ASSIGN USER';\n" +
+            "      if (denegateBtn) denegateBtn.style.display = 'none';\n" +
             "    }\n" +
             "  }\n" +
             "  function openRenameDbModal(oldDb) {\n" +
@@ -1859,10 +1992,13 @@ public class StoreDatabasesPage extends StoreTemplatePage {
             for (String k : keys.keySet()) {
                 String rest = k.substring(p.length());
                 int colonIdx = rest.indexOf(':');
-                String dbName = colonIdx > 0 ? rest.substring(0, colonIdx) : "default";
-
-                DatabaseMetadata meta = databases.computeIfAbsent(dbName, DatabaseMetadata::new);
-                meta.incrementEngine(engineName);
+                if (colonIdx > 0) {
+                    String dbName = rest.substring(0, colonIdx).trim();
+                    if (!dbName.isBlank() && !"_system".equalsIgnoreCase(dbName)) {
+                        DatabaseMetadata meta = databases.computeIfAbsent(dbName, DatabaseMetadata::new);
+                        meta.incrementEngine(engineName);
+                    }
+                }
             }
         }
         return databases;

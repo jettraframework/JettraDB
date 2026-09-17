@@ -50,16 +50,7 @@ public class DashboardGlobalScrollAndKeyboardAccessibilityTest {
 
     @AfterEach
     void tearDown() throws IOException {
-        if (engine != null) {
-            engine.stop();
-        }
-        if (tempDir != null && Files.exists(tempDir)) {
-            try (var stream = Files.walk(tempDir)) {
-                stream.sorted(Comparator.reverseOrder()).forEach(p -> {
-                    try { Files.deleteIfExists(p); } catch (Exception ignored) {}
-                });
-            }
-        }
+        com.jettra.store.engine.test.TestDatabaseCleanup.cleanUp(engine, tempDir);
     }
 
     @JettraTest

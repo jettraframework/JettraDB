@@ -31,6 +31,10 @@ public final class TestDatabaseCleanup {
     }
 
     public static void cleanUp(JettraStorageEngine engine, Path tempDir, SampleDatabaseService sampleService) {
+        cleanUp(engine, tempDir, sampleService, (Path[]) null);
+    }
+
+    public static void cleanUp(JettraStorageEngine engine, Path tempDir, SampleDatabaseService sampleService, Path... extraDirs) {
         if (sampleService != null) {
             for (String sampleDb : KNOWN_SAMPLE_DATABASES) {
                 try {
@@ -52,6 +56,17 @@ public final class TestDatabaseCleanup {
                     .map(Path::toFile)
                     .forEach(File::delete);
             } catch (Exception ignored) {}
+        }
+        if (extraDirs != null) {
+            for (Path extra : extraDirs) {
+                if (extra != null && Files.exists(extra)) {
+                    try (var stream = Files.walk(extra)) {
+                        stream.sorted(Comparator.reverseOrder())
+                            .map(Path::toFile)
+                            .forEach(File::delete);
+                    } catch (Exception ignored) {}
+                }
+            }
         }
     }
 }

@@ -52,6 +52,9 @@ public class SnapshotDownloadIntegrationTest {
     static void teardown() throws Exception {
         if (engine != null) {
             try {
+                engine.dropAllDatabases();
+            } catch (Exception ignored) {}
+            try {
                 engine.stop();
             } catch (Exception ignored) {}
         }

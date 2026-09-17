@@ -82,25 +82,7 @@ public class StoreUsersPageUniquenessTest {
     @AfterEach
     void tearDown() {
         SecurityContextHolder.clear();
-        if (engine != null) {
-            engine.stop();
-        }
-        if (tempDir != null && Files.exists(tempDir)) {
-            try {
-                Files.walk(tempDir)
-                    .sorted(Comparator.reverseOrder())
-                    .map(Path::toFile)
-                    .forEach(File::delete);
-            } catch (Exception ignored) {}
-        }
-        if (tempSystemDbDir != null && Files.exists(tempSystemDbDir)) {
-            try {
-                Files.walk(tempSystemDbDir)
-                    .sorted(Comparator.reverseOrder())
-                    .map(Path::toFile)
-                    .forEach(File::delete);
-            } catch (Exception ignored) {}
-        }
+        com.jettra.store.engine.test.TestDatabaseCleanup.cleanUp(engine, tempDir, null, tempSystemDbDir);
     }
 
     @JettraTest

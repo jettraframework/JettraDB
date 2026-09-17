@@ -55,6 +55,9 @@ public class MultiModelStorageTreeHierarchyTest {
     public static void tearDown() {
         if (engine != null) {
             try {
+                engine.dropAllDatabases();
+            } catch (Exception ignored) {}
+            try {
                 engine.stop();
             } catch (Exception ignored) {}
         }

@@ -56,6 +56,13 @@ public class LsmBTreeHybrid {
             this.dbName = (dbName != null && !dbName.isBlank()) ? dbName.trim() : "_system";
             if ("_system".equalsIgnoreCase(this.dbName)) {
                 this.dbDirectory = rootStorageDir.resolve("system");
+            } else if ("system_db".equalsIgnoreCase(this.dbName)) {
+                Path directSysDb = rootStorageDir.resolve("system_db");
+                if (Files.exists(directSysDb) && Files.isDirectory(directSysDb)) {
+                    this.dbDirectory = directSysDb;
+                } else {
+                    this.dbDirectory = rootStorageDir.resolve("databases").resolve(this.dbName);
+                }
             } else {
                 this.dbDirectory = rootStorageDir.resolve("databases").resolve(this.dbName);
             }
@@ -407,8 +414,9 @@ public class LsmBTreeHybrid {
             e.printStackTrace();
         }
 
-        // Initialize system partition
+        // Initialize system partitions
         getPartition("_system");
+        getPartition("system_db");
 
         // Scan existing databases on disk under databases/
         Path dbRootDir = storageDirectory.resolve("databases");
@@ -530,9 +538,17 @@ public class LsmBTreeHybrid {
         }
 
         // Check if directory physically exists on disk
-        Path targetDir = "_system".equalsIgnoreCase(cleanDb)
-            ? storageDirectory.resolve("system")
-            : storageDirectory.resolve("databases").resolve(cleanDb);
+        Path targetDir;
+        if ("_system".equalsIgnoreCase(cleanDb)) {
+            targetDir = storageDirectory.resolve("system");
+        } else if ("system_db".equalsIgnoreCase(cleanDb)) {
+            Path directSysDb = storageDirectory.resolve("system_db");
+            targetDir = (Files.exists(directSysDb) && Files.isDirectory(directSysDb))
+                ? directSysDb
+                : storageDirectory.resolve("databases").resolve(cleanDb);
+        } else {
+            targetDir = storageDirectory.resolve("databases").resolve(cleanDb);
+        }
         if (Files.exists(targetDir) && Files.isDirectory(targetDir)) {
             return getPartition(cleanDb);
         }
@@ -565,23 +581,32 @@ public class LsmBTreeHybrid {
     }
 
     public Set<String> getDatabaseNames() {
-        Set<String> dbs = new LinkedHashSet<>(partitions.keySet());
-        dbs.remove("_system");
+        Set<String> dbs = new LinkedHashSet<>();
+        dbs.add("system_db");
+        for (String p : partitions.keySet()) {
+            if (!"_system".equalsIgnoreCase(p)) {
+                dbs.add(p);
+            }
+        }
         Path dbRootDir = storageDirectory.resolve("databases");
         if (Files.exists(dbRootDir) && Files.isDirectory(dbRootDir)) {
             try (DirectoryStream<Path> stream = Files.newDirectoryStream(dbRootDir)) {
                 for (Path entry : stream) {
-                    if (Files.isDirectory(entry)) {
+                    if (Files.isDirectory(entry) && !"_system".equalsIgnoreCase(entry.getFileName().toString())) {
                         dbs.add(entry.getFileName().toString());
                     }
                 }
             } catch (IOException ignored) {}
         }
+        Path directSysDb = storageDirectory.resolve("system_db");
+        if (Files.exists(directSysDb) && Files.isDirectory(directSysDb)) {
+            dbs.add("system_db");
+        }
         return dbs;
     }
 
     public void dropDatabase(String dbName) {
-        if (dbName == null || dbName.isBlank() || "_system".equalsIgnoreCase(dbName)) return;
+        if (dbName == null || dbName.isBlank() || "_system".equalsIgnoreCase(dbName) || "system_db".equalsIgnoreCase(dbName)) return;
         DatabasePartition partition = partitions.remove(dbName.trim());
         if (partition != null) {
             partition.drop();
@@ -597,7 +622,7 @@ public class LsmBTreeHybrid {
      */
     public void dropAllDatabases() {
         for (String db : new LinkedHashSet<>(partitions.keySet())) {
-            if (!"_system".equalsIgnoreCase(db)) {
+            if (!"_system".equalsIgnoreCase(db) && !"system_db".equalsIgnoreCase(db)) {
                 dropDatabase(db);
             }
         }
@@ -605,7 +630,7 @@ public class LsmBTreeHybrid {
         if (Files.exists(dbRootDir) && Files.isDirectory(dbRootDir)) {
             try (DirectoryStream<Path> stream = Files.newDirectoryStream(dbRootDir)) {
                 for (Path entry : stream) {
-                    if (Files.isDirectory(entry)) {
+                    if (Files.isDirectory(entry) && !"system_db".equalsIgnoreCase(entry.getFileName().toString()) && !"_system".equalsIgnoreCase(entry.getFileName().toString())) {
                         DatabasePartition.deleteDirectoryRecursively(entry);
                     }
                 }
