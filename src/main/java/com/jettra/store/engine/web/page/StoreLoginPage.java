@@ -69,6 +69,17 @@ public class StoreLoginPage extends FluxBaseHandler {
         try {
             authManager.login(username, password);
             authenticated = true;
+            if (authManager.getSystemUserRepository() != null) {
+                var suOpt = authManager.getSystemUserRepository().findByUsername(username);
+                if (suOpt.isPresent() && suOpt.get().role() != null && !suOpt.get().role().isBlank()) {
+                    String r = suOpt.get().role();
+                    if ("DB_ADMIN".equalsIgnoreCase(r) || "SUPERADMIN".equalsIgnoreCase(r) || suOpt.get().isAdmin()) {
+                        userRole = "ADMIN";
+                    } else {
+                        userRole = r.toUpperCase();
+                    }
+                }
+            }
         } catch (Exception ignored) {}
 
         // 2. Authenticate with JettraSecurityDB repository
@@ -79,7 +90,12 @@ public class StoreLoginPage extends FluxBaseHandler {
                     authenticated = true;
                     JUser u = credOpt.get().jUser();
                     if (u != null && u.jRoles() != null && !u.jRoles().isEmpty()) {
-                        userRole = u.jRoles().iterator().next().name();
+                        String r = u.jRoles().iterator().next().name();
+                        if ("DB_ADMIN".equalsIgnoreCase(r) || "SUPERADMIN".equalsIgnoreCase(r)) {
+                            userRole = "ADMIN";
+                        } else {
+                            userRole = r.toUpperCase();
+                        }
                     }
                 }
             } catch (Exception ignored) {}
@@ -90,6 +106,7 @@ public class StoreLoginPage extends FluxBaseHandler {
             if (("admin".equals(username) && "admin".equals(password)) ||
                 ("super-user".equals(username) && "superUserZ".equals(password))) {
                 authenticated = true;
+                userRole = "ADMIN";
             }
         }
 

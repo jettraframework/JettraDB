@@ -57,7 +57,8 @@ public class StoreDatabasesPageTest {
         engine.registerEngine("RECORDS", new RecordsEngine(engine));
         engine.start();
 
-        authManager = new AuthManager();
+        var systemUserRepo = new com.jettra.store.engine.users.SystemUserRepositoryImpl(tempDir.resolve("system_db"));
+        authManager = new AuthManager(systemUserRepo);
         userRepo = new JUserRepositoryImpl();
         databasesPage = new StoreDatabasesPage(engine, authManager);
 

@@ -1,5 +1,6 @@
 package com.jettra.store.engine.web;
 
+import com.jettra.store.engine.users.SystemUserRepositoryImpl;
 import com.jettra.store.engine.web.page.StoreUsersPage;
 import com.jettra.store.engine.auth.AuthManager;
 import com.jettra.store.engine.core.JettraStorageEngine;
@@ -64,7 +65,7 @@ public class StoreUsersPageValidationTest {
         tempDir = Files.createTempDirectory("jettra_user_val_test");
         engine = new JettraStorageEngine(tempDir.toString());
         engine.start();
-        authManager = new AuthManager();
+        authManager = new AuthManager(new SystemUserRepositoryImpl(tempDir.resolve("system_db")));
 
         userRepo = new MockUserRepository();
         credRepo = new MockCredentialRepository();

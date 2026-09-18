@@ -37,14 +37,13 @@ public record SystemUser(
         role = (role != null && !role.isBlank()) ? role.trim() : "READ_WRITE";
         
         Set<String> dbs = new TreeSet<>();
-        if (assignedDatabases != null && !assignedDatabases.isEmpty()) {
+        if (assignedDatabases != null) {
             for (String db : assignedDatabases) {
                 if (db != null && !db.isBlank()) {
                     dbs.add(db.trim());
                 }
             }
-        }
-        if (dbs.isEmpty()) {
+        } else {
             dbs.add("*");
         }
         assignedDatabases = Collections.unmodifiableSet(dbs);
@@ -100,7 +99,7 @@ public record SystemUser(
     }
 
     public boolean isAdmin() {
-        return "admin".equalsIgnoreCase(username) || "DB_ADMIN".equalsIgnoreCase(role) || "SUPERADMIN".equalsIgnoreCase(role);
+        return "admin".equalsIgnoreCase(username) || "ADMIN".equalsIgnoreCase(role) || "DB_ADMIN".equalsIgnoreCase(role) || "SUPERADMIN".equalsIgnoreCase(role);
     }
 
     public boolean hasDatabaseAccess(String targetDb) {

@@ -44,21 +44,21 @@ public interface SystemUserRepository extends AutoCloseable {
 
     /**
      * Deletes a user by UUID.
-     * In accordance with JettraDB Identity Preservation Policy, physical deletion is prohibited.
+     * The root user 'admin' cannot be deleted.
      *
      * @param id the user id
      * @return true if deleted, false otherwise
-     * @throws com.jettra.store.engine.exception.UnsupportedUserDeletionException always
+     * @throws com.jettra.store.engine.exception.ImmutableAccountException if the target user is admin
      */
     boolean delete(UUID id);
 
     /**
      * Deletes a user by username.
-     * In accordance with JettraDB Identity Preservation Policy, physical deletion is prohibited.
+     * The root user 'admin' cannot be deleted.
      *
      * @param username the username
      * @return true if deleted, false otherwise
-     * @throws com.jettra.store.engine.exception.UnsupportedUserDeletionException always
+     * @throws com.jettra.store.engine.exception.ImmutableAccountException if the target user is admin
      */
     boolean deleteByUsername(String username);
 

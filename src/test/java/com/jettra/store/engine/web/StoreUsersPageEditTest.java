@@ -63,13 +63,15 @@ public class StoreUsersPageEditTest {
     private StoreUsersPage usersPage;
     private JUserRepository userRepo;
     private JCredentialRepository credRepo;
+    private com.jettra.store.engine.users.SystemUserRepository systemUserRepo;
 
     @BeforeEach
     void setUp() throws IOException {
         tempDir = Files.createTempDirectory("jettra_user_edit_test");
         engine = new JettraStorageEngine(tempDir.toString());
         engine.start();
-        authManager = new AuthManager();
+        systemUserRepo = new com.jettra.store.engine.users.SystemUserRepositoryImpl(tempDir.resolve("system_db"));
+        authManager = new AuthManager(systemUserRepo);
         usersPage = new StoreUsersPage(engine, authManager);
         userRepo = new JUserRepositoryImpl();
         credRepo = new JCredentialRepositoryImpl();
@@ -84,7 +86,7 @@ public class StoreUsersPageEditTest {
 
     @AfterEach
     void tearDown() {
-        SecurityDbTestCleanup.purgeNonAdminTestUsers(userRepo, credRepo);
+        SecurityDbTestCleanup.purgeNonAdminTestUsers(userRepo, credRepo, systemUserRepo);
         SecurityContextHolder.clear();
         com.jettra.store.engine.test.TestDatabaseCleanup.cleanUp(engine, tempDir);
     }

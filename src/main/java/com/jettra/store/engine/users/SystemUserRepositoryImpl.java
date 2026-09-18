@@ -93,15 +93,24 @@ public class SystemUserRepositoryImpl implements SystemUserRepository {
     }
 
     private void bootstrapAdminIfEmpty() {
-        if (countUsersInternal() == 0) {
+        Optional<SystemUser> adminOpt = readAllInternal().stream()
+            .filter(u -> "admin".equalsIgnoreCase(u.username()))
+            .findFirst();
+        if (adminOpt.isEmpty()) {
             SystemUser admin = SystemUser.create(
                 "admin",
                 hashPassword("admin"),
                 "admin@jettra.io",
-                "DB_ADMIN",
+                "ADMIN",
                 Set.of("*")
             );
             persistUserInternal(admin);
+        } else {
+            SystemUser existing = adminOpt.get();
+            if (!"ADMIN".equalsIgnoreCase(existing.role())) {
+                SystemUser updated = existing.withUpdatedProfile(null, "ADMIN", true, null);
+                persistUserInternal(updated);
+            }
         }
     }
 
@@ -173,17 +182,44 @@ public class SystemUserRepositoryImpl implements SystemUserRepository {
     @Override
     public boolean delete(UUID id) {
         if (id == null) return false;
-        Optional<SystemUser> userOpt = findById(id);
-        String uName = userOpt.map(SystemUser::username).orElse(id.toString());
-        throw new UnsupportedUserDeletionException(uName, id, "SYSTEM_USER_REPOSITORY");
+        rwLock.writeLock().lock();
+        try {
+            Optional<SystemUser> userOpt = findById(id);
+            if (userOpt.isEmpty()) {
+                return false;
+            }
+            if ("admin".equalsIgnoreCase(userOpt.get().username())) {
+                throw new ImmutableAccountException("El usuario admin no puede ser eliminado.");
+            }
+            Path file = usersDirectory.resolve(id.toString() + ".jdb");
+            return Files.deleteIfExists(file);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Error deleting user with ID " + id, e);
+        } finally {
+            rwLock.writeLock().unlock();
+        }
     }
 
     @Override
     public boolean deleteByUsername(String username) {
         if (username == null || username.isBlank()) return false;
-        Optional<SystemUser> userOpt = findByUsername(username);
-        UUID uId = userOpt.map(SystemUser::id).orElse(null);
-        throw new UnsupportedUserDeletionException(username, uId, "SYSTEM_USER_REPOSITORY");
+        rwLock.writeLock().lock();
+        try {
+            Optional<SystemUser> userOpt = findByUsername(username);
+            if (userOpt.isEmpty()) {
+                return false;
+            }
+            if ("admin".equalsIgnoreCase(userOpt.get().username())) {
+                throw new ImmutableAccountException("El usuario admin no puede ser eliminado.");
+            }
+            UUID id = userOpt.get().id();
+            Path file = usersDirectory.resolve(id.toString() + ".jdb");
+            return Files.deleteIfExists(file);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Error deleting user '" + username + "'", e);
+        } finally {
+            rwLock.writeLock().unlock();
+        }
     }
 
     @Override

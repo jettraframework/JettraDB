@@ -16,13 +16,11 @@ public final class SecurityDbTestCleanup {
     private SecurityDbTestCleanup() {}
 
     public static void purgeNonAdminTestUsers() {
-        try {
-            purgeNonAdminTestUsers(new JUserRepositoryImpl(), new JCredentialRepositoryImpl());
-        } catch (Exception ignored) {}
+        // No-op by default to prevent accidental production database wipes
     }
 
     public static void purgeNonAdminTestUsers(JUserRepository userRepo, JCredentialRepository credRepo) {
-        purgeNonAdminTestUsers(userRepo, credRepo, new com.jettra.store.engine.users.SystemUserRepositoryImpl());
+        purgeNonAdminTestUsers(userRepo, credRepo, null);
     }
 
     public static void purgeNonAdminTestUsers(JUserRepository userRepo, JCredentialRepository credRepo, com.jettra.store.engine.users.SystemUserRepository sysRepo) {
@@ -49,6 +47,15 @@ public final class SecurityDbTestCleanup {
             } catch (Exception ignored) {}
         }
         if (sysRepo != null) {
+            // Strict safeguard: only purge if storage path is explicitly a test/temp directory
+            if (sysRepo.getStoragePath() != null) {
+                String pathStr = sysRepo.getStoragePath().toAbsolutePath().toString().toLowerCase();
+                boolean isTestOrTemp = pathStr.contains("tmp") || pathStr.contains("temp") || pathStr.contains("test");
+                if (!isTestOrTemp) {
+                    System.err.println("[SecurityDbTestCleanup] Refusing to purge non-admin users: " + pathStr + " is a production database path!");
+                    return;
+                }
+            }
             try {
                 for (com.jettra.store.engine.users.SystemUser su : sysRepo.findAll()) {
                     if (!"admin".equalsIgnoreCase(su.username())) {

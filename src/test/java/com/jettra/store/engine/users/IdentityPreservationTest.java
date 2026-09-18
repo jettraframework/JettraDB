@@ -103,7 +103,7 @@ public class IdentityPreservationTest {
                 "admin",
                 SystemUserRepositoryImpl.hashPassword("admin"),
                 "admin@jettra.io",
-                "DB_ADMIN",
+                "ADMIN",
                 Set.of("*")
             ));
         }
@@ -117,49 +117,37 @@ public class IdentityPreservationTest {
     }
 
     @JettraTest
-    @DisplayName("1. Repository level: Physical deletion of any user via delete() or deleteByUsername() strictly throws UnsupportedUserDeletionException")
+    @DisplayName("1. Repository level: Admin protection and physical deletion of non-admin user")
     void testRepositoryLevelPhysicalDeletionProhibited() {
         String username = "preserved_analyst";
         SystemUser user = SystemUser.create(username, "hash123", "analyst@jettra.io", "READ_WRITE", Set.of("analytics_db"));
         systemUserRepo.save(user);
         assertTrue(systemUserRepo.existsByUsername(username));
 
-        // 1. Calling delete(UUID) must throw UnsupportedUserDeletionException
-        UnsupportedUserDeletionException exUuid = null;
+        // 1. Calling deleteByUsername("admin") must throw ImmutableAccountException
+        boolean adminProtected = false;
         try {
-            systemUserRepo.delete(user.id());
-        } catch (UnsupportedUserDeletionException e) {
-            exUuid = e;
+            systemUserRepo.deleteByUsername("admin");
+        } catch (com.jettra.store.engine.exception.ImmutableAccountException e) {
+            adminProtected = true;
         }
-        assertNotNull(exUuid, "systemUserRepo.delete(UUID) must throw UnsupportedUserDeletionException");
-        assertEquals("USER_DELETION_PROHIBITED", exUuid.getErrorCode());
-        assertTrue(exUuid.getMessage().contains(username));
+        assertTrue(adminProtected, "Deleting root admin must throw ImmutableAccountException");
 
-        // 2. Calling deleteByUsername(String) must throw UnsupportedUserDeletionException
-        UnsupportedUserDeletionException exName = null;
-        try {
-            systemUserRepo.deleteByUsername(username);
-        } catch (UnsupportedUserDeletionException e) {
-            exName = e;
-        }
-        assertNotNull(exName, "systemUserRepo.deleteByUsername(String) must throw UnsupportedUserDeletionException");
-        assertEquals("USER_DELETION_PROHIBITED", exName.getErrorCode());
-
-        // 3. Entity must remain completely intact in system_db
-        assertTrue(systemUserRepo.existsByUsername(username), "User entity must permanently persist in system_db");
-        Optional<SystemUser> loaded = systemUserRepo.findByUsername(username);
-        assertTrue(loaded.isPresent());
-        assertEquals(user.id(), loaded.get().id());
+        // 2. Calling delete(UUID) deletes regular user
+        boolean deleted = systemUserRepo.delete(user.id());
+        assertTrue(deleted, "Deleting non-admin user must succeed");
+        assertFalse(systemUserRepo.existsByUsername(username), "Deleted user must not exist in system_db");
     }
 
     @JettraTest
-    @DisplayName("2. Command Pipeline: IdentityPreservationInterceptor vetoes DeleteUserAttemptCommand across all sources")
+    @DisplayName("2. Command Pipeline: Unprivileged command vetoed; Privileged command executed")
     void testCommandPipelineVetoesDeleteCommand() {
         for (CommandSource source : CommandSource.values()) {
             UserAdminCommand deleteCmd = new UserAdminCommand.DeleteUserAttemptCommand(
                 "operator_target",
                 UUID.randomUUID(),
                 source,
+                null,
                 "Testing pipeline veto for source: " + source
             );
 
@@ -170,39 +158,61 @@ public class IdentityPreservationTest {
                 thrown = e;
             }
 
-            assertNotNull(thrown, "Pipeline must veto deletion for channel: " + source);
+            assertNotNull(thrown, "Pipeline must veto deletion for unprivileged channel: " + source);
             assertEquals("USER_DELETION_PROHIBITED", thrown.getErrorCode());
             assertEquals(source.name(), thrown.getChannelSource());
-            assertTrue(thrown.getMessage().contains("Identity preservation policy violation"));
         }
+
+        // Privileged command executes
+        String privTarget = "pipeline_temp_user";
+        systemUserRepo.save(SystemUser.create(privTarget, "hash", "p@jettra.io", "READ_WRITE", Set.of("*")));
+        UserAdminCommand privCmd = new UserAdminCommand.DeleteUserAttemptCommand(
+            privTarget,
+            null,
+            CommandSource.STORAGE_ENGINE,
+            "admin",
+            "Admin deletion"
+        );
+        var result = pipeline.execute(privCmd);
+        assertTrue(result.success());
+        assertFalse(systemUserRepo.existsByUsername(privTarget));
     }
 
     @JettraTest
-    @DisplayName("3. Client Driver: Direct JSON deletion POST request returns HTTP 400 with USER_DELETION_PROHIBITED code")
+    @DisplayName("3. Client Driver: Unprivileged deletion rejected with HTTP 400; Admin deletion succeeds with HTTP 200")
     void testClientDriverJsonDeletionRequestRejected() throws IOException {
         String testUser = "driver_client_user";
         systemUserRepo.save(SystemUser.create(testUser, "hash", "driver@jettra.io", "READ_WRITE", Set.of("finance_db")));
+        systemUserRepo.save(SystemUser.create("operator", "hash", "op@jettra.io", "READ_ONLY", Set.of("*")));
 
-        // Test 1: Native JSON body payload
+        // Test 1: Unprivileged actor rejected
         TestHttpExchange exchange = new TestHttpExchange("POST", "/users");
         exchange.getRequestHeaders().set("Accept", "application/json");
         exchange.getRequestHeaders().set("Content-Type", "application/json");
-        exchange.getRequestHeaders().set("Cookie", "username=admin; role=ADMIN");
+        exchange.getRequestHeaders().set("Cookie", "username=operator; role=ADMIN");
         exchange.setRequestBody(String.format("{\"action\":\"delete_user\",\"username\":\"%s\"}", testUser));
 
         usersPage.handle(exchange);
 
-        assertEquals(400, exchange.getResponseCode(), "Driver deletion attempt must be rejected with HTTP 400");
+        assertEquals(400, exchange.getResponseCode(), "Unprivileged driver deletion attempt must be rejected with HTTP 400");
         String responseBody = exchange.getResponseBodyAsString();
         assertTrue(responseBody.contains("USER_DELETION_PROHIBITED"), "Must return USER_DELETION_PROHIBITED error code");
-        assertTrue(responseBody.contains("Identity preservation policy violation"), "Must explain policy violation");
+        assertTrue(systemUserRepo.existsByUsername(testUser), "User must not be removed by unprivileged driver request");
 
-        // Verify user remains in system_db
-        assertTrue(systemUserRepo.existsByUsername(testUser), "User must not be removed by driver request");
+        // Test 2: Privileged admin actor succeeds
+        TestHttpExchange adminExchange = new TestHttpExchange("POST", "/users");
+        adminExchange.getRequestHeaders().set("Accept", "application/json");
+        adminExchange.getRequestHeaders().set("Content-Type", "application/json");
+        adminExchange.getRequestHeaders().set("Cookie", "username=admin; role=ADMIN");
+        adminExchange.setRequestBody(String.format("{\"action\":\"delete_user\",\"username\":\"%s\"}", testUser));
+
+        usersPage.handle(adminExchange);
+        assertEquals(200, adminExchange.getResponseCode(), "Admin driver deletion attempt must succeed with HTTP 200");
+        assertFalse(systemUserRepo.existsByUsername(testUser), "User must be removed by admin driver request");
     }
 
     @JettraTest
-    @DisplayName("4. Shell CLI: Commands 'DROP USER', 'DELETE USER', and 'user delete' are intercepted and vetoed")
+    @DisplayName("4. Shell CLI: Unprivileged commands vetoed; Privileged commands executed")
     void testShellCliCommandsVetoed() {
         String[] dropCommands = {
             "DROP USER security_operator",
@@ -220,14 +230,20 @@ public class IdentityPreservationTest {
                 ex = e;
             }
 
-            assertNotNull(ex, "Shell command '" + cmd + "' must throw UnsupportedUserDeletionException");
+            assertNotNull(ex, "Unauthenticated Shell command '" + cmd + "' must throw UnsupportedUserDeletionException");
             assertEquals("SHELL_CLI", ex.getChannelSource());
             assertEquals("USER_DELETION_PROHIBITED", ex.getErrorCode());
         }
+
+        // Privileged shell execution
+        systemUserRepo.save(SystemUser.create("shell_target", "hash", "s@jettra.io", "READ_WRITE", Set.of("*")));
+        String output = shellDispatcher.executeCommand("DROP USER shell_target", "admin");
+        assertTrue(output.contains("eliminado exitosamente"));
+        assertFalse(systemUserRepo.existsByUsername("shell_target"));
     }
 
     @JettraTest
-    @DisplayName("5. Web UI: Action delete_user on /users is blocked, displays informative alert, and preserves user entity")
+    @DisplayName("5. Web UI: Action delete_user blocked for unprivileged user; Allowed for admin")
     void testWebUiDeletionActionBlockedWithPreservationFeedback() throws IOException {
         String username = "web_ui_target";
         UUID userId = UUID.randomUUID();
@@ -237,20 +253,33 @@ public class IdentityPreservationTest {
         JUser legacyUser = new JUser(userId, username, "reports_db", "web@jettra.io", "+123", true, Set.of(new JRole(UUID.randomUUID(), "READ_ONLY", true)), Set.of("reports_db"));
         userRepo.save(legacyUser);
 
+        systemUserRepo.save(SystemUser.create("operator", "hash", "op@jettra.io", "READ_ONLY", Set.of("*")));
+
+        // 1. Non-privileged user fails
         TestHttpExchange exchange = new TestHttpExchange("POST", "/users");
-        exchange.getRequestHeaders().set("Cookie", "username=admin; role=ADMIN");
+        exchange.getRequestHeaders().set("Cookie", "username=operator; role=ADMIN");
         exchange.setRequestBody("action=delete_user&user_id=" + userId.toString());
 
         usersPage.handle(exchange);
 
         assertEquals(200, exchange.getResponseCode());
         String body = exchange.getResponseBodyAsString();
-        assertTrue(body.contains("La eliminación física de usuarios está estrictamente prohibida en JettraDB"),
-            "Alert banner must explain that physical user deletion is prohibited");
+        assertTrue(body.contains("Operación denegada: Sólo usuarios con privilegios"),
+            "Alert banner must explain that only privileged users can delete");
 
         // Identity must remain intact across repositories
         assertTrue(systemUserRepo.existsByUsername(username), "system_db must preserve user identity");
         assertTrue(userRepo.findById(userId).isPresent(), "userRepo must preserve user identity");
+
+        // 2. Admin user succeeds
+        TestHttpExchange adminExchange = new TestHttpExchange("POST", "/users");
+        adminExchange.getRequestHeaders().set("Cookie", "username=admin; role=ADMIN");
+        adminExchange.setRequestBody("action=delete_user&user_id=" + userId.toString());
+
+        usersPage.handle(adminExchange);
+        assertEquals(200, adminExchange.getResponseCode());
+        assertTrue(adminExchange.getResponseBodyAsString().contains("eliminado exitosamente de system_db"));
+        assertFalse(systemUserRepo.existsByUsername(username));
     }
 
     @JettraTest

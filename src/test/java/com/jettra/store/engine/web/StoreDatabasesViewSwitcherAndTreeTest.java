@@ -281,8 +281,7 @@ public class StoreDatabasesViewSwitcherAndTreeTest {
         assertTrue(html.contains("Clear All"), "Must render Clear All quick control");
         assertTrue(html.contains("id=\"assignUserSelectionTable_counter\""), "Must render live selection counter badge");
         assertTrue(html.contains("id=\"assignUserSubmitBtn\""), "Must render ASSIGN USER submit button");
-        assertTrue(html.contains("id=\"assignUserDenegateBtn\""), "Must render DENEGATE USER button");
-        assertTrue(html.contains("DENEGATE USER"), "Must render DENEGATE USER text");
+        assertTrue(html.contains("ASSIGN USER"), "Must render ASSIGN USER text");
         assertTrue(html.contains("max-height:85vh"), "Must have max-height constraint for centered dialog");
     }
 

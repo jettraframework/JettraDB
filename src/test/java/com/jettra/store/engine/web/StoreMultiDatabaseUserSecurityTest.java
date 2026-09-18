@@ -66,17 +66,19 @@ public class StoreMultiDatabaseUserSecurityTest {
     private StoreEnginesPage enginesPage;
     private JUserRepository userRepo;
     private JCredentialRepository credRepo;
+    private com.jettra.store.engine.users.SystemUserRepository systemUserRepo;
 
     @BeforeEach
     void setUp() throws IOException {
-        tempDir = Files.createTempDirectory("jettra_multi_db_user_test");
+        tempDir = Files.createTempDirectory("jettra_multidb_sec_test");
         engine = new JettraStorageEngine(tempDir.toString());
         engine.registerEngine("DOCUMENT", new DocumentEngine(engine));
         engine.registerEngine("KEYVALUE", new KeyValueEngine(engine));
         engine.registerEngine("RECORDS", new RecordsEngine(engine));
         engine.start();
 
-        authManager = new AuthManager();
+        systemUserRepo = new com.jettra.store.engine.users.SystemUserRepositoryImpl(tempDir.resolve("system_db"));
+        authManager = new AuthManager(systemUserRepo);
         usersPage = new StoreUsersPage(engine, authManager);
         databasesPage = new StoreDatabasesPage(engine, authManager);
         enginesPage = new StoreEnginesPage(engine);
@@ -86,7 +88,7 @@ public class StoreMultiDatabaseUserSecurityTest {
 
     @AfterEach
     void tearDown() throws IOException {
-        SecurityDbTestCleanup.purgeNonAdminTestUsers(userRepo, credRepo);
+        SecurityDbTestCleanup.purgeNonAdminTestUsers(userRepo, credRepo, systemUserRepo);
         SecurityContextHolder.clear();
         com.jettra.store.engine.test.TestDatabaseCleanup.cleanUp(engine, tempDir);
     }

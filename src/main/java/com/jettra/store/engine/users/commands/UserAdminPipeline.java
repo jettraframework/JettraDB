@@ -45,8 +45,8 @@ public class UserAdminPipeline {
     public UserAdminPipeline(SystemUserRepository systemUserRepo, JUserRepository userRepo) {
         this.systemUserRepo = Objects.requireNonNull(systemUserRepo, "SystemUserRepository cannot be null");
         this.userRepo = userRepo;
-        // Default interceptor enforcing strict identity preservation
-        this.interceptors.add(new IdentityPreservationInterceptor());
+        // Default interceptor enforcing identity preservation for unprivileged actors
+        this.interceptors.add(new IdentityPreservationInterceptor(systemUserRepo));
     }
 
     public UserAdminPipeline addInterceptor(UserAdminInterceptor interceptor) {
@@ -62,15 +62,46 @@ public class UserAdminPipeline {
     public synchronized UserCommandResult execute(UserAdminCommand command) {
         Objects.requireNonNull(command, "Command cannot be null");
 
-        // 1. Interception phase (vetos destructive commands)
+        // 1. Interception phase (vetos destructive commands from unprivileged sources)
         for (UserAdminInterceptor interceptor : interceptors) {
             interceptor.intercept(command);
         }
 
         // 2. Pattern Matching execution phase (Java 25+)
         return switch (command) {
-            case UserAdminCommand.DeleteUserAttemptCommand del -> 
-                throw new UnsupportedUserDeletionException(del.targetIdentifier(), del.targetId(), del.source().name());
+            case UserAdminCommand.DeleteUserAttemptCommand del -> {
+                String target = del.targetIdentifier();
+                UUID targetId = del.targetId();
+                if ("admin".equalsIgnoreCase(target)) {
+                    throw new ImmutableAccountException("El usuario admin no puede ser eliminado.");
+                }
+                if (targetId != null) {
+                    Optional<SystemUser> userOpt = systemUserRepo.findById(targetId);
+                    if (userOpt.isPresent() && "admin".equalsIgnoreCase(userOpt.get().username())) {
+                        throw new ImmutableAccountException("El usuario admin no puede ser eliminado.");
+                    }
+                }
+                boolean deleted = false;
+                if (targetId != null) {
+                    deleted = systemUserRepo.delete(targetId);
+                } else if (target != null && !target.isBlank()) {
+                    deleted = systemUserRepo.deleteByUsername(target);
+                }
+                if (userRepo != null) {
+                    try {
+                        if (targetId != null) {
+                            userRepo.delete(targetId);
+                        } else if (target != null && !target.isBlank()) {
+                            userRepo.findByUsername(target).ifPresent(u -> userRepo.delete(u.id()));
+                        }
+                    } catch (Exception ignored) {}
+                }
+                if (deleted) {
+                    yield UserCommandResult.success("Usuario '" + target + "' eliminado exitosamente de system_db.", null);
+                } else {
+                    yield UserCommandResult.failure("Usuario '" + target + "' no encontrado en system_db.");
+                }
+            }
 
             case UserAdminCommand.RevokeDatabaseScopeCommand revoke -> {
                 String uName = revoke.username().trim();

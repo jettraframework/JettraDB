@@ -54,6 +54,7 @@ public class SystemUserRepositoryTest {
         assertTrue(adminOpt.isPresent(), "Admin user must be automatically provisioned");
         SystemUser admin = adminOpt.get();
         assertEquals("admin", admin.username());
+        assertEquals("ADMIN", admin.role());
         assertTrue(admin.isAdmin(), "Admin must have admin privileges");
         assertTrue(admin.assignedDatabases().contains("*"), "Admin must have global access");
         assertTrue(repository.count() >= 1, "Count must be at least 1");
@@ -150,35 +151,26 @@ public class SystemUserRepositoryTest {
     }
 
     @JettraTest
-    @DisplayName("5. Physical deletion is strictly prohibited in repository throwing UnsupportedUserDeletionException")
+    @DisplayName("5. Root admin protection and physical deletion of regular user in repository")
     void testDeleteAndAdminProtection() {
-        // Attempting to delete admin throws UnsupportedUserDeletionException
+        // Attempting to delete admin throws ImmutableAccountException
         boolean adminProtected = false;
         try {
             repository.deleteByUsername("admin");
-        } catch (com.jettra.store.engine.exception.UnsupportedUserDeletionException e) {
+        } catch (com.jettra.store.engine.exception.ImmutableAccountException e) {
             adminProtected = true;
             assertTrue(e.getMessage().contains("admin"), "Exception must reference admin user");
         }
-        assertTrue(adminProtected, "Deleting admin must be strictly prevented");
+        assertTrue(adminProtected, "Deleting admin must be strictly prevented with ImmutableAccountException");
 
-        // Attempting to delete regular user also throws UnsupportedUserDeletionException
+        // Deleting regular user from repository succeeds
         SystemUser temp = SystemUser.create("temp_user", "hash", "temp@jettra.io", "READ_ONLY", Set.of("*"));
         repository.save(temp);
         assertTrue(repository.existsByUsername("temp_user"));
 
-        boolean regularUserProtected = false;
-        try {
-            repository.delete(temp.id());
-        } catch (com.jettra.store.engine.exception.UnsupportedUserDeletionException e) {
-            regularUserProtected = true;
-            assertTrue(e.getMessage().contains("temp_user"));
-        }
-        assertTrue(regularUserProtected, "Deleting regular user must also be prohibited");
-        assertTrue(repository.existsByUsername("temp_user"), "User identity must be permanently preserved");
-
-        // Clean up test entity with purgeTestUserForTestingOnly
-        repository.purgeTestUserForTestingOnly(temp.id());
+        boolean deleted = repository.delete(temp.id());
+        assertTrue(deleted, "Deleting regular user must succeed");
+        assertFalse(repository.existsByUsername("temp_user"), "Deleted user must not exist in system_db");
     }
 
     @JettraTest

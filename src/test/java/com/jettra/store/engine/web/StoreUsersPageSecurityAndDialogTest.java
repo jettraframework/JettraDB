@@ -7,6 +7,8 @@ import com.jettra.store.engine.core.JettraStorageEngine;
 import com.jettra.store.engine.models.DocumentEngine;
 import com.jettra.store.engine.models.KeyValueEngine;
 import com.jettra.store.engine.models.RecordsEngine;
+import com.jettra.store.engine.users.SystemUser;
+import java.util.Set;
 import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpContext;
 import com.sun.net.httpserver.HttpExchange;
@@ -58,6 +60,7 @@ public class StoreUsersPageSecurityAndDialogTest {
     private StoreLoginPage loginPage;
     private JUserRepository userRepo;
     private JCredentialRepository credRepo;
+    private com.jettra.store.engine.users.SystemUserRepository systemUserRepo;
 
     @BeforeEach
     void setUp() throws IOException {
@@ -68,7 +71,8 @@ public class StoreUsersPageSecurityAndDialogTest {
         engine.registerEngine("RECORDS", new RecordsEngine(engine));
         engine.start();
 
-        authManager = new AuthManager();
+        systemUserRepo = new com.jettra.store.engine.users.SystemUserRepositoryImpl(tempDir.resolve("system_db"));
+        authManager = new AuthManager(systemUserRepo);
         usersPage = new StoreUsersPage(engine, authManager);
         loginPage = new StoreLoginPage(authManager);
         userRepo = new JUserRepositoryImpl();
@@ -77,7 +81,7 @@ public class StoreUsersPageSecurityAndDialogTest {
 
     @AfterEach
     void tearDown() throws IOException {
-        SecurityDbTestCleanup.purgeNonAdminTestUsers(userRepo, credRepo);
+        SecurityDbTestCleanup.purgeNonAdminTestUsers(userRepo, credRepo, systemUserRepo);
         SecurityContextHolder.clear();
         com.jettra.store.engine.test.TestDatabaseCleanup.cleanUp(engine, tempDir);
     }
@@ -227,20 +231,31 @@ public class StoreUsersPageSecurityAndDialogTest {
                 .findFirst()
                 .orElseThrow(() -> new AssertionError("Target user must exist"));
 
-        // 2. Attempt execute revoke via delete_user -> must be blocked
+        // 2. Attempt execute revoke via delete_user by non-privileged user -> must be blocked
+        authManager.getSystemUserRepository().save(SystemUser.create("operator", "hash", "op@jettra.io", "READ_ONLY", Set.of("*")));
         TestHttpExchange deleteExchange = new TestHttpExchange("POST", "/users");
-        deleteExchange.getRequestHeaders().set("Cookie", "username=adminUser; role=ADMIN");
+        deleteExchange.getRequestHeaders().set("Cookie", "username=operator; role=ADMIN");
         deleteExchange.setRequestBody("action=delete_user&user_id=" + user.id().toString());
 
         usersPage.handle(deleteExchange);
         assertEquals(200, deleteExchange.getResponseCode());
         String delBody = deleteExchange.getResponseBodyAsString();
-        assertTrue(delBody.contains("La eliminación física de usuarios está estrictamente prohibida"),
-            "Alert must state that physical deletion is prohibited");
+        assertTrue(delBody.contains("Operación denegada: Sólo usuarios con privilegios"),
+            "Alert must state that only privileged users can delete");
 
-        // 3. Verify user identity is PRESERVED in repositories
+        // 3. Verify user identity is PRESERVED in repositories for non-privileged actor
         Optional<JUser> postDeleteUser = userRepo.findById(user.id());
         assertTrue(postDeleteUser.isPresent(), "User identity must be preserved in repository");
+
+        // 4. Privileged admin user deletes the user
+        TestHttpExchange adminDeleteExchange = new TestHttpExchange("POST", "/users");
+        adminDeleteExchange.getRequestHeaders().set("Cookie", "username=admin; role=ADMIN");
+        adminDeleteExchange.setRequestBody("action=delete_user&user_id=" + user.id().toString());
+        usersPage.handle(adminDeleteExchange);
+        assertEquals(200, adminDeleteExchange.getResponseCode());
+        assertTrue(adminDeleteExchange.getResponseBodyAsString().contains("eliminado exitosamente"),
+            "Must state that user was successfully deleted");
+        assertFalse(userRepo.findById(user.id()).isPresent(), "User must be removed by admin");
     }
 
     /**

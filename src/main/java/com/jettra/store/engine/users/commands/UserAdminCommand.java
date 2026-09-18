@@ -113,8 +113,13 @@ public sealed interface UserAdminCommand permits
         String targetIdentifier,
         UUID targetId,
         CommandSource source,
+        String initiatingUser,
         String reason
     ) implements UserAdminCommand {
+        public DeleteUserAttemptCommand(String targetIdentifier, UUID targetId, CommandSource source, String reason) {
+            this(targetIdentifier, targetId, source, null, reason);
+        }
+
         public DeleteUserAttemptCommand {
             targetIdentifier = (targetIdentifier != null && !targetIdentifier.isBlank()) 
                 ? targetIdentifier 

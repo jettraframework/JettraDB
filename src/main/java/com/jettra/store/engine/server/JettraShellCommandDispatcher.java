@@ -37,6 +37,18 @@ public class JettraShellCommandDispatcher {
      * @throws UnsupportedUserDeletionException if a physical user deletion was attempted
      */
     public String executeCommand(String commandLine) {
+        return executeCommand(commandLine, null);
+    }
+
+    /**
+     * Interprets and executes shell CLI command lines with explicit actor identity.
+     *
+     * @param commandLine the raw shell command string
+     * @param loggedUser the initiating user username, or null
+     * @return result description string
+     * @throws UnsupportedUserDeletionException if a physical user deletion was attempted by non-privileged actor
+     */
+    public String executeCommand(String commandLine, String loggedUser) {
         if (commandLine == null || commandLine.isBlank()) {
             return "Empty command";
         }
@@ -53,9 +65,11 @@ public class JettraShellCommandDispatcher {
                 targetUser,
                 null,
                 CommandSource.SHELL_CLI,
+                loggedUser,
                 "Executed CLI command: " + trimmed
             );
-            pipeline.execute(deleteCmd);
+            var res = pipeline.execute(deleteCmd);
+            return res.message();
         }
 
         if (lower.startsWith("user delete ") || lower.startsWith("user drop ") || lower.startsWith("user rm ")) {
@@ -65,9 +79,11 @@ public class JettraShellCommandDispatcher {
                 targetUser,
                 null,
                 CommandSource.SHELL_CLI,
+                loggedUser,
                 "Executed CLI command: " + trimmed
             );
-            pipeline.execute(deleteCmd);
+            var res = pipeline.execute(deleteCmd);
+            return res.message();
         }
 
         // Safe database revoke command: 'user revoke <username> <database>'

@@ -51,7 +51,7 @@ import java.util.concurrent.locks.ReentrantLock;
  * Visual User and RBAC Role Management Console for JettraStoreEngine.
  * Built with pure JettraFlux components, integrated user editing modal, and encapsulated native confirmation dialogs.
  */
-@PageWidgetAllow(role = { jcf.AppRole.ADMIN })
+@PageWidgetAllow(role = { jcf.AppRole.ADMIN, jcf.AppRole.MANAGER })
 public class StoreUsersPage extends StoreTemplatePage {
 
     private final JettraStorageEngine engine;
@@ -103,17 +103,51 @@ public class StoreUsersPage extends StoreTemplatePage {
         return "";
     }
 
+    protected String resolveCurrentUserRole(HttpExchange exchange) {
+        if (exchange != null) {
+            try {
+                String loggedRole = getLoggedRole(exchange);
+                if (loggedRole != null && !loggedRole.isBlank()) {
+                    return loggedRole.toUpperCase().trim();
+                }
+            } catch (Exception ignored) {}
+        }
+        String currentUser = resolveCurrentUser(exchange);
+        if (currentUser != null && !currentUser.isBlank() && systemUserRepo != null) {
+            Optional<SystemUser> su = systemUserRepo.findByUsername(currentUser);
+            if (su.isPresent() && su.get().role() != null) {
+                return su.get().role().toUpperCase().trim();
+            }
+        }
+        SecurityContext sec = SecurityContextHolder.getContext();
+        if (sec != null && sec.principal() != null) {
+            if (sec.principal().hasRole("ADMIN")) {
+                return "ADMIN";
+            }
+            if (sec.principal().hasRole("MANAGER")) {
+                return "MANAGER";
+            }
+            if (sec.principal().roles() != null && !sec.principal().roles().isEmpty()) {
+                return sec.principal().roles().iterator().next().toUpperCase().trim();
+            }
+        }
+        return "";
+    }
+
     private void ensureAdminUserPresent() {
         if (systemUserRepo != null) {
             try {
-                if (!systemUserRepo.existsByUsername("admin")) {
+                Optional<SystemUser> adminOpt = systemUserRepo.findByUsername("admin");
+                if (adminOpt.isEmpty()) {
                     systemUserRepo.save(SystemUser.create(
                         "admin",
                         SystemUserRepositoryImpl.hashPassword("admin"),
                         "admin@jettra.io",
-                        "DB_ADMIN",
+                        "ADMIN",
                         Set.of("*")
                     ));
+                } else if (!"ADMIN".equalsIgnoreCase(adminOpt.get().role())) {
+                    systemUserRepo.save(adminOpt.get().withUpdatedProfile(null, "ADMIN", true, null));
                 }
             } catch (Exception ignored) {}
         }
@@ -173,18 +207,33 @@ public class StoreUsersPage extends StoreTemplatePage {
         if (userId != null && !userId.isBlank()) {
             try { uId = UUID.fromString(userId.trim()); } catch (Exception ignored) {}
         }
+        String initiatingUser = resolveCurrentUser(exchange);
         UserAdminCommand deleteCmd = new UserAdminCommand.DeleteUserAttemptCommand(
             username != null ? username : (uId != null ? uId.toString() : "unknown"),
             uId,
             CommandSource.CLIENT_DRIVER,
+            initiatingUser,
             "Driver deletion request"
         );
         try {
-            userAdminPipeline.execute(deleteCmd);
+            var res = userAdminPipeline.execute(deleteCmd);
+            if (res.success()) {
+                String okJson = String.format("{\"status\":\"SUCCESS\",\"valid\":true,\"message\":\"%s\"}", escapeJson(res.message()));
+                sendJsonResponse(exchange, 200, okJson);
+            } else {
+                String errJson = String.format("{\"status\":\"ERROR\",\"valid\":false,\"message\":\"%s\"}", escapeJson(res.message()));
+                sendJsonResponse(exchange, 404, errJson);
+            }
         } catch (UnsupportedUserDeletionException e) {
             String errJson = String.format(
                 "{\"status\":\"ERROR\",\"valid\":false,\"code\":\"%s\",\"message\":\"%s\"}",
                 escapeJson(e.getErrorCode()),
+                escapeJson(e.getMessage())
+            );
+            sendJsonResponse(exchange, 400, errJson);
+        } catch (com.jettra.store.engine.exception.ImmutableAccountException e) {
+            String errJson = String.format(
+                "{\"status\":\"ERROR\",\"valid\":false,\"code\":\"IMMUTABLE_ACCOUNT\",\"message\":\"%s\"}",
                 escapeJson(e.getMessage())
             );
             sendJsonResponse(exchange, 400, errJson);
@@ -419,6 +468,12 @@ public class StoreUsersPage extends StoreTemplatePage {
                         }
                     }
 
+                    String loggedRole = resolveCurrentUserRole(exchange);
+                    boolean isLoggedManager = "MANAGER".equalsIgnoreCase(loggedRole);
+                    if (validation.isValid() && isLoggedManager && ("ADMIN".equalsIgnoreCase(roleName) || "DB_ADMIN".equalsIgnoreCase(roleName) || (username != null && "admin".equalsIgnoreCase(username.trim())))) {
+                        validation = ValidationResult.invalid("role", "ROLE_UNAUTHORIZED", "Operación denegada: Un usuario con perfil MANAGER no puede asignar el rol ADMIN ni crear cuentas admin.");
+                    }
+
                     if (validation instanceof ValidationResult.Invalid invalid) {
                         alertMessage = invalid.message();
                         alertType = "badge-raft";
@@ -512,17 +567,32 @@ public class StoreUsersPage extends StoreTemplatePage {
                     if ("admin".equalsIgnoreCase(uName)) {
                         throw new ImmutableAccountException("El usuario admin no puede ser revocado.");
                     }
+                    if (uId != null) {
+                        Optional<SystemUser> suTarget = systemUserRepo.findById(uId);
+                        if (suTarget.isPresent() && ("admin".equalsIgnoreCase(suTarget.get().username()) || suTarget.get().isAdmin())) {
+                            throw new ImmutableAccountException("El usuario admin no puede ser revocado.");
+                        }
+                    }
 
+                    String initiatingUser = resolveCurrentUser(exchange);
                     UserAdminCommand deleteCmd = new UserAdminCommand.DeleteUserAttemptCommand(
                         uName,
                         uId,
                         CommandSource.WEB_UI,
+                        initiatingUser,
                         "Web UI deletion request"
                     );
                     try {
-                        userAdminPipeline.execute(deleteCmd);
+                        var res = userAdminPipeline.execute(deleteCmd);
+                        if (res.success()) {
+                            alertMessage = "Usuario '" + uName + "' eliminado exitosamente de system_db.";
+                            alertType = "badge-active";
+                        } else {
+                            alertMessage = res.message();
+                            alertType = "badge-raft";
+                        }
                     } catch (UnsupportedUserDeletionException e) {
-                        alertMessage = "Operación denegada: La eliminación física de usuarios está estrictamente prohibida en JettraDB para preservar la integridad histórica de identidades. Para revocar accesos a bases de datos, modifique sus autorizaciones desde el diálogo de edición o desactive la cuenta.";
+                        alertMessage = "Operación denegada: Sólo usuarios con privilegios (ADMIN o MANAGER) pueden eliminar usuarios en JettraDB.";
                         alertType = "badge-raft";
                     }
                 } else if ("update_user".equalsIgnoreCase(action) || "edit_user".equalsIgnoreCase(action)) {
@@ -564,10 +634,22 @@ public class StoreUsersPage extends StoreTemplatePage {
                             alertType = "badge-raft";
                         } else {
                             String loggedUser = resolveCurrentUser(exchange);
+                            String loggedRole = resolveCurrentUserRole(exchange);
+                            boolean isLoggedManager = "MANAGER".equalsIgnoreCase(loggedRole);
 
-                            // Strict immutability guard: Only active authenticated user 'admin' can edit the admin record
+                            boolean targetIsAdmin = "admin".equalsIgnoreCase(cleanUser) || 
+                                (suOpt.isPresent() && (suOpt.get().isAdmin() || "ADMIN".equalsIgnoreCase(suOpt.get().role()))) ||
+                                (userOpt.isPresent() && userOpt.get().jRoles() != null && userOpt.get().jRoles().stream().anyMatch(r -> "ADMIN".equalsIgnoreCase(r.name()) || "DB_ADMIN".equalsIgnoreCase(r.name())));
+
+                            // Strict immutability guard: MANAGER cannot alter ADMIN, and non-admin cannot alter admin
+                            if (targetIsAdmin && isLoggedManager) {
+                                throw new ImmutableAccountException("Operación denegada: El usuario con perfil MANAGER no puede alterar el usuario ADMIN.");
+                            }
                             if ("admin".equalsIgnoreCase(cleanUser) && !"admin".equalsIgnoreCase(loggedUser)) {
                                 throw new ImmutableAccountException("Operación denegada: Solo el usuario admin activo puede modificar el perfil de admin.");
+                            }
+                            if (isLoggedManager && ("ADMIN".equalsIgnoreCase(roleName) || "DB_ADMIN".equalsIgnoreCase(roleName))) {
+                                throw new ImmutableAccountException("Operación denegada: Un usuario con perfil MANAGER no puede asignar el rol ADMIN.");
                             }
 
                             // Self-lockout check: an admin editing their own account cannot remove their admin role or deactivate their account
@@ -768,7 +850,7 @@ public class StoreUsersPage extends StoreTemplatePage {
                 if (u.jRoles() != null && !u.jRoles().isEmpty()) {
                     for (JRole r : u.jRoles()) {
                         String roleColor = switch (r.name()) {
-                            case "DB_ADMIN" -> "badge-raft";
+                            case "ADMIN", "DB_ADMIN" -> "badge-raft";
                             case "READ_WRITE" -> "badge-engine";
                             case "MANAGER" -> "badge-active";
                             default -> "";
@@ -794,15 +876,18 @@ public class StoreUsersPage extends StoreTemplatePage {
                     : Span.of("DISABLED").modifier(new Modifier().cssClass("store-badge").style("background:rgba(239,68,68,0.2); color:#f87171;"));
 
                 String loggedInUser = resolveCurrentUser(exchange);
-                boolean isRowAdmin = "admin".equalsIgnoreCase(u.firstName());
-                boolean isCurrentSessionAdmin = "admin".equalsIgnoreCase(loggedInUser);
+                String loggedInRole = resolveCurrentUserRole(exchange);
+                boolean isCurrentManager = "MANAGER".equalsIgnoreCase(loggedInRole);
+                boolean isRowAdmin = "admin".equalsIgnoreCase(u.firstName()) ||
+                    (u.jRoles() != null && u.jRoles().stream().anyMatch(r -> "ADMIN".equalsIgnoreCase(r.name()) || "DB_ADMIN".equalsIgnoreCase(r.name())));
+                boolean isCurrentSessionAdmin = "admin".equalsIgnoreCase(loggedInUser) || "ADMIN".equalsIgnoreCase(loggedInRole);
 
                 Widget editAction;
-                if (isRowAdmin && !isCurrentSessionAdmin) {
+                if (isRowAdmin && (!isCurrentSessionAdmin || isCurrentManager)) {
                     editAction = Span.of(
                         Icon.of("fas fa-lock").modifier(new Modifier().style("margin-right:4px;")),
                         Text.of("Bloqueado")
-                    ).attribute("title", "Solo el usuario admin puede editar su propia cuenta")
+                    ).attribute("title", isCurrentManager ? "El usuario con perfil MANAGER no puede alterar al usuario ADMIN" : "Solo el usuario admin puede editar su propia cuenta")
                      .modifier(new Modifier().cssClass("store-badge").style("background:rgba(148,163,184,0.15); color:#94a3b8; border:1px solid rgba(148,163,184,0.3); padding:4px 8px; font-size:11px; margin-right:6px; cursor:not-allowed; display:inline-flex; align-items:center;"));
                 } else {
                     Button editBtn = Button.of(Icon.of("fas fa-user-edit"), Text.of(" Edit"));
@@ -878,7 +963,10 @@ public class StoreUsersPage extends StoreTemplatePage {
             .placeholder("Select one or more databases...")
             .quickActions(true);
 
-        Dropdown roleDropdown = Dropdown.of("DB_ADMIN", "READ_WRITE", "READ_ONLY", "MANAGER").selected("READ_WRITE").placeholder(null);
+        boolean isCurrentManager = "MANAGER".equalsIgnoreCase(resolveCurrentUserRole(exchange));
+        Dropdown roleDropdown = isCurrentManager
+            ? Dropdown.of("READ_WRITE", "READ_ONLY", "MANAGER").selected("READ_WRITE").placeholder(null)
+            : Dropdown.of("ADMIN", "DB_ADMIN", "READ_WRITE", "READ_ONLY", "MANAGER").selected("READ_WRITE").placeholder(null);
         roleDropdown.attribute("name", "role");
         roleDropdown.modifier(new Modifier().style("width:100%; padding:8px 10px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#f8fafc; box-sizing:border-box;"));
 
@@ -1000,13 +1088,17 @@ public class StoreUsersPage extends StoreTemplatePage {
         Widget bottomGrid = Div.of(rolesCard, tokenPolicyCard)
             .modifier(new Modifier().style("display: grid; grid-template-columns: 1fr 1fr; gap: 20px;"));
 
+        List<String> editRoleList = isCurrentManager
+            ? List.of("READ_WRITE", "READ_ONLY", "MANAGER")
+            : List.of("ADMIN", "DB_ADMIN", "READ_WRITE", "READ_ONLY", "MANAGER");
+
         // Native JettraFlux Modal for User Profile & Multi-Database Assignment Editing
         Widget editUserModal = JettraUserEditModal.of("editUserModal")
             .title("Edit User Profile & Security Permissions")
             .subtitle("Update RBAC role, account status, and authorized target databases.")
             .formAction(JettraServer.resolvePath("/users"))
             .actionName("update_user")
-            .roles("DB_ADMIN", "READ_WRITE", "READ_ONLY", "MANAGER")
+            .roles(editRoleList.toArray(new String[0]))
             .databases(discoveredDbs)
             .submitText("Guardar Cambios")
             .cancelText("Cancelar");

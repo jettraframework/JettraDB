@@ -173,6 +173,10 @@ public class StoreDatabasesPage extends StoreTemplatePage {
             ? selectedUsernames.stream().map(String::trim).collect(Collectors.toSet())
             : Collections.emptySet();
 
+        Set<String> allKnownDbs = new TreeSet<>(discoverDatabases().keySet());
+        allKnownDbs.add("system_db");
+        allKnownDbs.add(cleanDb);
+
         for (SystemUser user : allUsers) {
             boolean shouldBeAuthorized = cleanSelected.contains(user.username());
             Set<String> currentDbs = new TreeSet<>(user.assignedDatabases());
@@ -182,15 +186,27 @@ public class StoreDatabasesPage extends StoreTemplatePage {
 
             boolean modified = false;
             if (shouldBeAuthorized) {
+                // If user should be authorized for cleanDb
                 if (!hasTargetDb && !hasWildcard) {
                     currentDbs.add(cleanDb);
                     modified = true;
                 }
             } else {
-                // Uncheck / Deselect: revoke targetDb access unless user is protected (admin or cluster wildcard '*')
-                if (!isAdmin && !hasWildcard && hasTargetDb) {
-                    currentDbs.remove(cleanDb);
-                    modified = true;
+                // User is in "Not Assigned" state -> REVOKE permissions for targetDb
+                if (!isAdmin) {
+                    if (hasWildcard) {
+                        currentDbs.remove("*");
+                        for (String db : allKnownDbs) {
+                            if (!db.equalsIgnoreCase(cleanDb) && !db.isBlank()) {
+                                currentDbs.add(db);
+                            }
+                        }
+                        currentDbs.remove(cleanDb);
+                        modified = true;
+                    } else if (hasTargetDb) {
+                        currentDbs.remove(cleanDb);
+                        modified = true;
+                    }
                 }
             }
 
@@ -218,6 +234,57 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                 updatedCount++;
             }
         }
+
+        if (userRepo != null) {
+            for (JUser ju : userRepo.findAll()) {
+                String uname = ju.firstName();
+                if (uname == null || "admin".equalsIgnoreCase(uname)) continue;
+                if (allUsers.stream().anyMatch(u -> u.username().equalsIgnoreCase(uname))) continue;
+
+                boolean shouldBeAuth = cleanSelected.contains(uname);
+                Set<String> legDbs = new TreeSet<>(ju.assignedDatabases());
+                boolean hasWild = legDbs.contains("*");
+                boolean hasTarget = legDbs.contains(cleanDb);
+                boolean legModified = false;
+
+                if (shouldBeAuth) {
+                    if (!hasTarget && !hasWild) {
+                        legDbs.add(cleanDb);
+                        legModified = true;
+                    }
+                } else {
+                    if (hasWild) {
+                        legDbs.remove("*");
+                        for (String db : allKnownDbs) {
+                            if (!db.equalsIgnoreCase(cleanDb) && !db.isBlank()) {
+                                legDbs.add(db);
+                            }
+                        }
+                        legDbs.remove(cleanDb);
+                        legModified = true;
+                    } else if (hasTarget) {
+                        legDbs.remove(cleanDb);
+                        legModified = true;
+                    }
+                }
+
+                if (legModified) {
+                    JUser updatedLegacy = new JUser(
+                        ju.id(),
+                        ju.firstName(),
+                        String.join(", ", legDbs),
+                        ju.email(),
+                        ju.phone(),
+                        ju.active(),
+                        ju.jRoles(),
+                        legDbs
+                    );
+                    userRepo.save(updatedLegacy);
+                    updatedCount++;
+                }
+            }
+        }
+
         return updatedCount;
     }
 
@@ -1284,11 +1351,6 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                 .modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:8px 16px;"))
                 .attribute("type", "button")
                 .attribute("onclick", "document.getElementById('assignUserModal').close();"),
-            Button.of(Icon.of("fas fa-user-slash"), Text.of(" DENEGATE USER"))
-                .id("assignUserDenegateBtn")
-                .modifier(new Modifier().cssClass("btn-action btn-danger").style("padding:8px 18px; background:rgba(239,68,68,0.2); border:1px solid rgba(239,68,68,0.5); color:#fca5a5; cursor:pointer; font-weight:600;"))
-                .attribute("type", "button")
-                .attribute("onclick", "submitDenegateUser();"),
             Button.of(Icon.of("fas fa-user-check"), Text.of(" ASSIGN USER"))
                 .id("assignUserSubmitBtn")
                 .modifier(new Modifier().cssClass("btn-action btn-primary").style("padding:8px 18px;"))
@@ -1380,31 +1442,12 @@ public class StoreDatabasesPage extends StoreTemplatePage {
             "      modal.showModal();\n" +
             "    }\n" +
             "  }\n" +
-            "  function submitDenegateUser() {\n" +
-            "    var dbInp = document.getElementById('assignUserDbInput');\n" +
-            "    var targetDb = dbInp ? dbInp.value : '';\n" +
-            "    if (!targetDb) {\n" +
-            "      alert('No se ha especificado la base de datos.');\n" +
-            "      return;\n" +
-            "    }\n" +
-            "    var valInput = document.getElementById('assignUserSelectionTable_value');\n" +
-            "    var selected = valInput ? valInput.value : '';\n" +
-            "    if (!selected || selected.trim() === '') {\n" +
-            "      alert('Debe seleccionar al menos un usuario para denegar el permiso a la base de datos.');\n" +
-            "      return;\n" +
-            "    }\n" +
-            "    var actionInp = document.getElementById('assignUserActionInput');\n" +
-            "    if (actionInp) actionInp.value = 'denegate_user';\n" +
-            "    var form = document.getElementById('assignUserForm');\n" +
-            "    if (form) form.submit();\n" +
-            "  }\n" +
             "  function switchAssignUserMode(mode) {\n" +
             "    var modeInput = document.getElementById('assignUserModeInput');\n" +
             "    if (modeInput) modeInput.value = mode;\n" +
             "    var existingSec = document.getElementById('assignUserExistingSection');\n" +
             "    var newSec = document.getElementById('assignUserNewSection');\n" +
             "    var submitBtn = document.getElementById('assignUserSubmitBtn');\n" +
-            "    var denegateBtn = document.getElementById('assignUserDenegateBtn');\n" +
             "    var newUsernameInp = document.getElementById('new_username_input');\n" +
             "    var newEmailInp = document.getElementById('new_email_input');\n" +
             "    var newPassInp = document.getElementById('new_password_input');\n" +
@@ -1415,7 +1458,6 @@ public class StoreDatabasesPage extends StoreTemplatePage {
             "      if (newEmailInp) newEmailInp.removeAttribute('required');\n" +
             "      if (newPassInp) newPassInp.removeAttribute('required');\n" +
             "      if (submitBtn) submitBtn.innerHTML = '<i class=\"fas fa-user-check\"></i> ASSIGN USER';\n" +
-            "      if (denegateBtn) denegateBtn.style.display = 'inline-flex';\n" +
             "    } else {\n" +
             "      if (existingSec) existingSec.style.display = 'none';\n" +
             "      if (newSec) newSec.style.display = 'block';\n" +
@@ -1423,7 +1465,6 @@ public class StoreDatabasesPage extends StoreTemplatePage {
             "      if (newEmailInp) newEmailInp.setAttribute('required', 'required');\n" +
             "      if (newPassInp) newPassInp.setAttribute('required', 'required');\n" +
             "      if (submitBtn) submitBtn.innerHTML = '<i class=\"fas fa-plus-circle\"></i> CREATE & ASSIGN USER';\n" +
-            "      if (denegateBtn) denegateBtn.style.display = 'none';\n" +
             "    }\n" +
             "  }\n" +
             "  function openRenameDbModal(oldDb) {\n" +

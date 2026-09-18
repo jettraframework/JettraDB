@@ -290,9 +290,7 @@ public class StoreDatabasesAssignUserTest {
 
         // 6. Action button
         assertTrue(html.contains("id=\"assignUserSubmitBtn\""), "Must render typed submit button");
-        assertTrue(html.contains("id=\"assignUserDenegateBtn\""), "Must render DENEGATE USER button");
-        assertTrue(html.contains("DENEGATE USER"), "Must render DENEGATE USER text");
-        assertTrue(html.contains("submitDenegateUser"), "Must wire submitDenegateUser script");
+        assertTrue(html.contains("ASSIGN USER"), "Must render ASSIGN USER button");
         assertTrue(html.contains("max-height:85vh"), "Modal must declare max-height for vertical centering");
     }
 

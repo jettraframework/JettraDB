@@ -43,14 +43,17 @@ public class AuthManager {
 
     private void bootstrapSystemDbCredentials() {
         try {
-            if (!systemUserRepository.existsByUsername("admin")) {
+            Optional<SystemUser> adminOpt = systemUserRepository.findByUsername("admin");
+            if (adminOpt.isEmpty()) {
                 systemUserRepository.save(SystemUser.create(
                     "admin",
                     SystemUserRepositoryImpl.hashPassword("admin"),
                     "admin@jettra.io",
-                    "DB_ADMIN",
+                    "ADMIN",
                     Set.of("*")
                 ));
+            } else if (!"ADMIN".equalsIgnoreCase(adminOpt.get().role())) {
+                systemUserRepository.save(adminOpt.get().withUpdatedProfile(null, "ADMIN", true, null));
             }
         } catch (Exception ignored) {}
     }
