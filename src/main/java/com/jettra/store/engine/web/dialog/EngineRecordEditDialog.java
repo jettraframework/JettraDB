@@ -543,9 +543,16 @@ public final class EngineRecordEditDialog {
         <script>
         function safeDecodePayload(b64) {
             if (!b64 || b64 === 'undefined' || b64 === 'null') return '';
+            if (typeof b64 === 'object' && b64 !== null) {
+                try { return JSON.stringify(b64); } catch(e) { return '{}'; }
+            }
             var str = String(b64).trim();
             if (str.startsWith('{') || str.startsWith('[') || str.startsWith('<')) {
                 return str;
+            }
+            if (str.indexOf('%7B') >= 0 || str.indexOf('%22') >= 0 || str.indexOf('%20') >= 0) {
+                try { str = decodeURIComponent(str); } catch(e) {}
+                if (str.startsWith('{') || str.startsWith('[') || str.startsWith('<')) return str;
             }
             try {
                 var bin = atob(str);
@@ -906,6 +913,22 @@ public final class EngineRecordEditDialog {
             var pretty = parsed ? JSON.stringify(parsed, null, 2) : (payload || '{}');
             var p = (parsed && typeof parsed === 'object') ? parsed : {};
 
+            // Dynamic auto-fetch if payload is empty but an ID is provided
+            if (id && (!payload || payload === '{}' || payload.trim() === '')) {
+                var fetchUrl = '/engines?action=get_record_payload&engine=' + encodeURIComponent(eng) +
+                               '&target_db=' + encodeURIComponent(db || 'default') +
+                               '&coll=' + encodeURIComponent(unit || 'default') +
+                               '&id=' + encodeURIComponent(id);
+                fetch(fetchUrl)
+                    .then(function(res) { if (res.ok) return res.json(); return null; })
+                    .then(function(data) {
+                        if (data && data.payload && data.payload !== '{}') {
+                            openUniversalEditModal(eng, db, unit, id, data.payloadB64 || data.payload);
+                        }
+                    })
+                    .catch(function(e) {});
+            }
+
             // Common display fields
             var engDisplay = document.getElementById('universalEditEngineDisplay');
             if (engDisplay) engDisplay.innerText = eng;
@@ -1106,6 +1129,7 @@ public final class EngineRecordEditDialog {
         }
 
         window.submitUniversalEditRecord = submitUniversalEditRecord;
+        window.universalRecordEditor = openUniversalEditModal;
         window.openUniversalEditModal = openUniversalEditModal;
         window.switchEditEngine = switchEditEngine;
         window.populateRecordFieldsFromPayload = populateRecordFieldsFromPayload;

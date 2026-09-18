@@ -337,13 +337,35 @@ public class HierarchyExplorerService {
     }
 
     public String getItemPayload(String engineKey, String db, String coll, String id) {
+        if (id == null || id.isBlank()) return "{}";
         String prefix = getPrefixForEngine(engineKey);
-        String[] candidateKeys = {
-            prefix + db + ":" + coll + ":" + id,
-            prefix + db + ":" + id,
-            db + ":" + coll + ":" + id,
-            db + ":" + id
-        };
+        List<String> candidateKeys = new ArrayList<>();
+        if (db != null && !db.isBlank()) {
+            if (coll != null && !coll.isBlank()) {
+                candidateKeys.add(prefix + db + ":" + coll + ":" + id);
+                candidateKeys.add(db + ":" + coll + ":" + id);
+            }
+            candidateKeys.add(prefix + db + ":" + id);
+            candidateKeys.add(prefix + db + ":default:" + id);
+            candidateKeys.add(db + ":" + id);
+        }
+        if (coll != null && !coll.isBlank()) {
+            candidateKeys.add(prefix + coll + ":" + id);
+            candidateKeys.add(coll + ":" + id);
+        }
+        candidateKeys.add(prefix + id);
+        candidateKeys.add(id);
+
+        // Also check alternative prefix for DOCUMENT/RECORDS interchangeability
+        if ("DOCUMENT".equalsIgnoreCase(engineKey) || "RECORDS".equalsIgnoreCase(engineKey) || "RECORD".equalsIgnoreCase(engineKey)) {
+            String altPrefix = "rec:".equals(prefix) ? "doc:" : "rec:";
+            if (db != null && !db.isBlank()) {
+                if (coll != null && !coll.isBlank()) candidateKeys.add(altPrefix + db + ":" + coll + ":" + id);
+                candidateKeys.add(altPrefix + db + ":" + id);
+            }
+            if (coll != null && !coll.isBlank()) candidateKeys.add(altPrefix + coll + ":" + id);
+            candidateKeys.add(altPrefix + id);
+        }
 
         for (String k : candidateKeys) {
             byte[] b = engine.getStorageCore().get(k);
@@ -351,6 +373,23 @@ public class HierarchyExplorerService {
                 return new String(b, StandardCharsets.UTF_8);
             }
         }
+
+        // Fallback: scan prefix for matching suffix
+        if (db != null && !db.isBlank()) {
+            String scanPfx = prefix + db + ":";
+            Map<String, byte[]> scanned = engine.getStorageCore().scanPrefix(scanPfx);
+            for (Map.Entry<String, byte[]> entry : scanned.entrySet()) {
+                String key = entry.getKey();
+                if (key.contains("@")) continue;
+                if (key.endsWith(":" + id) || key.equals(scanPfx + id)) {
+                    byte[] b = entry.getValue();
+                    if (b != null && b.length > 0) {
+                        return new String(b, StandardCharsets.UTF_8);
+                    }
+                }
+            }
+        }
+
         return "{}";
     }
 

@@ -321,7 +321,9 @@ public final class StorageModalCommands {
             "    if (typeof window.renderAdaptiveInspectModelView === 'function') window.renderAdaptiveInspectModelView(engine, db, unit || 'default', id, parsed, payload);\n" +
             "    if (window.JettraFluxModal) { window.JettraFluxModal.open('inspectRecordModal'); } else { window.showModal('inspectRecordModal'); }\n" +
             "  };\n" +
-            "  if (typeof window.openUniversalEditModal !== 'function' || !window.setJsonEditorVal) {\n" +
+            "  if (typeof window.universalRecordEditor === 'function') {\n" +
+            "    window.openUniversalEditModal = window.universalRecordEditor;\n" +
+            "  } else if (typeof window.openUniversalEditModal !== 'function' || !window.setJsonEditorVal) {\n" +
             "    window.openUniversalEditModal = function(engine, db, unit, id, payloadB64) {\n" +
             "      var payload = window.decodeUtf8Base64(payloadB64);\n" +
             "      var parsed = null;\n" +

@@ -139,6 +139,10 @@ public class StoreEnginesPage extends StoreTemplatePage {
             handleInstallSampleDatabase(exchange, params);
             return true;
         }
+        if (params != null && ("get_record_payload".equalsIgnoreCase(params.get("action")) || "get_payload".equalsIgnoreCase(params.get("action")))) {
+            handleGetRecordPayload(exchange, params);
+            return true;
+        }
         if (params != null && "uninstall_sample_db".equalsIgnoreCase(params.get("action"))) {
             handleUninstallSampleDatabase(exchange, params);
             return true;
@@ -470,6 +474,28 @@ public class StoreEnginesPage extends StoreTemplatePage {
             os.write(b);
             os.flush();
         }
+    }
+
+    public void handleGetRecordPayload(HttpExchange exchange, Map<String, String> params) throws IOException {
+        String eng = params != null ? params.getOrDefault("engine", "DOCUMENT") : "DOCUMENT";
+        String db = params != null ? params.getOrDefault("target_db", params.getOrDefault("db", "default")) : "default";
+        String coll = params != null ? params.getOrDefault("coll", params.getOrDefault("unit", params.getOrDefault("target_coll", "default"))) : "default";
+        String id = params != null ? params.getOrDefault("id", params.getOrDefault("target_id", "")) : "";
+
+        String payload = hierarchyService != null ? hierarchyService.getItemPayload(eng, db, coll, id) : "{}";
+        if (payload == null) payload = "{}";
+        String payloadB64 = Base64.getEncoder().encodeToString(payload.getBytes(StandardCharsets.UTF_8));
+
+        JsonObject resp = new JsonObject();
+        resp.addProperty("status", "SUCCESS");
+        resp.addProperty("engine", eng);
+        resp.addProperty("database", db);
+        resp.addProperty("collection", coll);
+        resp.addProperty("id", id);
+        resp.addProperty("payload", payload);
+        resp.addProperty("payloadB64", payloadB64);
+
+        sendJsonResponse(exchange, resp, 200);
     }
 
     public JsonObject buildDatabaseHierarchyJson(String dbName) {
@@ -3920,10 +3946,14 @@ public class StoreEnginesPage extends StoreTemplatePage {
   }
 
   function openUniversalEditModal(engine, db, unit, id, payloadB64) {
-    if (window.openUniversalEditModal && window.openUniversalEditModal !== openUniversalEditModal && typeof window.setJsonEditorVal === 'function') {
-      return window.openUniversalEditModal(engine, db, unit, id, payloadB64);
+    if (typeof window.universalRecordEditor === 'function') {
+      return window.universalRecordEditor(engine, db, unit, id, payloadB64);
     }
     var payload = decodeUtf8Base64(payloadB64);
+    if (!payload || payload === 'undefined' || payload === 'null') {
+      var str = String(payloadB64 || '').trim();
+      if (str.startsWith('{') || str.startsWith('[') || str.startsWith('<')) payload = str;
+    }
     var parsed = null;
     try { if (typeof payload === 'string' && (payload.trim().startsWith('{') || payload.trim().startsWith('['))) parsed = JSON.parse(payload); } catch (e) {}
     var pretty = parsed ? JSON.stringify(parsed, null, 2) : (payload || '{}');
@@ -3952,6 +3982,8 @@ public class StoreEnginesPage extends StoreTemplatePage {
     if (normEngine === 'RECORDS') {
       if (typeof populateRecordFieldsFromPayload === 'function') {
         populateRecordFieldsFromPayload('edit_rec', p, pretty);
+      } else if (typeof window.populateRecordFieldsFromPayload === 'function') {
+        window.populateRecordFieldsFromPayload('edit_rec', p, pretty);
       }
       setElementValues({
         editRecClassInput: p._recordClass || p._class || 'com.jettra.model.Record',
@@ -3964,10 +3996,13 @@ public class StoreEnginesPage extends StoreTemplatePage {
         editDocClassInput: p._class || '',
         editDocPayloadInput: pretty
       });
+      if (typeof setJsonEditorVal === 'function') setJsonEditorVal('editDocPayload', pretty);
+      else if (typeof window.setJsonEditorVal === 'function') window.setJsonEditorVal('editDocPayload', pretty);
     } else if (normEngine === 'KEYVALUE') {
       setElementValues({
         editKvCollInput: unit || 'default',
-        editKvValueInput: (typeof payload === 'string') ? payload : pretty
+        editKvTtlInput: p.ttl || '',
+        editKvValueInput: (typeof payload === 'string' && payload.length > 0) ? payload : pretty
       });
     } else if (normEngine === 'VECTOR') {
       var vecCoords = '0.12, 0.45, 0.88, 0.31';
@@ -3977,13 +4012,18 @@ public class StoreEnginesPage extends StoreTemplatePage {
       setElementValues({
         editVecCollInput: unit || 'default',
         editVecCoordsInput: vecCoords,
+        editVecMetricSelect: p.metric || 'COSINE',
+        editVecLabelInput: p.label || '',
         editVecMetaInput: pretty
       });
+      if (typeof window.setJsonEditorVal === 'function') window.setJsonEditorVal('editVecMeta', p.metadata || p.meta || p);
     } else if (normEngine === 'GRAPH') {
       setElementValues({
         editGraphCollInput: p.label || unit || 'Vertex',
+        editGraphNodeLabel: p.label || unit || 'Person',
         editGraphPropsInput: pretty
       });
+      if (typeof window.setJsonEditorVal === 'function') window.setJsonEditorVal('editGraphNodeProps', p.properties || p.props || p);
     } else if (normEngine === 'TIMESERIES') {
       setElementValues({
         editTsCollInput: p.metric || unit || 'telemetry',
@@ -3992,11 +4032,14 @@ public class StoreEnginesPage extends StoreTemplatePage {
         editTsUnitInput: p.unit || 'celsius',
         editTsTagsInput: pretty
       });
+      if (typeof window.setJsonEditorVal === 'function') window.setJsonEditorVal('editTsTags', p.tags || p);
     } else if (normEngine === 'COLUMN') {
       setElementValues({
         editColCollInput: p._family || unit || 'analytics',
+        editColQualifierInput: p.qualifier || 'profile:full',
         editColDataInput: pretty
       });
+      if (typeof window.setJsonEditorVal === 'function') window.setJsonEditorVal('editColData', p.columns || p);
     } else if (normEngine === 'GEOSPATIAL') {
       setElementValues({
         editGeoCollInput: p._layer || unit || 'stores_layer',
@@ -4004,16 +4047,34 @@ public class StoreEnginesPage extends StoreTemplatePage {
         editGeoLonInput: (p.lon !== undefined ? p.lon : (p.longitude !== undefined ? p.longitude : '-79.5199')),
         editGeoNameInput: p.name || id
       });
+      if (typeof window.setJsonEditorVal === 'function') window.setJsonEditorVal('editGeoMeta', p.properties || p);
     } else if (normEngine === 'OBJECT') {
       setElementValues({
         editObjCollInput: p.bucket || unit || 'media_bucket',
+        editObjClassInput: p.className || 'com.jettra.storage.MediaFile',
         editObjMimeInput: p.mimeType || 'application/json',
         editObjPayloadInput: p.content || payload || pretty
       });
+      if (typeof window.setJsonEditorVal === 'function') window.setJsonEditorVal('editObjPayload', p.content || payload || pretty);
     }
 
     if (typeof switchEditEngine === 'function') {
       switchEditEngine(normEngine);
+    }
+
+    // Dynamic auto-fetch if empty
+    if (id && (!payload || payload === '{}' || payload.trim() === '')) {
+      var fetchUrl = '/engines?action=get_record_payload&engine=' + encodeURIComponent(normEngine) +
+                     '&target_db=' + encodeURIComponent(db || 'default') +
+                     '&coll=' + encodeURIComponent(unit || 'default') +
+                     '&id=' + encodeURIComponent(id);
+      fetch(fetchUrl)
+        .then(function(res) { if (res.ok) return res.json(); return null; })
+        .then(function(data) {
+          if (data && data.payload && data.payload !== '{}') {
+            openUniversalEditModal(normEngine, db, unit, id, data.payloadB64 || data.payload);
+          }
+        }).catch(function() {});
     }
 
     if (window.JettraFluxNotification) {
@@ -4025,6 +4086,10 @@ public class StoreEnginesPage extends StoreTemplatePage {
     } else {
       showModal('universalEditModal');
     }
+  }
+
+  if (typeof window.universalRecordEditor === 'function') {
+    window.openUniversalEditModal = window.universalRecordEditor;
   }
 
   if (typeof window.openUniversalRestoreModal !== 'function') {

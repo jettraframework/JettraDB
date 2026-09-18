@@ -612,6 +612,42 @@ public class AdaptiveMultiModelRecordDialogsTest {
         assertTrue(html.contains("Canonical Record Payload Serialization"), "Must contain canonical record serialization header");
     }
 
+    @JettraTest
+    @DisplayName("Test 12: Record payload endpoint and universalRecordEditor auto-population")
+    public void testRecordPayloadEndpointAndUniversalRecordEditor() throws Exception {
+        // Pre-insert a record in storage
+        String docKey = "doc:default:customers:cust_999";
+        String originalJson = "{\"name\":\"Super Customer\",\"tier\":\"VIP\",\"points\":1500}";
+        engine.getStorageCore().put(docKey, originalJson.getBytes(java.nio.charset.StandardCharsets.UTF_8), System.currentTimeMillis());
+
+        // 1. Test get_record_payload action on /engines
+        TestHttpExchange exchange = new TestHttpExchange("GET", "/engines?action=get_record_payload&engine=DOCUMENT&target_db=default&coll=customers&id=cust_999");
+        exchange.getRequestHeaders().set("Cookie", "username=admin; role=ADMIN");
+        page.handle(exchange);
+
+        assertEquals(200, exchange.getResponseCode(), "get_record_payload must return 200 OK");
+        String responseBody = exchange.getResponseBodyAsString();
+        assertTrue(responseBody.contains("\"status\":\"SUCCESS\""), "Response must indicate SUCCESS");
+        assertTrue(responseBody.contains("Super Customer"), "Response must return stored payload content");
+        assertTrue(responseBody.contains("\"payloadB64\""), "Response must include payloadB64");
+
+        // 2. Verify StoreEnginesPage exports and connects universalRecordEditor
+        Map<String, String> params = new HashMap<>();
+        params.put("engine", "DOCUMENT");
+        params.put("target_db", "default");
+        Widget pageWidget = page.buildContent(null, params, "dark");
+        String pageHtml = pageWidget.render(Themes.FlatTheme());
+
+        assertTrue(pageHtml.contains("universalRecordEditor"), "Page must reference universalRecordEditor");
+        assertTrue(pageHtml.contains("get_record_payload"), "Page must support get_record_payload fallback");
+
+        // 3. Verify EngineRecordEditDialog exports universalRecordEditor and contains dynamic auto-fetch
+        Widget dialogWidget = EngineRecordEditDialog.build("/engines");
+        String dialogHtml = dialogWidget.render(Themes.FlatTheme());
+        assertTrue(dialogHtml.contains("window.universalRecordEditor = openUniversalEditModal"), "Dialog must export universalRecordEditor");
+        assertTrue(dialogHtml.contains("action=get_record_payload"), "Dialog must implement dynamic auto-fetch fallback if payload is empty");
+    }
+
     private static class TestHttpExchange extends com.sun.net.httpserver.HttpExchange {
         private final String method;
         private final java.net.URI uri;
