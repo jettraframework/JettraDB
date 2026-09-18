@@ -511,8 +511,15 @@ public final class EngineRecordEditDialog {
                 if (objColl && objColl.value) payloadObj['target_coll'] = objColl.value;
             }
 
-            // Send via AJAX fetch to prevent raw JSON navigation and keep user in web interface
-            var actionUrl = form.action || window.location.href;
+            // Resolve target endpoint safely without HTML DOM clobbering from <input name="action">
+            var actionAttr = (typeof form.getAttribute === 'function') ? form.getAttribute('action') : null;
+            var actionUrl = (actionAttr && typeof actionAttr === 'string' && actionAttr.indexOf('[object') === -1 && actionAttr.trim().length > 0)
+                ? actionAttr
+                : (window.lastActionUrl || '/engines');
+            if (eng && actionUrl.indexOf('engine=') === -1) {
+                actionUrl += (actionUrl.indexOf('?') === -1 ? '?' : '&') + 'engine=' + encodeURIComponent(eng);
+            }
+
             fetch(actionUrl, {
                 method: 'POST',
                 headers: {
@@ -523,7 +530,18 @@ public final class EngineRecordEditDialog {
                 body: JSON.stringify(payloadObj)
             })
             .then(function(res) {
-                if (!res.ok) throw new Error('HTTP ' + res.status);
+                if (!res.ok) {
+                    return res.text().then(function(errText) {
+                        var errMsg = 'HTTP ' + res.status;
+                        try {
+                            var jsonErr = JSON.parse(errText);
+                            if (jsonErr && (jsonErr.message || jsonErr.error)) {
+                                errMsg += ': ' + (jsonErr.message || jsonErr.error);
+                            }
+                        } catch(e) {}
+                        throw new Error(errMsg);
+                    });
+                }
                 return res.json();
             })
             .then(function(data) {

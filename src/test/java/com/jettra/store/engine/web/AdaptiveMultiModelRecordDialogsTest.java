@@ -221,7 +221,7 @@ public class AdaptiveMultiModelRecordDialogsTest {
 
     @JettraTest
     @DisplayName("Test 4: Edit Dialog Submit Script dispatches JSON and handles update_object without HTTP 400")
-    public void testEditDialogSubmitScriptAndActionHandling() {
+    public void testEditDialogSubmitScriptAndActionHandling() throws IOException {
         Widget editDialog = EngineRecordEditDialog.build("/engines");
         String html = editDialog.render(Themes.FlatTheme());
 
@@ -231,6 +231,72 @@ public class AdaptiveMultiModelRecordDialogsTest {
         assertTrue(html.contains("'X-Requested-With': 'XMLHttpRequest'"), "Must set X-Requested-With");
         assertTrue(html.contains("payloadObj['action'] = 'update_object'"), "Must set action to update_object");
         assertTrue(html.contains("payloadObj['is_fetch'] = 'true'"), "Must flag request with is_fetch");
+
+        // Verify DOM clobbering prevention: must use form.getAttribute('action'), not form.action
+        assertTrue(html.contains("form.getAttribute('action')"), "Must use form.getAttribute('action') to avoid DOM clobbering by <input name='action'>");
+        assertFalse(html.contains("form.action ||"), "Must NOT use form.action which returns child input element in HTML DOM");
+
+        // First pre-insert a document in DOCUMENT engine
+        engine.getStorageCore().put("doc:default:default:doc_101", "{\"name\":\"Original Doc\"}".getBytes(java.nio.charset.StandardCharsets.UTF_8), System.currentTimeMillis());
+
+        // Simulate exact AJAX POST dispatch from browser hitting /engines
+        TestHttpExchange exchange = new TestHttpExchange("POST", "/engines?engine=DOCUMENT");
+        exchange.getRequestHeaders().set("Content-Type", "application/json; charset=UTF-8");
+        exchange.getRequestHeaders().set("Accept", "application/json");
+        exchange.getRequestHeaders().set("X-Requested-With", "XMLHttpRequest");
+        exchange.getRequestHeaders().set("Cookie", "username=admin; role=ADMIN");
+        String jsonBody = "{\"action\":\"update_object\",\"is_ajax\":\"true\",\"is_fetch\":\"true\",\"engine_type\":\"DOCUMENT\",\"target_db\":\"default\",\"target_coll\":\"default\",\"target_id\":\"doc_101\",\"record_payload\":\"{\\\"name\\\":\\\"Updated Doc\\\"}\"}";
+        exchange.setJsonRequestBody(jsonBody);
+
+        page.handle(exchange);
+
+        assertEquals(200, exchange.getResponseCode(), "Response code must be 200 OK, not 400: " + exchange.getResponseBodyAsString());
+        assertTrue(exchange.getResponseBodyAsString().contains("\"status\":\"SUCCESS\""), "Must return SUCCESS status");
+
+        // Also test dispatch when hitting /engine (singular alias)
+        TestHttpExchange exchangeSingular = new TestHttpExchange("POST", "/engine?engine=DOCUMENT");
+        exchangeSingular.getRequestHeaders().set("Content-Type", "application/json; charset=UTF-8");
+        exchangeSingular.getRequestHeaders().set("Accept", "application/json");
+        exchangeSingular.getRequestHeaders().set("X-Requested-With", "XMLHttpRequest");
+        exchangeSingular.getRequestHeaders().set("Cookie", "username=admin; role=ADMIN");
+        exchangeSingular.setJsonRequestBody(jsonBody);
+
+        page.handle(exchangeSingular);
+        assertEquals(200, exchangeSingular.getResponseCode(), "Singular /engine path must also succeed with 200 OK: " + exchangeSingular.getResponseBodyAsString());
+    }
+
+    @JettraTest
+    @DisplayName("Test 4B: Multi-Model Record Updates for RECORDS, KEYVALUE, VECTOR without HTTP 400")
+    public void testMultiEngineRecordUpdatesWithoutHttp400() throws IOException {
+        // Pre-insert records for RECORDS and KEYVALUE
+        engine.getStorageCore().put("rec:default:employees:emp_01", "{\"_recordClass\":\"com.jettra.model.EmployeeRecord\",\"_table\":\"employees\",\"components\":{\"name\":\"Alice\"}}".getBytes(java.nio.charset.StandardCharsets.UTF_8), System.currentTimeMillis());
+        engine.getStorageCore().put("kv:default:config:app_title", "Old Title".getBytes(java.nio.charset.StandardCharsets.UTF_8), System.currentTimeMillis());
+
+        // 1. Update RECORDS item
+        TestHttpExchange recExchange = new TestHttpExchange("POST", "/engines?engine=RECORDS");
+        recExchange.getRequestHeaders().set("Content-Type", "application/json; charset=UTF-8");
+        recExchange.getRequestHeaders().set("Accept", "application/json");
+        recExchange.getRequestHeaders().set("X-Requested-With", "XMLHttpRequest");
+        recExchange.getRequestHeaders().set("Cookie", "username=admin; role=ADMIN");
+        String recBody = "{\"action\":\"update_object\",\"is_ajax\":\"true\",\"is_fetch\":\"true\",\"engine_type\":\"RECORDS\",\"target_db\":\"default\",\"target_coll\":\"employees\",\"target_id\":\"emp_01\",\"record_payload\":\"{\\\"_table\\\":\\\"employees\\\",\\\"_recordClass\\\":\\\"com.jettra.model.EmployeeRecord\\\",\\\"components\\\":{\\\"name\\\":\\\"Alice Updated\\\"}}\"}";
+        recExchange.setJsonRequestBody(recBody);
+
+        page.handle(recExchange);
+        assertEquals(200, recExchange.getResponseCode(), "Updating RECORDS must return 200 OK: " + recExchange.getResponseBodyAsString());
+        assertTrue(recExchange.getResponseBodyAsString().contains("\"status\":\"SUCCESS\""), "RECORDS update must return SUCCESS");
+
+        // 2. Update KEYVALUE item
+        TestHttpExchange kvExchange = new TestHttpExchange("POST", "/engine?engine=KEYVALUE");
+        kvExchange.getRequestHeaders().set("Content-Type", "application/json; charset=UTF-8");
+        kvExchange.getRequestHeaders().set("Accept", "application/json");
+        kvExchange.getRequestHeaders().set("X-Requested-With", "XMLHttpRequest");
+        kvExchange.getRequestHeaders().set("Cookie", "username=admin; role=ADMIN");
+        String kvBody = "{\"action\":\"update_object\",\"is_ajax\":\"true\",\"is_fetch\":\"true\",\"engine_type\":\"KEYVALUE\",\"target_db\":\"default\",\"target_coll\":\"config\",\"target_id\":\"app_title\",\"record_payload\":\"New Title V2\",\"kv_value\":\"New Title V2\"}";
+        kvExchange.setJsonRequestBody(kvBody);
+
+        page.handle(kvExchange);
+        assertEquals(200, kvExchange.getResponseCode(), "Updating KEYVALUE must return 200 OK: " + kvExchange.getResponseBodyAsString());
+        assertTrue(kvExchange.getResponseBodyAsString().contains("\"status\":\"SUCCESS\""), "KEYVALUE update must return SUCCESS");
     }
 
     @JettraTest
@@ -308,6 +374,48 @@ public class AdaptiveMultiModelRecordDialogsTest {
         assertTrue(emp201Json.contains("\"_schema\":"), "emp_201 must contain _schema");
         assertTrue(emp201Json.contains("\"hireDate\":\"LocalDate\""), "emp_201 must contain LocalDate");
         assertTrue(emp201Json.contains("\"components\":"), "emp_201 must contain components");
+    }
+
+    private static class TestHttpExchange extends com.sun.net.httpserver.HttpExchange {
+        private final String method;
+        private final java.net.URI uri;
+        private final com.sun.net.httpserver.Headers requestHeaders = new com.sun.net.httpserver.Headers();
+        private final com.sun.net.httpserver.Headers responseHeaders = new com.sun.net.httpserver.Headers();
+        private final java.io.ByteArrayOutputStream responseBody = new java.io.ByteArrayOutputStream();
+        private java.io.ByteArrayInputStream requestBody = new java.io.ByteArrayInputStream(new byte[0]);
+        private int responseCode = -1;
+
+        TestHttpExchange(String method, String path) {
+            this.method = method;
+            this.uri = java.net.URI.create(path);
+        }
+
+        void setJsonRequestBody(String body) {
+            this.requestBody = new java.io.ByteArrayInputStream(body.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            this.requestHeaders.set("Content-Type", "application/json; charset=UTF-8");
+        }
+
+        @Override public com.sun.net.httpserver.Headers getRequestHeaders() { return requestHeaders; }
+        @Override public com.sun.net.httpserver.Headers getResponseHeaders() { return responseHeaders; }
+        @Override public java.net.URI getRequestURI() { return uri; }
+        @Override public String getRequestMethod() { return method; }
+        @Override public com.sun.net.httpserver.HttpContext getHttpContext() { return null; }
+        @Override public void close() {}
+        @Override public java.io.InputStream getRequestBody() { return requestBody; }
+        @Override public java.io.OutputStream getResponseBody() { return responseBody; }
+        @Override public void sendResponseHeaders(int rCode, long responseLength) { this.responseCode = rCode; }
+        @Override public java.net.InetSocketAddress getRemoteAddress() { return null; }
+        @Override public int getResponseCode() { return responseCode; }
+        @Override public java.net.InetSocketAddress getLocalAddress() { return null; }
+        @Override public String getProtocol() { return "HTTP/1.1"; }
+        @Override public Object getAttribute(String name) { return null; }
+        @Override public void setAttribute(String name, Object value) {}
+        @Override public void setStreams(java.io.InputStream i, java.io.OutputStream o) {}
+        @Override public com.sun.net.httpserver.HttpPrincipal getPrincipal() { return null; }
+
+        public String getResponseBodyAsString() {
+            return responseBody.toString(java.nio.charset.StandardCharsets.UTF_8);
+        }
     }
 }
 

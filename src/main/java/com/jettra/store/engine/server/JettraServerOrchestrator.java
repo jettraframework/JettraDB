@@ -99,6 +99,7 @@ public class JettraServerOrchestrator {
         jettraServer.addHandler("/dashboard", dashboardPage);
         jettraServer.addHandler("/wui", dashboardPage);
         jettraServer.addHandler("/databases", databasesPage);
+        jettraServer.addHandler("/engine", enginesPage);
         jettraServer.addHandler("/engines", enginesPage);
         jettraServer.addHandler("/information", informationPage);
         jettraServer.addHandler("/informations", informationPage);
@@ -122,6 +123,7 @@ public class JettraServerOrchestrator {
             jettraGuiServer.addHandler("/wui", dashboardPage);
             jettraGuiServer.addHandler("/databases", databasesPage);
             jettraGuiServer.addHandler("/api/databases/", databaseRestController);
+            jettraGuiServer.addHandler("/engine", enginesPage);
             jettraGuiServer.addHandler("/engines", enginesPage);
             jettraGuiServer.addHandler("/information", informationPage);
             jettraGuiServer.addHandler("/informations", informationPage);
@@ -154,7 +156,7 @@ public class JettraServerOrchestrator {
         System.out.println("  --------------------------------------------------------------------------------");
         System.out.println("  [Web Management & Console URLs]:");
         System.out.printf("  • Web Management UI (GUI):                  http://localhost:%d/ (or /dashboard)%n", guiPort);
-        System.out.printf("  • Multi-Model Database Engines:             http://localhost:%d/engines%n", guiPort);
+        System.out.printf("  • Multi-Model Database Engines:             http://localhost:%d/engines (or /engine)%n", guiPort);
         System.out.printf("  • Engines Architecture Information:         http://localhost:%d/information%n", guiPort);
         System.out.printf("  • Users & Security (Per-Database RBAC):     http://localhost:%d/users%n", guiPort);
         System.out.printf("  • Cluster Topology & Internals:             http://localhost:%d/components%n", guiPort);

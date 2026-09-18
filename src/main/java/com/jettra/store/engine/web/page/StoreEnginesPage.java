@@ -149,6 +149,13 @@ public class StoreEnginesPage extends StoreTemplatePage {
     @Override
     protected boolean onPost(HttpExchange exchange, Map<String, String> params) throws IOException {
         String action = params != null ? params.get("action") : null;
+        if (action == null && params != null && params.containsKey("target_id")
+                && (params.containsKey("record_payload") || params.containsKey("doc_payload")
+                || params.containsKey("rec_payload") || params.containsKey("kv_value")
+                || params.containsKey("engine_type"))) {
+            action = "update_object";
+            params.put("action", "update_object");
+        }
         String reqWith = exchange.getRequestHeaders() != null ? exchange.getRequestHeaders().getFirst("X-Requested-With") : null;
         String accept = exchange.getRequestHeaders() != null ? exchange.getRequestHeaders().getFirst("Accept") : null;
         String contentType = exchange.getRequestHeaders() != null ? exchange.getRequestHeaders().getFirst("Content-Type") : null;
@@ -170,6 +177,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
     public void handleAjaxPost(HttpExchange exchange, Map<String, String> params) throws IOException {
         String action = params != null ? params.get("action") : "";
         String selectedEngine = params != null && params.containsKey("engine") ? params.get("engine").toUpperCase() : "DOCUMENT";
+        if ("RECORD".equalsIgnoreCase(selectedEngine)) selectedEngine = "RECORDS";
         String targetDb = params != null && params.containsKey("target_db") ? params.get("target_db") : getDefaultDbForEngine(selectedEngine);
 
         try {
@@ -243,6 +251,10 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 String id = params.get("target_id");
                 String coll = params.getOrDefault("target_coll", "default");
                 String engType = params.getOrDefault("engine_type", selectedEngine);
+                if ("RECORD".equalsIgnoreCase(engType)) engType = "RECORDS";
+                if ("KEY_VALUE".equalsIgnoreCase(engType) || "KEY-VALUE".equalsIgnoreCase(engType)) engType = "KEYVALUE";
+                if ("TIME_SERIES".equalsIgnoreCase(engType) || "TIMESERIE".equalsIgnoreCase(engType)) engType = "TIMESERIES";
+                if ("GEO".equalsIgnoreCase(engType)) engType = "GEOSPATIAL";
                 String payload = params.get("record_payload");
                 if (payload == null) payload = params.get("doc_payload");
                 if (payload == null) payload = params.get("raw_payload");

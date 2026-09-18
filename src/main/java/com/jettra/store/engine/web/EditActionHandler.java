@@ -77,6 +77,10 @@ public class EditActionHandler {
         }
 
         String engType = cmd.engineType() != null ? cmd.engineType().toUpperCase() : "DOCUMENT";
+        if ("RECORD".equalsIgnoreCase(engType)) engType = "RECORDS";
+        if ("KEY_VALUE".equalsIgnoreCase(engType) || "KEY-VALUE".equalsIgnoreCase(engType)) engType = "KEYVALUE";
+        if ("TIME_SERIES".equalsIgnoreCase(engType) || "TIMESERIE".equalsIgnoreCase(engType)) engType = "TIMESERIES";
+        if ("GEO".equalsIgnoreCase(engType)) engType = "GEOSPATIAL";
         String db = cmd.database() != null ? cmd.database() : "default_db";
         String coll = cmd.collection() != null ? cmd.collection() : "default";
         String id = cmd.recordId() != null ? cmd.recordId() : "";

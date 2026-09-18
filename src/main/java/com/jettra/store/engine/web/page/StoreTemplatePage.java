@@ -453,7 +453,7 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
                 default -> {
                     String path = routeConfig.requestPath() != null ? routeConfig.requestPath().toLowerCase() : "";
                     if (path.contains("/databases")) yield "databases";
-                    if (path.contains("/engines")) yield "engines";
+                    if (path.contains("/engine")) yield "engines";
                     if (path.contains("/components")) yield "components";
                     if (path.contains("/users")) yield "users";
                     if (path.contains("/swagger")) yield "swagger";
