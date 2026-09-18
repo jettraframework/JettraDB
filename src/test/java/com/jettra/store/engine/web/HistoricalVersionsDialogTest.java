@@ -1,5 +1,7 @@
 package com.jettra.store.engine.web;
 
+import com.jettra.store.engine.web.dialog.HistoricalVersionsDialog;
+import com.jettra.store.engine.web.page.StoreEnginesPage;
 import com.jettra.store.engine.core.JettraStorageEngine;
 import com.jettra.store.engine.hierarchy.HierarchyExplorerService;
 import com.jettra.store.engine.models.DocumentEngine;

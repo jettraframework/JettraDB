@@ -2,7 +2,7 @@ package com.jettra.store.engine.dashboard;
 
 import com.jettra.store.engine.core.JettraStorageEngine;
 import com.jettra.store.engine.dashboard.DashboardMetrics.ComprehensiveDashboardSnapshot;
-import com.jettra.store.engine.web.StoreDashboardPage;
+import com.jettra.store.engine.web.page.StoreDashboardPage;
 import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpContext;
 import com.sun.net.httpserver.HttpExchange;

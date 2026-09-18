@@ -305,7 +305,7 @@ public class StorageEnginesFeaturesTest {
         com.jettra.store.engine.samples.SampleDatasetManager sampleManager = new com.jettra.store.engine.samples.SampleDatasetManager(engine);
         sampleManager.loadAllDatasets();
 
-        com.jettra.store.engine.web.StoreEnginesPage page = new com.jettra.store.engine.web.StoreEnginesPage(engine);
+        com.jettra.store.engine.web.page.StoreEnginesPage page = new com.jettra.store.engine.web.page.StoreEnginesPage(engine);
         // Test with hr_enterprise_db
         io.jettra.flux.core.Widget ui = page.buildContent(null, java.util.Map.of("engine", "DOCUMENT", "target_db", "hr_enterprise_db"), "dark");
         String html = ui.render(io.jettra.flux.theme.Themes.FlatTheme());
@@ -438,7 +438,7 @@ public class StorageEnginesFeaturesTest {
     @JettraTest
     void testEditOrderMasterVersionIncrement() {
         new com.jettra.store.engine.samples.SampleDatasetManager(engine).loadExampleDBReferencesDataset();
-        com.jettra.store.engine.web.StoreEnginesPage page = new com.jettra.store.engine.web.StoreEnginesPage(engine);
+        com.jettra.store.engine.web.page.StoreEnginesPage page = new com.jettra.store.engine.web.page.StoreEnginesPage(engine);
 
         String db = "ExampleDBReferences";
         String id = "order_master_7002";
@@ -602,7 +602,7 @@ public class StorageEnginesFeaturesTest {
         assertEquals("RESOLVED", resGeoRemote.status());
 
         // 8. Verify Studio Layout HTML rendering (TYPES sidebar, database explorer, accessibility)
-        com.jettra.store.engine.web.StoreEnginesPage page = new com.jettra.store.engine.web.StoreEnginesPage(engine);
+        com.jettra.store.engine.web.page.StoreEnginesPage page = new com.jettra.store.engine.web.page.StoreEnginesPage(engine);
         io.jettra.flux.core.Widget ui = page.buildContent(null, java.util.Map.of("engine", "DOCUMENT", "target_db", "ExampleDBReferences"), "dark");
         String html = ui.render(io.jettra.flux.theme.Themes.FlatTheme());
         assertTrue(html.contains("TYPES"), "HTML must contain TYPES sidebar");

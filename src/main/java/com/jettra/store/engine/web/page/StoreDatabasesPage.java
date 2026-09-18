@@ -1,4 +1,4 @@
-package com.jettra.store.engine.web;
+package com.jettra.store.engine.web.page;
 
 import com.jettra.store.engine.auth.AuthManager;
 import com.jettra.store.engine.core.JettraStorageEngine;
@@ -38,6 +38,8 @@ import com.jettra.store.engine.samples.lifecycle.SampleDatabaseDefinition;
 import com.jettra.store.engine.samples.lifecycle.SampleDatabaseService;
 import com.jettra.store.engine.samples.lifecycle.DatasetInstallInvoker;
 import com.jettra.store.engine.samples.lifecycle.InstallSingleDatasetCommand;
+import com.jettra.store.engine.web.RouteVisibilityGuard;
+import com.jettra.store.engine.web.RouteVisibilityGuard;
 import io.jettra.json.JettraJson;
 import io.jettra.json.JsonObject;
 import io.jettra.json.JsonArray;
@@ -411,7 +413,7 @@ public class StoreDatabasesPage extends StoreTemplatePage {
     }
 
     @Override
-    protected Widget buildContent(HttpExchange exchange, Map<String, String> params, String currentTheme) {
+    public Widget buildContent(HttpExchange exchange, Map<String, String> params, String currentTheme) {
         String alertMessage = "";
         String alertType = "badge-active";
 

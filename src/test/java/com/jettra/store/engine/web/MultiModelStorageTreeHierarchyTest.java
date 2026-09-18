@@ -1,5 +1,6 @@
 package com.jettra.store.engine.web;
 
+import com.jettra.store.engine.web.view.StorageTreeView;
 import com.jettra.store.engine.core.JettraStorageEngine;
 import com.jettra.store.engine.hierarchy.HierarchyExplorerService;
 import com.jettra.store.engine.models.StorageHierarchyNodeData;

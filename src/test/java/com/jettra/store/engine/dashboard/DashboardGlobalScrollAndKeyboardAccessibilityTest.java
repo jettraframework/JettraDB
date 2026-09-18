@@ -4,7 +4,7 @@ import com.jettra.store.engine.core.JettraStorageEngine;
 import com.jettra.store.engine.models.DocumentEngine;
 import com.jettra.store.engine.models.KeyValueEngine;
 import com.jettra.store.engine.models.RecordsEngine;
-import com.jettra.store.engine.web.StoreDashboardPage;
+import com.jettra.store.engine.web.page.StoreDashboardPage;
 import io.jettra.flux.core.Widget;
 import io.jettra.flux.theme.ColorMode;
 import io.jettra.flux.theme.Themes;

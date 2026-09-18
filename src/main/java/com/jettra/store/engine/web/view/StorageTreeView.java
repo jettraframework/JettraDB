@@ -1,4 +1,4 @@
-package com.jettra.store.engine.web;
+package com.jettra.store.engine.web.view;
 
 import com.jettra.store.engine.hierarchy.HierarchyExplorerService;
 import com.jettra.store.engine.models.StorageHierarchyNodeData;

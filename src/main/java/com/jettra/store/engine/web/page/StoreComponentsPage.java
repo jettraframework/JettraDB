@@ -1,6 +1,8 @@
-package com.jettra.store.engine.web;
+package com.jettra.store.engine.web.page;
 
 import com.jettra.store.engine.core.JettraStorageEngine;
+import com.jettra.store.engine.web.RouteVisibilityGuard;
+import com.jettra.store.engine.web.RouteVisibilityGuard;
 import com.sun.net.httpserver.HttpExchange;
 import io.jettra.flux.core.Modifier;
 import io.jettra.flux.core.Widget;
@@ -55,7 +57,7 @@ public class StoreComponentsPage extends StoreTemplatePage {
     }
 
     @Override
-    protected Widget buildContent(HttpExchange exchange, Map<String, String> params, String currentTheme) {
+    public Widget buildContent(HttpExchange exchange, Map<String, String> params, String currentTheme) {
         File dataDir = new File(engine.getStorageDir().toString());
         File[] files = dataDir.listFiles();
         int fileCount = files != null ? files.length : 0;

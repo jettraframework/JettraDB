@@ -1,4 +1,4 @@
-package com.jettra.store.engine.web;
+package com.jettra.store.engine.web.page;
 
 import jcf.annotation.PageWidgetAllow;
 import jcf.AppRole;
@@ -7,6 +7,8 @@ import com.jettra.store.engine.dashboard.DashboardMetrics.ComprehensiveDashboard
 import com.jettra.store.engine.dashboard.DashboardMetricsCollector;
 import com.jettra.store.engine.dashboard.MainDashboardView;
 import com.jettra.store.engine.dashboard.SnapshotService;
+import com.jettra.store.engine.web.RouteVisibilityGuard;
+import com.jettra.store.engine.web.RouteVisibilityGuard;
 import com.sun.net.httpserver.HttpExchange;
 import io.jettra.flux.core.Widget;
 

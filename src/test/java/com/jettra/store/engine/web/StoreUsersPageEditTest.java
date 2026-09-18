@@ -1,5 +1,6 @@
 package com.jettra.store.engine.web;
 
+import com.jettra.store.engine.web.page.StoreUsersPage;
 import com.jettra.store.engine.auth.AuthManager;
 import com.jettra.store.engine.core.JettraStorageEngine;
 import com.sun.net.httpserver.Headers;
@@ -17,7 +18,6 @@ import io.jettra.server.autentification.repository.JCredentialRepositoryImpl;
 import io.jettra.server.autentification.repository.JUserRepository;
 import io.jettra.server.autentification.repository.JUserRepositoryImpl;
 import io.jettra.server.autentification.repository.JettraSecurityDBInitializer;
-import com.jettra.store.engine.exception.ImmutableAccountException;
 import io.jettra.test.annotation.AfterEach;
 import io.jettra.test.annotation.BeforeEach;
 import io.jettra.test.annotation.DisplayName;
@@ -36,9 +36,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
-import java.util.Comparator;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;

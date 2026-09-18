@@ -1,4 +1,4 @@
-package com.jettra.store.engine.web;
+package com.jettra.store.engine.web.page;
 
 import com.jettra.store.engine.auth.AuthManager;
 import com.jettra.store.engine.core.JettraStorageEngine;
@@ -44,6 +44,7 @@ import io.jettra.flux.widgets.IdentityPreservationNotice;
 import com.jettra.store.engine.users.SystemUser;
 import com.jettra.store.engine.users.SystemUserRepository;
 import com.jettra.store.engine.users.SystemUserRepositoryImpl;
+import com.jettra.store.engine.web.RouteVisibilityGuard;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
@@ -388,7 +389,7 @@ public class StoreUsersPage extends StoreTemplatePage {
     }
 
     @Override
-    protected Widget buildContent(HttpExchange exchange, Map<String, String> params, String currentTheme) {
+    public Widget buildContent(HttpExchange exchange, Map<String, String> params, String currentTheme) {
         String alertMessage = "";
         String alertType = "badge-active";
         ValidationState usernameValidationState = ValidationState.none();

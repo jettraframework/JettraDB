@@ -5,7 +5,7 @@ import com.jettra.store.engine.samples.SampleDatasetManager;
 import com.jettra.store.engine.samples.lifecycle.InstallState;
 import com.jettra.store.engine.samples.lifecycle.SampleDatabaseDefinition;
 import com.jettra.store.engine.samples.lifecycle.SampleDatabaseService;
-import com.jettra.store.engine.web.StoreEnginesPage;
+import com.jettra.store.engine.web.page.StoreEnginesPage;
 import io.jettra.flux.core.Widget;
 import io.jettra.flux.theme.Themes;
 import io.jettra.json.JettraJson;

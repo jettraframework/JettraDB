@@ -1,11 +1,13 @@
 package com.jettra.store.engine.web;
 
+import com.jettra.store.engine.web.view.StorageTableView;
+import com.jettra.store.engine.web.page.StoreEnginesPage;
 import com.jettra.store.engine.core.JettraStorageEngine;
 import com.jettra.store.engine.models.DocumentEngine;
 import com.jettra.store.engine.models.KeyValueEngine;
 import com.jettra.store.engine.models.RecordsEngine;
 import com.jettra.store.engine.web.StorageModalCommands.*;
-import com.jettra.store.engine.web.StorageTableView.FlatRecordItem;
+import com.jettra.store.engine.web.view.StorageTableView.FlatRecordItem;
 import io.jettra.flux.core.Widget;
 import io.jettra.flux.theme.Themes;
 import io.jettra.json.JsonObject;

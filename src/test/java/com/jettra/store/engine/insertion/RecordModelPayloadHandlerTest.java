@@ -4,7 +4,7 @@ import com.jettra.store.engine.core.JettraStorageEngine;
 import com.jettra.store.engine.hierarchy.StorageEngineType;
 import com.jettra.store.engine.insertion.RecordModelPayloadHandler.CanonicalRecord;
 import com.jettra.store.engine.models.RecordsEngine;
-import com.jettra.store.engine.web.EngineRecordInsertionDialog;
+import com.jettra.store.engine.web.dialog.EngineRecordInsertionDialog;
 import io.jettra.flux.core.Widget;
 import io.jettra.flux.theme.Themes;
 import io.jettra.flux.widgets.JettraFluxRecordForm;

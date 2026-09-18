@@ -1,4 +1,4 @@
-package com.jettra.store.engine.web;
+package com.jettra.store.engine.web.page;
 
 import com.jettra.store.engine.auth.AuthManager;
 import com.sun.net.httpserver.HttpExchange;

@@ -5,7 +5,7 @@ import com.jettra.store.engine.dashboard.DashboardMetrics.*;
 import com.jettra.store.engine.models.DocumentEngine;
 import com.jettra.store.engine.models.KeyValueEngine;
 import com.jettra.store.engine.models.RecordsEngine;
-import com.jettra.store.engine.web.StoreDashboardPage;
+import com.jettra.store.engine.web.page.StoreDashboardPage;
 import io.jettra.flux.core.Widget;
 import io.jettra.flux.theme.Themes;
 import io.jettra.test.annotation.AfterEach;
@@ -207,7 +207,7 @@ public class DashboardModularPanelsTest {
     @JettraTest
     @DisplayName("Test 6: StorageDashboardView contains ThemeSelectorMenu and adjacent ThemeModeToggle")
     void testStorageDashboardViewAdjacentThemeControls() {
-        Widget storageDash = com.jettra.store.engine.web.StorageDashboardView.build(
+        Widget storageDash = com.jettra.store.engine.web.view.StorageDashboardView.build(
             "DOCUMENT", "customers_db", "/engines?engine=", 10, 5, 2, 0, 100, 20, 0, 1, 4, "SL"
         );
         assertNotNull(storageDash);

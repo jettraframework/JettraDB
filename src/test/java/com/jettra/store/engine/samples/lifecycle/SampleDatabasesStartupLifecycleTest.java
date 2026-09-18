@@ -7,7 +7,7 @@ import com.jettra.store.engine.models.RecordsEngine;
 import com.jettra.store.engine.ref.JettraReferenceResolver;
 import com.jettra.store.engine.samples.SampleDatasetManager;
 import com.jettra.store.engine.users.SystemUserRepositoryImpl;
-import com.jettra.store.engine.web.StoreDatabasesPage;
+import com.jettra.store.engine.web.page.StoreDatabasesPage;
 import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpContext;
 import com.sun.net.httpserver.HttpExchange;

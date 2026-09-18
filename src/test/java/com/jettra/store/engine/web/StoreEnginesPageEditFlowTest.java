@@ -1,5 +1,6 @@
 package com.jettra.store.engine.web;
 
+import com.jettra.store.engine.web.page.StoreEnginesPage;
 import com.jettra.store.engine.core.JettraStorageEngine;
 import com.jettra.store.engine.models.DocumentEngine;
 import io.jettra.flux.core.Widget;

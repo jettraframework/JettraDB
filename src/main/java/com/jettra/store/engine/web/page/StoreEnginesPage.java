@@ -1,4 +1,4 @@
-package com.jettra.store.engine.web;
+package com.jettra.store.engine.web.page;
 
 import com.jettra.store.engine.core.DatabaseBackupManager;
 import com.jettra.store.engine.core.DatabaseBackupManager.BackupFileInfo;
@@ -32,6 +32,30 @@ import io.jettra.json.JsonArray;
 import io.jettra.server.JettraServer;
 import com.jettra.store.engine.security.DatabaseSecurityFilter;
 import com.jettra.store.engine.users.SystemUserRepositoryImpl;
+import com.jettra.store.engine.web.EditActionHandler;
+import com.jettra.store.engine.web.EditActionHandler;
+import com.jettra.store.engine.web.EditDocumentCommand;
+import com.jettra.store.engine.web.EditDocumentCommand;
+import com.jettra.store.engine.web.EditDocumentResult;
+import com.jettra.store.engine.web.EditDocumentResult;
+import com.jettra.store.engine.web.dialog.EngineRecordInsertionDialog;
+import com.jettra.store.engine.web.dialog.EngineRecordInsertionDialog;
+import com.jettra.store.engine.web.dialog.EngineRecordInspectDialog;
+import com.jettra.store.engine.web.dialog.EngineRecordInspectDialog;
+import com.jettra.store.engine.web.dialog.HistoricalVersionsDialog;
+import com.jettra.store.engine.web.dialog.HistoricalVersionsDialog;
+import com.jettra.store.engine.web.RestoreActionHandler;
+import com.jettra.store.engine.web.RestoreActionHandler;
+import com.jettra.store.engine.web.RollbackCommand;
+import com.jettra.store.engine.web.RollbackCommand;
+import com.jettra.store.engine.web.view.StorageDashboardView;
+import com.jettra.store.engine.web.view.StorageDashboardView;
+import com.jettra.store.engine.web.StorageModalCommands;
+import com.jettra.store.engine.web.StorageModalCommands;
+import com.jettra.store.engine.web.view.StorageTableView;
+import com.jettra.store.engine.web.view.StorageTableView;
+import com.jettra.store.engine.web.view.StorageTreeView;
+import com.jettra.store.engine.web.view.StorageTreeView;
 import io.jettra.flux.security.SecurityPrincipal;
 
 import java.io.IOException;

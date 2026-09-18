@@ -1,5 +1,6 @@
-package com.jettra.store.engine.web;
+package com.jettra.store.engine.web.view;
 
+import com.jettra.store.engine.web.StorageModalCommands;
 import io.jettra.flux.core.FluxEscapers;
 import io.jettra.flux.core.Modifier;
 import io.jettra.flux.core.Widget;

@@ -1,5 +1,7 @@
 package com.jettra.store.engine.web;
 
+import com.jettra.store.engine.web.dialog.EngineRecordInspectDialog;
+import com.jettra.store.engine.web.dialog.EngineRecordEditDialog;
 import io.jettra.flux.core.Modifier;
 import io.jettra.flux.core.Widget;
 import io.jettra.flux.widgets.*;

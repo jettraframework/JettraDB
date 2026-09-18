@@ -1,4 +1,4 @@
-package com.jettra.store.engine.web;
+package com.jettra.store.engine.web.dialog;
 
 import com.jettra.store.engine.insertion.EngineType;
 import io.jettra.flux.core.Modifier;

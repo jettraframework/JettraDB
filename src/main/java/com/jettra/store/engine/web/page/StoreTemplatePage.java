@@ -1,5 +1,7 @@
-package com.jettra.store.engine.web;
+package com.jettra.store.engine.web.page;
 
+import com.jettra.store.engine.web.RouteVisibilityGuard;
+import com.jettra.store.engine.web.RouteVisibilityGuard;
 import io.jettra.flux.pages.FluxBaseHandler;
 import com.sun.net.httpserver.HttpExchange;
 import io.jettra.flux.core.Modifier;
@@ -29,7 +31,7 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
     protected String getTitle() {
         return getPageTitle();
     }
-    protected abstract Widget buildContent(HttpExchange exchange, Map<String, String> params, String currentTheme);
+    public abstract Widget buildContent(HttpExchange exchange, Map<String, String> params, String currentTheme);
 
     protected Set<String> getAvailableDatabases() {
         return new TreeSet<>(Set.of("system_db"));
@@ -436,7 +438,7 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
         return rail;
     }
 
-    protected String resolveActiveRailKey(NavigationRouteConfig routeConfig, String currentTab) {
+    public String resolveActiveRailKey(NavigationRouteConfig routeConfig, String currentTab) {
         if ("settings".equalsIgnoreCase(currentTab)) {
             return "settings";
         }

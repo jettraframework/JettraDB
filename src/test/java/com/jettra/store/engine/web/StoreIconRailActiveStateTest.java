@@ -1,18 +1,20 @@
 package com.jettra.store.engine.web;
 
+
 import com.jettra.store.engine.auth.AuthManager;
 import com.jettra.store.engine.core.JettraStorageEngine;
 import com.jettra.store.engine.models.DocumentEngine;
 import com.jettra.store.engine.models.RecordsEngine;
 import com.jettra.store.engine.web.RouteVisibilityGuard.NavigationRouteConfig;
-import com.jettra.store.engine.web.RouteVisibilityGuard.RouteType;
+import com.jettra.store.engine.web.page.InformationPage;
+import com.jettra.store.engine.web.page.StoreComponentsPage;
+import com.jettra.store.engine.web.page.StoreDatabasesPage;
+import com.jettra.store.engine.web.page.StoreEnginesPage;
 import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpContext;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpPrincipal;
 import io.jettra.flux.security.SecurityContextHolder;
-import io.jettra.flux.widgets.IconRail;
-import io.jettra.flux.widgets.IconRailItem;
 import io.jettra.test.annotation.AfterEach;
 import io.jettra.test.annotation.BeforeEach;
 import io.jettra.test.annotation.DisplayName;
@@ -31,8 +33,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import static io.jettra.test.core.JettraAssert.*;
 

@@ -1,4 +1,4 @@
-package com.jettra.store.engine.web;
+package com.jettra.store.engine.web.view;
 
 import io.jettra.flux.core.Modifier;
 import io.jettra.flux.core.Widget;

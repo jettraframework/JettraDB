@@ -1,6 +1,7 @@
-package com.jettra.store.engine.web;
+package com.jettra.store.engine.web.page;
 
 import com.jettra.store.engine.core.JettraStorageEngine;
+import com.jettra.store.engine.web.RouteVisibilityGuard;
 import com.sun.net.httpserver.HttpExchange;
 import jcf.annotation.PageWidgetAllow;
 import jcf.AppRole;
@@ -44,7 +45,7 @@ public class InformationPage extends StoreTemplatePage {
     }
 
     @Override
-    protected Widget buildContent(HttpExchange exchange, Map<String, String> params, String currentTheme) {
+    public Widget buildContent(HttpExchange exchange, Map<String, String> params, String currentTheme) {
         // Title Header Block
         Widget titleBlock = Row.of(
             Column.of(
