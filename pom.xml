@@ -16,7 +16,7 @@
         <jettra.gprc.version>1.0.0</jettra.gprc.version>
         <jettra.rules.version>1.0.0</jettra.rules.version>
         <jettra.ee.version>1.0.0-SNAPSHOT</jettra.ee.version>
-        <jettra.flux.version>1.0.0-SNAPSHOT</jettra.flux.version>
+        <jettra.flux.version>1.0.0</jettra.flux.version>
         <jettra.report.version>1.0.0</jettra.report.version>
         <jettra.rest.version>1.0.0-SNAPSHOT</jettra.rest.version>
         <jettra.json.version>1.0.0</jettra.json.version>
