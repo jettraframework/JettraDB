@@ -40,10 +40,18 @@ public class GraphInsertionStrategy implements EngineRecordInsertionStrategy<Gra
             String label = params.get("edge_label");
             if (label == null || label.isBlank()) errors.add("La etiqueta de la relación ('Edge Label') es requerida.");
         } else {
+            String idMode = params.getOrDefault("id_gen_mode", "UUID");
             String id = params.get("target_id");
-            if (id == null || id.isBlank()) errors.add("El ID del vértice ('Node ID') es requerido.");
+            if ("MANUAL".equalsIgnoreCase(idMode) && (id == null || id.isBlank())) {
+                errors.add("El ID del vértice ('Node ID') es requerido cuando el modo de generación es Manual.");
+            }
             String label = params.get("node_label");
-            if (label == null || label.isBlank()) errors.add("La etiqueta del vértice ('Node Label') es requerida.");
+            if (label == null || label.isBlank()) {
+                String coll = params.get("target_coll");
+                if (coll == null || coll.isBlank()) {
+                    errors.add("La etiqueta del vértice ('Node Label') es requerida.");
+                }
+            }
         }
         return errors.isEmpty() ? ValidationResult.success() : ValidationResult.failure(errors);
     }
@@ -61,7 +69,10 @@ public class GraphInsertionStrategy implements EngineRecordInsertionStrategy<Gra
             return new GraphPayload("edge", edgeId, label, from, to, props, rawProps);
         } else {
             String nodeId = (id != null && !id.isBlank()) ? id : params.getOrDefault("target_id", "vertex_01");
-            String label = params.getOrDefault("node_label", (unit != null && !unit.isBlank()) ? unit : "UserNode");
+            String rawLabel = params.get("node_label");
+            String label = (rawLabel != null && !rawLabel.isBlank())
+                    ? rawLabel.trim()
+                    : ((unit != null && !unit.isBlank()) ? unit.trim() : "UserNode");
             String rawProps = params.getOrDefault("node_props", "{}");
             JsonObject props = JsonPayloadHelper.parseJsonOrWrap(rawProps, "properties");
             props.addProperty("label", label);

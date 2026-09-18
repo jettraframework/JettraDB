@@ -321,37 +321,40 @@ public final class StorageModalCommands {
             "    if (typeof window.renderAdaptiveInspectModelView === 'function') window.renderAdaptiveInspectModelView(engine, db, unit || 'default', id, parsed, payload);\n" +
             "    if (window.JettraFluxModal) { window.JettraFluxModal.open('inspectRecordModal'); } else { window.showModal('inspectRecordModal'); }\n" +
             "  };\n" +
-            "  window.openUniversalEditModal = function(engine, db, unit, id, payloadB64) {\n" +
-            "    var payload = window.decodeUtf8Base64(payloadB64);\n" +
-            "    var parsed = null;\n" +
-            "    try { parsed = JSON.parse(payload); } catch(e) {}\n" +
-            "    var pretty = parsed ? JSON.stringify(parsed, null, 2) : (payload || '{}');\n" +
-            "    var p = parsed || {};\n" +
-            "    window.setElementValues({\n" +
-            "      universalEditEngineInput: engine,\n" +
-            "      universalEditEngineDisplay: engine,\n" +
-            "      universalEditDbInput: db,\n" +
-            "      universalEditDbDisplay: db,\n" +
-            "      universalEditCollInput: unit || 'default',\n" +
-            "      universalEditCollDisplay: unit || 'default',\n" +
-            "      universalEditIdInput: id,\n" +
-            "      universalEditIdDisplay: id,\n" +
-            "      universalEditPayloadInput: pretty,\n" +
-            "      editDocCollInput: unit || 'default',\n" +
-            "      editDocClassInput: p._class || '',\n" +
-            "      editDocPayloadInput: pretty,\n" +
-            "      editKvCollInput: unit || 'default',\n" +
-            "      editKvValueInput: (typeof payload === 'string') ? payload : pretty,\n" +
-            "      editRecCollInput: unit || 'default',\n" +
-            "      editRecClassInput: p._recordClass || p._class || 'com.jettra.model.Record',\n" +
-            "      editRecPayloadInput: pretty\n" +
-            "    });\n" +
-            "    if ((engine === 'RECORDS' || engine === 'RECORD') && typeof window.populateRecordFieldsFromPayload === 'function') {\n" +
-            "      window.populateRecordFieldsFromPayload('edit_rec', p, pretty);\n" +
-            "    }\n" +
-            "    if (typeof window.switchEditEngine === 'function') window.switchEditEngine(engine);\n" +
-            "    if (window.JettraFluxModal) { window.JettraFluxModal.open('universalEditModal'); } else { window.showModal('universalEditModal'); }\n" +
-            "  };\n" +
+            "  if (typeof window.openUniversalEditModal !== 'function' || !window.setJsonEditorVal) {\n" +
+            "    window.openUniversalEditModal = function(engine, db, unit, id, payloadB64) {\n" +
+            "      var payload = window.decodeUtf8Base64(payloadB64);\n" +
+            "      var parsed = null;\n" +
+            "      try { parsed = JSON.parse(payload); } catch(e) {}\n" +
+            "      var pretty = parsed ? JSON.stringify(parsed, null, 2) : (payload || '{}');\n" +
+            "      var p = parsed || {};\n" +
+            "      window.setElementValues({\n" +
+            "        universalEditEngineInput: engine,\n" +
+            "        universalEditEngineDisplay: engine,\n" +
+            "        universalEditDbInput: db,\n" +
+            "        universalEditDbDisplay: db,\n" +
+            "        universalEditCollInput: unit || 'default',\n" +
+            "        universalEditCollDisplay: unit || 'default',\n" +
+            "        universalEditIdInput: id,\n" +
+            "        universalEditIdDisplay: id,\n" +
+            "        universalEditPayloadInput: pretty,\n" +
+            "        editDocCollInput: unit || 'default',\n" +
+            "        editDocClassInput: p._class || '',\n" +
+            "        editDocPayloadInput: pretty,\n" +
+            "        editKvCollInput: unit || 'default',\n" +
+            "        editKvValueInput: (typeof payload === 'string') ? payload : pretty,\n" +
+            "        editRecCollInput: unit || 'default',\n" +
+            "        editRecClassInput: p._recordClass || p._class || 'com.jettra.model.Record',\n" +
+            "        editRecPayloadInput: pretty\n" +
+            "      });\n" +
+            "      if (typeof window.setJsonEditorVal === 'function') window.setJsonEditorVal('editDocPayload', pretty);\n" +
+            "      if ((engine === 'RECORDS' || engine === 'RECORD') && typeof window.populateRecordFieldsFromPayload === 'function') {\n" +
+            "        window.populateRecordFieldsFromPayload('edit_rec', p, pretty);\n" +
+            "      }\n" +
+            "      if (typeof window.switchEditEngine === 'function') window.switchEditEngine(engine);\n" +
+            "      if (window.JettraFluxModal) { window.JettraFluxModal.open('universalEditModal'); } else { window.showModal('universalEditModal'); }\n" +
+            "    };\n" +
+            "  }\n" +
             "  window.openUniversalDeleteModal = function(engine, db, unit, id) {\n" +
             "    window.setElementValues({\n" +
             "      confirmDeleteEngineInput: engine,\n" +

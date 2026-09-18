@@ -38,7 +38,7 @@ import com.jettra.store.engine.web.EditDocumentCommand;
 import com.jettra.store.engine.web.EditDocumentCommand;
 import com.jettra.store.engine.web.EditDocumentResult;
 import com.jettra.store.engine.web.EditDocumentResult;
-import com.jettra.store.engine.web.dialog.EngineRecordInsertionDialog;
+import com.jettra.store.engine.insertion.EngineType;
 import com.jettra.store.engine.web.dialog.EngineRecordInsertionDialog;
 import com.jettra.store.engine.web.dialog.EngineRecordInspectDialog;
 import com.jettra.store.engine.web.dialog.EngineRecordInspectDialog;
@@ -875,16 +875,19 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     String indexName = params.get("index_name");
                     String fieldName = params.get("index_field");
                     String indexType = params.getOrDefault("index_type", "BTREE");
-                    String coll = params.getOrDefault("target_coll", "default");
+                    String engType = params.getOrDefault("engine_type", selectedEngine);
+                    if ("RECORD".equalsIgnoreCase(engType)) engType = "RECORDS";
+                    String coll = params.getOrDefault("target_coll", params.getOrDefault("coll", "default"));
                     if (indexName != null && !indexName.isBlank()) {
                         JsonObject idxJson = new JsonObject();
                         idxJson.addProperty("name", indexName.trim());
                         idxJson.addProperty("field", fieldName != null && !fieldName.isBlank() ? fieldName.trim() : "id");
                         idxJson.addProperty("type", indexType);
+                        idxJson.addProperty("engineType", engType);
                         idxJson.addProperty("collection", coll);
                         idxJson.addProperty("createdAt", System.currentTimeMillis());
                         engine.getStorageCore().put("idx:" + targetDb + ":" + indexName.trim(), idxJson.toString().getBytes(StandardCharsets.UTF_8), System.currentTimeMillis());
-                        alertMessage = "Index '" + indexName + "' (" + indexType + ") on field '" + fieldName + "' created for database '" + targetDb + "'!";
+                        alertMessage = "Index '" + indexName + "' (" + indexType + ") on field '" + fieldName + "' for engine '" + engType + "' / unit '" + coll + "' created for database '" + targetDb + "'!";
                         alertType = "badge-active";
                     }
                 } else if ("delete_index".equalsIgnoreCase(action)) {
@@ -3642,7 +3645,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
         ).id("advSearchHelpModal").modifier(new Modifier().style("display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); backdrop-filter:blur(6px); z-index:10050; align-items:center; justify-content:center;"));
     }
 
-    private Widget buildCreateIndexModal(String actionUrl) {
+    public Widget buildCreateIndexModal(String actionUrl) {
         Widget header = createModalHeader("Create Secondary / Composite Index", "fas fa-bolt", "#eab308", "createIndexModal");
 
         Map<String, String> indexTypes = new LinkedHashMap<>();
@@ -3652,12 +3655,25 @@ public class StoreEnginesPage extends StoreTemplatePage {
         indexTypes.put("VECTOR_HNSW", "Vector HNSW (Hierarchical Navigable Small World for ANN)");
         indexTypes.put("SPATIAL_2D", "Spatial 2D (QuadTree/Geohash spatial index)");
 
+        Map<String, String> engineTypes = new LinkedHashMap<>();
+        for (EngineType et : EngineType.all()) {
+            engineTypes.put(et.key(), et.displayName() + " (" + et.key() + ")");
+        }
+
         Widget form = Form.of(
             InputHidden.of("action", "create_index"),
             InputHidden.of("target_db", "").id("createIndexDbInput"),
             Inputs.of(
                 createLabel("Target Database:"),
                 createTextInput("target_db_display", "", "", "#eab308").id("createIndexDbDisplay").attribute("disabled", "true")
+            ).modifier(new Modifier().style("margin-bottom:12px;")),
+            Inputs.of(
+                createLabel("Storage Engine (Tipo de Motor):"),
+                createSelectOne("engine_type", "createIndexEngineSelect", "#38bdf8", "", engineTypes, "DOCUMENT")
+            ).modifier(new Modifier().style("margin-bottom:12px;")),
+            Inputs.of(
+                createLabel("Target Unit (Colección, Tabla, Bucket, Familia o Capa):"),
+                createTextInput("target_coll", "e.g. customers, employees, telemetry, default", "default", "#f8fafc").id("createIndexCollInput").attribute("required", "true")
             ).modifier(new Modifier().style("margin-bottom:12px;")),
             Inputs.of(
                 createLabel("Index Name:"),
@@ -3669,12 +3685,12 @@ public class StoreEnginesPage extends StoreTemplatePage {
             ).modifier(new Modifier().style("margin-bottom:12px;")),
             Inputs.of(
                 createLabel("Index Algorithm / Structure:"),
-                createSelectOne("index_type", "", "#fde047", "", indexTypes, "BTREE")
+                createSelectOne("index_type", "createIndexTypeSelect", "#fde047", "", indexTypes, "BTREE")
             ).modifier(new Modifier().style("margin-bottom:16px;")),
             createModalFormActions("createIndexModal", "Build Index", "fas fa-bolt", "#eab308; color:#0f172a")
         ).method("POST").action(actionUrl);
 
-        return createModalOverlay("createIndexModal", "520px", "rgba(234,179,8,0.4)", header, form);
+        return createModalOverlay("createIndexModal", "560px", "rgba(234,179,8,0.4)", header, form);
     }
 
     private Widget buildCreateSchemaModal(String actionUrl) {
@@ -3751,8 +3767,15 @@ public class StoreEnginesPage extends StoreTemplatePage {
     }
   }
 
-  function openAddIndexModal(db) {
-    setElementValues({ createIndexDbInput: db, createIndexDbDisplay: db });
+  function openAddIndexModal(db, engine, unit) {
+    var e = engine || (typeof currentEngine !== 'undefined' ? currentEngine : 'DOCUMENT');
+    var u = unit || (typeof currentUnit !== 'undefined' ? currentUnit : 'default');
+    setElementValues({
+      createIndexDbInput: db,
+      createIndexDbDisplay: db,
+      createIndexEngineSelect: e,
+      createIndexCollInput: u
+    });
     showModal('createIndexModal');
   }
 
@@ -3897,6 +3920,9 @@ public class StoreEnginesPage extends StoreTemplatePage {
   }
 
   function openUniversalEditModal(engine, db, unit, id, payloadB64) {
+    if (window.openUniversalEditModal && window.openUniversalEditModal !== openUniversalEditModal && typeof window.setJsonEditorVal === 'function') {
+      return window.openUniversalEditModal(engine, db, unit, id, payloadB64);
+    }
     var payload = decodeUtf8Base64(payloadB64);
     var parsed = null;
     try { if (typeof payload === 'string' && (payload.trim().startsWith('{') || payload.trim().startsWith('['))) parsed = JSON.parse(payload); } catch (e) {}
@@ -4757,9 +4783,9 @@ public class StoreEnginesPage extends StoreTemplatePage {
             html += '</span>';
 
             html += '<div style="display:flex; align-items:center; gap:2px;">';
-            html += '<button type="button" onclick="openInspectRecordModal(\\'' + escapeJsString(eng.name) + '\\', \\'' + escapeJsString(dbName) + '\\', \\'' + escapeJsString(u.name) + '\\', \\'' + escapeJsString(itm.id) + '\\', \\'' + itm.payloadB64 + '\\', ' + (itm.versionCount || 1) + ')" title="Inspect record details" style="background:none; border:1px solid rgba(56,189,248,0.3); color:#38bdf8; font-size:8px; padding:1px 4px; border-radius:3px; cursor:pointer;"><i class="fas fa-eye"></i></button>';
-            html += '<button type="button" onclick="openUniversalEditModal(\\'' + escapeJsString(eng.name) + '\\', \\'' + escapeJsString(dbName) + '\\', \\'' + escapeJsString(u.name) + '\\', \\'' + escapeJsString(itm.id) + '\\', \\'' + itm.payloadB64 + '\\')" title="Edit record" style="background:none; border:1px solid rgba(56,189,248,0.3); color:#38bdf8; font-size:8px; padding:1px 4px; border-radius:3px; cursor:pointer;"><i class="fas fa-edit"></i></button>';
-            html += '<button type="button" onclick="openUniversalRestoreModal(\\'' + escapeJsString(eng.name) + '\\', \\'' + escapeJsString(dbName) + '\\', \\'' + escapeJsString(u.name) + '\\', \\'' + escapeJsString(itm.id) + '\\', \\'' + itm.versionsB64 + '\\')" title="Version history v' + (itm.versionCount || 1) + '" style="background:none; border:1px solid rgba(168,85,247,0.3); color:#a855f7; font-size:8px; padding:1px 4px; border-radius:3px; cursor:pointer;"><i class="fas fa-history"></i></button>';
+            html += '<button type="button" onclick="openInspectRecordModal(\\'' + escapeJsString(eng.name) + '\\', \\'' + escapeJsString(dbName) + '\\', \\'' + escapeJsString(u.name) + '\\', \\'' + escapeJsString(itm.id) + '\\', \\'' + (itm.payloadB64 || '') + '\\', ' + (itm.versionCount || 1) + ')" title="Inspect record details" style="background:none; border:1px solid rgba(56,189,248,0.3); color:#38bdf8; font-size:8px; padding:1px 4px; border-radius:3px; cursor:pointer;"><i class="fas fa-eye"></i></button>';
+            html += '<button type="button" onclick="openUniversalEditModal(\\'' + escapeJsString(eng.name) + '\\', \\'' + escapeJsString(dbName) + '\\', \\'' + escapeJsString(u.name) + '\\', \\'' + escapeJsString(itm.id) + '\\', \\'' + (itm.payloadB64 || '') + '\\')" title="Edit record" style="background:none; border:1px solid rgba(56,189,248,0.3); color:#38bdf8; font-size:8px; padding:1px 4px; border-radius:3px; cursor:pointer;"><i class="fas fa-edit"></i></button>';
+            html += '<button type="button" onclick="openUniversalRestoreModal(\\'' + escapeJsString(eng.name) + '\\', \\'' + escapeJsString(dbName) + '\\', \\'' + escapeJsString(u.name) + '\\', \\'' + escapeJsString(itm.id) + '\\', \\'' + (itm.versionsB64 || '') + '\\')" title="Version history v' + (itm.versionCount || 1) + '" style="background:none; border:1px solid rgba(168,85,247,0.3); color:#a855f7; font-size:8px; padding:1px 4px; border-radius:3px; cursor:pointer;"><i class="fas fa-history"></i></button>';
             html += '<button type="button" onclick="openUniversalDeleteModal(\\'' + escapeJsString(eng.name) + '\\', \\'' + escapeJsString(dbName) + '\\', \\'' + escapeJsString(u.name) + '\\', \\'' + escapeJsString(itm.id) + '\\')" title="Delete record" style="background:none; border:1px solid rgba(239,68,68,0.3); color:#ef4444; font-size:8px; padding:1px 4px; border-radius:3px; cursor:pointer;"><i class="fas fa-trash-alt"></i></button>';
             html += '</div></div>';
 
@@ -4793,9 +4819,9 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
             // Quick actions
             html += '<div style="display:flex; gap:8px; align-items:center; margin-top:4px; border-top:1px dashed rgba(255,255,255,0.06); padding-top:3px;">';
-            html += '<button type="button" onclick="openInspectRecordModal(\\'' + escapeJsString(eng.name) + '\\', \\'' + escapeJsString(dbName) + '\\', \\'' + escapeJsString(u.name) + '\\', \\'' + escapeJsString(itm.id) + '\\', \\'' + itm.payloadB64 + '\\', ' + (itm.versionCount || 1) + ')" style="background:none; border:none; color:#38bdf8; font-size:8px; cursor:pointer; padding:1px 4px; display:inline-flex; align-items:center; gap:2px;"><i class="fas fa-search-plus"></i> Inspeccionar</button>';
-            html += '<button type="button" onclick="openUniversalEditModal(\\'' + escapeJsString(eng.name) + '\\', \\'' + escapeJsString(dbName) + '\\', \\'' + escapeJsString(u.name) + '\\', \\'' + escapeJsString(itm.id) + '\\', \\'' + itm.payloadB64 + '\\')" style="background:none; border:none; color:#fbbf24; font-size:8px; cursor:pointer; padding:1px 4px; display:inline-flex; align-items:center; gap:2px;"><i class="fas fa-edit"></i> Editar</button>';
-            html += '<button type="button" onclick="openUniversalRestoreModal(\\'' + escapeJsString(eng.name) + '\\', \\'' + escapeJsString(dbName) + '\\', \\'' + escapeJsString(u.name) + '\\', \\'' + escapeJsString(itm.id) + '\\', \\'' + itm.versionsB64 + '\\')" style="background:none; border:none; color:#c084fc; font-size:8px; cursor:pointer; padding:1px 4px; display:inline-flex; align-items:center; gap:2px;"><i class="fas fa-history"></i> Historial (v' + (itm.versionCount || 1) + ')</button>';
+            html += '<button type="button" onclick="openInspectRecordModal(\\'' + escapeJsString(eng.name) + '\\', \\'' + escapeJsString(dbName) + '\\', \\'' + escapeJsString(u.name) + '\\', \\'' + escapeJsString(itm.id) + '\\', \\'' + (itm.payloadB64 || '') + '\\', ' + (itm.versionCount || 1) + ')" style="background:none; border:none; color:#38bdf8; font-size:8px; cursor:pointer; padding:1px 4px; display:inline-flex; align-items:center; gap:2px;"><i class="fas fa-search-plus"></i> Inspeccionar</button>';
+            html += '<button type="button" onclick="openUniversalEditModal(\\'' + escapeJsString(eng.name) + '\\', \\'' + escapeJsString(dbName) + '\\', \\'' + escapeJsString(u.name) + '\\', \\'' + escapeJsString(itm.id) + '\\', \\'' + (itm.payloadB64 || '') + '\\')" style="background:none; border:none; color:#fbbf24; font-size:8px; cursor:pointer; padding:1px 4px; display:inline-flex; align-items:center; gap:2px;"><i class="fas fa-edit"></i> Editar</button>';
+            html += '<button type="button" onclick="openUniversalRestoreModal(\\'' + escapeJsString(eng.name) + '\\', \\'' + escapeJsString(dbName) + '\\', \\'' + escapeJsString(u.name) + '\\', \\'' + escapeJsString(itm.id) + '\\', \\'' + (itm.versionsB64 || '') + '\\')" style="background:none; border:none; color:#c084fc; font-size:8px; cursor:pointer; padding:1px 4px; display:inline-flex; align-items:center; gap:2px;"><i class="fas fa-history"></i> Historial (v' + (itm.versionCount || 1) + ')</button>';
             html += '</div>';
 
             html += '</div>';
@@ -4833,7 +4859,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
     html += ' → <span style="color:#cbd5e1; font-size:8.5px; font-weight:normal;">(' + indexes.length + ' Indexes, ' + schemas.length + ' Schemas)</span>';
     html += '</div>';
     html += '<div style="display:flex; gap:2px;">';
-    html += '<button type="button" onclick="openAddIndexModal(\\'' + escapeJsString(dbName) + '\\')" style="background:none; border:1px solid rgba(234,179,8,0.5); color:#eab308; font-size:8.5px; padding:1px 4px; border-radius:3px; cursor:pointer; margin-right:3px;"><i class="fas fa-plus"></i> Index</button>';
+    html += '<button type="button" onclick="openAddIndexModal(\\'' + escapeJsString(dbName) + '\\', \\'' + escapeJsString(selectedEngine || '') + '\\', \\'\\\')" style="background:none; border:1px solid rgba(234,179,8,0.5); color:#eab308; font-size:8.5px; padding:1px 4px; border-radius:3px; cursor:pointer; margin-right:3px;"><i class="fas fa-plus"></i> Index</button>';
     html += '<button type="button" onclick="openAddSchemaModal(\\'' + escapeJsString(dbName) + '\\')" style="background:none; border:1px solid rgba(56,189,248,0.5); color:#38bdf8; font-size:8.5px; padding:1px 4px; border-radius:3px; cursor:pointer;"><i class="fas fa-shield-alt"></i> Schema</button>';
     html += '</div>';
     html += '</div>';
@@ -4844,7 +4870,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
     html += '<div style="margin-bottom:3px; margin-top:2px;">';
     html += '<div style="display:flex; justify-content:space-between; align-items:center;">';
     html += '<span style="color:#fde047; font-size:9.5px; font-weight:600;">📁 Secondary & Composite Indexes <span style="font-size:8px; color:#94a3b8; font-weight:normal;">(' + indexes.length + ')</span></span>';
-    html += '<button type="button" onclick="openAddIndexModal(\\'' + escapeJsString(dbName) + '\\')" style="background:none; border:none; color:#eab308; font-size:8.5px; cursor:pointer; padding:0;">[+ Index]</button>';
+    html += '<button type="button" onclick="openAddIndexModal(\\'' + escapeJsString(dbName) + '\\', \\'' + escapeJsString(selectedEngine || '') + '\\', \\'\\\')" style="background:none; border:none; color:#eab308; font-size:8.5px; cursor:pointer; padding:0;">[+ Index]</button>';
     html += '</div>';
     html += '<div style="margin-left:8px; border-left: 1px dashed rgba(255,255,255,0.08); padding-left:6px; margin-top:2px;">';
     if (indexes.length === 0) {
@@ -4856,6 +4882,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
         var idxType = idxObj.type ? String(idxObj.type).replace(/"/g, '') : 'BTREE';
         var idxField = idxObj.field ? String(idxObj.field).replace(/"/g, '') : '_id';
         var idxColl = idxObj.collection ? String(idxObj.collection).replace(/"/g, '') : 'default';
+        var idxEng = idxObj.engineType ? String(idxObj.engineType).replace(/"/g, '') : '';
 
         html += '<div style="display:flex; justify-content:space-between; align-items:center; font-size:9px; padding:1.5px 0; color:#94a3b8;">';
         html += '<span>';
@@ -4863,6 +4890,9 @@ public class StoreEnginesPage extends StoreTemplatePage {
         html += '<i class="fas fa-bolt" style="color:#eab308; margin-right:3px; font-size:8.5px;"></i>';
         html += '<span style="color:#f8fafc; font-weight:bold; font-size:9px; font-family:monospace;">' + escapeHtml(idxName) + '</span> ';
         html += '<span class="store-badge" style="background:rgba(234,179,8,0.15); color:#fde047; font-size:7.5px; padding:0.5px 3px;">' + escapeHtml(idxType) + '</span> ';
+        if (idxEng) {
+          html += '<span class="store-badge" style="background:rgba(56,189,248,0.15); color:#38bdf8; font-size:7.5px; padding:0.5px 3px; margin-left:2px;">' + escapeHtml(idxEng) + '</span> ';
+        }
         html += 'on <span style="color:#38bdf8; font-family:monospace; font-size:8.5px;">' + escapeHtml(idxField) + '</span> (' + escapeHtml(idxColl) + ')';
         html += '</span>';
         html += '<button type="button" onclick="openDeleteIndexModal(\\\'' + escapeJsString(dbName) + '\\\', \\\'' + escapeJsString(idxName) + '\\\')" style="background:none; border:1px solid rgba(239,68,68,0.3); color:#ef4444; font-size:8px; padding:1px 4px; border-radius:3px; cursor:pointer;"><i class="fas fa-trash-alt"></i></button>';
@@ -5849,7 +5879,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
       'inspectRecordModal', 'referenceWarningModal', 'advancedSearchModal',
       'advSearchHelpModal', 'backupDbModal', 'restoreDbModal', 'confirmDbRestoreModal',
       'exportDataModal', 'createIndexModal', 'createSchemaModal',
-      'adaptiveRecordInsertModal'
+      'adaptiveRecordInsertModal', 'universalEditModal'
     ];
     modalIds.forEach(function(mid) {
       var el = document.getElementById(mid);

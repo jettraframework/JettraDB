@@ -21,6 +21,20 @@ import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
 
+import com.jettra.store.engine.insertion.EngineInsertionFactory;
+import com.jettra.store.engine.insertion.InsertionResult;
+import com.jettra.store.engine.insertion.ValidationResult;
+import com.jettra.store.engine.insertion.strategies.GraphInsertionStrategy;
+import com.jettra.store.engine.models.GraphEngine;
+import com.jettra.store.engine.web.EditActionHandler;
+import com.jettra.store.engine.web.EditDocumentCommand;
+import com.jettra.store.engine.web.EditDocumentResult;
+import com.jettra.store.engine.hierarchy.HierarchyExplorerService;
+import com.jettra.store.engine.models.RecordVersionSnapshot;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.List;
+
 import static io.jettra.test.core.JettraAssert.*;
 
 /**
@@ -40,6 +54,7 @@ public class AdaptiveMultiModelRecordDialogsTest {
         tempDir = Files.createTempDirectory("jettra_adaptive_dialogs_test");
         engine = new JettraStorageEngine(tempDir.toString());
         engine.registerEngine("DOCUMENT", new DocumentEngine(engine));
+        engine.registerEngine("GRAPH", new GraphEngine(engine));
         engine.start();
 
         page = new StoreEnginesPage(engine);
@@ -376,6 +391,227 @@ public class AdaptiveMultiModelRecordDialogsTest {
         assertTrue(emp201Json.contains("\"components\":"), "emp_201 must contain components");
     }
 
+    @JettraTest
+    @DisplayName("Test 7: Graph Insertion Strategy Validation allows auto-generated ID without 400 error")
+    public void testGraphInsertionStrategyAutoIdAndValidation() throws Exception {
+        GraphInsertionStrategy strategy = new GraphInsertionStrategy();
+
+        // 1. Auto ID with UUID mode: target_id is empty -> Validation must succeed
+        Map<String, String> autoParams = new HashMap<>();
+        autoParams.put("id_gen_mode", "UUID");
+        autoParams.put("node_label", "Person");
+        autoParams.put("node_props", "{\"name\":\"Alice Vance\"}");
+
+        ValidationResult autoVal = strategy.validate(autoParams);
+        assertTrue(autoVal.isValid(), "Validation must pass when target_id is omitted with UUID auto-generation mode");
+
+        // 2. Auto ID with empty id_gen_mode (defaults to UUID) -> Validation must succeed
+        Map<String, String> defaultParams = new HashMap<>();
+        defaultParams.put("node_label", "Developer");
+        defaultParams.put("node_props", "{\"skill\":\"Java 25\"}");
+
+        ValidationResult defaultVal = strategy.validate(defaultParams);
+        assertTrue(defaultVal.isValid(), "Validation must pass when id_gen_mode is defaulted");
+
+        // 3. Manual mode without target_id -> Validation must fail with clear message
+        Map<String, String> manualEmptyParams = new HashMap<>();
+        manualEmptyParams.put("id_gen_mode", "MANUAL");
+        manualEmptyParams.put("node_label", "Person");
+
+        ValidationResult manualVal = strategy.validate(manualEmptyParams);
+        assertFalse(manualVal.isValid(), "Validation must fail in MANUAL mode if target_id is blank");
+        assertTrue(manualVal.errors().stream().anyMatch(e -> e.contains("Manual")),
+                "Error message must specify that target_id is required in Manual mode");
+
+        // 4. End-to-end execution via EngineInsertionFactory
+        CompletableFuture<InsertionResult> future = EngineInsertionFactory.executeInsertAsync(
+                engine, "GRAPH", "social_db", autoParams);
+        InsertionResult result = future.get(5, TimeUnit.SECONDS);
+
+        assertTrue(result.success(), "InsertionResult must be successful: " + result.message());
+        assertNotNull(result.id(), "Resolved ID must be generated");
+        assertFalse(result.id().isBlank(), "Resolved ID must not be blank");
+    }
+
+    @JettraTest
+    @DisplayName("Test 8: Index Creation specifies explicit engine_type and target_coll")
+    public void testCreateIndexModalExplicitEngineAndUnit() throws Exception {
+        // 1. Render buildCreateIndexModal
+        Widget createIndexModal = page.buildCreateIndexModal("/engines");
+        String modalHtml = createIndexModal.render(Themes.FlatTheme());
+
+        assertTrue(modalHtml.contains("name='engine_type'") || modalHtml.contains("name=\"engine_type\""), "createIndexModal must contain engine_type select");
+        assertTrue(modalHtml.contains("name='target_coll'") || modalHtml.contains("name=\"target_coll\""), "createIndexModal must contain target_coll input");
+        assertTrue(modalHtml.contains("createIndexEngineSelect"), "Must have createIndexEngineSelect id");
+        assertTrue(modalHtml.contains("createIndexCollInput"), "Must have createIndexCollInput id");
+
+        // 2. Dispatch create_index request with explicit engine_type and target_coll
+        TestHttpExchange exchange = new TestHttpExchange("POST", "/engines?action=create_index");
+        exchange.getRequestHeaders().set("Cookie", "username=admin; role=ADMIN");
+        Map<String, String> formParams = new HashMap<>();
+        formParams.put("action", "create_index");
+        formParams.put("target_db", "test_index_db");
+        formParams.put("engine_type", "KEYVALUE");
+        formParams.put("target_coll", "user_sessions");
+        formParams.put("index_name", "idx_session_ttl");
+        formParams.put("index_field", "ttl");
+        formParams.put("index_type", "HASH");
+
+        // Encode as form urlencoded
+        StringBuilder sb = new StringBuilder();
+        for (Map.Entry<String, String> entry : formParams.entrySet()) {
+            if (!sb.isEmpty()) sb.append("&");
+            sb.append(java.net.URLEncoder.encode(entry.getKey(), java.nio.charset.StandardCharsets.UTF_8))
+              .append("=")
+              .append(java.net.URLEncoder.encode(entry.getValue(), java.nio.charset.StandardCharsets.UTF_8));
+        }
+        exchange.setFormRequestBody(sb.toString());
+
+        page.handle(exchange);
+        assertEquals(200, exchange.getResponseCode(), "create_index must return 200 OK");
+
+        // Verify index is registered in storage with engineType and collection
+        byte[] idxBytes = engine.getStorageCore().get("idx:test_index_db:idx_session_ttl");
+        assertNotNull(idxBytes, "Index must be stored in idx:test_index_db:idx_session_ttl");
+        String idxJson = new String(idxBytes, java.nio.charset.StandardCharsets.UTF_8);
+        assertTrue(idxJson.contains("\"engineType\":\"KEYVALUE\""), "Index metadata must contain engineType KEYVALUE");
+        assertTrue(idxJson.contains("\"collection\":\"user_sessions\""), "Index metadata must contain collection user_sessions");
+        assertTrue(idxJson.contains("\"field\":\"ttl\""), "Index metadata must contain field ttl");
+        assertTrue(idxJson.contains("\"type\":\"HASH\""), "Index metadata must contain type HASH");
+    }
+
+    @JettraTest
+    @DisplayName("Test 9: Universal Edit Modal teleportation and Java 25 Record v+1 versioning")
+    public void testUniversalEditModalTeleportedAndRecordVersionIncrement() throws Exception {
+        // 1. Verify modalIds array in page HTML includes universalEditModal
+        Map<String, String> pageParams = new HashMap<>();
+        Widget pageWidget = page.buildContent(null, pageParams, "dark");
+        String pageHtml = pageWidget.render(Themes.FlatTheme());
+
+        assertTrue(pageHtml.contains("'universalEditModal'"),
+                "StoreEnginesPage modalIds teleport array must include universalEditModal");
+        assertTrue(pageHtml.contains("'adaptiveRecordInsertModal'"),
+                "StoreEnginesPage modalIds teleport array must include adaptiveRecordInsertModal");
+
+        // 2. Verify Record edit creates v+1 version
+        String db = "corp_db";
+        String coll = "staff";
+        String id = "rec_001";
+        String key = "rec:" + db + ":" + coll + ":" + id;
+
+        // Initial version v1
+        String v1Payload = "{\"_recordClass\":\"com.jettra.model.StaffRecord\",\"_table\":\"staff\",\"components\":{\"name\":\"Carlos\",\"role\":\"Eng\"}}";
+        engine.getStorageCore().put(key, v1Payload.getBytes(java.nio.charset.StandardCharsets.UTF_8), System.currentTimeMillis() - 5000);
+
+        // Edit through EditActionHandler
+        EditActionHandler editHandler = new EditActionHandler(engine);
+        Map<String, String> extraParams = new HashMap<>();
+        extraParams.put("rec_class", "com.jettra.model.StaffRecord");
+        String v2Payload = "{\"_recordClass\":\"com.jettra.model.StaffRecord\",\"_table\":\"staff\",\"components\":{\"name\":\"Carlos\",\"role\":\"Lead Eng\"}}";
+
+        EditDocumentCommand cmd = EditDocumentCommand.of("RECORDS", db, coll, id, v2Payload, extraParams);
+        EditDocumentResult res = editHandler.executeEdit(cmd);
+        assertTrue(res.success(), "Edit must succeed: " + res.error());
+
+        // Verify data in storage has the new payload
+        byte[] updatedBytes = engine.getStorageCore().get(key);
+        assertNotNull(updatedBytes, "Updated record must exist in storage");
+        String updatedJson = new String(updatedBytes, java.nio.charset.StandardCharsets.UTF_8);
+        assertTrue(updatedJson.contains("Lead Eng"), "Updated payload must be persisted");
+
+        // Verify version history has at least 2 versions (v1 and v2)
+        HierarchyExplorerService hierarchyService = new HierarchyExplorerService(engine);
+        List<RecordVersionSnapshot> snapshots = hierarchyService.getVersionSnapshots("RECORDS", db, coll, id);
+        assertTrue(snapshots.size() >= 2, "HierarchyExplorerService must report at least 2 snapshots after edit, confirming v+1: " + snapshots.size());
+    }
+
+    @JettraTest
+    @DisplayName("Test 10: StoreEnginesPage Tree View script does not reference undefined currentColl")
+    public void testTreeViewScriptDoesNotReferenceUndefinedCurrentColl() {
+        Map<String, String> params = new HashMap<>();
+        params.put("engine", "DOCUMENT");
+        params.put("target_db", "test_db");
+
+        Widget pageWidget = page.buildContent(null, params, "dark");
+        String html = pageWidget.render(Themes.FlatTheme());
+
+        // Ensure currentColl is NOT referenced as an undefined JS identifier in renderDbHierarchyHtml
+        assertFalse(html.contains("escapeJsString(currentColl)"),
+                "renderDbHierarchyHtml must not reference undefined variable 'currentColl'");
+        assertFalse(html.contains("+ currentColl +"),
+                "renderDbHierarchyHtml must not concatenate undefined 'currentColl'");
+        assertTrue(html.contains("renderDbHierarchyHtml"),
+                "Page must contain renderDbHierarchyHtml function");
+    }
+
+    @JettraTest
+    @DisplayName("Test 11: EngineRecordEditDialog renders structured JettraFlux components for all 9 engines")
+    public void testEngineRecordEditDialogStructuredJettraFluxComponents() {
+        Widget editDialog = EngineRecordEditDialog.build("/engines");
+        String html = editDialog.render(Themes.FlatTheme());
+
+        // Helper scripts for safe JSON editor setting and decoding
+        assertTrue(html.contains("function safeDecodePayload"), "Must declare safeDecodePayload script");
+        assertTrue(html.contains("function setJsonEditorVal"), "Must declare setJsonEditorVal script");
+
+        // DOCUMENT: JettraFluxJsonEditor and Class input
+        assertTrue(html.contains("id=\"editDocPayload_container\"") || html.contains("name=\"editDocPayload\""), "Must contain editDocPayload JettraFluxJsonEditor");
+        assertTrue(html.contains("id=\"editDocPayload_input\""), "Must contain editDocPayload textarea");
+        assertTrue(html.contains("id=\"editDocClassInput\""), "Must contain editDocClassInput");
+
+        // KEYVALUE: Value and TTL
+        assertTrue(html.contains("id=\"editKvValueInput\""), "Must contain editKvValueInput");
+        assertTrue(html.contains("id=\"editKvTtlInput\""), "Must contain editKvTtlInput");
+
+        // VECTOR: Coords, Metric select, and JettraFluxJsonEditor
+        assertTrue(html.contains("id=\"editVecCoordsInput\""), "Must contain editVecCoordsInput");
+        assertTrue(html.contains("id=\"editVecMetricSelect\""), "Must contain editVecMetricSelect");
+        assertTrue(html.contains("id=\"editVecMeta_container\"") || html.contains("name=\"editVecMeta\""), "Must contain editVecMeta JettraFluxJsonEditor");
+        assertTrue(html.contains("id=\"editVecMeta_input\""), "Must contain editVecMeta textarea");
+
+        // GRAPH: Mode radios (Node/Edge), Label/IDs, and JettraFluxJsonEditors
+        assertTrue(html.contains("id=\"edit_graph_mode_node\""), "Must contain Node mode radio");
+        assertTrue(html.contains("id=\"edit_graph_mode_edge\""), "Must contain Edge mode radio");
+        assertTrue(html.contains("id=\"editGraphNodeProps_container\"") || html.contains("name=\"editGraphNodeProps\""), "Must contain editGraphNodeProps JettraFluxJsonEditor");
+        assertTrue(html.contains("id=\"editGraphEdgeProps_container\"") || html.contains("name=\"editGraphEdgeProps\""), "Must contain editGraphEdgeProps JettraFluxJsonEditor");
+        assertTrue(html.contains("id=\"editGraphFromId\""), "Must contain editGraphFromId");
+        assertTrue(html.contains("id=\"editGraphToId\""), "Must contain editGraphToId");
+
+        // TIMESERIES: Value, Unit, Timestamp with Now button, and Tags JettraFluxJsonEditor
+        assertTrue(html.contains("id=\"editTsValueInput\""), "Must contain editTsValueInput");
+        assertTrue(html.contains("id=\"editTsUnitInput\""), "Must contain editTsUnitInput");
+        assertTrue(html.contains("id=\"editTsTags_container\"") || html.contains("name=\"editTsTags\""), "Must contain editTsTags JettraFluxJsonEditor");
+        assertTrue(html.contains("id=\"editTsTags_input\""), "Must contain editTsTags textarea");
+
+        // COLUMN: Family, Qualifier, and Data JettraFluxJsonEditor
+        assertTrue(html.contains("id=\"editColCollInput\""), "Must contain editColCollInput");
+        assertTrue(html.contains("id=\"editColQualifierInput\""), "Must contain editColQualifierInput");
+        assertTrue(html.contains("id=\"editColData_container\"") || html.contains("name=\"editColData\""), "Must contain editColData JettraFluxJsonEditor");
+        assertTrue(html.contains("id=\"editColData_input\""), "Must contain editColData textarea");
+
+        // GEOSPATIAL: Layer, Feature Name, Geo Type Select, Lat, Lon, and Meta JettraFluxJsonEditor
+        assertTrue(html.contains("id=\"editGeoCollInput\""), "Must contain editGeoCollInput");
+        assertTrue(html.contains("id=\"editGeoNameInput\""), "Must contain editGeoNameInput");
+        assertTrue(html.contains("id=\"editGeoTypeSelect\""), "Must contain editGeoTypeSelect");
+        assertTrue(html.contains("id=\"editGeoLatInput\""), "Must contain editGeoLatInput");
+        assertTrue(html.contains("id=\"editGeoLonInput\""), "Must contain editGeoLonInput");
+        assertTrue(html.contains("id=\"editGeoMeta_container\"") || html.contains("name=\"editGeoMeta\""), "Must contain editGeoMeta JettraFluxJsonEditor");
+        assertTrue(html.contains("id=\"editGeoMeta_input\""), "Must contain editGeoMeta textarea");
+
+        // OBJECT: Bucket, Class, MIME Type, and Payload JettraFluxJsonEditor
+        assertTrue(html.contains("id=\"editObjCollInput\""), "Must contain editObjCollInput");
+        assertTrue(html.contains("id=\"editObjClassInput\""), "Must contain editObjClassInput");
+        assertTrue(html.contains("id=\"editObjMimeInput\""), "Must contain editObjMimeInput");
+        assertTrue(html.contains("id=\"editObjPayload_container\"") || html.contains("name=\"editObjPayload\""), "Must contain editObjPayload JettraFluxJsonEditor");
+        assertTrue(html.contains("id=\"editObjPayload_input\""), "Must contain editObjPayload textarea");
+
+        // RECORDS: JettraFluxRecordForm with schema, components, and canonical dual view
+        assertTrue(html.contains("id=\"edit_rec_record_editor_container\""), "Must contain JettraFluxRecordForm container");
+        assertTrue(html.contains("id=\"edit_rec_record_fields_tbody\""), "Must contain record fields tbody");
+        assertTrue(html.contains("id=\"edit_rec_record_json_container\""), "Must contain canonical JSON container");
+        assertTrue(html.contains("Canonical Record Payload Serialization"), "Must contain canonical record serialization header");
+    }
+
     private static class TestHttpExchange extends com.sun.net.httpserver.HttpExchange {
         private final String method;
         private final java.net.URI uri;
@@ -393,6 +629,11 @@ public class AdaptiveMultiModelRecordDialogsTest {
         void setJsonRequestBody(String body) {
             this.requestBody = new java.io.ByteArrayInputStream(body.getBytes(java.nio.charset.StandardCharsets.UTF_8));
             this.requestHeaders.set("Content-Type", "application/json; charset=UTF-8");
+        }
+
+        void setFormRequestBody(String body) {
+            this.requestBody = new java.io.ByteArrayInputStream(body.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            this.requestHeaders.set("Content-Type", "application/x-www-form-urlencoded");
         }
 
         @Override public com.sun.net.httpserver.Headers getRequestHeaders() { return requestHeaders; }

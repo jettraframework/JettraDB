@@ -12,12 +12,17 @@ import java.util.List;
  * Adaptive Multi-Model Record Editing Dialog for JettraDB in /engines under
  * the Multi-Model Storage Hierarchy Explorer section.
  *
- * Tailors its editing interface identically to EngineRecordInsertionDialog:
- * - When editing a Record, displays the JettraFluxRecordForm typed table of columns,
- *   field types (primitives, temporals, collections, objects), and values.
- * - Displays and enables strictly the engine corresponding to the edited record.
- * - Submits asynchronously via AJAX (fetch) with Virtual Thread persistence,
- *   preventing navigation away to raw JSON and keeping the user seamlessly in the UI.
+ * Exclusively built with JettraFlux components, structurally mirroring
+ * the EngineRecordInsertionDialog layout per storage engine:
+ * - Document: Target Collection, Java Class, and JettraFluxJsonEditor.
+ * - KeyValue: Bucket/Namespace, TTL, and Value.
+ * - Vector: Index, Distance Metric Select, Semantic Label, Embeddings Float Array, and JettraFluxJsonEditor for Metadata.
+ * - Graph: Entity mode selector (Node vs Edge) with JettraFluxJsonEditor for Properties.
+ * - TimeSeries: Metric, Value, Unit, Timestamp with "Ahora" button, and JettraFluxJsonEditor for IoT Tags.
+ * - Wide Column: Column Family, Qualifier, and JettraFluxJsonEditor for Dynamic Columns.
+ * - Geospatial: Layer, Name, Geometry Type Select, Coordinates (Lat/Lon), and JettraFluxJsonEditor for GeoJSON metadata.
+ * - Pure Object: Bucket, Object Class, MIME Type, and Payload.
+ * - Relational Records: JettraFluxRecordForm with typed columns table, type selector, and canonical JSON dual view.
  */
 public final class EngineRecordEditDialog {
 
@@ -28,7 +33,7 @@ public final class EngineRecordEditDialog {
     private EngineRecordEditDialog() {}
 
     public static Widget build(String actionUrl) {
-        // 1. Notification banner
+        // 1. Notification feedback banner inside modal
         Widget notification = JettraFluxNotification.of(NOTIFICATION_ID)
                 .title("Resultado de Edición")
                 .message("")
@@ -69,7 +74,7 @@ public final class EngineRecordEditDialog {
             Span.of("Zero-loss versioned update (v+1)").modifier(new Modifier().style("font-size:10.5px; color:var(--j-text-muted); margin-left:auto;"))
         ).modifier(new Modifier().style("display:flex; align-items:center; flex-wrap:wrap; gap:6px; background:var(--j-bg-body); padding:9px 14px; border-radius:8px; border:1px solid var(--j-border); margin-bottom:12px;"));
 
-        // 4. Form with polymorphic engine sections
+        // 4. Form with polymorphic engine sections mirroring EngineRecordInsertionDialog
         Widget form = Form.of(
             InputHidden.of("action", "update_object"),
             InputHidden.of("is_ajax", "true"),
@@ -80,7 +85,7 @@ public final class EngineRecordEditDialog {
 
             commonRow,
 
-            // Polymorphic sections for each engine
+            // Polymorphic sections for the 9 engines
             buildDocumentSection(),
             buildKeyValueSection(),
             buildVectorSection(),
@@ -178,24 +183,30 @@ public final class EngineRecordEditDialog {
     private static Widget buildDocumentSection() {
         return Div.of(
             Div.of(
-                Label.of("Colección de Destino (Collection):")
-                    .modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
-                TextField.of().id("editDocCollInput").binding("target_coll").value("default")
-                    .modifier(new Modifier().style("width:100%; box-sizing:border-box; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:#38bdf8; font-weight:600; font-size:12px;"))
-            ).modifier(new Modifier().style("margin-bottom:10px;")),
+                Div.of(
+                    Label.of("Colección de Documentos:")
+                        .modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
+                    TextField.of().id("editDocCollInput").binding("target_coll").value("customers")
+                        .modifier(new Modifier().style("width:100%; box-sizing:border-box; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:#38bdf8; font-weight:600; font-size:12px;"))
+                ).modifier(new Modifier().style("flex:1;")),
+                Div.of(
+                    Label.of("Java Entity Class (_class metadata):")
+                        .modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
+                    TextField.of().id("editDocClassInput").binding("doc_class").value("")
+                        .modifier(new Modifier().attribute("placeholder", "com.jettra.models.Customer")
+                            .style("width:100%; box-sizing:border-box; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:var(--j-text-primary); font-size:12px; font-family:monospace;"))
+                ).modifier(new Modifier().style("flex:1;"))
+            ).modifier(new Modifier().style("display:flex; gap:12px; margin-bottom:12px;")),
+
             Div.of(
-                Label.of("Clase / Esquema Tipado (Class / Schema Optional):")
-                    .modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
-                TextField.of().id("editDocClassInput").binding("doc_class").value("")
-                    .modifier(new Modifier().attribute("placeholder", "com.jettra.model.Customer")
-                        .style("width:100%; box-sizing:border-box; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:var(--j-text-primary); font-size:12px; font-family:monospace;"))
-            ).modifier(new Modifier().style("margin-bottom:10px;")),
-            Div.of(
-                Label.of("Payload JSON del Documento:")
-                    .modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
-                TextArea.create().name("doc_payload").rows(10).id("editDocPayloadInput")
-                    .modifier(new Modifier().style("width:100%; box-sizing:border-box; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:#38bdf8; font-family:monospace; font-size:12px; padding:10px; line-height:1.4; resize:vertical;"))
-            )
+                JettraFluxJsonEditor.of("editDocPayload", "Document JSON Body", "{\n  \n}")
+                    .name("doc_payload")
+                    .height("220px")
+            ),
+
+            // Legacy direct textarea for backwards compatibility
+            TextArea.create().name("doc_payload_direct").id("editDocPayloadInput")
+                .modifier(new Modifier().style("display:none;"))
         ).modifier(new Modifier().cssClass("universal-edit-engine-section").attribute("data-engine", "DOCUMENT").style("display:block;"));
     }
 
@@ -203,17 +214,31 @@ public final class EngineRecordEditDialog {
     private static Widget buildKeyValueSection() {
         return Div.of(
             Div.of(
-                Label.of("Bucket / Namespace:")
-                    .modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
-                TextField.of().id("editKvCollInput").binding("target_coll").value("default")
-                    .modifier(new Modifier().style("width:100%; box-sizing:border-box; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:#10b981; font-weight:600; font-size:12px;"))
-            ).modifier(new Modifier().style("margin-bottom:10px;")),
+                Div.of(
+                    Label.of("Namespace / Bucket:")
+                        .modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
+                    TextField.of().id("editKvCollInput").binding("target_coll").value("session_cache")
+                        .modifier(new Modifier().style("width:100%; box-sizing:border-box; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:#10b981; font-weight:600; font-size:12px;"))
+                ).modifier(new Modifier().style("flex:1;")),
+                Div.of(
+                    Label.of("TTL (Segundos - Opcional):")
+                        .modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
+                    TextField.of().id("editKvTtlInput").binding("kv_ttl").value("")
+                        .modifier(new Modifier().attribute("placeholder", "Ej. 3600 (0 o vacío = Sin expiración)")
+                            .style("width:100%; box-sizing:border-box; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:var(--j-text-primary); font-size:12px;"))
+                ).modifier(new Modifier().style("flex:1;"))
+            ).modifier(new Modifier().style("display:flex; gap:12px; margin-bottom:12px;")),
+
             Div.of(
-                Label.of("Valor Almacenado / Payload:")
+                Label.of("Valor / Contenido Almacenado:")
                     .modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
-                TextArea.create().name("kv_value").rows(9).id("editKvValueInput")
-                    .modifier(new Modifier().style("width:100%; box-sizing:border-box; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:#10b981; font-family:monospace; font-size:12px; padding:10px; line-height:1.4; resize:vertical;"))
-            )
+                TextArea.create().name("kv_value").rows(8).id("editKvValueInput")
+                    .modifier(new Modifier().attribute("placeholder", "Ingrese cadena, JSON o datos a almacenar...")
+                        .style("width:100%; box-sizing:border-box; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:#10b981; font-family:monospace; font-size:12px; padding:10px; line-height:1.4; resize:vertical;"))
+            ).modifier(new Modifier().style("margin-bottom:6px;")),
+
+            Paragraph.of(Text.of("Soporta tipos primitivos, cadenas Base64 y payloads serializados."))
+                .modifier(new Modifier().style("font-size:11px; color:var(--j-text-muted); margin:0;"))
         ).modifier(new Modifier().cssClass("universal-edit-engine-section").attribute("data-engine", "KEYVALUE").style("display:none;"));
     }
 
@@ -221,23 +246,45 @@ public final class EngineRecordEditDialog {
     private static Widget buildVectorSection() {
         return Div.of(
             Div.of(
-                Label.of("Índice Vectorial / Colección:")
-                    .modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
-                TextField.of().id("editVecCollInput").binding("target_coll").value("default")
-                    .modifier(new Modifier().style("width:100%; box-sizing:border-box; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:#8b5cf6; font-weight:600; font-size:12px;"))
-            ).modifier(new Modifier().style("margin-bottom:10px;")),
+                Div.of(
+                    Label.of("Índice Vectorial (Index):")
+                        .modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
+                    TextField.of().id("editVecCollInput").binding("target_coll").value("semantic_index")
+                        .modifier(new Modifier().style("width:100%; box-sizing:border-box; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:#8b5cf6; font-weight:600; font-size:12px;"))
+                ).modifier(new Modifier().style("flex:1;")),
+                Div.of(
+                    Label.of("Métrica de Distancia:")
+                        .modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
+                    JettraFluxSelect.of("editVecMetricSelect", "vector_metric")
+                        .addOption("COSINE", "Cosine Similarity", true)
+                        .addOption("EUCLIDEAN", "Euclidean (L2)")
+                        .addOption("DOT_PRODUCT", "Dot Product (Inner Product)")
+                        .addOption("MANHATTAN", "Manhattan (L1)")
+                ).modifier(new Modifier().style("flex:1;")),
+                Div.of(
+                    Label.of("Etiqueta / Clase Semántica:")
+                        .modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
+                    TextField.of().id("editVecLabelInput").binding("vector_label").value("")
+                        .modifier(new Modifier().style("width:100%; box-sizing:border-box; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:var(--j-text-primary); font-size:12px;"))
+                ).modifier(new Modifier().style("flex:1;"))
+            ).modifier(new Modifier().style("display:flex; gap:12px; margin-bottom:12px;")),
+
             Div.of(
-                Label.of("Coordenadas Vectoriales (Float Array / Embedding):")
+                Label.of("Array de Embeddings (float[] flotantes separados por coma):")
                     .modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
-                TextField.of().id("editVecCoordsInput").binding("vector_coords").value("0.12, 0.45, 0.88, 0.31")
-                    .modifier(new Modifier().style("width:100%; box-sizing:border-box; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:#a855f7; font-family:monospace; font-size:12px;"))
-            ).modifier(new Modifier().style("margin-bottom:10px;")),
+                TextArea.of("0.12, 0.45, 0.88, 0.31").id("editVecCoordsInput").binding("vector_coords")
+                    .modifier(new Modifier().attribute("rows", "3")
+                        .style("width:100%; box-sizing:border-box; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:#a855f7; font-family:monospace; font-size:12px; resize:vertical;"))
+            ).modifier(new Modifier().style("margin-bottom:12px;")),
+
             Div.of(
-                Label.of("Metadatos Asociados (JSON):")
-                    .modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
-                TextArea.create().name("vector_meta").rows(7).id("editVecMetaInput")
-                    .modifier(new Modifier().style("width:100%; box-sizing:border-box; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:var(--j-text-primary); font-family:monospace; font-size:12px; padding:10px; line-height:1.4; resize:vertical;"))
-            )
+                JettraFluxJsonEditor.of("editVecMeta", "Metadatos Asociados (JSON)", "{\n  \n}")
+                    .name("vector_meta")
+                    .height("160px")
+            ),
+
+            TextArea.create().name("vector_meta_direct").id("editVecMetaInput")
+                .modifier(new Modifier().style("display:none;"))
         ).modifier(new Modifier().cssClass("universal-edit-engine-section").attribute("data-engine", "VECTOR").style("display:none;"));
     }
 
@@ -245,17 +292,69 @@ public final class EngineRecordEditDialog {
     private static Widget buildGraphSection() {
         return Div.of(
             Div.of(
-                Label.of("Etiqueta de Vértice / Grupo (Node Label):")
+                Label.of("Tipo de Entidad Grafo:")
                     .modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
-                TextField.of().id("editGraphCollInput").binding("target_coll").value("Vertex")
-                    .modifier(new Modifier().style("width:100%; box-sizing:border-box; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:#ec4899; font-weight:600; font-size:12px;"))
-            ).modifier(new Modifier().style("margin-bottom:10px;")),
+                Div.of(
+                    RadioButton.of("edit_graph_mode_node", "Vértice / Nodo (Vertex)")
+                        .id("edit_graph_mode_node")
+                        .name("graph_mode")
+                        .value("node")
+                        .checked(true)
+                        .onChange("document.getElementById('edit_graph_node_fields').style.display='block';document.getElementById('edit_graph_edge_fields').style.display='none';")
+                        .modifier(new Modifier().style("margin-right:16px; font-size:12px; color:var(--j-text-primary); cursor:pointer;")),
+                    RadioButton.of("edit_graph_mode_edge", "Arista / Relación (Edge)")
+                        .id("edit_graph_mode_edge")
+                        .name("graph_mode")
+                        .value("edge")
+                        .checked(false)
+                        .onChange("document.getElementById('edit_graph_node_fields').style.display='none';document.getElementById('edit_graph_edge_fields').style.display='block';")
+                        .modifier(new Modifier().style("font-size:12px; color:var(--j-text-primary); cursor:pointer;"))
+                ).modifier(new Modifier().style("display:flex; align-items:center; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px;"))
+            ).modifier(new Modifier().style("margin-bottom:12px;")),
+
+            // Node specific fields
             Div.of(
-                Label.of("Propiedades del Grafo (JSON):")
-                    .modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
-                TextArea.create().name("node_props").rows(9).id("editGraphPropsInput")
-                    .modifier(new Modifier().style("width:100%; box-sizing:border-box; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:#ec4899; font-family:monospace; font-size:12px; padding:10px; line-height:1.4; resize:vertical;"))
-            )
+                Div.of(
+                    Label.of("Etiqueta de Nodo (Node Label / Type):")
+                        .modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
+                    TextField.of().id("editGraphNodeLabel").binding("node_label").value("Person")
+                        .modifier(new Modifier().style("width:100%; box-sizing:border-box; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:#ec4899; font-weight:600; font-size:12px;"))
+                ).modifier(new Modifier().style("margin-bottom:12px;")),
+                JettraFluxJsonEditor.of("editGraphNodeProps", "Propiedades del Vértice (JSON)", "{\n  \n}")
+                    .name("node_props")
+                    .height("170px")
+            ).id("edit_graph_node_fields"),
+
+            // Edge specific fields
+            Div.of(
+                Div.of(
+                    Div.of(
+                        Label.of("Nodo Origen (From ID):")
+                            .modifier(new Modifier().style("font-size:11px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
+                        TextField.of().id("editGraphFromId").binding("from_id").value("")
+                            .modifier(new Modifier().style("width:100%; box-sizing:border-box; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:var(--j-text-primary); font-size:12px;"))
+                    ).modifier(new Modifier().style("flex:1;")),
+                    Div.of(
+                        Label.of("Tipo de Relación (Edge Label):")
+                            .modifier(new Modifier().style("font-size:11px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
+                        TextField.of().id("editGraphEdgeLabel").binding("edge_label").value("RELATES_TO")
+                            .modifier(new Modifier().style("width:100%; box-sizing:border-box; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:var(--j-text-primary); font-size:12px;"))
+                    ).modifier(new Modifier().style("flex:1;")),
+                    Div.of(
+                        Label.of("Nodo Destino (To ID):")
+                            .modifier(new Modifier().style("font-size:11px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
+                        TextField.of().id("editGraphToId").binding("to_id").value("")
+                            .modifier(new Modifier().style("width:100%; box-sizing:border-box; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:var(--j-text-primary); font-size:12px;"))
+                    ).modifier(new Modifier().style("flex:1;"))
+                ).modifier(new Modifier().style("display:flex; gap:10px; margin-bottom:12px;")),
+                JettraFluxJsonEditor.of("editGraphEdgeProps", "Propiedades de la Arista (JSON)", "{\n  \n}")
+                    .name("edge_props")
+                    .height("170px")
+            ).id("edit_graph_edge_fields").modifier(new Modifier().style("display:none;")),
+
+            // Legacy mirrors for backwards compatibility
+            TextField.of().id("editGraphCollInput").binding("target_coll").value("Vertex").modifier(new Modifier().style("display:none;")),
+            TextArea.create().name("node_props_direct").id("editGraphPropsInput").modifier(new Modifier().style("display:none;"))
         ).modifier(new Modifier().cssClass("universal-edit-engine-section").attribute("data-engine", "GRAPH").style("display:none;"));
     }
 
@@ -263,35 +362,46 @@ public final class EngineRecordEditDialog {
     private static Widget buildTimeSeriesSection() {
         return Div.of(
             Div.of(
-                Label.of("Nombre de la Métrica / Serie:")
-                    .modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
-                TextField.of().id("editTsCollInput").binding("target_coll").value("telemetry")
-                    .modifier(new Modifier().style("width:100%; box-sizing:border-box; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:#06b6d4; font-weight:600; font-size:12px;"))
-            ).modifier(new Modifier().style("margin-bottom:10px;")),
-            Div.of(
                 Div.of(
-                    Label.of("Valor Numérico (Double):").modifier(new Modifier().style("font-size:11px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
+                    Label.of("Nombre de Serie / Métrica:")
+                        .modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
+                    TextField.of().id("editTsCollInput").binding("target_coll").value("server_temperature")
+                        .modifier(new Modifier().style("width:100%; box-sizing:border-box; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:#06b6d4; font-weight:600; font-size:12px;"))
+                ).modifier(new Modifier().style("flex:1.2;")),
+                Div.of(
+                    Label.of("Valor Numérico (Double):")
+                        .modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
                     TextField.of().id("editTsValueInput").binding("ts_value").value("25.4")
                         .modifier(new Modifier().attribute("type", "number").attribute("step", "any")
                             .style("width:100%; box-sizing:border-box; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:var(--j-text-primary); font-size:12px;"))
-                ),
+                ).modifier(new Modifier().style("flex:1;")),
                 Div.of(
-                    Label.of("Unidad / Escala:").modifier(new Modifier().style("font-size:11px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
-                    TextField.of().id("editTsUnitInput").binding("ts_unit").value("celsius")
+                    Label.of("Unidad de Medida:")
+                        .modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
+                    TextField.of().id("editTsUnitInput").binding("ts_unit").value("°C")
                         .modifier(new Modifier().style("width:100%; box-sizing:border-box; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:var(--j-text-primary); font-size:12px;"))
-                ),
-                Div.of(
-                    Label.of("Timestamp (Epoch ms):").modifier(new Modifier().style("font-size:11px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
-                    TextField.of().id("editTsTimestampInput").binding("ts_timestamp").value("")
-                        .modifier(new Modifier().style("width:100%; box-sizing:border-box; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:var(--j-text-primary); font-family:monospace; font-size:12px;"))
-                )
-            ).modifier(new Modifier().style("display:grid; grid-template-columns:1fr 1fr 1.2fr; gap:10px; margin-bottom:10px;")),
+                ).modifier(new Modifier().style("flex:0.8;"))
+            ).modifier(new Modifier().style("display:flex; gap:12px; margin-bottom:12px;")),
+
             Div.of(
-                Label.of("Tags / Dimensiones JSON:")
+                Label.of("Timestamp (Milisegundos Epoch o ISO-8601):")
                     .modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
-                TextArea.create().name("ts_tags").rows(6).id("editTsTagsInput")
-                    .modifier(new Modifier().style("width:100%; box-sizing:border-box; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:#06b6d4; font-family:monospace; font-size:12px; padding:10px; line-height:1.4; resize:vertical;"))
-            )
+                Div.of(
+                    TextField.of().id("editTsTimestampInput").binding("ts_timestamp").value("")
+                        .modifier(new Modifier().style("flex:1; box-sizing:border-box; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:var(--j-text-primary); font-family:monospace; font-size:12px;")),
+                    Button.of(Icon.of("fas fa-clock"), Text.of(" Ahora"))
+                        .modifier(new Modifier().attribute("type", "button").attribute("onclick", "document.getElementById('editTsTimestampInput').value = Date.now();")
+                            .style("padding:8px 14px; font-size:11px; background:var(--j-bg-subsurface); color:var(--j-text-primary); border:1px solid var(--j-border); border-radius:6px; cursor:pointer;"))
+                ).modifier(new Modifier().style("display:flex; gap:8px;"))
+            ).modifier(new Modifier().style("margin-bottom:12px;")),
+
+            Div.of(
+                JettraFluxJsonEditor.of("editTsTags", "Tags / Dimensiones IoT (JSON)", "{\n  \n}")
+                    .name("ts_tags")
+                    .height("160px")
+            ),
+
+            TextArea.create().name("ts_tags_direct").id("editTsTagsInput").modifier(new Modifier().style("display:none;"))
         ).modifier(new Modifier().cssClass("universal-edit-engine-section").attribute("data-engine", "TIMESERIES").style("display:none;"));
     }
 
@@ -299,17 +409,27 @@ public final class EngineRecordEditDialog {
     private static Widget buildColumnSection() {
         return Div.of(
             Div.of(
-                Label.of("Familia de Columnas (Column Family):")
-                    .modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
-                TextField.of().id("editColCollInput").binding("target_coll").value("analytics")
-                    .modifier(new Modifier().style("width:100%; box-sizing:border-box; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:#f97316; font-weight:600; font-size:12px;"))
-            ).modifier(new Modifier().style("margin-bottom:10px;")),
+                Div.of(
+                    Label.of("Familia de Columnas (Column Family):")
+                        .modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
+                    TextField.of().id("editColCollInput").binding("target_coll").value("user_analytics")
+                        .modifier(new Modifier().style("width:100%; box-sizing:border-box; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:#f97316; font-weight:600; font-size:12px;"))
+                ).modifier(new Modifier().style("flex:1;")),
+                Div.of(
+                    Label.of("Column Qualifier (Opcional):")
+                        .modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
+                    TextField.of().id("editColQualifierInput").binding("col_qualifier").value("profile:full")
+                        .modifier(new Modifier().style("width:100%; box-sizing:border-box; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:var(--j-text-primary); font-size:12px;"))
+                ).modifier(new Modifier().style("flex:1;"))
+            ).modifier(new Modifier().style("display:flex; gap:12px; margin-bottom:12px;")),
+
             Div.of(
-                Label.of("Columnas Dinámicas / Row Data (JSON):")
-                    .modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
-                TextArea.create().name("col_data").rows(9).id("editColDataInput")
-                    .modifier(new Modifier().style("width:100%; box-sizing:border-box; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:#f97316; font-family:monospace; font-size:12px; padding:10px; line-height:1.4; resize:vertical;"))
-            )
+                JettraFluxJsonEditor.of("editColData", "Dynamic Columns & Qualifier Map (JSON)", "{\n  \n}")
+                    .name("col_data")
+                    .height("180px")
+            ),
+
+            TextArea.create().name("col_data_direct").id("editColDataInput").modifier(new Modifier().style("display:none;"))
         ).modifier(new Modifier().cssClass("universal-edit-engine-section").attribute("data-engine", "COLUMN").style("display:none;"));
     }
 
@@ -317,31 +437,53 @@ public final class EngineRecordEditDialog {
     private static Widget buildGeoSection() {
         return Div.of(
             Div.of(
-                Label.of("Capa Espacial (Spatial Layer):")
-                    .modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
-                TextField.of().id("editGeoCollInput").binding("target_coll").value("stores_layer")
-                    .modifier(new Modifier().style("width:100%; box-sizing:border-box; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:#14b8a6; font-weight:600; font-size:12px;"))
-            ).modifier(new Modifier().style("margin-bottom:10px;")),
+                Div.of(
+                    Label.of("Capa Espacial (Spatial Layer):")
+                        .modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
+                    TextField.of().id("editGeoCollInput").binding("target_coll").value("facilities_layer")
+                        .modifier(new Modifier().style("width:100%; box-sizing:border-box; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:#14b8a6; font-weight:600; font-size:12px;"))
+                ).modifier(new Modifier().style("flex:1;")),
+                Div.of(
+                    Label.of("Nombre de Feature / Lugar:")
+                        .modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
+                    TextField.of().id("editGeoNameInput").binding("geo_name").value("")
+                        .modifier(new Modifier().style("width:100%; box-sizing:border-box; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:var(--j-text-primary); font-size:12px;"))
+                ).modifier(new Modifier().style("flex:1;")),
+                Div.of(
+                    Label.of("Tipo de Geometría:")
+                        .modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
+                    JettraFluxSelect.of("editGeoTypeSelect", "geo_type")
+                        .addOption("Point", "Point (Coordenada)", true)
+                        .addOption("Polygon", "Polygon (Polígono)")
+                        .addOption("MultiPolygon", "MultiPolygon")
+                        .addOption("LineString", "LineString (Trayectoria)")
+                ).modifier(new Modifier().style("flex:1;"))
+            ).modifier(new Modifier().style("display:flex; gap:12px; margin-bottom:12px;")),
+
             Div.of(
                 Div.of(
-                    Label.of("Latitud (-90..90):").modifier(new Modifier().style("font-size:11px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
+                    Label.of("Latitud (-90.0 a +90.0):")
+                        .modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
                     TextField.of().id("editGeoLatInput").binding("geo_lat").value("8.9824")
                         .modifier(new Modifier().attribute("type", "number").attribute("step", "any")
-                            .style("width:100%; box-sizing:border-box; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:var(--j-text-primary); font-size:12px;"))
-                ),
+                            .style("width:100%; box-sizing:border-box; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:#14b8a6; font-weight:600; font-size:12px;"))
+                ).modifier(new Modifier().style("flex:1;")),
                 Div.of(
-                    Label.of("Longitud (-180..180):").modifier(new Modifier().style("font-size:11px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
+                    Label.of("Longitud (-180.0 a +180.0):")
+                        .modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
                     TextField.of().id("editGeoLonInput").binding("geo_lon").value("-79.5199")
                         .modifier(new Modifier().attribute("type", "number").attribute("step", "any")
-                            .style("width:100%; box-sizing:border-box; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:var(--j-text-primary); font-size:12px;"))
-                )
-            ).modifier(new Modifier().style("display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px;")),
+                            .style("width:100%; box-sizing:border-box; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:#14b8a6; font-weight:600; font-size:12px;"))
+                ).modifier(new Modifier().style("flex:1;"))
+            ).modifier(new Modifier().style("display:flex; gap:12px; margin-bottom:12px;")),
+
             Div.of(
-                Label.of("Nombre del Lugar / Metadata:")
-                    .modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
-                TextField.of().id("editGeoNameInput").binding("geo_name").value("")
-                    .modifier(new Modifier().style("width:100%; box-sizing:border-box; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:var(--j-text-primary); font-size:12px;"))
-            )
+                JettraFluxJsonEditor.of("editGeoMeta", "Propiedades y Coordenadas GeoJSON (JSON)", "{\n  \n}")
+                    .name("geo_props")
+                    .height("160px")
+            ),
+
+            TextArea.create().name("geo_props_direct").id("editGeoPropsInput").modifier(new Modifier().style("display:none;"))
         ).modifier(new Modifier().cssClass("universal-edit-engine-section").attribute("data-engine", "GEOSPATIAL").style("display:none;"));
     }
 
@@ -349,23 +491,33 @@ public final class EngineRecordEditDialog {
     private static Widget buildObjectSection() {
         return Div.of(
             Div.of(
-                Label.of("Bucket de Almacenamiento:")
-                    .modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
-                TextField.of().id("editObjCollInput").binding("target_coll").value("media_bucket")
-                    .modifier(new Modifier().style("width:100%; box-sizing:border-box; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:#a855f7; font-weight:600; font-size:12px;"))
-            ).modifier(new Modifier().style("margin-bottom:10px;")),
+                Div.of(
+                    Label.of("Bucket de Almacenamiento:")
+                        .modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
+                    TextField.of().id("editObjCollInput").binding("target_coll").value("media_bucket")
+                        .modifier(new Modifier().style("width:100%; box-sizing:border-box; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:#a855f7; font-weight:600; font-size:12px;"))
+                ).modifier(new Modifier().style("flex:1;")),
+                Div.of(
+                    Label.of("Canonical Java Object Class:")
+                        .modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
+                    TextField.of().id("editObjClassInput").binding("obj_class").value("com.jettra.storage.MediaFile")
+                        .modifier(new Modifier().style("width:100%; box-sizing:border-box; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:var(--j-text-primary); font-size:12px;"))
+                ).modifier(new Modifier().style("flex:1;")),
+                Div.of(
+                    Label.of("MIME / Content Type:")
+                        .modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
+                    TextField.of().id("editObjMimeInput").binding("obj_mime").value("application/json")
+                        .modifier(new Modifier().style("width:100%; box-sizing:border-box; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:var(--j-text-primary); font-size:12px;"))
+                ).modifier(new Modifier().style("flex:1;"))
+            ).modifier(new Modifier().style("display:flex; gap:12px; margin-bottom:12px;")),
+
             Div.of(
-                Label.of("MIME Content-Type:")
-                    .modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
-                TextField.of().id("editObjMimeInput").binding("obj_mime").value("application/json")
-                    .modifier(new Modifier().style("width:100%; box-sizing:border-box; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:var(--j-text-primary); font-size:12px;"))
-            ).modifier(new Modifier().style("margin-bottom:10px;")),
-            Div.of(
-                Label.of("Contenido / Raw Payload:")
-                    .modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
-                TextArea.create().name("obj_payload").rows(7).id("editObjPayloadInput")
-                    .modifier(new Modifier().style("width:100%; box-sizing:border-box; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:#a855f7; font-family:monospace; font-size:12px; padding:10px; line-height:1.4; resize:vertical;"))
-            )
+                JettraFluxJsonEditor.of("editObjPayload", "Contenido del Objeto / Payload Serializado (JSON o Raw)", "{\n  \n}")
+                    .name("obj_payload")
+                    .height("160px")
+            ),
+
+            TextArea.create().name("obj_payload_direct").id("editObjPayloadInput").modifier(new Modifier().style("display:none;"))
         ).modifier(new Modifier().cssClass("universal-edit-engine-section").attribute("data-engine", "OBJECT").style("display:none;"));
     }
 
@@ -389,6 +541,48 @@ public final class EngineRecordEditDialog {
     private static Widget buildClientScript() {
         return RawHtml.of("""
         <script>
+        function safeDecodePayload(b64) {
+            if (!b64 || b64 === 'undefined' || b64 === 'null') return '';
+            var str = String(b64).trim();
+            if (str.startsWith('{') || str.startsWith('[') || str.startsWith('<')) {
+                return str;
+            }
+            try {
+                var bin = atob(str);
+                var bytes = new Uint8Array(bin.length);
+                for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+                return new TextDecoder('utf-8').decode(bytes);
+            } catch (e) {
+                try { return atob(str); } catch (e2) { return str; }
+            }
+        }
+
+        function setJsonEditorVal(editorId, jsonVal) {
+            var str = '';
+            if (typeof jsonVal === 'object' && jsonVal !== null) {
+                str = JSON.stringify(jsonVal, null, 2);
+            } else if (typeof jsonVal === 'string') {
+                var trimmed = jsonVal.trim();
+                if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+                    try { str = JSON.stringify(JSON.parse(trimmed), null, 2); } catch(e) { str = jsonVal; }
+                } else {
+                    str = jsonVal;
+                }
+            } else {
+                str = String(jsonVal || '');
+            }
+
+            var inp = document.getElementById(editorId + '_input');
+            if (inp) {
+                inp.value = str;
+                if (window.JettraFluxJsonEditor && window.JettraFluxJsonEditor.validate) {
+                    window.JettraFluxJsonEditor.validate(editorId + '_input', editorId + '_status');
+                }
+            }
+            var direct = document.getElementById(editorId + 'Input');
+            if (direct) direct.value = str;
+        }
+
         function submitUniversalEditRecord(e) {
             if (e) {
                 if (e.preventDefault) e.preventDefault();
@@ -404,9 +598,10 @@ public final class EngineRecordEditDialog {
                 btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Guardando cambios...';
             }
 
-            // Sync Record Form if active
             var engInp = document.getElementById('universalEditEngineInput');
             var eng = engInp ? engInp.value : 'DOCUMENT';
+
+            // Sync Record Form if active
             if ((eng === 'RECORDS' || eng === 'RECORD') && window.JettraFluxRecordForm) {
                 try {
                     window.JettraFluxRecordForm.updatePayload('edit_rec');
@@ -428,7 +623,6 @@ public final class EngineRecordEditDialog {
             payloadObj['action'] = 'update_object';
             payloadObj['is_ajax'] = 'true';
             payloadObj['is_fetch'] = 'true';
-
             payloadObj['engine_type'] = eng;
 
             var dbInp = document.getElementById('universalEditDbInput');
@@ -440,19 +634,18 @@ public final class EngineRecordEditDialog {
             var idInp = document.getElementById('universalEditIdInput');
             if (idInp && idInp.value) payloadObj['target_id'] = idInp.value;
 
-            var uniPayloadEl = document.getElementById('universalEditPayloadInput');
-            if (uniPayloadEl && uniPayloadEl.value) {
-                payloadObj['record_payload'] = uniPayloadEl.value;
-            }
-
             if (eng === 'RECORDS' || eng === 'RECORD') {
-                var recEl = document.getElementById('edit_rec_payload');
+                var recEl = document.getElementById('edit_rec_payload') || document.getElementById('editRecPayloadInput');
                 if (recEl && recEl.value) {
                     payloadObj['record_payload'] = recEl.value;
                     payloadObj['rec_payload'] = recEl.value;
                 }
+                var recTable = document.getElementById('edit_rec_table') || document.getElementById('editRecCollInput');
+                if (recTable && recTable.value) payloadObj['target_coll'] = recTable.value;
+                var recCls = document.getElementById('edit_rec_class') || document.getElementById('editRecClassInput');
+                if (recCls && recCls.value) payloadObj['rec_class'] = recCls.value;
             } else if (eng === 'DOCUMENT') {
-                var docEl = document.getElementById('editDocPayloadInput');
+                var docEl = document.getElementById('editDocPayload_input') || document.getElementById('editDocPayloadInput');
                 if (docEl && docEl.value) {
                     payloadObj['record_payload'] = docEl.value;
                     payloadObj['doc_payload'] = docEl.value;
@@ -469,30 +662,74 @@ public final class EngineRecordEditDialog {
                 }
                 var kvColl = document.getElementById('editKvCollInput');
                 if (kvColl && kvColl.value) payloadObj['target_coll'] = kvColl.value;
+                var kvTtl = document.getElementById('editKvTtlInput');
+                if (kvTtl && kvTtl.value) payloadObj['kv_ttl'] = kvTtl.value;
             } else if (eng === 'VECTOR') {
                 var vecCoords = document.getElementById('editVecCoordsInput');
                 if (vecCoords && vecCoords.value) payloadObj['vector_coords'] = vecCoords.value;
-                var vecMeta = document.getElementById('editVecMetaInput');
-                if (vecMeta && vecMeta.value) payloadObj['vector_meta'] = vecMeta.value;
+                var vecMeta = document.getElementById('editVecMeta_input') || document.getElementById('editVecMetaInput');
+                if (vecMeta && vecMeta.value) {
+                    payloadObj['vector_meta'] = vecMeta.value;
+                    payloadObj['record_payload'] = vecMeta.value;
+                }
+                var vecColl = document.getElementById('editVecCollInput');
+                if (vecColl && vecColl.value) payloadObj['target_coll'] = vecColl.value;
+                var vecMetric = document.getElementById('editVecMetricSelect');
+                if (vecMetric && vecMetric.value) payloadObj['vector_metric'] = vecMetric.value;
+                var vecLabel = document.getElementById('editVecLabelInput');
+                if (vecLabel && vecLabel.value) payloadObj['vector_label'] = vecLabel.value;
             } else if (eng === 'GRAPH') {
-                var graphProps = document.getElementById('editGraphPropsInput');
-                if (graphProps && graphProps.value) payloadObj['node_props'] = graphProps.value;
-                var graphColl = document.getElementById('editGraphCollInput');
-                if (graphColl && graphColl.value) payloadObj['target_coll'] = graphColl.value;
+                var isEdge = document.getElementById('edit_graph_mode_edge') && document.getElementById('edit_graph_mode_edge').checked;
+                payloadObj['graph_mode'] = isEdge ? 'edge' : 'node';
+                if (isEdge) {
+                    var fromId = document.getElementById('editGraphFromId');
+                    if (fromId && fromId.value) payloadObj['from_id'] = fromId.value;
+                    var edgeLbl = document.getElementById('editGraphEdgeLabel');
+                    if (edgeLbl && edgeLbl.value) payloadObj['edge_label'] = edgeLbl.value;
+                    var toId = document.getElementById('editGraphToId');
+                    if (toId && toId.value) payloadObj['to_id'] = toId.value;
+                    var edgeProps = document.getElementById('editGraphEdgeProps_input');
+                    if (edgeProps && edgeProps.value) {
+                        payloadObj['node_props'] = edgeProps.value;
+                        payloadObj['edge_props'] = edgeProps.value;
+                        payloadObj['record_payload'] = edgeProps.value;
+                    }
+                } else {
+                    var nodeLbl = document.getElementById('editGraphNodeLabel');
+                    if (nodeLbl && nodeLbl.value) {
+                        payloadObj['node_label'] = nodeLbl.value;
+                        payloadObj['target_coll'] = nodeLbl.value;
+                    }
+                    var nodeProps = document.getElementById('editGraphNodeProps_input') || document.getElementById('editGraphPropsInput');
+                    if (nodeProps && nodeProps.value) {
+                        payloadObj['node_props'] = nodeProps.value;
+                        payloadObj['record_payload'] = nodeProps.value;
+                    }
+                }
             } else if (eng === 'TIMESERIES') {
                 var tsVal = document.getElementById('editTsValueInput');
                 if (tsVal && tsVal.value) payloadObj['ts_value'] = tsVal.value;
                 var tsUnit = document.getElementById('editTsUnitInput');
                 if (tsUnit && tsUnit.value) payloadObj['ts_unit'] = tsUnit.value;
-                var tsTags = document.getElementById('editTsTagsInput');
-                if (tsTags && tsTags.value) payloadObj['ts_tags'] = tsTags.value;
+                var tsTs = document.getElementById('editTsTimestampInput');
+                if (tsTs && tsTs.value) payloadObj['ts_timestamp'] = tsTs.value;
+                var tsTags = document.getElementById('editTsTags_input') || document.getElementById('editTsTagsInput');
+                if (tsTags && tsTags.value) {
+                    payloadObj['ts_tags'] = tsTags.value;
+                    payloadObj['record_payload'] = tsTags.value;
+                }
                 var tsColl = document.getElementById('editTsCollInput');
                 if (tsColl && tsColl.value) payloadObj['target_coll'] = tsColl.value;
             } else if (eng === 'COLUMN') {
-                var colData = document.getElementById('editColDataInput');
-                if (colData && colData.value) payloadObj['col_data'] = colData.value;
+                var colData = document.getElementById('editColData_input') || document.getElementById('editColDataInput');
+                if (colData && colData.value) {
+                    payloadObj['col_data'] = colData.value;
+                    payloadObj['record_payload'] = colData.value;
+                }
                 var colColl = document.getElementById('editColCollInput');
                 if (colColl && colColl.value) payloadObj['target_coll'] = colColl.value;
+                var colQual = document.getElementById('editColQualifierInput');
+                if (colQual && colQual.value) payloadObj['col_qualifier'] = colQual.value;
             } else if (eng === 'GEOSPATIAL') {
                 var geoLat = document.getElementById('editGeoLatInput');
                 if (geoLat && geoLat.value) payloadObj['geo_lat'] = geoLat.value;
@@ -500,15 +737,32 @@ public final class EngineRecordEditDialog {
                 if (geoLon && geoLon.value) payloadObj['geo_lon'] = geoLon.value;
                 var geoName = document.getElementById('editGeoNameInput');
                 if (geoName && geoName.value) payloadObj['geo_name'] = geoName.value;
-                var geoProps = document.getElementById('editGeoPropsInput');
-                if (geoProps && geoProps.value) payloadObj['geo_props'] = geoProps.value;
+                var geoType = document.getElementById('editGeoTypeSelect');
+                if (geoType && geoType.value) payloadObj['geo_type'] = geoType.value;
+                var geoProps = document.getElementById('editGeoMeta_input') || document.getElementById('editGeoPropsInput');
+                if (geoProps && geoProps.value) {
+                    payloadObj['geo_props'] = geoProps.value;
+                    payloadObj['record_payload'] = geoProps.value;
+                }
+                var geoColl = document.getElementById('editGeoCollInput');
+                if (geoColl && geoColl.value) payloadObj['target_coll'] = geoColl.value;
             } else if (eng === 'OBJECT') {
-                var objPayload = document.getElementById('editObjPayloadInput');
-                if (objPayload && objPayload.value) payloadObj['obj_payload'] = objPayload.value;
+                var objPayload = document.getElementById('editObjPayload_input') || document.getElementById('editObjPayloadInput');
+                if (objPayload && objPayload.value) {
+                    payloadObj['obj_payload'] = objPayload.value;
+                    payloadObj['record_payload'] = objPayload.value;
+                }
                 var objMime = document.getElementById('editObjMimeInput');
                 if (objMime && objMime.value) payloadObj['obj_mime'] = objMime.value;
+                var objClass = document.getElementById('editObjClassInput');
+                if (objClass && objClass.value) payloadObj['obj_class'] = objClass.value;
                 var objColl = document.getElementById('editObjCollInput');
                 if (objColl && objColl.value) payloadObj['target_coll'] = objColl.value;
+            }
+
+            var uniPayloadEl = document.getElementById('universalEditPayloadInput');
+            if (uniPayloadEl && payloadObj['record_payload']) {
+                uniPayloadEl.value = payloadObj['record_payload'];
             }
 
             // Resolve target endpoint safely without HTML DOM clobbering from <input name="action">
@@ -641,13 +895,7 @@ public final class EngineRecordEditDialog {
             if (eng === 'TIME_SERIES' || eng === 'TIMESERIE') eng = 'TIMESERIES';
             if (eng === 'GEO') eng = 'GEOSPATIAL';
 
-            var payload = '';
-            if (typeof decodeUtf8Base64 === 'function') {
-                payload = decodeUtf8Base64(payloadB64);
-            } else {
-                try { payload = atob(payloadB64); } catch(e) { payload = payloadB64 || ''; }
-            }
-
+            var payload = safeDecodePayload(payloadB64);
             var parsed = null;
             try {
                 if (typeof payload === 'string' && (payload.trim().startsWith('{') || payload.trim().startsWith('['))) {
@@ -656,7 +904,7 @@ public final class EngineRecordEditDialog {
             } catch(e) {}
 
             var pretty = parsed ? JSON.stringify(parsed, null, 2) : (payload || '{}');
-            var p = parsed || {};
+            var p = (parsed && typeof parsed === 'object') ? parsed : {};
 
             // Common display fields
             var engDisplay = document.getElementById('universalEditEngineDisplay');
@@ -681,7 +929,7 @@ public final class EngineRecordEditDialog {
             // Enable and show ONLY the engine corresponding to this record
             switchEditEngine(eng);
 
-            // Populate engine-specific inputs
+            // Populate engine-specific inputs with structured values
             if (eng === 'RECORDS') {
                 populateRecordFieldsFromPayload('edit_rec', p, pretty);
                 var recClassInp = document.getElementById('editRecClassInput');
@@ -695,16 +943,22 @@ public final class EngineRecordEditDialog {
                 if (docColl) docColl.value = unit || 'default';
                 var docClass = document.getElementById('editDocClassInput');
                 if (docClass) docClass.value = p._class || '';
-                var docPayload = document.getElementById('editDocPayloadInput');
-                if (docPayload) docPayload.value = pretty;
+                setJsonEditorVal('editDocPayload', pretty);
             } else if (eng === 'KEYVALUE') {
                 var kvColl = document.getElementById('editKvCollInput');
                 if (kvColl) kvColl.value = unit || 'default';
+                var kvTtl = document.getElementById('editKvTtlInput');
+                if (kvTtl) kvTtl.value = p.ttl || '';
                 var kvVal = document.getElementById('editKvValueInput');
-                if (kvVal) kvVal.value = (typeof payload === 'string') ? payload : pretty;
+                if (kvVal) kvVal.value = (typeof payload === 'string' && payload.length > 0) ? payload : pretty;
             } else if (eng === 'VECTOR') {
                 var vecColl = document.getElementById('editVecCollInput');
                 if (vecColl) vecColl.value = unit || 'default';
+                var vecMetric = document.getElementById('editVecMetricSelect');
+                if (vecMetric) vecMetric.value = p.metric || p.distanceMetric || 'COSINE';
+                var vecLabel = document.getElementById('editVecLabelInput');
+                if (vecLabel) vecLabel.value = p.label || p.semanticClass || '';
+
                 var vecCoords = '0.12, 0.45, 0.88, 0.31';
                 if (Array.isArray(p.coordinates)) vecCoords = p.coordinates.join(', ');
                 else if (Array.isArray(p.embedding)) vecCoords = p.embedding.join(', ');
@@ -712,45 +966,88 @@ public final class EngineRecordEditDialog {
                 else if (p.coordinates || p.embedding || p.vector) vecCoords = String(p.coordinates || p.embedding || p.vector);
                 var vecCoordsInp = document.getElementById('editVecCoordsInput');
                 if (vecCoordsInp) vecCoordsInp.value = vecCoords;
-                var vecMeta = document.getElementById('editVecMetaInput');
-                if (vecMeta) vecMeta.value = pretty;
+
+                var metaPayload = p.metadata || p.meta || p;
+                setJsonEditorVal('editVecMeta', metaPayload);
             } else if (eng === 'GRAPH') {
+                var isEdge = (p.mode === 'edge' || p.fromId || p.from || p.toId || p.to);
+                var rNode = document.getElementById('edit_graph_mode_node');
+                var rEdge = document.getElementById('edit_graph_mode_edge');
+                var fNode = document.getElementById('edit_graph_node_fields');
+                var fEdge = document.getElementById('edit_graph_edge_fields');
+
+                if (isEdge) {
+                    if (rEdge) rEdge.checked = true;
+                    if (rNode) rNode.checked = false;
+                    if (fNode) fNode.style.display = 'none';
+                    if (fEdge) fEdge.style.display = 'block';
+
+                    var fromInp = document.getElementById('editGraphFromId');
+                    if (fromInp) fromInp.value = p.fromId || p.from || '';
+                    var edgeLbl = document.getElementById('editGraphEdgeLabel');
+                    if (edgeLbl) edgeLbl.value = p.label || unit || 'RELATES_TO';
+                    var toInp = document.getElementById('editGraphToId');
+                    if (toInp) toInp.value = p.toId || p.to || '';
+
+                    setJsonEditorVal('editGraphEdgeProps', p.properties || p.props || p);
+                } else {
+                    if (rNode) rNode.checked = true;
+                    if (rEdge) rEdge.checked = false;
+                    if (fNode) fNode.style.display = 'block';
+                    if (fEdge) fEdge.style.display = 'none';
+
+                    var nodeLbl = document.getElementById('editGraphNodeLabel');
+                    if (nodeLbl) nodeLbl.value = p.label || unit || 'Person';
+
+                    setJsonEditorVal('editGraphNodeProps', p.properties || p.props || p);
+                }
+
                 var graphColl = document.getElementById('editGraphCollInput');
                 if (graphColl) graphColl.value = p.label || unit || 'Vertex';
-                var graphProps = document.getElementById('editGraphPropsInput');
-                if (graphProps) graphProps.value = pretty;
             } else if (eng === 'TIMESERIES') {
                 var tsColl = document.getElementById('editTsCollInput');
-                if (tsColl) tsColl.value = p.metric || unit || 'telemetry';
+                if (tsColl) tsColl.value = p.metric || unit || 'server_temperature';
                 var tsTs = document.getElementById('editTsTimestampInput');
                 if (tsTs) tsTs.value = p.timestamp || id;
                 var tsVal = document.getElementById('editTsValueInput');
                 if (tsVal) tsVal.value = (p.value !== undefined) ? p.value : '25.4';
                 var tsUnit = document.getElementById('editTsUnitInput');
-                if (tsUnit) tsUnit.value = p.unit || 'celsius';
-                var tsTags = document.getElementById('editTsTagsInput');
-                if (tsTags) tsTags.value = pretty;
+                if (tsUnit) tsUnit.value = p.unit || '°C';
+
+                var tagsPayload = p.tags || p.dimensions || p;
+                setJsonEditorVal('editTsTags', tagsPayload);
             } else if (eng === 'COLUMN') {
                 var colColl = document.getElementById('editColCollInput');
-                if (colColl) colColl.value = p._family || unit || 'analytics';
-                var colData = document.getElementById('editColDataInput');
-                if (colData) colData.value = pretty;
+                if (colColl) colColl.value = p._family || unit || 'user_analytics';
+                var colQual = document.getElementById('editColQualifierInput');
+                if (colQual) colQual.value = p.qualifier || p.col_qualifier || 'profile:full';
+
+                var colsPayload = p.columns || p.col_data || p;
+                setJsonEditorVal('editColData', colsPayload);
             } else if (eng === 'GEOSPATIAL') {
                 var geoColl = document.getElementById('editGeoCollInput');
-                if (geoColl) geoColl.value = p._layer || unit || 'stores_layer';
-                var geoLat = document.getElementById('editGeoLatInput');
-                if (geoLat) geoLat.value = (p.lat !== undefined ? p.lat : (p.latitude !== undefined ? p.latitude : '8.9824'));
-                var geoLon = document.getElementById('editGeoLonInput');
-                if (geoLon) geoLon.value = (p.lon !== undefined ? p.lon : (p.longitude !== undefined ? p.longitude : '-79.5199'));
+                if (geoColl) geoColl.value = p._layer || unit || 'facilities_layer';
                 var geoName = document.getElementById('editGeoNameInput');
                 if (geoName) geoName.value = p.name || id;
+                var geoType = document.getElementById('editGeoTypeSelect');
+                if (geoType) geoType.value = p.geomType || p.type || 'Point';
+                var geoLat = document.getElementById('editGeoLatInput');
+                if (geoLat) geoLat.value = (p.latitude !== undefined ? p.latitude : (p.lat !== undefined ? p.lat : '8.9824'));
+                var geoLon = document.getElementById('editGeoLonInput');
+                if (geoLon) geoLon.value = (p.longitude !== undefined ? p.longitude : (p.lon !== undefined ? p.lon : '-79.5199'));
+
+                var geoProps = p.properties || p.meta || p;
+                setJsonEditorVal('editGeoMeta', geoProps);
             } else if (eng === 'OBJECT') {
                 var objColl = document.getElementById('editObjCollInput');
                 if (objColl) objColl.value = p.bucket || unit || 'media_bucket';
+                var objClass = document.getElementById('editObjClassInput');
+                if (objClass) objClass.value = p.className || p.obj_class || 'com.jettra.storage.MediaFile';
                 var objMime = document.getElementById('editObjMimeInput');
-                if (objMime) objMime.value = p.mimeType || 'application/json';
-                var objPayload = document.getElementById('editObjPayloadInput');
-                if (objPayload) objPayload.value = p.content || payload || pretty;
+                if (objMime) objMime.value = p.mimeType || p.obj_mime || 'application/json';
+
+                var objContent = p.content || payload || pretty;
+                setJsonEditorVal('editObjPayload', objContent);
             }
 
             // Sync with universalEditPayloadInput for backward compatibility
@@ -811,6 +1108,9 @@ public final class EngineRecordEditDialog {
         window.submitUniversalEditRecord = submitUniversalEditRecord;
         window.openUniversalEditModal = openUniversalEditModal;
         window.switchEditEngine = switchEditEngine;
+        window.populateRecordFieldsFromPayload = populateRecordFieldsFromPayload;
+        window.safeDecodePayload = safeDecodePayload;
+        window.setJsonEditorVal = setJsonEditorVal;
         </script>
         """);
     }
