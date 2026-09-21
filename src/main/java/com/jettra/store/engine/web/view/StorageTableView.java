@@ -202,7 +202,7 @@ public final class StorageTableView {
 
                 Widget detailRow = Div.of(detailContent)
                     .id(rowDetailId)
-                    .modifier(new Modifier().cssClass("explorer-table-detail-row").style("display:none; padding:10px 16px; background:var(--j-bg-subsurface); border-bottom:1px solid var(--j-border); border-left:3px solid " + item.color() + "; margin-left:32px; border-radius:0 0 6px 6px; box-shadow:inset 0 2px 8px rgba(0,0,0,0.05); margin-bottom:4px;"));
+                    .modifier(new Modifier().cssClass("explorer-table-detail-row").style("display:none; padding:10px 16px; background:var(--j-bg-subsurface); border-bottom:1px solid var(--j-border); border-left:3px solid " + item.color() + "; margin-left:32px; border-radius:0 0 6px 6px; box-shadow:inset 0 2px 8px rgba(0,0,0,0.05); margin-bottom:4px; font-size:7.5px;"));
 
                 tableRows.add(row);
                 tableRows.add(detailRow);
@@ -318,8 +318,8 @@ public final class StorageTableView {
 
         // 1. Meta Header Bar
         Widget metaHeader = Div.of(
-            Span.of("📍 " + primaryAddr).modifier(new Modifier().style("color:#4ade80; font-family:monospace; font-weight:600; font-size:8.5px;")),
-            Span.of("Engine: " + item.engine() + " | v" + item.vCount()).modifier(new Modifier().style("color:#38bdf8; font-size:8px; font-weight:500;"))
+            Span.of("📍 " + primaryAddr).modifier(new Modifier().style("color:#4ade80; font-family:monospace; font-weight:600; font-size:7.5px;")),
+            Span.of("Engine: " + item.engine() + " | v" + item.vCount()).modifier(new Modifier().style("color:#38bdf8; font-size:7px; font-weight:500;"))
         ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.06); padding-bottom:3px; margin-bottom:4px;"));
         detailElements.add(metaHeader);
 
@@ -328,7 +328,7 @@ public final class StorageTableView {
         int propCount = 0;
         for (String key : parsed.keySet()) {
             if (propCount >= 8) {
-                propRows.add(Span.of("... and " + (parsed.keySet().size() - propCount) + " more field(s)").modifier(new Modifier().style("color:#64748b; font-style:italic; font-size:8px;")));
+                propRows.add(Span.of("... and " + (parsed.keySet().size() - propCount) + " more field(s)").modifier(new Modifier().style("color:#64748b; font-style:italic; font-size:7px;")));
                 break;
             }
             propCount++;
@@ -337,32 +337,32 @@ public final class StorageTableView {
             if (valStr.length() > 60) valStr = valStr.substring(0, 60) + "...";
 
             boolean isJref = valStr.contains("jref://");
-            Widget valWidget = Span.of(valStr).modifier(new Modifier().style("color:" + (isJref ? "#38bdf8" : "#f1f5f9") + "; font-family:monospace; font-size:8px;"));
+            Widget valWidget = Span.of(valStr).modifier(new Modifier().style("color:" + (isJref ? "#38bdf8" : "#f1f5f9") + "; font-family:monospace; font-size:7px;"));
 
             Widget propRow = Div.of(
-                Span.of(key + ": ").modifier(new Modifier().style("color:#94a3b8; font-weight:600; font-size:8px; margin-right:4px;")),
+                Span.of(key + ": ").modifier(new Modifier().style("color:#94a3b8; font-weight:600; font-size:7px; margin-right:4px;")),
                 valWidget
             ).modifier(new Modifier().style("padding:1px 0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"));
             propRows.add(propRow);
         }
 
         if (propRows.isEmpty()) {
-            propRows.add(Span.of("(Empty or unparsed binary payload)").modifier(new Modifier().style("color:#64748b; font-style:italic; font-size:8px;")));
+            propRows.add(Span.of("(Empty or unparsed binary payload)").modifier(new Modifier().style("color:#64748b; font-style:italic; font-size:7px;")));
         }
 
         Widget propsContainer = Div.of(propRows.toArray(new Widget[0]))
-            .modifier(new Modifier().style("display:flex; flex-direction:column; gap:1px; background:rgba(0,0,0,0.25); padding:4px 6px; border-radius:3px; margin-bottom:4px;"));
+            .modifier(new Modifier().style("display:flex; flex-direction:column; gap:1px; background:rgba(0,0,0,0.25); padding:4px 6px; border-radius:3px; margin-bottom:4px; font-size:7px;"));
         detailElements.add(propsContainer);
 
         // 3. Action Buttons Row inside Detail Panel
         Widget detailActions = Div.of(
             Button.of(Icon.of("fas fa-search-plus"), Text.of(" Inspeccionar"))
-                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openInspectRecordModal('" + escapeJs(item.engine()) + "', '" + escapeJs(item.db()) + "', '" + escapeJs(item.unit()) + "', '" + escapeJs(item.id()) + "', '" + item.payloadB64() + "', " + item.vCount() + ")").style("background:none; border:none; color:#38bdf8; font-size:8px; cursor:pointer; padding:1px 4px; display:inline-flex; align-items:center; gap:2px;")),
+                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openInspectRecordModal('" + escapeJs(item.engine()) + "', '" + escapeJs(item.db()) + "', '" + escapeJs(item.unit()) + "', '" + escapeJs(item.id()) + "', '" + item.payloadB64() + "', " + item.vCount() + ")").style("background:none; border:none; color:#38bdf8; font-size:7px; cursor:pointer; padding:1px 4px; display:inline-flex; align-items:center; gap:2px;")),
             Button.of(Icon.of("fas fa-edit"), Text.of(" Editar"))
-                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openUniversalEditModal('" + escapeJs(item.engine()) + "', '" + escapeJs(item.db()) + "', '" + escapeJs(item.unit()) + "', '" + escapeJs(item.id()) + "', '" + item.payloadB64() + "')").style("background:none; border:none; color:#fbbf24; font-size:8px; cursor:pointer; padding:1px 4px; display:inline-flex; align-items:center; gap:2px;")),
+                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openUniversalEditModal('" + escapeJs(item.engine()) + "', '" + escapeJs(item.db()) + "', '" + escapeJs(item.unit()) + "', '" + escapeJs(item.id()) + "', '" + item.payloadB64() + "')").style("background:none; border:none; color:#fbbf24; font-size:7px; cursor:pointer; padding:1px 4px; display:inline-flex; align-items:center; gap:2px;")),
             Button.of(Icon.of("fas fa-history"), Text.of(" Historial (v" + item.vCount() + ")"))
-                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openUniversalRestoreModal('" + escapeJs(item.engine()) + "', '" + escapeJs(item.db()) + "', '" + escapeJs(item.unit()) + "', '" + escapeJs(item.id()) + "', '" + item.versionsB64() + "')").style("background:none; border:none; color:#c084fc; font-size:8px; cursor:pointer; padding:1px 4px; display:inline-flex; align-items:center; gap:2px;"))
-        ).modifier(new Modifier().style("display:flex; gap:8px; align-items:center; border-top:1px dashed rgba(255,255,255,0.06); padding-top:3px;"));
+                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openUniversalRestoreModal('" + escapeJs(item.engine()) + "', '" + escapeJs(item.db()) + "', '" + escapeJs(item.unit()) + "', '" + escapeJs(item.id()) + "', '" + item.versionsB64() + "')").style("background:none; border:none; color:#c084fc; font-size:7px; cursor:pointer; padding:1px 4px; display:inline-flex; align-items:center; gap:2px;"))
+        ).modifier(new Modifier().style("display:flex; gap:8px; align-items:center; border-top:1px dashed rgba(255,255,255,0.06); padding-top:3px; font-size:7px;"));
         detailElements.add(detailActions);
 
         return Div.of(detailElements.toArray(new Widget[0]));

@@ -402,54 +402,54 @@ public final class StorageTreeView {
 
         // 1. Technical Meta Header Bar: Address, Engine, Memory Size, Version
         Widget metaHeader = Div.of(
-            Span.of("📍 " + primaryAddr).modifier(new Modifier().style("color:#4ade80; font-family:monospace; font-weight:600; font-size:9.5px;")),
+            Span.of("📍 " + primaryAddr).modifier(new Modifier().style("color:#4ade80; font-family:monospace; font-weight:600; font-size:7.5px;")),
             Div.of(
-                Span.of(engName).modifier(new Modifier().cssClass("store-badge").style("font-size:8px; padding:1px 5px; color:" + engColor + "; border:1px solid " + engColor + "; margin-right:4px;")),
-                Span.of("v" + vCount).modifier(new Modifier().cssClass("store-badge badge-active").style("font-size:8px; padding:1px 5px; margin-right:4px;")),
-                Span.of("Mem: " + sizeFormatted).modifier(new Modifier().style("color:#38bdf8; font-size:8.5px; font-weight:500;"))
+                Span.of(engName).modifier(new Modifier().cssClass("store-badge").style("font-size:7px; padding:1px 4px; color:" + engColor + "; border:1px solid " + engColor + "; margin-right:3px;")),
+                Span.of("v" + vCount).modifier(new Modifier().cssClass("store-badge badge-active").style("font-size:7px; padding:1px 4px; margin-right:3px;")),
+                Span.of("Mem: " + sizeFormatted).modifier(new Modifier().style("color:#38bdf8; font-size:7px; font-weight:500;"))
             ).modifier(new Modifier().style("display:inline-flex; align-items:center;"))
-        ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:4px; margin-bottom:5px;"));
+        ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:3px; margin-bottom:4px;"));
         detailElements.add(metaHeader);
 
         // 2. Engine-Specific Technical Inspection Badges
         List<Widget> specBadges = new ArrayList<>();
         switch (engName.toUpperCase()) {
             case "VECTOR" -> {
-                specBadges.add(Span.of("🧠 Dimension: 128 (Float32)").modifier(new Modifier().style("color:#a78bfa; font-size:8.5px; margin-right:8px; font-weight:600;")));
-                specBadges.add(Span.of("📐 Metric: Cosine Similarity").modifier(new Modifier().style("color:#c084fc; font-size:8.5px; margin-right:8px; font-weight:500;")));
-                specBadges.add(Span.of("⚡ Index: HNSW M=16").modifier(new Modifier().style("color:#e9d5ff; font-size:8.5px; font-weight:500;")));
+                specBadges.add(Span.of("🧠 Dimension: 128 (Float32)").modifier(new Modifier().style("color:#a78bfa; font-size:7px; margin-right:6px; font-weight:600;")));
+                specBadges.add(Span.of("📐 Metric: Cosine Similarity").modifier(new Modifier().style("color:#c084fc; font-size:7px; margin-right:6px; font-weight:500;")));
+                specBadges.add(Span.of("⚡ Index: HNSW M=16").modifier(new Modifier().style("color:#e9d5ff; font-size:7px; font-weight:500;")));
             }
             case "GRAPH" -> {
-                specBadges.add(Span.of("🕸️ Entity: Vertex / Node").modifier(new Modifier().style("color:#f472b6; font-size:8.5px; margin-right:8px; font-weight:600;")));
-                specBadges.add(Span.of("🔗 Adjacency: Directed Graph").modifier(new Modifier().style("color:#f9a8d4; font-size:8.5px; font-weight:500;")));
+                specBadges.add(Span.of("🕸️ Entity: Vertex / Node").modifier(new Modifier().style("color:#f472b6; font-size:7px; margin-right:6px; font-weight:600;")));
+                specBadges.add(Span.of("🔗 Adjacency: Directed Graph").modifier(new Modifier().style("color:#f9a8d4; font-size:7px; font-weight:500;")));
             }
             case "TIMESERIES" -> {
-                specBadges.add(Span.of("⏱️ Resolution: Raw 1ms").modifier(new Modifier().style("color:#22d3ee; font-size:8.5px; margin-right:8px; font-weight:600;")));
-                specBadges.add(Span.of("📊 Storage: Append-Only Columnar Block").modifier(new Modifier().style("color:#67e8f9; font-size:8.5px; font-weight:500;")));
+                specBadges.add(Span.of("⏱️ Resolution: Raw 1ms").modifier(new Modifier().style("color:#22d3ee; font-size:7px; margin-right:6px; font-weight:600;")));
+                specBadges.add(Span.of("📊 Storage: Append-Only Columnar Block").modifier(new Modifier().style("color:#67e8f9; font-size:7px; font-weight:500;")));
             }
             case "KEYVALUE" -> {
-                specBadges.add(Span.of("🔑 Partition Key: Hash Bucket").modifier(new Modifier().style("color:#34d399; font-size:8.5px; margin-right:8px; font-weight:600;")));
-                specBadges.add(Span.of("💾 Format: " + (payload != null && payload.startsWith("{") ? "JSON Document" : "Binary/UTF-8")).modifier(new Modifier().style("color:#6ee7b7; font-size:8.5px; font-weight:500;")));
+                specBadges.add(Span.of("🔑 Partition Key: Hash Bucket").modifier(new Modifier().style("color:#34d399; font-size:7px; margin-right:6px; font-weight:600;")));
+                specBadges.add(Span.of("💾 Format: " + (payload != null && payload.startsWith("{") ? "JSON Document" : "Binary/UTF-8")).modifier(new Modifier().style("color:#6ee7b7; font-size:7px; font-weight:500;")));
             }
             case "COLUMN" -> {
-                specBadges.add(Span.of("🏛️ Column Family: " + uName).modifier(new Modifier().style("color:#fb923c; font-size:8.5px; margin-right:8px; font-weight:600;")));
-                specBadges.add(Span.of("📑 Sparse Row Encoding").modifier(new Modifier().style("color:#fdba74; font-size:8.5px; font-weight:500;")));
+                specBadges.add(Span.of("🏛️ Column Family: " + uName).modifier(new Modifier().style("color:#fb923c; font-size:7px; margin-right:6px; font-weight:600;")));
+                specBadges.add(Span.of("📑 Sparse Row Encoding").modifier(new Modifier().style("color:#fdba74; font-size:7px; font-weight:500;")));
             }
             case "GEOSPATIAL" -> {
-                specBadges.add(Span.of("🌍 CRS: EPSG:4326 (WGS 84)").modifier(new Modifier().style("color:#2dd4bf; font-size:8.5px; margin-right:8px; font-weight:600;")));
-                specBadges.add(Span.of("🗺️ Spatial Index: R-Tree").modifier(new Modifier().style("color:#5eead4; font-size:8.5px; font-weight:500;")));
+                specBadges.add(Span.of("🌍 CRS: EPSG:4326 (WGS 84)").modifier(new Modifier().style("color:#2dd4bf; font-size:7px; margin-right:6px; font-weight:600;")));
+                specBadges.add(Span.of("🗺️ Spatial Index: R-Tree").modifier(new Modifier().style("color:#5eead4; font-size:7px; font-weight:500;")));
             }
             case "OBJECT" -> {
-                specBadges.add(Span.of("📦 Bucket: " + uName).modifier(new Modifier().style("color:#c084fc; font-size:8.5px; margin-right:8px; font-weight:600;")));
-                specBadges.add(Span.of("🗄️ Chunked BLOB Storage").modifier(new Modifier().style("color:#d8b4fe; font-size:8.5px; font-weight:500;")));
+                specBadges.add(Span.of("📦 Bucket: " + uName).modifier(new Modifier().style("color:#c084fc; font-size:7px; margin-right:6px; font-weight:600;")));
+                specBadges.add(Span.of("🗄️ Chunked BLOB Storage").modifier(new Modifier().style("color:#d8b4fe; font-size:7px; font-weight:500;")));
             }
             default -> {
-                specBadges.add(Span.of("📄 Format: JSON Document").modifier(new Modifier().style("color:#38bdf8; font-size:8.5px; margin-right:8px; font-weight:600;")));
-                specBadges.add(Span.of("🔍 Schema: Dynamic BSON").modifier(new Modifier().style("color:#7dd3fc; font-size:8.5px; font-weight:500;")));
+                specBadges.add(Span.of("📄 Format: JSON Document").modifier(new Modifier().style("color:#38bdf8; font-size:7px; margin-right:6px; font-weight:600;")));
+                specBadges.add(Span.of("🔍 Schema: Dynamic BSON").modifier(new Modifier().style("color:#7dd3fc; font-size:7px; font-weight:500;")));
             }
         }
         Widget specRow = Div.of(specBadges.toArray(new Widget[0]))
-            .modifier(new Modifier().style("display:flex; align-items:center; flex-wrap:wrap; margin-bottom:5px; background:rgba(0,0,0,0.15); padding:2px 6px; border-radius:3px;"));
+            .modifier(new Modifier().style("display:flex; align-items:center; flex-wrap:wrap; margin-bottom:4px; background:rgba(0,0,0,0.15); padding:2px 6px; border-radius:3px; font-size:7px;"));
         detailElements.add(specRow);
 
         // 3. Properties Preview Grid
@@ -457,7 +457,7 @@ public final class StorageTreeView {
         int propCount = 0;
         for (String key : parsed.keySet()) {
             if (propCount >= 6) {
-                propRows.add(Span.of("... and " + (parsed.keySet().size() - propCount) + " more attribute(s)").modifier(new Modifier().style("color:#64748b; font-style:italic; font-size:8px;")));
+                propRows.add(Span.of("... and " + (parsed.keySet().size() - propCount) + " more attribute(s)").modifier(new Modifier().style("color:#64748b; font-style:italic; font-size:7px;")));
                 break;
             }
             propCount++;
@@ -466,38 +466,38 @@ public final class StorageTreeView {
             if (valStr.length() > 65) valStr = valStr.substring(0, 65) + "...";
 
             boolean isJref = valStr.contains("jref://");
-            Widget valWidget = Span.of(valStr).modifier(new Modifier().style("color:" + (isJref ? "#38bdf8" : "#f1f5f9") + "; font-family:monospace; font-size:8px;"));
+            Widget valWidget = Span.of(valStr).modifier(new Modifier().style("color:" + (isJref ? "#38bdf8" : "#f1f5f9") + "; font-family:monospace; font-size:7px;"));
 
             Widget propRow = Div.of(
-                Span.of(key + ": ").modifier(new Modifier().style("color:#94a3b8; font-weight:600; font-size:8px; margin-right:4px;")),
+                Span.of(key + ": ").modifier(new Modifier().style("color:#94a3b8; font-weight:600; font-size:7px; margin-right:4px;")),
                 valWidget
             ).modifier(new Modifier().style("padding:1px 0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"));
             propRows.add(propRow);
         }
 
         if (propRows.isEmpty()) {
-            propRows.add(Span.of("(No parsed JSON fields)").modifier(new Modifier().style("color:#64748b; font-style:italic; font-size:8px;")));
+            propRows.add(Span.of("(No parsed JSON fields)").modifier(new Modifier().style("color:#64748b; font-style:italic; font-size:7px;")));
         }
 
         Widget propsContainer = Div.of(propRows.toArray(new Widget[0]))
-            .modifier(new Modifier().style("display:flex; flex-direction:column; gap:1px; background:rgba(0,0,0,0.22); padding:4px 6px; border-radius:4px; margin-bottom:5px;"));
+            .modifier(new Modifier().style("display:flex; flex-direction:column; gap:1px; background:rgba(0,0,0,0.22); padding:4px 6px; border-radius:4px; margin-bottom:4px; font-size:7px;"));
         detailElements.add(propsContainer);
 
         // 4. Action Toolbar inside Detail Panel
         Widget detailActions = Div.of(
             Button.of(Icon.of("fas fa-search-plus"), Text.of(" Inspeccionar"))
-                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openInspectRecordModal('" + escapeJs(engName) + "', '" + escapeJs(targetDb) + "', '" + escapeJs(uName) + "', '" + escapeJs(itemId) + "', '" + pB64 + "', " + vCount + ")").style("background:rgba(56,189,248,0.12); border:1px solid rgba(56,189,248,0.3); color:#38bdf8; font-size:8.5px; cursor:pointer; padding:2px 6px; border-radius:3px; display:inline-flex; align-items:center; gap:3px;")),
+                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openInspectRecordModal('" + escapeJs(engName) + "', '" + escapeJs(targetDb) + "', '" + escapeJs(uName) + "', '" + escapeJs(itemId) + "', '" + pB64 + "', " + vCount + ")").style("background:rgba(56,189,248,0.12); border:1px solid rgba(56,189,248,0.3); color:#38bdf8; font-size:7px; cursor:pointer; padding:1px 5px; border-radius:3px; display:inline-flex; align-items:center; gap:2px;")),
             Button.of(Icon.of("fas fa-edit"), Text.of(" Editar"))
-                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openUniversalEditModal('" + escapeJs(engName) + "', '" + escapeJs(targetDb) + "', '" + escapeJs(uName) + "', '" + escapeJs(itemId) + "', '" + pB64 + "')").style("background:rgba(251,191,36,0.12); border:1px solid rgba(251,191,36,0.3); color:#fbbf24; font-size:8.5px; cursor:pointer; padding:2px 6px; border-radius:3px; display:inline-flex; align-items:center; gap:3px;")),
+                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openUniversalEditModal('" + escapeJs(engName) + "', '" + escapeJs(targetDb) + "', '" + escapeJs(uName) + "', '" + escapeJs(itemId) + "', '" + pB64 + "')").style("background:rgba(251,191,36,0.12); border:1px solid rgba(251,191,36,0.3); color:#fbbf24; font-size:7px; cursor:pointer; padding:1px 5px; border-radius:3px; display:inline-flex; align-items:center; gap:2px;")),
             Button.of(Icon.of("fas fa-history"), Text.of(" Versiones (v" + vCount + ")"))
-                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openUniversalRestoreModal('" + escapeJs(engName) + "', '" + escapeJs(targetDb) + "', '" + escapeJs(uName) + "', '" + escapeJs(itemId) + "', '" + vB64 + "')").style("background:rgba(168,85,247,0.12); border:1px solid rgba(168,85,247,0.3); color:#c084fc; font-size:8.5px; cursor:pointer; padding:2px 6px; border-radius:3px; display:inline-flex; align-items:center; gap:3px;")),
+                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openUniversalRestoreModal('" + escapeJs(engName) + "', '" + escapeJs(targetDb) + "', '" + escapeJs(uName) + "', '" + escapeJs(itemId) + "', '" + vB64 + "')").style("background:rgba(168,85,247,0.12); border:1px solid rgba(168,85,247,0.3); color:#c084fc; font-size:7px; cursor:pointer; padding:1px 5px; border-radius:3px; display:inline-flex; align-items:center; gap:2px;")),
             Button.of(Icon.of("fas fa-trash-alt"), Text.of(" Eliminar"))
-                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openUniversalDeleteModal('" + escapeJs(engName) + "', '" + escapeJs(targetDb) + "', '" + escapeJs(uName) + "', '" + escapeJs(itemId) + "')").style("background:rgba(239,68,68,0.12); border:1px solid rgba(239,68,68,0.3); color:#ef4444; font-size:8.5px; cursor:pointer; padding:2px 6px; border-radius:3px; display:inline-flex; align-items:center; gap:3px;"))
-        ).modifier(new Modifier().style("display:flex; gap:6px; align-items:center; flex-wrap:wrap; border-top:1px dashed rgba(255,255,255,0.08); padding-top:4px;"));
+                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openUniversalDeleteModal('" + escapeJs(engName) + "', '" + escapeJs(targetDb) + "', '" + escapeJs(uName) + "', '" + escapeJs(itemId) + "')").style("background:rgba(239,68,68,0.12); border:1px solid rgba(239,68,68,0.3); color:#ef4444; font-size:7px; cursor:pointer; padding:1px 5px; border-radius:3px; display:inline-flex; align-items:center; gap:2px;"))
+        ).modifier(new Modifier().style("display:flex; gap:6px; align-items:center; flex-wrap:wrap; border-top:1px dashed rgba(255,255,255,0.08); padding-top:3px; font-size:7px;"));
         detailElements.add(detailActions);
 
         return Div.of(detailElements.toArray(new Widget[0]))
-            .modifier(new Modifier().style("background:var(--j-bg-subsurface,#1e293b); border:1px solid rgba(56,189,248,0.2); border-left:3px solid " + engColor + "; padding:6px 10px; border-radius:0 0 6px 6px;"));
+            .modifier(new Modifier().style("background:var(--j-bg-subsurface,#1e293b); border:1px solid rgba(56,189,248,0.2); border-left:3px solid " + engColor + "; padding:5px 8px; border-radius:0 0 6px 6px; font-size:7.5px;"));
     }
 
     private static Widget buildUnitDetailPanel(

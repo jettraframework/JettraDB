@@ -4856,17 +4856,17 @@ public class StoreEnginesPage extends StoreTemplatePage {
             html += '</div></div>';
 
             // Collapsed Item Details Subtree Panel
-            html += '<div id="' + itemDetailId + '" class="tree-collapsible-content item-detail-' + unitContainerId + '" data-page="' + pageNum + '" style="display:' + (isDetailExpanded ? 'block' : 'none') + '; margin-left:14px; margin-top:2px; margin-bottom:4px; padding:4px 8px; background:rgba(15,23,42,0.85); border:1px solid rgba(56,189,248,0.18); border-left:2px solid ' + eng.color + '; border-radius:4px; font-size:8.5px; line-height:1.35;">';
+            html += '<div id="' + itemDetailId + '" class="tree-collapsible-content item-detail-' + unitContainerId + '" data-page="' + pageNum + '" style="display:' + (isDetailExpanded ? 'block' : 'none') + '; margin-left:14px; margin-top:2px; margin-bottom:4px; padding:3px 6px; background:rgba(15,23,42,0.85); border:1px solid rgba(56,189,248,0.18); border-left:2px solid ' + eng.color + '; border-radius:4px; font-size:7.5px; line-height:1.25;">';
             html += '<div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.06); padding-bottom:3px; margin-bottom:4px;">';
             var pfxMap = { 'RECORDS': 'rec:', 'KEYVALUE': 'kv:', 'VECTOR': 'vec:', 'GRAPH': 'graph:', 'TIMESERIES': 'ts:', 'COLUMN': 'col:', 'GEOSPATIAL': 'geo:', 'OBJECT': 'obj:' };
             var addrPfx = pfxMap[eng.name.toUpperCase()] || 'doc:';
             var primaryAddr = addrPfx + dbName + ':' + (u.name === 'default' ? '' : u.name + ':') + itm.id;
-            html += '<span style="color:#4ade80; font-family:monospace; font-weight:600; font-size:8.5px;">📍 ' + escapeHtml(primaryAddr) + '</span>';
-            html += '<span style="color:#38bdf8; font-size:8px; font-weight:500;">Engine: ' + escapeHtml(eng.name) + ' | v' + (itm.versionCount || 1) + '</span>';
+            html += '<span style="color:#4ade80; font-family:monospace; font-weight:600; font-size:7.5px;">📍 ' + escapeHtml(primaryAddr) + '</span>';
+            html += '<span style="color:#38bdf8; font-size:7px; font-weight:500;">Engine: ' + escapeHtml(eng.name) + ' | v' + (itm.versionCount || 1) + '</span>';
             html += '</div>';
 
             // Props
-            html += '<div style="display:flex; flex-direction:column; gap:1px; background:rgba(0,0,0,0.25); padding:4px 6px; border-radius:3px;">';
+            html += '<div style="display:flex; flex-direction:column; gap:1px; background:rgba(0,0,0,0.25); padding:4px 6px; border-radius:3px; font-size:7px;">';
             var sp = itm.summaryProps || {};
             var hasProps = false;
             for (var pKey in sp) {
@@ -4874,20 +4874,20 @@ public class StoreEnginesPage extends StoreTemplatePage {
               var pVal = sp[pKey];
               var isJref = pVal && String(pVal).indexOf('jref://') >= 0;
               html += '<div style="padding:1px 0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">';
-              html += '<span style="color:#94a3b8; font-weight:600; font-size:8px; margin-right:4px;">' + escapeHtml(pKey) + ': </span>';
-              html += '<span style="color:' + (isJref ? '#38bdf8' : '#f1f5f9') + '; font-family:monospace; font-size:8px;">' + escapeHtml(pVal) + '</span>';
+              html += '<span style="color:#94a3b8; font-weight:600; font-size:7px; margin-right:4px;">' + escapeHtml(pKey) + ': </span>';
+              html += '<span style="color:' + (isJref ? '#38bdf8' : '#f1f5f9') + '; font-family:monospace; font-size:7px;">' + escapeHtml(pVal) + '</span>';
               html += '</div>';
             }
             if (!hasProps) {
-              html += '<span style="color:#64748b; font-style:italic; font-size:8px;">(No structured properties or empty payload)</span>';
+              html += '<span style="color:#64748b; font-style:italic; font-size:7px;">(No structured properties or empty payload)</span>';
             }
             html += '</div>';
 
             // Quick actions
-            html += '<div style="display:flex; gap:8px; align-items:center; margin-top:4px; border-top:1px dashed rgba(255,255,255,0.06); padding-top:3px;">';
-            html += '<button type="button" onclick="openInspectRecordModal(\\'' + escapeJsString(eng.name) + '\\', \\'' + escapeJsString(dbName) + '\\', \\'' + escapeJsString(u.name) + '\\', \\'' + escapeJsString(itm.id) + '\\', \\'' + (itm.payloadB64 || '') + '\\', ' + (itm.versionCount || 1) + ')" style="background:none; border:none; color:#38bdf8; font-size:8px; cursor:pointer; padding:1px 4px; display:inline-flex; align-items:center; gap:2px;"><i class="fas fa-search-plus"></i> Inspeccionar</button>';
-            html += '<button type="button" onclick="openUniversalEditModal(\\'' + escapeJsString(eng.name) + '\\', \\'' + escapeJsString(dbName) + '\\', \\'' + escapeJsString(u.name) + '\\', \\'' + escapeJsString(itm.id) + '\\', \\'' + (itm.payloadB64 || '') + '\\')" style="background:none; border:none; color:#fbbf24; font-size:8px; cursor:pointer; padding:1px 4px; display:inline-flex; align-items:center; gap:2px;"><i class="fas fa-edit"></i> Editar</button>';
-            html += '<button type="button" onclick="openUniversalRestoreModal(\\'' + escapeJsString(eng.name) + '\\', \\'' + escapeJsString(dbName) + '\\', \\'' + escapeJsString(u.name) + '\\', \\'' + escapeJsString(itm.id) + '\\', \\'' + (itm.versionsB64 || '') + '\\')" style="background:none; border:none; color:#c084fc; font-size:8px; cursor:pointer; padding:1px 4px; display:inline-flex; align-items:center; gap:2px;"><i class="fas fa-history"></i> Historial (v' + (itm.versionCount || 1) + ')</button>';
+            html += '<div style="display:flex; gap:8px; align-items:center; margin-top:4px; border-top:1px dashed rgba(255,255,255,0.06); padding-top:3px; font-size:7px;">';
+            html += '<button type="button" onclick="openInspectRecordModal(\\'' + escapeJsString(eng.name) + '\\', \\'' + escapeJsString(dbName) + '\\', \\'' + escapeJsString(u.name) + '\\', \\'' + escapeJsString(itm.id) + '\\', \\'' + (itm.payloadB64 || '') + '\\', ' + (itm.versionCount || 1) + ')" style="background:none; border:none; color:#38bdf8; font-size:7px; cursor:pointer; padding:1px 4px; display:inline-flex; align-items:center; gap:2px;"><i class="fas fa-search-plus"></i> Inspeccionar</button>';
+            html += '<button type="button" onclick="openUniversalEditModal(\\'' + escapeJsString(eng.name) + '\\', \\'' + escapeJsString(dbName) + '\\', \\'' + escapeJsString(u.name) + '\\', \\'' + escapeJsString(itm.id) + '\\', \\'' + (itm.payloadB64 || '') + '\\')" style="background:none; border:none; color:#fbbf24; font-size:7px; cursor:pointer; padding:1px 4px; display:inline-flex; align-items:center; gap:2px;"><i class="fas fa-edit"></i> Editar</button>';
+            html += '<button type="button" onclick="openUniversalRestoreModal(\\'' + escapeJsString(eng.name) + '\\', \\'' + escapeJsString(dbName) + '\\', \\'' + escapeJsString(u.name) + '\\', \\'' + escapeJsString(itm.id) + '\\', \\'' + (itm.versionsB64 || '') + '\\')" style="background:none; border:none; color:#c084fc; font-size:7px; cursor:pointer; padding:1px 4px; display:inline-flex; align-items:center; gap:2px;"><i class="fas fa-history"></i> Historial (v' + (itm.versionCount || 1) + ')</button>';
             html += '</div>';
 
             html += '</div>';

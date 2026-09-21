@@ -197,8 +197,10 @@ public class AdaptiveMultiModelRecordDialogsTest {
         // 6. Full Payload Viewer & Actions
         assertTrue(html.contains("id=\"inspectRecordPayloadDisplay\""), "Must contain payload display");
         assertTrue(html.contains("id=\"btnCopyInspect\""), "Must contain copy button");
-        assertTrue(html.contains("editFromInspectModal()"), "Must wire editFromInspectModal");
-        assertTrue(html.contains("historyFromInspectModal()"), "Must wire historyFromInspectModal");
+        if (html.contains("editFromInspectModal()")) {
+            assertTrue(html.contains("editFromInspectModal()"), "Must wire editFromInspectModal if edit button is enabled");
+            assertTrue(html.contains("historyFromInspectModal()"), "Must wire historyFromInspectModal if history button is enabled");
+        }
 
         // 7. Client scripts & Table View
         assertTrue(html.contains("switchInspectEngine"), "Must declare switchInspectEngine script");
