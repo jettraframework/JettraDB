@@ -504,8 +504,14 @@ public class LsmBTreeHybrid {
                     return "_system"; // generic prefix like "doc:"
                 }
                 int nextColon = rest.indexOf(':');
-                String dbCandidate = (nextColon > 0) ? rest.substring(0, nextColon) : rest;
-                return dbCandidate.isBlank() ? "_system" : dbCandidate;
+                if (nextColon > 0) {
+                    String dbCandidate = rest.substring(0, nextColon).trim();
+                    return dbCandidate.isBlank() ? "_system" : dbCandidate;
+                } else {
+                    // Key format is prefix:id without a database segment (e.g. geo:hub_1, graph:node_1).
+                    // This is an entity ID under the default/system namespace, NOT a database name.
+                    return "_system";
+                }
             } else {
                 return key.substring(0, firstColon);
             }

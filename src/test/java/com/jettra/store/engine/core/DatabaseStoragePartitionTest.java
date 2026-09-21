@@ -136,4 +136,24 @@ public class DatabaseStoragePartitionTest {
         assertEquals(2, history.size(), "Version history must be preserved in partition WAL");
         restoredStorage.close();
     }
+
+    @JettraTest
+    void testNoPhantomDatabasesCreatedForTwoSegmentKeys() {
+        long now = System.currentTimeMillis();
+        storage.put("geo:hub_1", "{\"lat\":8.9}".getBytes(StandardCharsets.UTF_8), now);
+        storage.put("graph:node_1", "{\"label\":\"test\"}".getBytes(StandardCharsets.UTF_8), now);
+        storage.put("doc:cust_101", "{\"name\":\"Test\"}".getBytes(StandardCharsets.UTF_8), now);
+
+        java.util.Set<String> dbNames = storage.getDatabaseNames();
+        assertFalse(dbNames.contains("hub_1"), "hub_1 must NOT be treated as a database");
+        assertFalse(dbNames.contains("node_1"), "node_1 must NOT be treated as a database");
+        assertFalse(dbNames.contains("cust_101"), "cust_101 must NOT be treated as a database");
+
+        Path dbRootDir = tempDir.resolve("databases");
+        if (Files.exists(dbRootDir)) {
+            assertFalse(Files.exists(dbRootDir.resolve("hub_1")));
+            assertFalse(Files.exists(dbRootDir.resolve("node_1")));
+            assertFalse(Files.exists(dbRootDir.resolve("cust_101")));
+        }
+    }
 }

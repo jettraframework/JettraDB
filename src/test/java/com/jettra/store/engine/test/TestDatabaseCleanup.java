@@ -21,7 +21,13 @@ public final class TestDatabaseCleanup {
         "ExampleDBReferences",
         "hr_enterprise_db",
         "meteorology_iot_db",
-        "ecommerce_olap_db"
+        "ecommerce_olap_db",
+        "smart_city_gis_db",
+        "ai_knowledge_db",
+        "social_network_db",
+        "digital_assets_db",
+        "distributed_cache_db",
+        "scrum_board_db"
     );
 
     private TestDatabaseCleanup() {}
