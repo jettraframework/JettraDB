@@ -186,13 +186,13 @@ public final class EngineRecordEditDialog {
                 Div.of(
                     Label.of("Colección de Documentos:")
                         .modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
-                    TextField.of().id("editDocCollInput").binding("target_coll").value("customers")
+                    TextField.of("target_coll").id("editDocCollInput").binding("target_coll").value("customers")
                         .modifier(new Modifier().style("width:100%; box-sizing:border-box; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:#38bdf8; font-weight:600; font-size:12px;"))
                 ).modifier(new Modifier().style("flex:1;")),
                 Div.of(
                     Label.of("Java Entity Class (_class metadata):")
                         .modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
-                    TextField.of().id("editDocClassInput").binding("doc_class").value("")
+                    TextField.of("doc_class").id("editDocClassInput").binding("doc_class").value("")
                         .modifier(new Modifier().attribute("placeholder", "com.jettra.models.Customer")
                             .style("width:100%; box-sizing:border-box; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:var(--j-text-primary); font-size:12px; font-family:monospace;"))
                 ).modifier(new Modifier().style("flex:1;"))

@@ -337,36 +337,57 @@ public class HierarchyExplorerService {
         return result;
     }
 
-    public String getItemPayload(String engineKey, String db, String coll, String id) {
-        if (id == null || id.isBlank()) return "{}";
+    public List<String> resolveCandidateKeys(String engineKey, String db, String coll, String id) {
+        if (id == null || id.isBlank()) return Collections.emptyList();
         String prefix = getPrefixForEngine(engineKey);
         List<String> candidateKeys = new ArrayList<>();
+        boolean hasColl = coll != null && !coll.isBlank();
+        boolean isDefault = hasColl && "default".equalsIgnoreCase(coll);
+
         if (db != null && !db.isBlank()) {
-            if (coll != null && !coll.isBlank()) {
+            if (hasColl && !isDefault) {
                 candidateKeys.add(prefix + db + ":" + coll + ":" + id);
                 candidateKeys.add(db + ":" + coll + ":" + id);
+            } else if (isDefault) {
+                candidateKeys.add(prefix + db + ":default:" + id);
+                candidateKeys.add(db + ":default:" + id);
+                candidateKeys.add(prefix + db + ":" + id);
+                candidateKeys.add(db + ":" + id);
             }
-            candidateKeys.add(prefix + db + ":" + id);
-            candidateKeys.add(prefix + db + ":default:" + id);
-            candidateKeys.add(db + ":" + id);
+            if (!candidateKeys.contains(prefix + db + ":" + id)) {
+                candidateKeys.add(prefix + db + ":" + id);
+            }
+            if (!candidateKeys.contains(db + ":" + id)) {
+                candidateKeys.add(db + ":" + id);
+            }
         }
-        if (coll != null && !coll.isBlank()) {
-            candidateKeys.add(prefix + coll + ":" + id);
-            candidateKeys.add(coll + ":" + id);
+        if (hasColl) {
+            String cKey1 = prefix + coll + ":" + id;
+            if (!candidateKeys.contains(cKey1)) candidateKeys.add(cKey1);
+            String cKey2 = coll + ":" + id;
+            if (!candidateKeys.contains(cKey2)) candidateKeys.add(cKey2);
         }
-        candidateKeys.add(prefix + id);
-        candidateKeys.add(id);
+        if (!candidateKeys.contains(prefix + id)) candidateKeys.add(prefix + id);
+        if (!candidateKeys.contains(id)) candidateKeys.add(id);
 
-        // Also check alternative prefix for DOCUMENT/RECORDS interchangeability
+        // Alternative prefix for DOCUMENT/RECORDS interchangeability
         if ("DOCUMENT".equalsIgnoreCase(engineKey) || "RECORDS".equalsIgnoreCase(engineKey) || "RECORD".equalsIgnoreCase(engineKey)) {
             String altPrefix = "rec:".equals(prefix) ? "doc:" : "rec:";
             if (db != null && !db.isBlank()) {
-                if (coll != null && !coll.isBlank()) candidateKeys.add(altPrefix + db + ":" + coll + ":" + id);
+                if (hasColl) candidateKeys.add(altPrefix + db + ":" + coll + ":" + id);
                 candidateKeys.add(altPrefix + db + ":" + id);
             }
-            if (coll != null && !coll.isBlank()) candidateKeys.add(altPrefix + coll + ":" + id);
+            if (hasColl) candidateKeys.add(altPrefix + coll + ":" + id);
             candidateKeys.add(altPrefix + id);
         }
+
+        return candidateKeys;
+    }
+
+    public String getItemPayload(String engineKey, String db, String coll, String id) {
+        if (id == null || id.isBlank()) return "{}";
+        String prefix = getPrefixForEngine(engineKey);
+        List<String> candidateKeys = resolveCandidateKeys(engineKey, db, coll, id);
 
         for (String k : candidateKeys) {
             byte[] b = engine.getStorageCore().get(k);
@@ -395,34 +416,35 @@ public class HierarchyExplorerService {
     }
 
     public int getItemVersionCount(String engineKey, String db, String coll, String id) {
-        String prefix = getPrefixForEngine(engineKey);
-        String directKey = prefix + db + ":" + id;
-        String collKey = prefix + db + ":" + coll + ":" + id;
-        String simpleKey = db + ":" + id;
-
-        if (engine.getStorageCore().get(directKey) != null) {
-            return engine.getStorageCore().getVersionCount(directKey);
+        int maxVersions = 1;
+        boolean found = false;
+        for (String k : resolveCandidateKeys(engineKey, db, coll, id)) {
+            if (engine.getStorageCore().get(k) != null) {
+                int count = engine.getStorageCore().getVersionCount(k);
+                if (count > maxVersions) {
+                    maxVersions = count;
+                }
+                found = true;
+            }
         }
-        if (engine.getStorageCore().get(collKey) != null) {
-            return engine.getStorageCore().getVersionCount(collKey);
-        }
-        if (engine.getStorageCore().get(simpleKey) != null) {
-            return engine.getStorageCore().getVersionCount(simpleKey);
-        }
-        return 1;
+        return found ? maxVersions : 1;
     }
 
     public List<RecordVersionSnapshot> getVersionSnapshots(String engineKey, String db, String coll, String id) {
-        String prefix = getPrefixForEngine(engineKey);
-        String primaryKey = prefix + db + ":" + coll + ":" + id;
-        if (engine.getStorageCore().get(primaryKey) == null) {
-            primaryKey = prefix + db + ":" + id;
+        String primaryKey = null;
+        int maxCount = -1;
+        for (String k : resolveCandidateKeys(engineKey, db, coll, id)) {
+            if (engine.getStorageCore().get(k) != null) {
+                int count = engine.getStorageCore().getVersionCount(k);
+                if (count > maxCount) {
+                    maxCount = count;
+                    primaryKey = k;
+                }
+            }
         }
-        if (engine.getStorageCore().get(primaryKey) == null) {
-            primaryKey = db + ":" + coll + ":" + id;
-        }
-        if (engine.getStorageCore().get(primaryKey) == null) {
-            primaryKey = db + ":" + id;
+        if (primaryKey == null) {
+            String prefix = getPrefixForEngine(engineKey);
+            primaryKey = prefix + (db != null ? db + ":" : "") + (coll != null && !coll.isBlank() ? coll + ":" : "") + id;
         }
 
         List<com.jettra.store.engine.core.LsmBTreeHybrid.RecordVersion> rawVersions = engine.getStorageCore().getVersionHistory(primaryKey);
