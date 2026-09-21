@@ -125,7 +125,8 @@ public class StoreComponentsPageActionsSuppressionTest {
         StoreComponentsPage customPage = new StoreComponentsPage(engine).withGlobalActionButtons(true);
         String html = customPage.buildUI(null, Collections.emptyMap(), "Matrix").render(Themes.Dark());
 
-        assertTrue(html.contains("+ DB"), "When explicitly enabled with fluent API, + DB must be rendered");
+        assertFalse(html.contains("+ DB"), "The + DB button is commented out");
+        assertTrue(html.contains("+ Unit"), "When explicitly enabled with fluent API, + Unit must be rendered");
         assertTrue(html.contains("Backup"), "When explicitly enabled with fluent API, Backup must be rendered");
     }
 

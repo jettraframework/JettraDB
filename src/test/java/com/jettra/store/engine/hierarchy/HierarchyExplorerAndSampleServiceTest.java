@@ -1,6 +1,7 @@
 package com.jettra.store.engine.hierarchy;
 
 import com.jettra.store.engine.core.JettraStorageEngine;
+import com.jettra.store.engine.core.LsmBTreeHybrid;
 import com.jettra.store.engine.samples.SampleDatasetManager;
 import com.jettra.store.engine.samples.lifecycle.InstallState;
 import com.jettra.store.engine.samples.lifecycle.SampleDatabaseDefinition;
@@ -232,4 +233,29 @@ public class HierarchyExplorerAndSampleServiceTest {
         assertEquals(1, recEng.units().size());
         assertEquals("subscribers", recEng.units().get(0).name());
     }
+
+    @JettraTest
+    void testCreatingNewDatabaseDoesNotCreatePhantomDatabases() {
+        String testDb = "alpha_prod_db";
+        page.initializeDatabaseEngineSubtrees(testDb, "DOCUMENT", "orders");
+
+        Set<String> discovered = hierarchyService.discoverAllDatabases();
+        assertTrue(discovered.contains(testDb), "Newly created DB must be discovered.");
+
+        // Assert strictly that engine names / prefixes are NEVER treated as databases
+        String[] forbiddenDbs = {"COL", "DOC", "GEO", "GRAPH", "KB", "OBJ", "REC", "RECORD_STORE", "TS", "VEC", "KV"};
+        for (String forbidden : forbiddenDbs) {
+            assertFalse(discovered.contains(forbidden), "Database list must NOT contain phantom database '" + forbidden + "'");
+            assertFalse(discovered.contains(forbidden.toLowerCase()), "Database list must NOT contain phantom database '" + forbidden.toLowerCase() + "'");
+            assertTrue(LsmBTreeHybrid.isReservedDatabaseName(forbidden), forbidden + " must be recognized as a reserved database name.");
+            assertTrue(LsmBTreeHybrid.isReservedDatabaseName(forbidden.toLowerCase()), forbidden.toLowerCase() + " must be recognized as a reserved database name.");
+        }
+
+        Set<String> physDbs = engine.getStorageCore().getDatabaseNames();
+        for (String forbidden : forbiddenDbs) {
+            assertFalse(physDbs.contains(forbidden), "Storage core getDatabaseNames must NOT contain '" + forbidden + "'");
+            assertFalse(physDbs.contains(forbidden.toLowerCase()), "Storage core getDatabaseNames must NOT contain '" + forbidden.toLowerCase() + "'");
+        }
+    }
 }
+

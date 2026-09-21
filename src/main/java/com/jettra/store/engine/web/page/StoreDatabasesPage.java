@@ -2,6 +2,7 @@ package com.jettra.store.engine.web.page;
 
 import com.jettra.store.engine.auth.AuthManager;
 import com.jettra.store.engine.core.JettraStorageEngine;
+import com.jettra.store.engine.core.LsmBTreeHybrid;
 import com.jettra.store.engine.samples.SampleDatasetManager;
 import com.sun.net.httpserver.HttpExchange;
 import jcf.annotation.PageWidgetAllow;
@@ -2019,7 +2020,7 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                 Set<String> physDbs = engine.getStorageCore().getDatabaseNames();
                 if (physDbs != null) {
                     for (String db : physDbs) {
-                        if (db != null && !db.isBlank() && !"_system".equalsIgnoreCase(db)) {
+                        if (db != null && !db.isBlank() && !"_system".equalsIgnoreCase(db) && !LsmBTreeHybrid.isReservedDatabaseName(db)) {
                             databases.computeIfAbsent(db.trim(), DatabaseMetadata::new);
                         }
                     }
@@ -2037,13 +2038,14 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                 int colonIdx = rest.indexOf(':');
                 if (colonIdx > 0) {
                     String dbName = rest.substring(0, colonIdx).trim();
-                    if (!dbName.isBlank() && !"_system".equalsIgnoreCase(dbName)) {
+                    if (!dbName.isBlank() && !"_system".equalsIgnoreCase(dbName) && !LsmBTreeHybrid.isReservedDatabaseName(dbName)) {
                         DatabaseMetadata meta = databases.computeIfAbsent(dbName, DatabaseMetadata::new);
                         meta.incrementEngine(engineName);
                     }
                 }
             }
         }
+        databases.keySet().removeIf(LsmBTreeHybrid::isReservedDatabaseName);
         return databases;
     }
 

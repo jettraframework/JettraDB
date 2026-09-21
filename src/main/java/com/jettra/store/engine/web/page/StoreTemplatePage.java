@@ -344,10 +344,11 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
         List<Widget> rightItems = new ArrayList<>();
 
         if (config.showGlobalActionButtons()) {
-            rightItems.add(
-                Button.of(Icon.of("fas fa-database"), Text.of(" + DB"))
-                    .modifier(new Modifier().attribute("type", "button").attribute("title", "Create Database").attribute("onclick", "if(typeof showModal === 'function') showModal('createDbModal'); else location.href='" + JettraServer.resolvePath("/engines?tab=schema&engine=" + selectedEngine + "&target_db=" + targetDb) + "';").cssClass("btn-studio-primary"))
-            );
+            // El boton + DB queda en comentario en /engine para que la creacion de bases de datos quede solamente habilitada en la pagina /databases
+            // rightItems.add(
+            //     Button.of(Icon.of("fas fa-database"), Text.of(" + DB"))
+            //         .modifier(new Modifier().attribute("type", "button").attribute("title", "Create Database").attribute("onclick", "if(typeof showModal === 'function') showModal('createDbModal'); else location.href='" + JettraServer.resolvePath("/engines?tab=schema&engine=" + selectedEngine + "&target_db=" + targetDb) + "';").cssClass("btn-studio-primary"))
+            // );
             rightItems.add(
                 Button.of(Icon.of("fas fa-folder-plus"), Text.of(" + Unit"))
                     .modifier(new Modifier().attribute("type", "button").attribute("title", "Add Unit / Collection").attribute("onclick", "if(typeof showModal === 'function') showModal('createUnitModal'); else location.href='" + JettraServer.resolvePath("/engines?tab=schema&engine=" + selectedEngine + "&target_db=" + targetDb) + "';").cssClass("btn-studio-secondary"))

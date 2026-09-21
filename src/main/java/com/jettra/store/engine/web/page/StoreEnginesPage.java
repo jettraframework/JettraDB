@@ -564,6 +564,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
         if (securityFilter != null) {
             dbs.addAll(securityFilter.discoverAllPhysicalDatabases(engine));
         }
+        dbs.removeIf(LsmBTreeHybrid::isReservedDatabaseName);
         return dbs;
     }
 

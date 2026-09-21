@@ -1,6 +1,7 @@
 package com.jettra.store.engine.hierarchy;
 
 import com.jettra.store.engine.core.JettraStorageEngine;
+import com.jettra.store.engine.core.LsmBTreeHybrid;
 import com.jettra.store.engine.models.ColumnEngine;
 import com.jettra.store.engine.models.DocumentEngine;
 import com.jettra.store.engine.models.GeospatialEngine;
@@ -491,29 +492,36 @@ public class HierarchyExplorerService {
         for (String key : allKeys.keySet()) {
             if (key.startsWith("meta:") || key.startsWith("schema:") || key.startsWith("rule:") || key.startsWith("idx:")) {
                 String[] parts = key.split(":");
-                if (parts.length > 1 && !parts[1].isBlank()) {
+                if (parts.length > 1 && !parts[1].isBlank() && !LsmBTreeHybrid.isReservedDatabaseName(parts[1])) {
                     databases.add(parts[1]);
                 }
                 continue;
             }
 
+            boolean prefixMatched = false;
             for (String[] spec : ENGINE_SPECS) {
                 String pfx = getPrefixForEngine(spec[0]);
                 if (key.startsWith(pfx)) {
+                    prefixMatched = true;
                     String sub = key.substring(pfx.length());
                     String[] parts = sub.split(":");
-                    if (parts.length > 0 && !parts[0].isBlank()) {
+                    if (parts.length > 0 && !parts[0].isBlank() && !LsmBTreeHybrid.isReservedDatabaseName(parts[0])) {
                         databases.add(parts[0]);
                     }
                     break;
                 }
             }
 
+            if (prefixMatched) {
+                continue;
+            }
+
             String[] parts = key.split(":");
-            if (parts.length >= 2 && !parts[0].isBlank() && !parts[0].contains("/")) {
+            if (parts.length >= 2 && !parts[0].isBlank() && !parts[0].contains("/") && !LsmBTreeHybrid.isReservedDatabaseName(parts[0])) {
                 databases.add(parts[0]);
             }
         }
+        databases.removeIf(LsmBTreeHybrid::isReservedDatabaseName);
         return databases;
     }
 

@@ -1,6 +1,7 @@
 package com.jettra.store.engine.security;
 
 import com.jettra.store.engine.core.JettraStorageEngine;
+import com.jettra.store.engine.core.LsmBTreeHybrid;
 import com.jettra.store.engine.users.SystemUser;
 import com.jettra.store.engine.users.SystemUserRepository;
 import com.jettra.store.engine.users.SystemUserRepositoryImpl;
@@ -63,7 +64,7 @@ public class DatabaseSecurityFilter {
             Set<String> physicalNames = engine.getStorageCore().getDatabaseNames();
             if (physicalNames != null) {
                 for (String name : physicalNames) {
-                    if (name != null && !name.isBlank() && !"_system".equalsIgnoreCase(name)) {
+                    if (name != null && !name.isBlank() && !LsmBTreeHybrid.isReservedDatabaseName(name)) {
                         databases.add(name.trim());
                     }
                 }
@@ -80,7 +81,7 @@ public class DatabaseSecurityFilter {
                         String rest = k.substring(p.length());
                         int colonIdx = rest.indexOf(':');
                         String dbName = colonIdx > 0 ? rest.substring(0, colonIdx) : "";
-                        if (!dbName.isBlank() && !dbName.contains("/") && !"_system".equalsIgnoreCase(dbName)) {
+                        if (!dbName.isBlank() && !dbName.contains("/") && !LsmBTreeHybrid.isReservedDatabaseName(dbName)) {
                             databases.add(dbName.trim());
                         }
                     }
@@ -88,6 +89,7 @@ public class DatabaseSecurityFilter {
             }
         } catch (Exception ignored) {}
 
+        databases.removeIf(LsmBTreeHybrid::isReservedDatabaseName);
         return databases;
     }
 

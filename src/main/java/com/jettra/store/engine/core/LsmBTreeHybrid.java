@@ -487,6 +487,27 @@ public class LsmBTreeHybrid {
      * Extracts the target database name from any engine key structure.
      * Supports standard prefixes (rec:, doc:, geo:, vec:, obj:, kv:, ts:, graph:, col:, schema:, idx:),
      * direct database keys (e.g. ExampleDBReferences:id), and system keys.
+    /**
+     * Checks whether a database name candidate matches system namespaces, multi-model engine prefixes,
+     * or metadata prefixes that should never be created or recognized as independent user databases.
+     */
+    public static boolean isReservedDatabaseName(String name) {
+        if (name == null || name.isBlank()) return true;
+        String n = name.trim().toLowerCase();
+        return n.equals("_system") || n.equals("system") || n.equals("sys")
+                || n.equals("col") || n.equals("doc") || n.equals("geo")
+                || n.equals("graph") || n.equals("kb") || n.equals("kv")
+                || n.equals("obj") || n.equals("rec") || n.equals("record_store")
+                || n.equals("recordstore") || n.equals("ts") || n.equals("vec")
+                || n.equals("meta") || n.equals("schema") || n.equals("idx")
+                || n.equals("rule") || n.equals("column") || n.equals("document")
+                || n.equals("geospatial") || n.equals("keyvalue") || n.equals("object")
+                || n.equals("record") || n.equals("records") || n.equals("timeseries")
+                || n.equals("vector");
+    }
+
+    /**
+     * Extracts database name from storage key using multi-model hierarchy patterns.
      */
     public static String extractDatabaseFromKey(String key) {
         if (key == null || key.isBlank()) return "_system";
@@ -497,8 +518,10 @@ public class LsmBTreeHybrid {
         if (firstColon > 0) {
             String pfx = key.substring(0, firstColon).toLowerCase();
             if (pfx.equals("rec") || pfx.equals("doc") || pfx.equals("geo") || pfx.equals("vec")
-                    || pfx.equals("obj") || pfx.equals("kv") || pfx.equals("ts") || pfx.equals("graph")
-                    || pfx.equals("col") || pfx.equals("schema") || pfx.equals("idx")) {
+                    || pfx.equals("obj") || pfx.equals("kv") || pfx.equals("kb") || pfx.equals("ts")
+                    || pfx.equals("graph") || pfx.equals("col") || pfx.equals("record_store")
+                    || pfx.equals("recordstore") || pfx.equals("schema") || pfx.equals("idx")
+                    || pfx.equals("rule") || pfx.equals("meta") || isReservedDatabaseName(pfx)) {
                 String rest = key.substring(firstColon + 1);
                 if (rest.isBlank()) {
                     return "_system"; // generic prefix like "doc:"
@@ -506,14 +529,15 @@ public class LsmBTreeHybrid {
                 int nextColon = rest.indexOf(':');
                 if (nextColon > 0) {
                     String dbCandidate = rest.substring(0, nextColon).trim();
-                    return dbCandidate.isBlank() ? "_system" : dbCandidate;
+                    return (dbCandidate.isBlank() || isReservedDatabaseName(dbCandidate)) ? "_system" : dbCandidate;
                 } else {
                     // Key format is prefix:id without a database segment (e.g. geo:hub_1, graph:node_1).
                     // This is an entity ID under the default/system namespace, NOT a database name.
                     return "_system";
                 }
             } else {
-                return key.substring(0, firstColon);
+                String candidate = key.substring(0, firstColon).trim();
+                return isReservedDatabaseName(candidate) ? "_system" : candidate;
             }
         }
         return "_system";
@@ -590,7 +614,7 @@ public class LsmBTreeHybrid {
         Set<String> dbs = new LinkedHashSet<>();
         dbs.add("system_db");
         for (String p : partitions.keySet()) {
-            if (!"_system".equalsIgnoreCase(p)) {
+            if (!"_system".equalsIgnoreCase(p) && !isReservedDatabaseName(p)) {
                 dbs.add(p);
             }
         }
@@ -598,8 +622,9 @@ public class LsmBTreeHybrid {
         if (Files.exists(dbRootDir) && Files.isDirectory(dbRootDir)) {
             try (DirectoryStream<Path> stream = Files.newDirectoryStream(dbRootDir)) {
                 for (Path entry : stream) {
-                    if (Files.isDirectory(entry) && !"_system".equalsIgnoreCase(entry.getFileName().toString())) {
-                        dbs.add(entry.getFileName().toString());
+                    String name = entry.getFileName().toString();
+                    if (Files.isDirectory(entry) && !"_system".equalsIgnoreCase(name) && !isReservedDatabaseName(name)) {
+                        dbs.add(name);
                     }
                 }
             } catch (IOException ignored) {}

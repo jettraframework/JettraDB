@@ -159,8 +159,9 @@ public class RouteVisibilityAndToolbarTest {
         assertTrue(renderedHtml.contains("Buckets"), "Engines page must contain Buckets tab");
         assertTrue(renderedHtml.contains("Indexes"), "Engines page must contain Indexes tab");
 
-        // 3. Assert Presence of Action Buttons
-        assertTrue(renderedHtml.contains("+ DB"), "Engines page must contain + DB action button");
+        // 3. Assert Presence of Action Buttons (+ DB is commented out to allow DB creation exclusively on /databases)
+        assertFalse(renderedHtml.contains("title='Create Database'") || renderedHtml.contains("title=\"Create Database\""),
+            "Engines page must NOT contain + DB action button (title='Create Database')");
         assertTrue(renderedHtml.contains("+ Unit"), "Engines page must contain + Unit action button");
         assertTrue(renderedHtml.contains("Backup"), "Engines page must contain Backup action button");
         assertTrue(renderedHtml.contains("Export"), "Engines page must contain Export action button");
