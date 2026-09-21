@@ -891,7 +891,7 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                 List<Widget> actionButtons = new ArrayList<>();
                 actionButtons.add(Link.of(JettraServer.resolvePath("/engines?engine=RECORDS&db=" + dbName),
                     Icon.of("fas fa-search"),
-                    Text.of(" Explore Data")
+                    Text.of(" ")
                 ).modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:6px 12px; font-size:12px;")));
 
                 if (!isSystemDb) {
@@ -905,7 +905,7 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                     .modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:6px 12px; font-size:12px;")));
 
                 if (!isSystemDb) {
-                    actionButtons.add(Button.of(Icon.of("fas fa-trash-alt"), Text.of(" Delete Database"))
+                    actionButtons.add(Button.of(Icon.of("fas fa-trash-alt"), Text.of(" Delete"))
                         .attribute("onclick", "JettraConfirmDialog.open('dropDbConfirmDialog', '" + dbName + "', '" + dbName + "')")
                         .attribute("title", "Delete Database")
                         .modifier(new Modifier().cssClass("btn-action btn-danger").style("padding:6px 12px; font-size:12px;")));
@@ -1025,21 +1025,22 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                 // Tree Node Actions
                 dbNode.action(Link.of(JettraServer.resolvePath("/engines?engine=RECORDS&db=" + dbName),
                     Icon.of("fas fa-search"),
-                    Text.of(" Explore Data")
+                    Text.of(" ")
+               
                 ).modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:3px 8px; font-size:11px; margin-right:2px;")));
 
                 if (!isSystemDb) {
-                    dbNode.action(Button.of(Icon.of("fas fa-pen"), Text.of(" Rename"))
+                    dbNode.action(Button.of(Icon.of("fas fa-pen"), Text.of(" "))
                         .attribute("onclick", "openRenameDbModal('" + dbName + "')")
                         .modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:3px 8px; font-size:11px; margin-right:2px;")));
                 }
 
-                dbNode.action(Button.of(Icon.of("fas fa-user-plus"), Text.of(" ASSIGN USER"))
+                dbNode.action(Button.of(Icon.of("fas fa-user-plus"), Text.of(" "))
                     .attribute("onclick", "openAssignUserModal('" + dbName + "')")
                     .modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:3px 8px; font-size:11px; margin-right:2px;")));
 
                 if (!isSystemDb) {
-                    dbNode.action(Button.of(Icon.of("fas fa-trash-alt"), Text.of(" Delete Database"))
+                    dbNode.action(Button.of(Icon.of("fas fa-trash-alt"), Text.of(" "))
                         .attribute("onclick", "JettraConfirmDialog.open('dropDbConfirmDialog', '" + dbName + "', '" + dbName + "')")
                         .attribute("title", "Delete Database")
                         .modifier(new Modifier().cssClass("btn-action btn-danger").style("padding:3px 8px; font-size:11px;")));
@@ -1095,7 +1096,7 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                 usersBranch.icon("fas fa-user-shield")
                            .iconColor("#38bdf8")
                            .badge(scopedSysUsers.size() + " Users", "store-badge badge-active")
-                           .action(Button.of(Icon.of("fas fa-user-plus"), Text.of(" ASSIGN USER"))
+                           .action(Button.of(Icon.of("fas fa-user-plus"), Text.of(" "))
                                .attribute("onclick", "openAssignUserModal('" + dbName + "')")
                                .modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:2px 6px; font-size:10px;")));
 

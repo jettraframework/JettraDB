@@ -303,15 +303,18 @@ public final class EngineRecordInsertionDialog {
             var form = document.getElementById('adaptiveRecordInsertForm');
             if (!form) return;
 
+            var activeSec = form.querySelector('.jettra-flux-form-section[data-section="' + activeEng + '"]');
+
             for (var key in sample) {
                 if (sample.hasOwnProperty(key)) {
-                    var input = form.querySelector('[name="' + key + '"]');
+                    var input = (activeSec ? activeSec.querySelector('[name="' + key + '"]') : null) || form.querySelector('[name="' + key + '"]');
                     if (input) {
                         input.value = sample[key];
-                        // If it's a JSON editor, trigger validation
-                        if (input.tagName && input.tagName.toLowerCase() === 'textarea') {
-                            var statusId = input.id.replace('_input', '_status');
-                            if (window.JettraFluxJsonEditor && document.getElementById(statusId)) {
+                        // If it's a true JSON editor textarea, trigger validation
+                        if (input.tagName && input.tagName.toLowerCase() === 'textarea' && input.id && input.id.endsWith('_input')) {
+                            var statusId = input.id.substring(0, input.id.length - 6) + '_status';
+                            var statusEl = document.getElementById(statusId);
+                            if (window.JettraFluxJsonEditor && statusEl && statusEl !== input) {
                                 window.JettraFluxJsonEditor.validate(input.id, statusId);
                             }
                         }
@@ -347,20 +350,22 @@ public final class EngineRecordInsertionDialog {
                 });
             });
 
-            // 2. Syntax validation for active section textareas
+            // 2. Syntax validation for active section textareas (only true JSON editors)
             var activeSection = form.querySelector('.jettra-flux-form-section[data-section="' + selectedEngine + '"]');
             if (activeSection) {
                 var textareas = activeSection.querySelectorAll('textarea');
                 for (var i = 0; i < textareas.length; i++) {
                     var ta = textareas[i];
-                    var statusId = ta.id.replace('_input', '_status');
-                    var statusEl = document.getElementById(statusId);
-                    if (statusEl && statusEl.textContent === 'SYNTAX ERROR') {
-                        if (window.JettraFluxNotification) {
-                            JettraFluxNotification.show('adaptiveRecordInsertNotification', 'Error de Sintaxis', 'Corrija los errores de sintaxis en el editor JSON antes de enviar.', 'ERROR');
+                    if (ta.id && ta.id.endsWith('_input')) {
+                        var statusId = ta.id.substring(0, ta.id.length - 6) + '_status';
+                        var statusEl = document.getElementById(statusId);
+                        if (statusEl && statusEl !== ta && statusEl.textContent === 'SYNTAX ERROR') {
+                            if (window.JettraFluxNotification) {
+                                JettraFluxNotification.show('adaptiveRecordInsertNotification', 'Error de Sintaxis', 'Corrija los errores de sintaxis en el editor JSON antes de enviar.', 'ERROR');
+                            }
+                            ta.focus();
+                            return;
                         }
-                        ta.focus();
-                        return;
                     }
                 }
             }

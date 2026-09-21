@@ -101,17 +101,17 @@ public class TimeSeriesInsertionStrategy implements EngineRecordInsertionStrateg
             Div.of(
                 Div.of(
                     Label.of("Nombre de Serie / Métrica:").modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
-                    TextField.of().id("insert_ts_metric").binding("target_coll").value(currentUnit != null ? currentUnit : "server_temperature")
+                    TextField.of("target_coll").id("insert_ts_metric").value(currentUnit != null ? currentUnit : "server_temperature")
                         .modifier(new Modifier().style("width:100%; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:var(--j-text-primary); font-size:12.5px;"))
                 ).modifier(new Modifier().style("flex:1.2;")),
                 Div.of(
                     Label.of("Valor Numérico (Double):").modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
-                    TextField.of().id("insert_ts_value").binding("ts_value").value("64.8")
+                    TextField.of("ts_value").id("insert_ts_value").value("64.8")
                         .modifier(new Modifier().style("width:100%; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:var(--j-text-primary); font-size:12.5px;"))
                 ).modifier(new Modifier().style("flex:1;")),
                 Div.of(
                     Label.of("Unidad de Medida:").modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
-                    TextField.of().id("insert_ts_unit").binding("ts_unit").value("°C")
+                    TextField.of("ts_unit").id("insert_ts_unit").value("°C")
                         .modifier(new Modifier().style("width:100%; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:var(--j-text-primary); font-size:12.5px;"))
                 ).modifier(new Modifier().style("flex:0.8;"))
             ).modifier(new Modifier().style("display:flex; gap:12px; margin-bottom:12px;")),
@@ -120,7 +120,7 @@ public class TimeSeriesInsertionStrategy implements EngineRecordInsertionStrateg
                 Div.of(
                     Label.of("Timestamp (Milisegundos Epoch o ISO-8601):").modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
                     Div.of(
-                        TextField.of().id("insert_ts_timestamp").binding("ts_timestamp").value(String.valueOf(System.currentTimeMillis()))
+                        TextField.of("ts_timestamp").id("insert_ts_timestamp").value(String.valueOf(System.currentTimeMillis()))
                             .modifier(new Modifier().style("flex:1; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:var(--j-text-primary); font-size:12.5px;")),
                         Button.of(Icon.of("fas fa-clock"), Text.of(" Ahora"))
                             .modifier(new Modifier().attribute("type", "button").attribute("onclick", "document.getElementById('insert_ts_timestamp').value = Date.now();")

@@ -106,12 +106,18 @@ public class JettraConsensusServer {
                     String key = parts[1];
                     String payloadStr = parts[2];
                     if ("__TOMBSTONE__".equals(payloadStr.trim()) || payloadStr.trim().isEmpty()) {
-                        long timestamp = System.currentTimeMillis();
-                        storageEngine.getStorageCore().delete(key, timestamp);
+                        byte[] existing = storageEngine.getStorageCore().get(key);
+                        if (existing != null) {
+                            long timestamp = System.currentTimeMillis();
+                            storageEngine.getStorageCore().delete(key, timestamp);
+                        }
                     } else {
                         byte[] payload = payloadStr.getBytes(StandardCharsets.UTF_8);
-                        long timestamp = System.currentTimeMillis();
-                        storageEngine.getStorageCore().put(key, payload, timestamp);
+                        byte[] existing = storageEngine.getStorageCore().get(key);
+                        if (existing == null || !java.util.Arrays.equals(existing, payload)) {
+                            long timestamp = System.currentTimeMillis();
+                            storageEngine.getStorageCore().put(key, payload, timestamp);
+                        }
                     }
                     out.println("OK");
                 } else {

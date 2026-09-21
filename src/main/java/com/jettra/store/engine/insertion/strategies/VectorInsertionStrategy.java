@@ -86,7 +86,7 @@ public class VectorInsertionStrategy implements EngineRecordInsertionStrategy<Ve
             Div.of(
                 Div.of(
                     Label.of("Índice Vectorial (Index):").modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
-                    TextField.of().id("insert_vec_index").binding("target_coll").value(currentUnit != null ? currentUnit : "semantic_index")
+                    TextField.of("target_coll").id("insert_vec_index").value(currentUnit != null ? currentUnit : "semantic_index")
                         .modifier(new Modifier().style("width:100%; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:var(--j-text-primary); font-size:12.5px;"))
                 ).modifier(new Modifier().style("flex:1;")),
                 Div.of(
@@ -99,14 +99,14 @@ public class VectorInsertionStrategy implements EngineRecordInsertionStrategy<Ve
                 ).modifier(new Modifier().style("flex:1;")),
                 Div.of(
                     Label.of("Etiqueta / Clase Semántica:").modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
-                    TextField.of().id("insert_vec_label").binding("vector_label").value("documentation_v2")
+                    TextField.of("vector_label").id("insert_vec_label").value("documentation_v2")
                         .modifier(new Modifier().style("width:100%; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:var(--j-text-primary); font-size:12.5px;"))
                 ).modifier(new Modifier().style("flex:1;"))
             ).modifier(new Modifier().style("display:flex; gap:12px; margin-bottom:12px;")),
 
             Div.of(
                 Label.of("Array de Embeddings (float[] flotantes separados por coma):").modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
-                TextArea.of("0.0824, -0.4121, 0.9312, 0.1456, -0.0219, 0.5123, -0.2874, 0.6391").id("insert_vec_coords").binding("vector_coords")
+                TextArea.of("vector_coords").id("insert_vec_coords").value("0.0824, -0.4121, 0.9312, 0.1456, -0.0219, 0.5123, -0.2874, 0.6391")
                     .modifier(new Modifier().attribute("rows", "3")
                         .style("width:100%; padding:10px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:#8b5cf6; font-family:monospace; font-size:12px; resize:vertical;"))
             ).modifier(new Modifier().style("margin-bottom:12px;")),

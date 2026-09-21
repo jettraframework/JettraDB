@@ -126,7 +126,7 @@ public class GraphInsertionStrategy implements EngineRecordInsertionStrategy<Gra
             Div.of(
                 Div.of(
                     Label.of("Etiqueta de Nodo (Node Label / Type):").modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
-                    TextField.of().id("insert_graph_node_label").binding("node_label").value(currentUnit != null ? currentUnit : "Person")
+                    TextField.of("node_label").id("insert_graph_node_label").value(currentUnit != null ? currentUnit : "Person")
                         .modifier(new Modifier().style("width:100%; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:var(--j-text-primary); font-size:12.5px;"))
                 ).modifier(new Modifier().style("margin-bottom:12px;")),
                 JettraFluxJsonEditor.of("insert_graph_node_props", "Propiedades del Vértice (JSON)", "{\n  \"name\": \"Alice Vance\",\n  \"department\": \"Research\",\n  \"reputation\": 98\n}")
@@ -138,17 +138,17 @@ public class GraphInsertionStrategy implements EngineRecordInsertionStrategy<Gra
                 Div.of(
                     Div.of(
                         Label.of("Nodo Origen (From ID):").modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
-                        TextField.of().id("insert_edge_from").binding("edge_from").value("node_alice")
+                        TextField.of("edge_from").id("insert_edge_from").value("node_alice")
                             .modifier(new Modifier().style("width:100%; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:var(--j-text-primary); font-size:12.5px;"))
                     ).modifier(new Modifier().style("flex:1;")),
                     Div.of(
                         Label.of("Nodo Destino (To ID):").modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
-                        TextField.of().id("insert_edge_to").binding("edge_to").value("node_bob")
+                        TextField.of("edge_to").id("insert_edge_to").value("node_bob")
                             .modifier(new Modifier().style("width:100%; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:var(--j-text-primary); font-size:12.5px;"))
                     ).modifier(new Modifier().style("flex:1;")),
                     Div.of(
                         Label.of("Relación (Edge Label):").modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
-                        TextField.of().id("insert_edge_label").binding("edge_label").value("MANAGES")
+                        TextField.of("edge_label").id("insert_edge_label").value("MANAGES")
                             .modifier(new Modifier().style("width:100%; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:var(--j-text-primary); font-size:12.5px;"))
                     ).modifier(new Modifier().style("flex:1;"))
                 ).modifier(new Modifier().style("display:flex; gap:12px; margin-bottom:12px;")),

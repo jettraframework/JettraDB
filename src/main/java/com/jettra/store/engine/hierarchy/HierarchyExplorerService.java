@@ -370,6 +370,45 @@ public class HierarchyExplorerService {
         if (!candidateKeys.contains(prefix + id)) candidateKeys.add(prefix + id);
         if (!candidateKeys.contains(id)) candidateKeys.add(id);
 
+        // Special resolution for GRAPH engine
+        if ("GRAPH".equalsIgnoreCase(engineKey)) {
+            if (db != null && !db.isBlank()) {
+                if (hasColl) {
+                    addUnique(candidateKeys, "graph:" + db + ":" + coll + ":node:" + id);
+                    addUnique(candidateKeys, "graph:" + db + ":" + coll + ":edge:" + id);
+                    addUnique(candidateKeys, "graph:" + db + ":" + coll + ":" + id);
+                }
+                addUnique(candidateKeys, "graph:" + db + ":node:" + id);
+                addUnique(candidateKeys, "graph:" + db + ":edge:" + id);
+                addUnique(candidateKeys, "graph:" + db + ":" + id);
+            }
+            if (hasColl) {
+                addUnique(candidateKeys, "graph:" + coll + ":node:" + id);
+                addUnique(candidateKeys, "graph:" + coll + ":edge:" + id);
+                addUnique(candidateKeys, "graph:" + coll + ":" + id);
+            }
+            addUnique(candidateKeys, "graph:node:" + id);
+            addUnique(candidateKeys, "graph:edge:" + id);
+            addUnique(candidateKeys, "graph:" + id);
+        }
+
+        // Special resolution for TIMESERIES engine
+        if ("TIMESERIES".equalsIgnoreCase(engineKey) || "TIME_SERIES".equalsIgnoreCase(engineKey)) {
+            if (db != null && !db.isBlank()) {
+                if (hasColl) {
+                    addUnique(candidateKeys, "ts:" + db + ":" + coll + ":" + id);
+                    addUnique(candidateKeys, db + ":" + coll + ":" + id);
+                }
+                addUnique(candidateKeys, "ts:" + db + ":" + id);
+                addUnique(candidateKeys, db + ":" + id);
+            }
+            if (hasColl) {
+                addUnique(candidateKeys, "ts:" + coll + ":" + id);
+                addUnique(candidateKeys, coll + ":" + id);
+            }
+            addUnique(candidateKeys, "ts:" + id);
+        }
+
         // Alternative prefix for DOCUMENT/RECORDS interchangeability
         if ("DOCUMENT".equalsIgnoreCase(engineKey) || "RECORDS".equalsIgnoreCase(engineKey) || "RECORD".equalsIgnoreCase(engineKey)) {
             String altPrefix = "rec:".equals(prefix) ? "doc:" : "rec:";
@@ -382,6 +421,12 @@ public class HierarchyExplorerService {
         }
 
         return candidateKeys;
+    }
+
+    private static void addUnique(List<String> list, String key) {
+        if (!list.contains(key)) {
+            list.add(key);
+        }
     }
 
     public String getItemPayload(String engineKey, String db, String coll, String id) {

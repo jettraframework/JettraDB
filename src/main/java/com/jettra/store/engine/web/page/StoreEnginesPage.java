@@ -264,6 +264,10 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 if (payload == null) payload = params.get("raw_payload");
                 if (payload == null) payload = params.get("kv_value");
                 if (payload == null) payload = params.get("rec_payload");
+                if (payload == null) payload = params.get("node_props");
+                if (payload == null) payload = params.get("ts_tags");
+                if (payload == null) payload = params.get("vector_meta");
+                if (payload == null) payload = params.get("col_data");
 
                 EditDocumentCommand cmd = EditDocumentCommand.of(engType, targetDb, coll, id, payload, params);
                 CompletableFuture<EditDocumentResult> future = editActionHandler.executeEditAsync(cmd);
