@@ -122,10 +122,10 @@ public final class EngineRecordInspectDialog {
             Button.of(Icon.of("fas fa-copy"), Text.of(" Copiar Payload"))
                 .id("btnCopyInspect")
                 .modifier(new Modifier().attribute("type", "button").attribute("onclick", "copyInspectRecordPayload()").cssClass("btn-action btn-secondary").style("font-size:11.5px; padding:6px 13px; margin-right:6px; cursor:pointer;")),
-            Button.of(Icon.of("fas fa-edit"), Text.of(" Editar"))
-                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "editFromInspectModal()").cssClass("btn-action btn-primary").style("font-size:11.5px; padding:6px 14px; background:#fbbf24; border-color:#fbbf24; color:#0f172a; font-weight:700; margin-right:6px; cursor:pointer;")),
-            Button.of(Icon.of("fas fa-history"), Text.of(" Historial"))
-                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "historyFromInspectModal()").cssClass("btn-action btn-secondary").style("font-size:11.5px; padding:6px 13px; color:#c084fc; border-color:#c084fc; margin-right:6px; cursor:pointer;")),
+//            Button.of(Icon.of("fas fa-edit"), Text.of(" Editar"))
+//                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "editFromInspectModal()").cssClass("btn-action btn-primary").style("font-size:11.5px; padding:6px 14px; background:#fbbf24; border-color:#fbbf24; color:#0f172a; font-weight:700; margin-right:6px; cursor:pointer;")),
+//            Button.of(Icon.of("fas fa-history"), Text.of(" Historial"))
+//                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "historyFromInspectModal()").cssClass("btn-action btn-secondary").style("font-size:11.5px; padding:6px 13px; color:#c084fc; border-color:#c084fc; margin-right:6px; cursor:pointer;")),
             Button.of(Icon.of("fas fa-times"), Text.of(" Cerrar"))
                 .modifier(new Modifier().attribute("type", "button")
                     .attribute("onclick", "if (window.JettraFluxModal) JettraFluxModal.close('inspectRecordModal'); else if (typeof hideModal==='function') hideModal('inspectRecordModal');")
