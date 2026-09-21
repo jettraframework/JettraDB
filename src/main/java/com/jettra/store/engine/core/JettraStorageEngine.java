@@ -18,6 +18,7 @@ public class JettraStorageEngine {
     private final Map<String, EngineFamily> registeredEngines;
     private LsmBTreeHybrid storageCore;
     private JettraConsensusServer raftOrchestrator;
+    private com.jettra.store.engine.highperformance.integration.HighPerformanceEngineBridge highPerformanceBridge;
     
     public JettraStorageEngine(String storagePath) {
         this.storageDir = Paths.get(storagePath);
@@ -72,6 +73,15 @@ public class JettraStorageEngine {
         return storageCore;
     }
     
+    public com.jettra.store.engine.highperformance.integration.HighPerformanceEngineBridge getHighPerformanceBridge() {
+        if (highPerformanceBridge == null) {
+            highPerformanceBridge = new com.jettra.store.engine.highperformance.integration.HighPerformanceEngineBridge(this);
+            registerEngine(com.jettra.store.engine.highperformance.integration.HighPerformanceEngineBridge.ENGINE_NAME, highPerformanceBridge);
+            highPerformanceBridge.init();
+        }
+        return highPerformanceBridge;
+    }
+
     public Path getStorageDir() {
         return storageDir;
     }

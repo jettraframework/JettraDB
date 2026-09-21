@@ -60,10 +60,17 @@ public final class EngineRecordInsertionDialog {
 
         Widget commonRow = Div.of(
             Div.of(
-                Label.of("Base de Datos Destino (Target Database):")
-                    .modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin-bottom:4px; display:block;")),
+                Div.of(
+                    Label.of("Base de Datos Destino (Target Database):")
+                        .modifier(new Modifier().style("font-size:11.5px; font-weight:600; color:var(--j-text-secondary); margin:0;")),
+                    Span.of("Solo Lectura")
+                        .modifier(new Modifier().style("font-size:9.5px; font-weight:700; color:var(--j-text-muted); background:var(--j-bg-subsurface); border:1px solid var(--j-border); padding:1px 6px; border-radius:4px; margin-left:auto;"))
+                ).modifier(new Modifier().style("display:flex; align-items:center; margin-bottom:4px;")),
                 TextField.of().id("adaptive_insert_target_db").binding("target_db").value(activeDb)
-                    .modifier(new Modifier().style("width:100%; padding:8px 12px; background:var(--j-bg-body); border:1px solid var(--j-border); border-radius:6px; color:var(--j-text-primary); font-size:12.5px; font-weight:600;"))
+                    .modifier(new Modifier()
+                        .attribute("readonly", "readonly")
+                        .attribute("title", "Base de datos seleccionada en la barra superior (modo solo lectura)")
+                        .style("width:100%; padding:8px 12px; background:var(--j-bg-subsurface); border:1px solid var(--j-border); border-radius:6px; color:#38bdf8; font-size:12.5px; font-weight:700; cursor:default; outline:none; user-select:all;"))
             ).modifier(new Modifier().style("flex:1.2;")),
 
             Div.of(
@@ -95,16 +102,11 @@ public final class EngineRecordInsertionDialog {
             form.addSection(engineType.key(), engineFields);
         }
 
-        // 4. Modal Footer Actions
+        // 4. Modal Footer Actions (Solo botón de plantilla y botón de inserción; modal cierra solo con X o inserción válida)
         Widget sampleButton = JettraFluxButton.of("Cargar Plantilla de Ejemplo", "fas fa-magic")
                 .variant(JettraFluxButton.Variant.SECONDARY)
                 .size(JettraFluxButton.Size.SM)
                 .onClickJs("loadSampleForActiveEngine()");
-
-        Widget cancelButton = JettraFluxButton.of("Cancelar")
-                .variant(JettraFluxButton.Variant.GHOST)
-                .size(JettraFluxButton.Size.SM)
-                .onClickJs("JettraFluxModal.close('" + MODAL_ID + "')");
 
         Widget submitButton = JettraFluxButton.of("Insertar Registro", "fas fa-plus-circle")
                 .id("btnAdaptiveSubmitInsert")
@@ -116,11 +118,10 @@ public final class EngineRecordInsertionDialog {
 
         Widget footer = Div.of(
             Div.of(sampleButton).modifier(new Modifier().style("margin-right:auto;")),
-            cancelButton,
             submitButton
         ).modifier(new Modifier().style("display:flex; justify-content:flex-end; align-items:center; gap:8px; width:100%;"));
 
-        // 5. Build Modal using JettraFluxModal
+        // 5. Build Modal using JettraFluxModal (Modal estricto: no cierra al hacer click afuera ni con Escape)
         JettraFluxModal modal = JettraFluxModal.of(MODAL_ID)
                 .title("Insertar Registro Multi-Modelo")
                 .subtitle("Formulario adaptativo con validación polimórfica para los 9 motores heterogéneos de JettraDB")
@@ -128,6 +129,8 @@ public final class EngineRecordInsertionDialog {
                 .badge("9 MOTORES", "#38bdf8")
                 .maxWidth("880px")
                 .maxHeight("92vh")
+                .closeOnClickOutside(false)
+                .closeOnEsc(false)
                 .addBody(notification)
                 .addBody(engineSelectorBar)
                 .addBody(form)
@@ -208,10 +211,15 @@ public final class EngineRecordInsertionDialog {
             var raw = (engineKey || 'DOCUMENT').toUpperCase();
             var eng = (raw === 'RECORD') ? 'RECORDS' : raw;
             switchInsertEngine(raw);
-            if (dbName) {
-                var dbInput = document.getElementById('adaptive_insert_target_db');
-                if (dbInput) dbInput.value = dbName;
+
+            // Obtener la base de datos seleccionada en la lista del top (Connected as admin @ <select id="topDatabaseSelect">)
+            var topDbSelect = document.getElementById('topDatabaseSelect');
+            var selectedDb = (topDbSelect && topDbSelect.value) ? topDbSelect.value : (dbName || 'system_db');
+            var dbInput = document.getElementById('adaptive_insert_target_db');
+            if (dbInput) {
+                dbInput.value = selectedDb;
             }
+
             if (unitName && unitName !== 'default') {
                 var activeSec = document.querySelector('#adaptiveRecordInsertForm .jettra-flux-form-section[data-section="' + eng + '"]');
                 if (activeSec) {
@@ -374,14 +382,21 @@ public final class EngineRecordInsertionDialog {
                 .redirectDelay(800)
                 .onSuccess("""
                     function(data) {
+                        // Cierra el diálogo modal al ser válida la operación
+                        if (window.JettraFluxModal) {
+                            JettraFluxModal.close('adaptiveRecordInsertModal');
+                        }
                         var engineInput = document.getElementById('adaptive_insert_engine_input');
                         var selectedEngine = engineInput ? engineInput.value : 'DOCUMENT';
-                        var dbVal = data.database || (document.getElementById('adaptive_insert_target_db') ? document.getElementById('adaptive_insert_target_db').value : 'system_db');
+                        var topDbSelect = document.getElementById('topDatabaseSelect');
+                        var dbVal = data.database || (topDbSelect && topDbSelect.value) || (document.getElementById('adaptive_insert_target_db') ? document.getElementById('adaptive_insert_target_db').value : 'system_db');
                         var collVal = data.collection || 'default';
                         var redirectUrl = window.location.pathname + '?engine=' + encodeURIComponent(selectedEngine)
                             + '&target_db=' + encodeURIComponent(dbVal)
                             + '&coll=' + encodeURIComponent(collVal);
-                        window.location.href = redirectUrl;
+                        setTimeout(function() {
+                            window.location.href = redirectUrl;
+                        }, 500);
                     }
                 """);
 

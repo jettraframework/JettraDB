@@ -2123,13 +2123,13 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     Icon.of(isTableView ? "fas fa-table" : "fas fa-sitemap").modifier(new Modifier().style("color:var(--j-primary); margin-right:6px; font-size:13px;")),
                     Text.of("Multi-Model Storage Hierarchy Explorer")
                 ).modifier(new Modifier().style("margin:0; font-size:13px; font-weight:600; color:var(--j-text-primary);")),
-                Row.of(
-                    Button.of(Icon.of("fas fa-plus-circle"), Text.of(" Insertar Registro"))
-                        .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openEngineInsertModal('" + selectedEngine + "', '" + escapeJs(currentColl) + "', '" + escapeJs(targetDb) + "')").cssClass("btn-action btn-primary").style("padding:3px 10px; font-size:9.5px; margin-left:12px; margin-right:4px; font-weight:700; background:linear-gradient(135deg, #38bdf8 0%, #0284c7 100%); color:#0f172a; border:none; box-shadow:0 1px 4px rgba(56,189,248,0.3);")),
+                Row.of(                 
                     Button.of(Icon.of("fas fa-sitemap"), Text.of(" Tree View"))
                         .modifier(new Modifier().attribute("type", "button").attribute("onclick", "location.href='" + actionUrl + selectedEngine + "&target_db=" + escapeJs(targetDb) + "&coll=" + escapeJs(currentColl) + "&view_mode=tree'").cssClass(!isTableView ? "btn-action btn-primary" : "btn-action btn-secondary").style("padding:3px 8px; font-size:9.5px; margin-right:4px;")),
                     Button.of(Icon.of("fas fa-table"), Text.of(" Table View"))
                         .modifier(new Modifier().attribute("type", "button").attribute("onclick", "location.href='" + actionUrl + selectedEngine + "&target_db=" + escapeJs(targetDb) + "&coll=" + escapeJs(currentColl) + "&view_mode=table'").cssClass(isTableView ? "btn-action btn-primary" : "btn-action btn-secondary").style("padding:3px 8px; font-size:9.5px; margin-right:4px;")),
+                       Button.of(Icon.of("fas fa-plus-circle"), Text.of(" Insertar Registro"))
+                        .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openEngineInsertModal('" + selectedEngine + "', '" + escapeJs(currentColl) + "', '" + escapeJs(targetDb) + "')").cssClass("btn-action btn-primary").style("padding:3px 10px; font-size:9.5px; margin-left:12px; margin-right:4px; font-weight:700; background:linear-gradient(135deg, #38bdf8 0%, #0284c7 100%); color:#0f172a; border:none; box-shadow:0 1px 4px rgba(56,189,248,0.3);")),
                     FluxTree.expandAllButton("storage-hierarchy-tree", "Expand All", "fas fa-expand-alt"),
                     FluxTree.collapseToRootButton("storage-hierarchy-tree", "Collapse All", "fas fa-compress-alt")
                 ).modifier(new Modifier().style("display:flex; align-items:center;"))

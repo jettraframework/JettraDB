@@ -507,6 +507,34 @@ public class AdaptiveRecordInsertionTest {
     }
 
     @Test
+    @DisplayName("Verify Target Database is Read-Only, synchronized with topDatabaseSelect, and modal is strictly non-dismissible outside")
+    public void testAdaptiveDialogReadOnlyTargetDbAndStrictModalBehavior() {
+        Widget dialog = EngineRecordInsertionDialog.build("/engines", "DOCUMENT", "analytics_db", "events");
+        assertNotNull(dialog);
+
+        String html = dialog.render(Themes.FlatTheme());
+        assertNotNull(html);
+
+        // 1. Verify Target Database is in Read-Only mode with visual badge and attributes
+        assertTrue(html.contains("Base de Datos Destino (Target Database):"), "Must render target db label");
+        assertTrue(html.contains("Solo Lectura"), "Must display 'Solo Lectura' badge");
+        assertTrue(html.contains("id=\"adaptive_insert_target_db\""), "Must contain adaptive_insert_target_db id");
+        assertTrue(html.contains("readonly=\"readonly\""), "Must have readonly attribute for target db input");
+        assertTrue(html.contains("name=\"target_db\""), "Must have target_db name for form submission");
+        assertTrue(html.contains("value=\"analytics_db\""), "Must contain active database value");
+
+        // 2. Verify strict modal behavior: closeOnClickOutside=false (no closing on backdrop click)
+        assertTrue(html.contains("onclick=\"\""), "Overlay backdrop must have empty onclick to prevent outside click dismissal");
+        assertTrue(html.contains("class=\"jettra-flux-modal-close\""), "Must have top-right close X button");
+        assertTrue(html.contains("JettraFluxModal.close('adaptiveRecordInsertModal')"), "Close X button must close modal");
+
+        // 3. Verify topDatabaseSelect synchronization in client JS
+        assertTrue(html.contains("topDatabaseSelect"), "Client JS must synchronize with topDatabaseSelect");
+        assertTrue(html.contains("var selectedDb = (topDbSelect && topDbSelect.value) ? topDbSelect.value :"), 
+                "Must extract selected value from top selectOne");
+    }
+
+    @Test
     @DisplayName("Verify RECORD native model insertion via EngineInsertionFactory and Virtual Threads")
     public void testNativeRecordModelInsertion() {
         // 1. Verify EngineType resolution for RECORD
@@ -601,7 +629,8 @@ public class AdaptiveRecordInsertionTest {
             java.util.Map.entry("testHierarchyExplorerTreeActionButtons", test::testHierarchyExplorerTreeActionButtons),
             java.util.Map.entry("testExceptionMapperPatternMatchingAndErrorResponse", test::testExceptionMapperPatternMatchingAndErrorResponse),
             java.util.Map.entry("testMultiModelInsertionRequestAndJsonPayloadExecution", test::testMultiModelInsertionRequestAndJsonPayloadExecution),
-            java.util.Map.entry("testAdaptiveDialogJettraFluxTransportIntegration", test::testAdaptiveDialogJettraFluxTransportIntegration)
+            java.util.Map.entry("testAdaptiveDialogJettraFluxTransportIntegration", test::testAdaptiveDialogJettraFluxTransportIntegration),
+            java.util.Map.entry("testAdaptiveDialogReadOnlyTargetDbAndStrictModalBehavior", test::testAdaptiveDialogReadOnlyTargetDbAndStrictModalBehavior)
         );
 
         for (var tc : testCases) {
