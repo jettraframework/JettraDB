@@ -31,7 +31,7 @@ public class SampleDatasetManager {
             "MULTI-MODEL",
             "ExampleDBReferences",
             "Cross-Engine & Multi-Cluster References Suite",
-            "Demonstrates direct O(1) object references (jref://) with primary storage addresses, multi-cluster node pointers, and dynamic reference resolution across Document, Records, Geo, Vector, Object, KeyValue, and TimeSeries engines.",
+            "Demonstrates direct O(1) object references (jref://) with primary storage addresses, multi-cluster node pointers, and dynamic reference resolution across Document, Records, Geo, Vector, Object, KeyValue, TimeSeries, Graph, and Column engines.",
             120,
             "fas fa-link"
         ),
@@ -217,7 +217,38 @@ public class SampleDatasetManager {
         engine.getStorageCore().put(db + ":iot_hub_power_01", tsPayload1.getBytes(StandardCharsets.UTF_8), now);
         count += 2;
 
-        // 8. MASTER ENTITY 1 (DOCUMENT): Order Master with Clean Cross-Engine Jref References
+        // 8. Referenced Target: GRAPH Knowledge & Logistics Network
+        String graphNodeKey1 = "graph:" + db + ":node_network_01";
+        String graphNodeKey2 = "graph:" + db + ":node:node_network_01";
+        String graphPayload1 = String.format(
+            "{\"nodeId\":\"node_network_01\",\"label\":\"Logistics Hub Network\",\"type\":\"VERTEX\"," +
+            "\"properties\":{\"clusterTier\":\"Tier-1\",\"active\":true,\"region\":\"LATAM\"}," +
+            "\"edges\":[{\"target\":\"node_network_02\",\"relationship\":\"CONNECTS_TO\",\"weight\":1.0}]," +
+            "\"leadArchitectRef\":\"jref://RECORDS:ExampleDBReferences/emp_201\"," +
+            "\"createdAt\":%d}",
+            now
+        );
+        engine.getStorageCore().put(graphNodeKey1, graphPayload1.getBytes(StandardCharsets.UTF_8), now);
+        engine.getStorageCore().put(graphNodeKey2, graphPayload1.getBytes(StandardCharsets.UTF_8), now);
+        engine.getStorageCore().put(db + ":node_network_01", graphPayload1.getBytes(StandardCharsets.UTF_8), now);
+        count += 3;
+
+        // 9. Referenced Target: COLUMN Wide-Column Analytical OLAP Facts
+        String colFactKey1 = "col:" + db + ":fact_sales_01";
+        String colFactKey2 = "col:" + db + ":sales_facts:fact_sales_01";
+        String colPayload1 = String.format(
+            "{\"factId\":\"fact_sales_01\",\"columnFamily\":\"sales_facts\",\"region\":\"LATAM-NORTH\"," +
+            "\"qtr\":\"Q3-2026\",\"revenue\":24500.00,\"unitsSold\":150,\"status\":\"SETTLED\"," +
+            "\"customerRef\":\"jref://DOCUMENT:ExampleDBReferences/cust_101\"," +
+            "\"createdAt\":%d}",
+            now
+        );
+        engine.getStorageCore().put(colFactKey1, colPayload1.getBytes(StandardCharsets.UTF_8), now);
+        engine.getStorageCore().put(colFactKey2, colPayload1.getBytes(StandardCharsets.UTF_8), now);
+        engine.getStorageCore().put(db + ":fact_sales_01", colPayload1.getBytes(StandardCharsets.UTF_8), now);
+        count += 3;
+
+        // 10. MASTER ENTITY 1 (DOCUMENT): Order Master with Clean Cross-Engine Jref References
         String orderDocKey = "doc:" + db + ":order_master_7001";
         String orderPayload = String.format(
             "{\"orderId\":\"ORD-2026-7001\",\"description\":\"Enterprise Cloud Server & Logistics Contract Deployment\"," +
@@ -229,6 +260,8 @@ public class SampleDatasetManager {
             "\"biometricsAuditRef\":\"jref://VECTOR:ExampleDBReferences/vec_face_carlos\"," +
             "\"activeSessionRef\":\"jref://KEYVALUE:ExampleDBReferences/session_token_carlos\"," +
             "\"powerMonitoringRef\":\"jref://TIMESERIES:ExampleDBReferences/iot_hub_power_01\"," +
+            "\"graphNetworkRef\":\"jref://GRAPH:ExampleDBReferences/node_network_01\"," +
+            "\"salesAnalyticsRef\":\"jref://COLUMN:ExampleDBReferences/fact_sales_01\"," +
             "\"createdAt\":%d}",
             now
         );

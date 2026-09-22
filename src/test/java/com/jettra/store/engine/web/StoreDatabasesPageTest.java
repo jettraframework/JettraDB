@@ -323,6 +323,35 @@ public class StoreDatabasesPageTest {
         assertTrue(body.contains("espresso-badge"), "Must render JettraFlux Badge component");
     }
 
+    @JettraTest
+    @DisplayName("10. Multi-Model Storage Components Overview displays statistics panels for GRAPH and COLUMN engines with totals")
+    void testMultiModelOverviewIncludesGraphAndColumnPanels() throws IOException {
+        // Seed graph and column data into finance_db
+        engine.getStorageCore().put("graph:finance_db:node_101", "{\"name\":\"NodeA\"}".getBytes(StandardCharsets.UTF_8), System.currentTimeMillis());
+        engine.getStorageCore().put("graph:finance_db:node_102", "{\"name\":\"NodeB\"}".getBytes(StandardCharsets.UTF_8), System.currentTimeMillis());
+        engine.getStorageCore().put("col:finance_db:fact_01", "{\"qtr\":\"Q3\"}".getBytes(StandardCharsets.UTF_8), System.currentTimeMillis());
+
+        TestHttpExchange exchange = new TestHttpExchange("GET", "/databases");
+        exchange.getRequestHeaders().set("Cookie", "username=adminUser; role=ADMIN");
+
+        databasesPage.handle(exchange);
+
+        assertEquals(200, exchange.getResponseCode());
+        String body = exchange.getResponseBodyAsString();
+
+        // Must render Multi-Model Storage Components Overview section
+        assertTrue(body.contains("Multi-Model Storage Components Overview"), "Must render section title");
+
+        // Must render GRAPH and COLUMN engine panels with their descriptions and aggregated totals
+        assertTrue(body.contains("GRAPH"), "Must render GRAPH engine panel");
+        assertTrue(body.contains("LPG Graph Nodes"), "Must render GRAPH engine description");
+        assertTrue(body.contains("2 keys"), "Must render 2 keys total for GRAPH");
+
+        assertTrue(body.contains("COLUMN"), "Must render COLUMN engine panel");
+        assertTrue(body.contains("OLAP Columns"), "Must render COLUMN engine description");
+        assertTrue(body.contains("1 keys"), "Must render 1 keys total for COLUMN");
+    }
+
     /**
      * In-memory test implementation of HttpExchange.
      */

@@ -24,7 +24,7 @@ public class SampleDatabaseService {
             "MULTI-MODEL",
             "ExampleDBReferences",
             "Cross-Engine & Multi-Cluster References Suite",
-            "Demonstrates direct O(1) object references (jref://) with primary storage addresses, multi-cluster node pointers, and dynamic reference resolution across Document, Records, Geo, Vector, Object, KeyValue, and TimeSeries engines.",
+            "Demonstrates direct O(1) object references (jref://) with primary storage addresses, multi-cluster node pointers, and dynamic reference resolution across Document, Records, Geo, Vector, Object, KeyValue, TimeSeries, Graph, and Column engines.",
             120,
             "fas fa-link",
             List.of("References", "Jref", "Multi-Cluster", "Composite")

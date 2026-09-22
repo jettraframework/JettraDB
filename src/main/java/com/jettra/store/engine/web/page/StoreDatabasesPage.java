@@ -793,13 +793,22 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                 ))
                 .build();
 
-        // Compute Multi-Model Components aggregation across authorized databases
+        // Pre-populate supported multi-model engines so every engine (notably GRAPH and COLUMN)
+        // is always presented as an operational statistics panel with total keys
+        String[] supportedEngines = {"RECORDS", "DOCUMENT", "VECTOR", "GRAPH", "TIMESERIES", "COLUMN", "KEYVALUE", "GEOSPATIAL", "OBJECT"};
         Map<String, Integer> globalEngineCounts = new LinkedHashMap<>();
-        for (DatabaseMetadata dbMeta : databases.values()) {
-            for (Map.Entry<String, Integer> comp : dbMeta.getEngineCounts().entrySet()) {
-                globalEngineCounts.put(comp.getKey(), globalEngineCounts.getOrDefault(comp.getKey(), 0) + comp.getValue());
+        if (!databases.isEmpty()) {
+            for (String eng : supportedEngines) {
+                globalEngineCounts.put(eng, 0);
+            }
+            for (DatabaseMetadata dbMeta : databases.values()) {
+                for (Map.Entry<String, Integer> comp : dbMeta.getEngineCounts().entrySet()) {
+                    globalEngineCounts.put(comp.getKey(), globalEngineCounts.getOrDefault(comp.getKey(), 0) + comp.getValue());
+                }
             }
         }
+
+        long activeEnginesCount = globalEngineCounts.values().stream().filter(cnt -> cnt > 0).count();
 
         // Section 1: Multi-Model Storage Components Overview Cards
         Widget multiModelSectionHeader = Div.of(
@@ -807,7 +816,7 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                         Icon.of("fas fa-cubes").modifier(new Modifier().style("color:#a855f7; font-size:18px; margin-right:8px;")),
                         Span.of("Multi-Model Storage Components Overview").modifier(new Modifier().style("font-size:15px; font-weight:700; color:#f8fafc;"))
                 ).modifier(new Modifier().style("display:flex; align-items:center;")),
-                Span.of(globalEngineCounts.size() + " Active Storage Engines").modifier(new Modifier().cssClass("store-badge badge-raft"))
+                Span.of((databases.isEmpty() ? 0 : activeEnginesCount) + " Active Storage Engines").modifier(new Modifier().cssClass("store-badge badge-raft"))
         ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;"));
 
         List<Widget> globalCompBoxes = new ArrayList<>();
