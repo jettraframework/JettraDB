@@ -3,22 +3,24 @@ package com.jettra.store.engine.samples.lifecycle;
 import com.jettra.store.engine.hierarchy.HierarchyResult;
 import com.jettra.store.engine.samples.SampleDatasetManager;
 
+import com.jettra.store.engine.samples.SampleDatabaseNamingPolicy;
+
 import java.util.Objects;
 import java.util.Set;
 
 /**
  * Concrete Command encapsulating the single-dataset installation of one of the 4 authorized
- * sample databases (ExampleDBReferences, hr_enterprise_db, meteorology_iot_db, ecommerce_olap_db).
+ * sample databases (ExampleDBReferences, ExampleHrEnterpriseDb, ExampleMeteorologyIotDb, ExampleEcommerceOlapDb).
  * Guarantees atomic, isolated installation of the chosen dataset without cross-contaminating
  * other sample namespaces.
  */
 public final class InstallSingleDatasetCommand implements DatasetInstallCommand {
 
     public static final Set<String> ALLOWED_DATABASES = Set.of(
-        "ExampleDBReferences",
-        "hr_enterprise_db",
-        "meteorology_iot_db",
-        "ecommerce_olap_db"
+        SampleDatabaseNamingPolicy.EXAMPLE_DB_REFERENCES,
+        SampleDatabaseNamingPolicy.EXAMPLE_HR_ENTERPRISE_DB,
+        SampleDatabaseNamingPolicy.EXAMPLE_METEOROLOGY_IOT_DB,
+        SampleDatabaseNamingPolicy.EXAMPLE_ECOMMERCE_OLAP_DB
     );
 
     private final SampleDatasetManager datasetManager;
@@ -36,9 +38,11 @@ public final class InstallSingleDatasetCommand implements DatasetInstallCommand 
 
     @Override
     public HierarchyResult<Integer> execute() {
+        String canonical = SampleDatabaseNamingPolicy.canonicalize(targetDatabase);
+
         // Strict restriction verification against authorized catalog
         boolean isAuthorized = ALLOWED_DATABASES.stream()
-            .anyMatch(allowed -> allowed.equalsIgnoreCase(targetDatabase));
+            .anyMatch(allowed -> allowed.equalsIgnoreCase(canonical) || allowed.equalsIgnoreCase(targetDatabase));
 
         if (!isAuthorized) {
             return HierarchyResult.failure("Unauthorized or obsolete sample database: '" + targetDatabase
@@ -46,10 +50,10 @@ public final class InstallSingleDatasetCommand implements DatasetInstallCommand 
         }
 
         try {
-            int loaded = datasetManager.loadDataset(targetDatabase);
+            int loaded = datasetManager.loadDataset(canonical);
             return HierarchyResult.success(loaded);
         } catch (Exception e) {
-            return HierarchyResult.failure("Failed to install single dataset '" + targetDatabase + "': " + e.getMessage(), e);
+            return HierarchyResult.failure("Failed to install single dataset '" + canonical + "': " + e.getMessage(), e);
         }
     }
 }

@@ -19,6 +19,15 @@ public final class TestDatabaseCleanup {
 
     private static final Set<String> KNOWN_SAMPLE_DATABASES = Set.of(
         "ExampleDBReferences",
+        "ExampleHrEnterpriseDb",
+        "ExampleMeteorologyIotDb",
+        "ExampleEcommerceOlapDb",
+        "ExampleScrumBoardDb",
+        "ExampleSmartCityGisDb",
+        "ExampleAiKnowledgeDb",
+        "ExampleSocialNetworkDb",
+        "ExampleDistributedCacheDb",
+        "ExampleDigitalAssetsDb",
         "hr_enterprise_db",
         "meteorology_iot_db",
         "ecommerce_olap_db",

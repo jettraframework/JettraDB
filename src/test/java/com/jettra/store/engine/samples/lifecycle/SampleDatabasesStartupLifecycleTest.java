@@ -47,10 +47,10 @@ import static io.jettra.test.core.JettraAssert.*;
 public class SampleDatabasesStartupLifecycleTest {
 
     private static final Set<String> ALLOWED_SAMPLE_DATABASES = Set.of(
-        "ExampleDBReferences",
-        "hr_enterprise_db",
-        "meteorology_iot_db",
-        "ecommerce_olap_db"
+        com.jettra.store.engine.samples.SampleDatabaseNamingPolicy.EXAMPLE_DB_REFERENCES,
+        com.jettra.store.engine.samples.SampleDatabaseNamingPolicy.EXAMPLE_HR_ENTERPRISE_DB,
+        com.jettra.store.engine.samples.SampleDatabaseNamingPolicy.EXAMPLE_METEOROLOGY_IOT_DB,
+        com.jettra.store.engine.samples.SampleDatabaseNamingPolicy.EXAMPLE_ECOMMERCE_OLAP_DB
     );
 
     private Path tempDir;
@@ -127,25 +127,25 @@ public class SampleDatabasesStartupLifecycleTest {
         var resDoc = resolver.resolve("jref://DOCUMENT:ExampleDBReferences/cust_101");
         assertFalse(resDoc.exists(), "Reference to uninstalled ExampleDBReferences must return not found");
 
-        var resRec = resolver.resolve("jref://RECORDS:hr_enterprise_db/emp_201");
-        assertFalse(resRec.exists(), "Reference to uninstalled hr_enterprise_db must return not found");
+        var resRec = resolver.resolve("jref://RECORDS:ExampleHrEnterpriseDb/emp_201");
+        assertFalse(resRec.exists(), "Reference to uninstalled ExampleHrEnterpriseDb must return not found");
 
         Path databasesDir = tempDir.resolve("databases");
         assertFalse(Files.exists(databasesDir.resolve("ExampleDBReferences")), "ExampleDBReferences must NOT be auto-loaded on disk");
-        assertFalse(Files.exists(databasesDir.resolve("hr_enterprise_db")), "hr_enterprise_db must NOT be auto-loaded on disk");
+        assertFalse(Files.exists(databasesDir.resolve("ExampleHrEnterpriseDb")), "ExampleHrEnterpriseDb must NOT be auto-loaded on disk");
     }
 
     @JettraTest
     @DisplayName("4. Manual User Action: Installation creates exclusively the selected dataset and deploys it to disk")
     void testManualUserInstallationCreatesStrictlySelectedDatabase() {
-        String targetDb = "hr_enterprise_db";
+        String targetDb = com.jettra.store.engine.samples.SampleDatabaseNamingPolicy.EXAMPLE_HR_ENTERPRISE_DB;
 
         var result = sampleService.install(targetDb);
-        assertTrue(result.isSuccess(), "Manual installation of hr_enterprise_db must succeed");
-        assertTrue(result.getOrNull() > 0, "hr_enterprise_db must have inserted records");
+        assertTrue(result.isSuccess(), "Manual installation of ExampleHrEnterpriseDb must succeed");
+        assertTrue(result.getOrNull() > 0, "ExampleHrEnterpriseDb must have inserted records");
 
         Path targetPath = tempDir.resolve("databases").resolve(targetDb);
-        assertTrue(Files.exists(targetPath), "Physical directory for hr_enterprise_db must now exist on disk");
+        assertTrue(Files.exists(targetPath), "Physical directory for ExampleHrEnterpriseDb must now exist on disk");
         assertEquals(InstallState.INSTALLED, sampleService.getInstallState(targetDb), "State must be INSTALLED");
         assertTrue(sampleService.getInstalledRecordCount(targetDb) > 0, "Record count must be greater than 0");
 
@@ -163,7 +163,7 @@ public class SampleDatabasesStartupLifecycleTest {
     @JettraTest
     @DisplayName("5. Manual User Action: Uninstallation purges the physical database directory from disk")
     void testManualUserUninstallationPurgesPhysicalDatabaseFromDisk() {
-        String targetDb = "hr_enterprise_db";
+        String targetDb = com.jettra.store.engine.samples.SampleDatabaseNamingPolicy.EXAMPLE_HR_ENTERPRISE_DB;
 
         sampleService.install(targetDb);
         Path targetPath = tempDir.resolve("databases").resolve(targetDb);
@@ -178,7 +178,7 @@ public class SampleDatabasesStartupLifecycleTest {
     @JettraTest
     @DisplayName("6. JettraFlux Web Page POST: Manual action via form triggers isolated installation of single dataset")
     void testWebConsoleFormSubmissionManualActionTriggersInstall() throws IOException {
-        String targetDb = "meteorology_iot_db";
+        String targetDb = com.jettra.store.engine.samples.SampleDatabaseNamingPolicy.EXAMPLE_METEOROLOGY_IOT_DB;
 
         String formData = "action=install_sample_db&target_db=" + targetDb;
         HttpExchange exchange = createMockExchange("POST", "/databases", formData);
@@ -186,7 +186,7 @@ public class SampleDatabasesStartupLifecycleTest {
         databasesPage.handle(exchange);
 
         Path targetPath = tempDir.resolve("databases").resolve(targetDb);
-        assertTrue(Files.exists(targetPath), "meteorology_iot_db must be deployed to disk after user clicks Install");
+        assertTrue(Files.exists(targetPath), "ExampleMeteorologyIotDb must be deployed to disk after user clicks Install");
         assertEquals(InstallState.INSTALLED, sampleService.getInstallState(targetDb));
 
         // The other databases must remain uninstalled and not present on disk

@@ -83,6 +83,9 @@ public class DatabaseStartupAndTestCleanupTest {
 
         // Verify that sample databases are NOT installed
         assertFalse(activeDbs.contains("ExampleDBReferences"), "ExampleDBReferences must not exist on startup");
+        assertFalse(activeDbs.contains("ExampleHrEnterpriseDb"), "ExampleHrEnterpriseDb must not exist on startup");
+        assertFalse(activeDbs.contains("ExampleMeteorologyIotDb"), "ExampleMeteorologyIotDb must not exist on startup");
+        assertFalse(activeDbs.contains("ExampleEcommerceOlapDb"), "ExampleEcommerceOlapDb must not exist on startup");
         assertFalse(activeDbs.contains("hr_enterprise_db"), "hr_enterprise_db must not exist on startup");
         assertFalse(activeDbs.contains("meteorology_iot_db"), "meteorology_iot_db must not exist on startup");
         assertFalse(activeDbs.contains("ecommerce_olap_db"), "ecommerce_olap_db must not exist on startup");

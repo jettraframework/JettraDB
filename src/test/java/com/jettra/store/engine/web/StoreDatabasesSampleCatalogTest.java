@@ -122,9 +122,9 @@ public class StoreDatabasesSampleCatalogTest {
 
         List<String> dbNames = catalog.stream().map(SampleDatabaseDefinition::databaseName).toList();
         assertTrue(dbNames.contains("ExampleDBReferences"), "Must include ExampleDBReferences");
-        assertTrue(dbNames.contains("hr_enterprise_db"), "Must include hr_enterprise_db");
-        assertTrue(dbNames.contains("meteorology_iot_db"), "Must include meteorology_iot_db");
-        assertTrue(dbNames.contains("ecommerce_olap_db"), "Must include ecommerce_olap_db");
+        assertTrue(dbNames.contains("ExampleHrEnterpriseDb"), "Must include ExampleHrEnterpriseDb");
+        assertTrue(dbNames.contains("ExampleMeteorologyIotDb"), "Must include ExampleMeteorologyIotDb");
+        assertTrue(dbNames.contains("ExampleEcommerceOlapDb"), "Must include ExampleEcommerceOlapDb");
 
         // Verify deprecated/removed databases are strictly excluded
         assertFalse(dbNames.contains("social_network_db"), "social_network_db must be excluded");
@@ -173,9 +173,9 @@ public class StoreDatabasesSampleCatalogTest {
         assertTrue(body.contains("id=\"btnInstallSampleDataSet\""), "Must render btnInstallSampleDataSet button");
         assertTrue(body.contains("Install DataSet"), "Must render 'Install DataSet' button text");
         assertTrue(body.contains("radio_sample_ExampleDBReferences"), "Must render radio for ExampleDBReferences");
-        assertTrue(body.contains("radio_sample_hr_enterprise_db"), "Must render radio for hr_enterprise_db");
-        assertTrue(body.contains("radio_sample_meteorology_iot_db"), "Must render radio for meteorology_iot_db");
-        assertTrue(body.contains("radio_sample_ecommerce_olap_db"), "Must render radio for ecommerce_olap_db");
+        assertTrue(body.contains("radio_sample_ExampleHrEnterpriseDb"), "Must render radio for ExampleHrEnterpriseDb");
+        assertTrue(body.contains("radio_sample_ExampleMeteorologyIotDb"), "Must render radio for ExampleMeteorologyIotDb");
+        assertTrue(body.contains("radio_sample_ExampleEcommerceOlapDb"), "Must render radio for ExampleEcommerceOlapDb");
     }
 
     @JettraTest

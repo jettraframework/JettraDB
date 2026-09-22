@@ -77,20 +77,20 @@ public class HierarchyExplorerAndSampleServiceTest {
 
     @JettraTest
     void testSampleDatabaseLifecycleInstallAndUninstall() throws Exception {
-        String targetDb = "hr_enterprise_db";
+        String targetDb = com.jettra.store.engine.samples.SampleDatabaseNamingPolicy.EXAMPLE_HR_ENTERPRISE_DB;
         assertEquals(InstallState.NOT_INSTALLED, sampleService.getInstallState(targetDb));
 
         // 1. Install asynchronously via Virtual Threads
         CompletableFuture<HierarchyResult<Integer>> installFuture = sampleService.installAsync(targetDb);
         HierarchyResult<Integer> installRes = installFuture.get();
-        assertTrue(installRes.isSuccess(), "Installation of hr_enterprise_db must succeed.");
+        assertTrue(installRes.isSuccess(), "Installation of ExampleHrEnterpriseDb must succeed.");
         assertTrue(installRes.getOrNull() > 0, "Installed records count must be greater than 0.");
 
         assertEquals(InstallState.INSTALLED, sampleService.getInstallState(targetDb));
 
         // 2. Discover via HierarchyExplorerService
         Set<String> dbsAfterInstall = hierarchyService.discoverAllDatabases();
-        assertTrue(dbsAfterInstall.contains(targetDb), "Discovered databases must now include hr_enterprise_db.");
+        assertTrue(dbsAfterInstall.contains(targetDb), "Discovered databases must now include ExampleHrEnterpriseDb.");
 
         HierarchyResult<HierarchyNode.DatabaseNode> hierRes = hierarchyService.resolveDatabaseHierarchy(targetDb);
         assertTrue(hierRes.isSuccess());
@@ -102,7 +102,7 @@ public class HierarchyExplorerAndSampleServiceTest {
         // 3. Uninstall / Purge asynchronously
         CompletableFuture<HierarchyResult<Integer>> uninstallFuture = sampleService.uninstallAsync(targetDb);
         HierarchyResult<Integer> uninstallRes = uninstallFuture.get();
-        assertTrue(uninstallRes.isSuccess(), "Uninstallation of hr_enterprise_db must succeed.");
+        assertTrue(uninstallRes.isSuccess(), "Uninstallation of ExampleHrEnterpriseDb must succeed.");
         assertTrue(uninstallRes.getOrNull() > 0, "Purged records count must be greater than 0.");
 
         assertEquals(InstallState.NOT_INSTALLED, sampleService.getInstallState(targetDb));

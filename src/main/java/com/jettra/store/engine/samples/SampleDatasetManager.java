@@ -29,7 +29,7 @@ public class SampleDatasetManager {
     public static final List<DatasetInfo> AVAILABLE_DATASETS = List.of(
         new DatasetInfo(
             "MULTI-MODEL",
-            "ExampleDBReferences",
+            SampleDatabaseNamingPolicy.EXAMPLE_DB_REFERENCES,
             "Cross-Engine & Multi-Cluster References Suite",
             "Demonstrates direct O(1) object references (jref://) with primary storage addresses, multi-cluster node pointers, and dynamic reference resolution across Document, Records, Geo, Vector, Object, KeyValue, TimeSeries, Graph, and Column engines.",
             120,
@@ -37,7 +37,7 @@ public class SampleDatasetManager {
         ),
         new DatasetInfo(
             "RECORDS",
-            "hr_enterprise_db",
+            SampleDatabaseNamingPolicy.EXAMPLE_HR_ENTERPRISE_DB,
             "Java 25 Enterprise HR & Payroll",
             "Immutable Record instances for Employees, Departments, Contracts, and Salary components with cross-engine biometrics and GIS links.",
             1000,
@@ -45,7 +45,7 @@ public class SampleDatasetManager {
         ),
         new DatasetInfo(
             "TIMESERIES",
-            "meteorology_iot_db",
+            SampleDatabaseNamingPolicy.EXAMPLE_METEOROLOGY_IOT_DB,
             "IoT Meteorological Weather Stations",
             "High-frequency sensor telemetry (temperature, humidity, atmospheric pressure, solar irradiance, precipitation) across time intervals.",
             2500,
@@ -53,7 +53,7 @@ public class SampleDatasetManager {
         ),
         new DatasetInfo(
             "COLUMN",
-            "ecommerce_olap_db",
+            SampleDatabaseNamingPolicy.EXAMPLE_ECOMMERCE_OLAP_DB,
             "E-Commerce OLAP Analytics",
             "Wide-column analytical fact tables, quarterly revenue by region, customer cohort aggregations, and performance metrics.",
             1000,
@@ -66,7 +66,7 @@ public class SampleDatasetManager {
     }
 
     /**
-     * Loads exclusively one of the 4 authorized sample datasets.
+     * Loads exclusively one of the authorized sample datasets.
      * Returns total records inserted.
      */
     public int loadDataset(String datasetKey) {
@@ -76,15 +76,15 @@ public class SampleDatasetManager {
         String key = datasetKey.trim().toUpperCase();
         return switch (key) {
             case "EXAMPLEDBREFERENCES", "REFERENCES", "EXAMPLE_DB_REFERENCES" -> loadExampleDBReferencesDataset();
-            case "HR_ENTERPRISE_DB", "RECORDS" -> loadHrEnterpriseDataset();
-            case "METEOROLOGY_IOT_DB", "TIMESERIES" -> loadMeteorologyDataset();
-            case "ECOMMERCE_OLAP_DB", "COLUMN" -> loadEcommerceOlapDataset();
-            case "SCRUM_BOARD_DB", "DOCUMENT" -> loadScrumBoardDataset();
-            case "SMART_CITY_GIS_DB", "GEOSPATIAL" -> loadSmartCityGisDataset();
-            case "AI_KNOWLEDGE_DB", "VECTOR" -> loadVectorKnowledgeDataset();
-            case "SOCIAL_NETWORK_DB", "GRAPH" -> loadSocialGraphDataset();
-            case "DISTRIBUTED_CACHE_DB", "KEYVALUE" -> loadDistributedCacheDataset();
-            case "DIGITAL_ASSETS_DB", "OBJECT" -> loadDigitalAssetsDataset();
+            case "EXAMPLEHRENTERPRISEDB", "EXAMPLEHRENTERPRISE", "EXAMPLE_HR_ENTERPRISE_DB", "HR_ENTERPRISE_DB", "RECORDS" -> loadHrEnterpriseDataset();
+            case "EXAMPLEMETEOROLOGYIOTDB", "EXAMPLEMETEOROLOGYIOT", "EXAMPLE_METEOROLOGY_IOT_DB", "METEOROLOGY_IOT_DB", "TIMESERIES" -> loadMeteorologyDataset();
+            case "EXAMPLEECOMMERCEOLAPDB", "EXAMPLEECOMMERCEOLAP", "EXAMPLE_ECOMMERCE_OLAP_DB", "ECOMMERCE_OLAP_DB", "COLUMN" -> loadEcommerceOlapDataset();
+            case "EXAMPLESCRUMBOARDDB", "EXAMPLESCRUMBOARD", "SCRUM_BOARD_DB", "DOCUMENT" -> loadScrumBoardDataset();
+            case "EXAMPLESMARTCITYGISDB", "EXAMPLESMARTCITYGIS", "SMART_CITY_GIS_DB", "GEOSPATIAL" -> loadSmartCityGisDataset();
+            case "EXAMPLEAIKNOWLEDGEDB", "EXAMPLEAIKNOWLEDGE", "AI_KNOWLEDGE_DB", "VECTOR" -> loadVectorKnowledgeDataset();
+            case "EXAMPLESOCIALNETWORKDB", "EXAMPLESOCIALNETWORK", "SOCIAL_NETWORK_DB", "GRAPH" -> loadSocialGraphDataset();
+            case "EXAMPLEDISTRIBUTEDCACHEDB", "EXAMPLEDISTRIBUTEDCACHE", "DISTRIBUTED_CACHE_DB", "KEYVALUE" -> loadDistributedCacheDataset();
+            case "EXAMPLEDIGITALASSETSDB", "EXAMPLEDIGITALASSETS", "DIGITAL_ASSETS_DB", "OBJECT" -> loadDigitalAssetsDataset();
             default -> throw new IllegalArgumentException("Unsupported dataset: " + datasetKey);
         };
     }
@@ -305,7 +305,7 @@ public class SampleDatasetManager {
 
     // 1. DOCUMENT: Scrum Board Project Management
     public int loadScrumBoardDataset() {
-        String db = "scrum_board_db";
+        String db = SampleDatabaseNamingPolicy.EXAMPLE_SCRUM_BOARD_DB;
         long now = System.currentTimeMillis();
         int count = 0;
 
@@ -323,8 +323,8 @@ public class SampleDatasetManager {
 
             String payload = String.format(
                 "{\"taskId\":\"%s\",\"title\":\"Implement feature module %d\",\"epicRef\":\"%s\"," +
-                "\"assigneeRef\":\"jref://RECORDS:hr_enterprise_db/emp_%d\"," +
-                "\"locationRef\":\"jref://GEOSPATIAL:smart_city_gis_db/hub_%d\"," +
+                "\"assigneeRef\":\"jref://RECORDS:ExampleHrEnterpriseDb/emp_%d\"," +
+                "\"locationRef\":\"jref://GEOSPATIAL:ExampleSmartCityGisDb/hub_%d\"," +
                 "\"storyPoints\":%d,\"priority\":\"%s\",\"status\":\"%s\",\"sprint\":\"Sprint-%02d\"," +
                 "\"acceptanceCriteria\":[\"Unit tests > 95%%\",\"Passes Raft benchmark\",\"JettraFlux UI verified\"]," +
                 "\"updatedAt\":%d}",
@@ -332,6 +332,7 @@ public class SampleDatasetManager {
             );
 
             engine.getStorageCore().put(db + ":" + taskId, payload.getBytes(StandardCharsets.UTF_8), now);
+            engine.getStorageCore().put("scrum_board_db:" + taskId, payload.getBytes(StandardCharsets.UTF_8), now);
             count++;
         }
         return count;
@@ -339,7 +340,7 @@ public class SampleDatasetManager {
 
     // 2. TIMESERIES: Weather Station IoT Telemetry
     public int loadMeteorologyDataset() {
-        String db = "meteorology_iot_db";
+        String db = SampleDatabaseNamingPolicy.EXAMPLE_METEOROLOGY_IOT_DB;
         long now = System.currentTimeMillis();
         int count = 0;
 
@@ -358,13 +359,14 @@ public class SampleDatasetManager {
             double uvIndex = (i % 11) * 1.0;
 
             String payload = String.format(Locale.US,
-                "{\"stationRef\":\"jref://GEOSPATIAL:smart_city_gis_db/station_%d\"," +
+                "{\"stationRef\":\"jref://GEOSPATIAL:ExampleSmartCityGisDb/station_%d\"," +
                 "\"sensorId\":\"%s\",\"station\":\"%s\",\"timestamp\":%d,\"temp_c\":%.2f," +
                 "\"humidity_pct\":%.2f,\"pressure_hpa\":%.2f,\"uv_index\":%.1f,\"quality\":\"OPTIMAL\",\"operationalState\":\"ONLINE\"}",
                 (i % 5) + 1, sensor, station, timestamp, temp, humidity, pressure, uvIndex
             );
 
             engine.getStorageCore().put(tsKey, payload.getBytes(StandardCharsets.UTF_8), timestamp);
+            engine.getStorageCore().put("ts:meteorology_iot_db:" + sensor + "_" + timestamp, payload.getBytes(StandardCharsets.UTF_8), timestamp);
             count++;
         }
         return count;
@@ -372,7 +374,7 @@ public class SampleDatasetManager {
 
     // 3. RECORDS: Java 25 Enterprise HR & Payroll
     public int loadHrEnterpriseDataset() {
-        String db = "hr_enterprise_db";
+        String db = SampleDatabaseNamingPolicy.EXAMPLE_HR_ENTERPRISE_DB;
         long now = System.currentTimeMillis();
         int count = 0;
 
@@ -398,12 +400,13 @@ public class SampleDatasetManager {
                 "\"components\":{\"id\":\"%s\",\"fullName\":\"Engineer #%d\",\"department\":\"%s\",\"role\":\"%s\",\"contractType\":\"%s\"," +
                 "\"salary\":%.2f,\"hireDate\":\"%s\",\"shift\":\"%s\",\"active\":true," +
                 "\"skills\":%s,\"country\":{\"code\":\"%s\",\"name\":\"%s\"}," +
-                "\"officeRef\":\"jref://GEOSPATIAL:smart_city_gis_db/hub_%d\"," +
-                "\"biometricsRef\":\"jref://VECTOR:ai_knowledge_db/vec_face_%d\"}}",
+                "\"officeRef\":\"jref://GEOSPATIAL:ExampleSmartCityGisDb/hub_%d\"," +
+                "\"biometricsRef\":\"jref://VECTOR:ExampleAiKnowledgeDb/vec_face_%d\"}}",
                 now, empId, empId, i, dept, role, contractType, salary, hireDate, shift, skillsJson, countryCode, country, (i % 20) + 1, i
             );
 
             engine.getStorageCore().put(recKey, payload.getBytes(StandardCharsets.UTF_8), now);
+            engine.getStorageCore().put("rec:hr_enterprise_db:" + empId, payload.getBytes(StandardCharsets.UTF_8), now);
             count++;
         }
         return count;
@@ -411,7 +414,7 @@ public class SampleDatasetManager {
 
     // 4. VECTOR: AI Neural Search & Embeddings
     public int loadVectorKnowledgeDataset() {
-        String db = "ai_knowledge_db";
+        String db = SampleDatabaseNamingPolicy.EXAMPLE_AI_KNOWLEDGE_DB;
         long now = System.currentTimeMillis();
         int count = 0;
 
@@ -431,12 +434,13 @@ public class SampleDatasetManager {
             String payload = String.format(
                 "{\"vectorId\":\"%s\",\"label\":\"%s\",\"embedding\":[%.4f, %.4f, %.4f, %.4f]," +
                 "\"dimensions\":4,\"metric\":\"COSINE\"," +
-                "\"linkedDocRef\":\"jref://DOCUMENT:scrum_board_db/TASK-%04d\"," +
+                "\"linkedDocRef\":\"jref://DOCUMENT:ExampleScrumBoardDb/TASK-%04d\"," +
                 "\"created\":%d}",
                 vecId, label, v1, v2, v3, v4, (i % 300) + 1, now
             );
 
             engine.getStorageCore().put(vecKey, payload.getBytes(StandardCharsets.UTF_8), now);
+            engine.getStorageCore().put("vec:ai_knowledge_db:" + vecId, payload.getBytes(StandardCharsets.UTF_8), now);
             count++;
         }
         return count;
@@ -444,7 +448,7 @@ public class SampleDatasetManager {
 
     // 5. GRAPH: LPG Social & Organization Network
     public int loadSocialGraphDataset() {
-        String db = "social_network_db";
+        String db = SampleDatabaseNamingPolicy.EXAMPLE_SOCIAL_NETWORK_DB;
         long now = System.currentTimeMillis();
         int count = 0;
 
@@ -460,11 +464,12 @@ public class SampleDatasetManager {
                 "{\"nodeId\":\"%s\",\"label\":\"SYSTEM_NODE\",\"weight\":%.2f," +
                 "\"properties\":{\"clusterTier\":\"Tier-1\",\"active\":true}," +
                 "\"edges\":[{\"target\":\"node_%d\",\"relationship\":\"%s\",\"weight\":1.0}]," +
-                "\"empRef\":\"jref://RECORDS:hr_enterprise_db/emp_%d\"}",
+                "\"empRef\":\"jref://RECORDS:ExampleHrEnterpriseDb/emp_%d\"}",
                 nodeId, (i * 0.5), targetNode, rel, (i % 200) + 100
             );
 
             engine.getStorageCore().put(graphKey, payload.getBytes(StandardCharsets.UTF_8), now);
+            engine.getStorageCore().put("graph:social_network_db:" + nodeId, payload.getBytes(StandardCharsets.UTF_8), now);
             count++;
         }
         return count;
@@ -472,7 +477,7 @@ public class SampleDatasetManager {
 
     // 6. GEOSPATIAL: Smart City GIS
     public int loadSmartCityGisDataset() {
-        String db = "smart_city_gis_db";
+        String db = SampleDatabaseNamingPolicy.EXAMPLE_SMART_CITY_GIS_DB;
         long now = System.currentTimeMillis();
         int count = 0;
 
@@ -488,11 +493,12 @@ public class SampleDatasetManager {
 
             String payload = String.format(
                 "{\"locId\":\"%s\",\"name\":\"%s\",\"lat\":%.6f,\"lon\":%.6f,\"altitude_m\":%.1f," +
-                "\"status\":\"OPERATIONAL\",\"weatherTelemetryRef\":\"jref://TIMESERIES:meteorology_iot_db/SENSOR_TEMP_01_%d\"}",
+                "\"status\":\"OPERATIONAL\",\"weatherTelemetryRef\":\"jref://TIMESERIES:ExampleMeteorologyIotDb/SENSOR_TEMP_01_%d\"}",
                 hubId, name, lat, lon, (i * 2.5), now
             );
 
             engine.getStorageCore().put(geoKey, payload.getBytes(StandardCharsets.UTF_8), now);
+            engine.getStorageCore().put("geo:smart_city_gis_db:" + hubId, payload.getBytes(StandardCharsets.UTF_8), now);
             count++;
         }
         return count;
@@ -500,7 +506,7 @@ public class SampleDatasetManager {
 
     // 7. COLUMN: E-Commerce OLAP Analytics
     public int loadEcommerceOlapDataset() {
-        String db = "ecommerce_olap_db";
+        String db = SampleDatabaseNamingPolicy.EXAMPLE_ECOMMERCE_OLAP_DB;
         long now = System.currentTimeMillis();
         int count = 0;
 
@@ -516,11 +522,12 @@ public class SampleDatasetManager {
 
             String payload = String.format(
                 "{\"factId\":\"%s\",\"region\":\"%s\",\"category\":\"%s\",\"qtr\":\"Q3-2026\",\"revenue\":%.2f," +
-                "\"unitsSold\":%d,\"fulfilledByRef\":\"jref://GEOSPATIAL:smart_city_gis_db/hub_%d\"}",
+                "\"unitsSold\":%d,\"fulfilledByRef\":\"jref://GEOSPATIAL:ExampleSmartCityGisDb/hub_%d\"}",
                 rowId, region, category, amount, (i % 25) + 1, (i % 50) + 1
             );
 
             engine.getStorageCore().put(colKey, payload.getBytes(StandardCharsets.UTF_8), now);
+            engine.getStorageCore().put("col:ecommerce_olap_db:" + rowId, payload.getBytes(StandardCharsets.UTF_8), now);
             count++;
         }
         return count;
@@ -528,16 +535,17 @@ public class SampleDatasetManager {
 
     // 8. KEYVALUE: Distributed Cache
     public int loadDistributedCacheDataset() {
-        String db = "distributed_cache_db";
+        String db = SampleDatabaseNamingPolicy.EXAMPLE_DISTRIBUTED_CACHE_DB;
         long now = System.currentTimeMillis();
         int count = 0;
 
         for (int i = 1; i <= 400; i++) {
             String key = "session_token_" + i;
             String kvKey = "kv:" + db + ":" + key;
-            String val = "{\"token\":\"jwt_sha256_" + UUID.randomUUID() + "\",\"userRef\":\"jref://RECORDS:hr_enterprise_db/emp_" + ((i % 200) + 100) + "\",\"ttl\":3600,\"authenticated\":true}";
+            String val = "{\"token\":\"jwt_sha256_" + UUID.randomUUID() + "\",\"userRef\":\"jref://RECORDS:ExampleHrEnterpriseDb/emp_" + ((i % 200) + 100) + "\",\"ttl\":3600,\"authenticated\":true}";
 
             engine.getStorageCore().put(kvKey, val.getBytes(StandardCharsets.UTF_8), now);
+            engine.getStorageCore().put("kv:distributed_cache_db:" + key, val.getBytes(StandardCharsets.UTF_8), now);
             count++;
         }
         return count;
@@ -545,7 +553,7 @@ public class SampleDatasetManager {
 
     // 9. OBJECT: Digital Assets
     public int loadDigitalAssetsDataset() {
-        String db = "digital_assets_db";
+        String db = SampleDatabaseNamingPolicy.EXAMPLE_DIGITAL_ASSETS_DB;
         long now = System.currentTimeMillis();
         int count = 0;
 
@@ -558,11 +566,12 @@ public class SampleDatasetManager {
 
             String payload = String.format(
                 "{\"assetId\":\"%s\",\"fileName\":\"Invoice_%04d.pdf\",\"mime\":\"%s\",\"sizeBytes\":%d," +
-                "\"ownerRef\":\"jref://RECORDS:hr_enterprise_db/emp_%d\",\"checksumSha256\":\"sha_%s\"}",
+                "\"ownerRef\":\"jref://RECORDS:ExampleHrEnterpriseDb/emp_%d\",\"checksumSha256\":\"sha_%s\"}",
                 assetId, i, mime, (i * 1024) + 4096, (i % 200) + 100, UUID.randomUUID().toString().substring(0, 16)
             );
 
             engine.getStorageCore().put(objKey, payload.getBytes(StandardCharsets.UTF_8), now);
+            engine.getStorageCore().put("obj:digital_assets_db:" + assetId, payload.getBytes(StandardCharsets.UTF_8), now);
             count++;
         }
         return count;

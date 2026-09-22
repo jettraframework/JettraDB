@@ -130,20 +130,8 @@ public class JettraReferenceResolver {
         String lastSegmentHyphen = lastSegment.replace('_', '-');
         String lastSegmentUnderscore = lastSegment.replace('-', '_');
 
-        // Canonical names for known sample and system databases
-        Map<String, String> knownDbs = Map.of(
-            "exampledbreferences", "ExampleDBReferences",
-            "scrum_board_db", "scrum_board_db",
-            "hr_enterprise_db", "hr_enterprise_db",
-            "smart_city_gis_db", "smart_city_gis_db",
-            "ai_knowledge_db", "ai_knowledge_db",
-            "social_network_db", "social_network_db",
-            "meteorology_iot_db", "meteorology_iot_db",
-            "ecommerce_olap_db", "ecommerce_olap_db",
-            "distributed_cache_db", "distributed_cache_db",
-            "digital_assets_db", "digital_assets_db"
-        );
-        String canonicalDb = knownDbs.getOrDefault(dbLower, db);
+        // Canonical names for known sample and system databases via SampleDatabaseNamingPolicy
+        String canonicalDb = com.jettra.store.engine.samples.SampleDatabaseNamingPolicy.canonicalize(db);
 
         Set<String> candidateKeys = new LinkedHashSet<>();
         

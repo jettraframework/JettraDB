@@ -2,6 +2,7 @@ package com.jettra.store.engine.samples.lifecycle;
 
 import com.jettra.store.engine.core.JettraStorageEngine;
 import com.jettra.store.engine.hierarchy.HierarchyResult;
+import com.jettra.store.engine.samples.SampleDatabaseNamingPolicy;
 import com.jettra.store.engine.samples.SampleDatasetManager;
 
 import java.util.*;
@@ -20,9 +21,9 @@ public class SampleDatabaseService {
 
     public static final List<SampleDatabaseDefinition> CATALOG = List.of(
         new SampleDatabaseDefinition(
-            "ExampleDBReferences",
+            SampleDatabaseNamingPolicy.EXAMPLE_DB_REFERENCES,
             "MULTI-MODEL",
-            "ExampleDBReferences",
+            SampleDatabaseNamingPolicy.EXAMPLE_DB_REFERENCES,
             "Cross-Engine & Multi-Cluster References Suite",
             "Demonstrates direct O(1) object references (jref://) with primary storage addresses, multi-cluster node pointers, and dynamic reference resolution across Document, Records, Geo, Vector, Object, KeyValue, TimeSeries, Graph, and Column engines.",
             120,
@@ -30,9 +31,9 @@ public class SampleDatabaseService {
             List.of("References", "Jref", "Multi-Cluster", "Composite")
         ),
         new SampleDatabaseDefinition(
-            "hr_enterprise_db",
+            SampleDatabaseNamingPolicy.EXAMPLE_HR_ENTERPRISE_DB,
             "RECORDS",
-            "hr_enterprise_db",
+            SampleDatabaseNamingPolicy.EXAMPLE_HR_ENTERPRISE_DB,
             "Java 25 Enterprise HR & Payroll",
             "Immutable Record instances for Employees, Departments, Contracts, and Salary components with cross-engine biometrics and GIS links.",
             1000,
@@ -40,9 +41,9 @@ public class SampleDatabaseService {
             List.of("Records", "Schema", "HR", "Immutable")
         ),
         new SampleDatabaseDefinition(
-            "meteorology_iot_db",
+            SampleDatabaseNamingPolicy.EXAMPLE_METEOROLOGY_IOT_DB,
             "TIMESERIES",
-            "meteorology_iot_db",
+            SampleDatabaseNamingPolicy.EXAMPLE_METEOROLOGY_IOT_DB,
             "IoT Meteorological Weather Stations",
             "High-frequency sensor telemetry (temperature, humidity, atmospheric pressure, solar irradiance, precipitation) across time intervals.",
             2500,
@@ -50,9 +51,9 @@ public class SampleDatabaseService {
             List.of("IoT", "Telemetry", "TimeSeries", "Sensors")
         ),
         new SampleDatabaseDefinition(
-            "ecommerce_olap_db",
+            SampleDatabaseNamingPolicy.EXAMPLE_ECOMMERCE_OLAP_DB,
             "COLUMN",
-            "ecommerce_olap_db",
+            SampleDatabaseNamingPolicy.EXAMPLE_ECOMMERCE_OLAP_DB,
             "E-Commerce OLAP Analytics",
             "Wide-column analytical fact tables, quarterly revenue by region, customer cohort aggregations, and performance metrics.",
             1000,
@@ -83,25 +84,30 @@ public class SampleDatabaseService {
 
     public InstallState getInstallState(String dbName) {
         if (dbName == null || dbName.isBlank()) return InstallState.NOT_INSTALLED;
-        InstallState transientState = transientStates.get(dbName);
+        String cleanDb = SampleDatabaseNamingPolicy.canonicalize(dbName);
+        InstallState transientState = transientStates.get(cleanDb);
+        if (transientState == null) transientState = transientStates.get(dbName.trim());
         if (transientState != null) return transientState;
 
-        boolean exists = isDatabasePresent(dbName);
+        boolean exists = isDatabasePresent(cleanDb) || isDatabasePresent(dbName.trim());
         return exists ? InstallState.INSTALLED : InstallState.NOT_INSTALLED;
     }
 
     public boolean isDatabasePresent(String dbName) {
         if (engine == null || engine.getStorageCore() == null || dbName == null || dbName.isBlank()) return false;
-        String cleanDb = dbName.trim();
-        if (!engine.getStorageCore().getDatabaseNames().contains(cleanDb)) {
+        String cleanDb = SampleDatabaseNamingPolicy.canonicalize(dbName);
+        Set<String> dbNames = engine.getStorageCore().getDatabaseNames();
+        if (!dbNames.contains(cleanDb) && !dbNames.contains(dbName.trim())) {
             return false;
         }
         String[] prefixes = {"doc:", "rec:", "kv:", "vec:", "graph:", "ts:", "col:", "geo:", "obj:", ""};
-        for (String pfx : prefixes) {
-            String scanKey = pfx + cleanDb + ":";
-            Map<String, byte[]> keys = engine.getStorageCore().scanPrefix(scanKey);
-            if (!keys.isEmpty()) {
-                return true;
+        for (String target : List.of(cleanDb, dbName.trim())) {
+            for (String pfx : prefixes) {
+                String scanKey = pfx + target + ":";
+                Map<String, byte[]> keys = engine.getStorageCore().scanPrefix(scanKey);
+                if (!keys.isEmpty()) {
+                    return true;
+                }
             }
         }
         return false;
@@ -109,16 +115,17 @@ public class SampleDatabaseService {
 
     public int getInstalledRecordCount(String dbName) {
         if (engine == null || engine.getStorageCore() == null || dbName == null || dbName.isBlank()) return 0;
-        String cleanDb = dbName.trim();
-        if (!engine.getStorageCore().getDatabaseNames().contains(cleanDb)) {
-            return 0;
-        }
+        String cleanDb = SampleDatabaseNamingPolicy.canonicalize(dbName);
         Set<String> uniqueIds = new HashSet<>();
         String[] prefixes = {"doc:", "rec:", "kv:", "vec:", "graph:", "ts:", "col:", "geo:", "obj:", ""};
-        for (String pfx : prefixes) {
-            String scanKey = pfx + cleanDb + ":";
-            Map<String, byte[]> keys = engine.getStorageCore().scanPrefix(scanKey);
-            uniqueIds.addAll(keys.keySet());
+        for (String target : List.of(cleanDb, dbName.trim())) {
+            if (engine.getStorageCore().getDatabaseNames().contains(target)) {
+                for (String pfx : prefixes) {
+                    String scanKey = pfx + target + ":";
+                    Map<String, byte[]> keys = engine.getStorageCore().scanPrefix(scanKey);
+                    uniqueIds.addAll(keys.keySet());
+                }
+            }
         }
         return uniqueIds.size();
     }
@@ -131,19 +138,23 @@ public class SampleDatabaseService {
         if (dbName == null || dbName.isBlank()) {
             return HierarchyResult.failure("Invalid database name");
         }
-        transientStates.put(dbName, InstallState.INSTALLING);
+        String cleanDb = SampleDatabaseNamingPolicy.canonicalize(dbName);
+        transientStates.put(cleanDb, InstallState.INSTALLING);
+        transientStates.put(dbName.trim(), InstallState.INSTALLING);
         try {
-            HierarchyResult<Integer> result = installInvoker.executeInstall(dbName.trim());
-            transientStates.remove(dbName);
+            HierarchyResult<Integer> result = installInvoker.executeInstall(cleanDb);
+            transientStates.remove(cleanDb);
+            transientStates.remove(dbName.trim());
             if (!result.isSuccess()) {
-                uninstall(dbName);
+                uninstall(cleanDb);
             }
             return result;
         } catch (Exception e) {
-            transientStates.remove(dbName);
+            transientStates.remove(cleanDb);
+            transientStates.remove(dbName.trim());
             // Rollback on failure
-            uninstall(dbName);
-            return HierarchyResult.failure("Failed to install sample database '" + dbName + "': " + e.getMessage(), e);
+            uninstall(cleanDb);
+            return HierarchyResult.failure("Failed to install sample database '" + cleanDb + "': " + e.getMessage(), e);
         }
     }
 
@@ -155,14 +166,21 @@ public class SampleDatabaseService {
         if (dbName == null || dbName.isBlank()) {
             return HierarchyResult.failure("Invalid database name");
         }
-        transientStates.put(dbName, InstallState.REMOVING);
+        String cleanDb = SampleDatabaseNamingPolicy.canonicalize(dbName);
+        transientStates.put(cleanDb, InstallState.REMOVING);
+        transientStates.put(dbName.trim(), InstallState.REMOVING);
         try {
-            int deleted = purgeDatabase(dbName);
-            transientStates.remove(dbName);
+            int deleted = purgeDatabase(cleanDb);
+            if (!cleanDb.equalsIgnoreCase(dbName.trim())) {
+                deleted += purgeDatabase(dbName.trim());
+            }
+            transientStates.remove(cleanDb);
+            transientStates.remove(dbName.trim());
             return HierarchyResult.success(deleted);
         } catch (Exception e) {
-            transientStates.remove(dbName);
-            return HierarchyResult.failure("Failed to uninstall sample database '" + dbName + "': " + e.getMessage(), e);
+            transientStates.remove(cleanDb);
+            transientStates.remove(dbName.trim());
+            return HierarchyResult.failure("Failed to uninstall sample database '" + cleanDb + "': " + e.getMessage(), e);
         }
     }
 
