@@ -239,4 +239,130 @@ public class EnginesInteractivityAndOperationsTest {
         assertTrue(script.contains("action=export_data"),
                 "downloadExportFile must dispatch action=export_data with selected format");
     }
+
+    @JettraTest
+    @DisplayName("6. Database Restore: Error handling returns structured JSON with HTTP 200 (preventing HTTP 500)")
+    void testDatabaseRestoreErrorReturnsStructuredJsonWithout500() throws IOException {
+        MockHttpExchange exchange = new MockHttpExchange();
+        exchange.setRequestMethod("POST");
+        exchange.setRequestURI(URI.create("/engines"));
+        Map<String, String> params = new HashMap<>();
+        params.put("action", "restore_database");
+        params.put("target_db", "sales_db");
+        params.put("restore_file_path", "/non/existent/path/backup.zip");
+
+        enginesPage.handleAjaxPost(exchange, params);
+
+        assertEquals(200, exchange.getResponseCode(),
+                "restore_database must return HTTP 200 with structured JSON even on failure");
+        String respJson = exchange.getResponseBodyAsString();
+        JsonObject resp = jsonParser.fromJson(respJson, JsonObject.class);
+        assertEquals("FAILURE", resp.getAsString("status"),
+                "Failed restore must return status 'FAILURE'");
+        assertTrue(resp.has("message"), "Response must contain explicit failure message");
+        assertTrue(resp.getAsString("message").contains("not found"),
+                "Failure message should indicate file not found");
+    }
+
+    @JettraTest
+    @DisplayName("7. Database Restore: Full End-to-End backup and restore flow")
+    void testDatabaseRestoreSuccessFlow() throws IOException {
+        String dbName = "restore_test_db";
+        engine.getStorageCore().put("doc:" + dbName + ":users:u1",
+                "{\"name\":\"Alice\"}".getBytes(StandardCharsets.UTF_8), System.currentTimeMillis());
+
+        // 1. Create backup
+        DatabaseBackupManager.BackupOperationResult backupRes = DatabaseBackupManager.createDatabaseBackup(
+                engine, dbName, tempDir.toString(), "test_restore_archive.zip"
+        );
+        assertTrue(backupRes.success(), "Backup creation must succeed");
+
+        // 2. Clear record
+        engine.getStorageCore().delete("doc:" + dbName + ":users:u1", System.currentTimeMillis());
+        assertNull(engine.getStorageCore().get("doc:" + dbName + ":users:u1"), "Record must be deleted before restore");
+
+        // 3. Restore via AJAX endpoint
+        MockHttpExchange exchange = new MockHttpExchange();
+        exchange.setRequestMethod("POST");
+        exchange.setRequestURI(URI.create("/engines"));
+        Map<String, String> params = new HashMap<>();
+        params.put("action", "restore_database");
+        params.put("target_db", dbName);
+        params.put("restore_file_path", backupRes.filePath());
+
+        enginesPage.handleAjaxPost(exchange, params);
+
+        assertEquals(200, exchange.getResponseCode(), "Restore endpoint must return HTTP 200");
+        JsonObject resp = jsonParser.fromJson(exchange.getResponseBodyAsString(), JsonObject.class);
+        assertEquals("SUCCESS", resp.getAsString("status"), "Restore must succeed");
+
+        // 4. Verify record was restored
+        byte[] restoredBytes = engine.getStorageCore().get("doc:" + dbName + ":users:u1");
+        assertNotNull(restoredBytes, "Record must exist in storage core after restore");
+        assertTrue(new String(restoredBytes, StandardCharsets.UTF_8).contains("Alice"), "Restored record payload must match");
+    }
+
+    @JettraTest
+    @DisplayName("8. Dynamic Export: Selective filtering strictly respects engine_type and target_coll")
+    void testSelectiveExportFilteringByEngineAndCollection() throws IOException {
+        String db = "sales_db";
+        // sales_db has:
+        // doc:sales_db:orders:ord_1
+        // doc:sales_db:orders:ord_2
+        // kv:sales_db:active_token
+
+        // 1. Export strictly DOCUMENT engine
+        MockHttpExchange docExchange = new MockHttpExchange();
+        docExchange.setRequestMethod("POST");
+        docExchange.setRequestURI(URI.create("/engines"));
+        Map<String, String> docParams = new HashMap<>();
+        docParams.put("action", "export_data");
+        docParams.put("target_db", db);
+        docParams.put("engine_type", "DOCUMENT");
+        docParams.put("target_coll", "orders");
+        docParams.put("format", "json");
+
+        enginesPage.handleAjaxPost(docExchange, docParams);
+
+        assertEquals(200, docExchange.getResponseCode());
+        JsonObject docResp = jsonParser.fromJson(docExchange.getResponseBodyAsString(), JsonObject.class);
+        assertEquals("SUCCESS", docResp.getAsString("status"));
+        assertEquals(2, docResp.getAsInt("recordCount"),
+                "DOCUMENT orders export must contain exactly the 2 document orders");
+
+        // 2. Export strictly KEYVALUE engine
+        MockHttpExchange kvExchange = new MockHttpExchange();
+        kvExchange.setRequestMethod("POST");
+        kvExchange.setRequestURI(URI.create("/engines"));
+        Map<String, String> kvParams = new HashMap<>();
+        kvParams.put("action", "export_data");
+        kvParams.put("target_db", db);
+        kvParams.put("engine_type", "KEYVALUE");
+        kvParams.put("target_coll", "");
+        kvParams.put("format", "json");
+
+        enginesPage.handleAjaxPost(kvExchange, kvParams);
+
+        assertEquals(200, kvExchange.getResponseCode());
+        JsonObject kvResp = jsonParser.fromJson(kvExchange.getResponseBodyAsString(), JsonObject.class);
+        assertEquals("SUCCESS", kvResp.getAsString("status"));
+        assertEquals(1, kvResp.getAsInt("recordCount"),
+                "KEYVALUE export must contain exactly the 1 key-value token, excluding document orders");
+    }
+
+    @JettraTest
+    @DisplayName("9. Tree View Interactivity: Window bridging and performDirectDbRestore defined")
+    void testTreeViewWindowBridgingAndDirectRestore() {
+        Widget scriptWidget = enginesPage.buildModalsScript();
+        String script = scriptWidget.render(Themes.FlatTheme());
+
+        assertTrue(script.contains("window.expandAllExplorerView = expandAllExplorerView"),
+                "Script must bridge expandAllExplorerView to window");
+        assertTrue(script.contains("window.collapseAllExplorerView = collapseAllExplorerView"),
+                "Script must bridge collapseAllExplorerView to window");
+        assertTrue(script.contains("window.performDirectDbRestore = performDirectDbRestore"),
+                "Script must bridge performDirectDbRestore to window");
+        assertTrue(script.contains("btnPerformRestore"),
+                "Restore modal button must have id 'btnPerformRestore'");
+    }
 }

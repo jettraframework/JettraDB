@@ -197,9 +197,22 @@ public class DatabaseBackupManager {
             return new RestoreOperationResult(false, 0, "Invalid engine or backup file path.");
         }
 
-        Path path = Path.of(zipFilePath.trim());
+        String cleanedPath = zipFilePath.trim();
+        if (cleanedPath.startsWith("~" + File.separator)) {
+            cleanedPath = System.getProperty("user.home") + cleanedPath.substring(1);
+        } else if (cleanedPath.equals("~")) {
+            cleanedPath = System.getProperty("user.home");
+        }
+
+        Path path = Path.of(cleanedPath);
         if (!Files.exists(path) || !Files.isRegularFile(path)) {
-            return new RestoreOperationResult(false, 0, "Backup file not found at: " + zipFilePath);
+            Path defaultDir = getDefaultBackupDir(dbName);
+            Path candidate = defaultDir.resolve(cleanedPath);
+            if (Files.exists(candidate) && Files.isRegularFile(candidate)) {
+                path = candidate;
+            } else {
+                return new RestoreOperationResult(false, 0, "Backup file not found at: " + zipFilePath);
+            }
         }
 
         try (ZipFile zipFile = new ZipFile(path.toFile())) {
@@ -226,8 +239,11 @@ public class DatabaseBackupManager {
                 keysMap = m;
             }
 
-            if (keysMap == null || keysMap.isEmpty()) {
-                return new RestoreOperationResult(false, 0, "No keys found in database dump manifest.");
+            if (keysMap == null) {
+                return new RestoreOperationResult(false, 0, "No keys object found in database dump manifest.");
+            }
+            if (keysMap.isEmpty()) {
+                return new RestoreOperationResult(true, 0, "Database restored successfully (backup archive contained 0 records).");
             }
 
             int restoredCount = 0;

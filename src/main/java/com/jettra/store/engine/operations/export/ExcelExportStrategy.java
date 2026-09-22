@@ -39,9 +39,19 @@ public final class ExcelExportStrategy implements ExportStrategy {
             for (Map.Entry<String, String> entry : recordsMap.entrySet()) {
                 String k = entry.getKey();
                 String val = entry.getValue() != null ? entry.getValue() : "";
-                String[] parts = k.split(":");
-                String unit = parts.length > 2 ? parts[2] : (parts.length > 1 ? parts[1] : "default");
-                String id = parts.length > 0 ? parts[parts.length - 1] : k;
+                String[] parts = k.split(":", -1);
+                String unit = "default";
+                String id = k;
+                if (parts.length >= 4) {
+                    unit = parts[2];
+                    id = parts[3];
+                } else if (parts.length == 3) {
+                    unit = "default";
+                    id = parts[2];
+                } else if (parts.length == 2) {
+                    unit = "default";
+                    id = parts[1];
+                }
                 sb.append("<tr>")
                   .append("<td style=\"font-weight:bold; color:#0f172a;\">").append(escapeXml(k)).append("</td>")
                   .append("<td>").append(escapeXml(database)).append("</td>")

@@ -85,7 +85,14 @@ public class EngineOperationService {
     private EngineOperationResult executeRestore(EngineOperationTask task, long start) {
         try {
             if (task.sourceFilePath() == null || task.sourceFilePath().isBlank()) {
-                throw new IllegalArgumentException("Restore source archive file path is required");
+                long duration = System.currentTimeMillis() - start;
+                return EngineOperationResult.failure(
+                        EngineOperationType.RESTORE,
+                        task.database(),
+                        "Restore source archive file path is required. Please select or provide a .zip backup archive.",
+                        null,
+                        duration
+                );
             }
 
             DatabaseBackupManager.RestoreOperationResult res = DatabaseBackupManager.restoreDatabaseBackup(
@@ -106,12 +113,25 @@ public class EngineOperationService {
                         duration
                 );
             } else {
-                throw new EngineOperationException(EngineOperationType.RESTORE, task.database(), res.message());
+                return EngineOperationResult.failure(
+                        EngineOperationType.RESTORE,
+                        task.database(),
+                        res.message(),
+                        null,
+                        duration
+                );
             }
         } catch (EngineOperationException e) {
             throw e;
         } catch (Exception e) {
-            throw new EngineOperationException(EngineOperationType.RESTORE, task.database(), "Restore failed: " + e.getMessage(), e);
+            long duration = System.currentTimeMillis() - start;
+            return EngineOperationResult.failure(
+                    EngineOperationType.RESTORE,
+                    task.database(),
+                    "Restore failed: " + e.getMessage(),
+                    e.toString(),
+                    duration
+            );
         }
     }
 
@@ -123,12 +143,12 @@ public class EngineOperationService {
         try {
             String db = task.database();
             String eng = task.engineType();
-            String coll = task.collection();
+            String coll = task.collection() != null ? task.collection().trim() : "";
             String format = task.exportFormat();
 
             Map<String, String> recordsMap = new LinkedHashMap<>();
             String[] prefixes;
-            if ("ALL".equalsIgnoreCase(eng) || eng.isBlank()) {
+            if ("ALL".equalsIgnoreCase(eng) || eng == null || eng.isBlank()) {
                 prefixes = new String[]{
                     "rec:" + db + ":", "doc:" + db + ":", "vec:" + db + ":",
                     "graph:" + db + ":", "ts:" + db + ":", "col:" + db + ":",
@@ -136,16 +156,33 @@ public class EngineOperationService {
                 };
             } else {
                 String pfx = resolveEnginePrefix(eng);
-                prefixes = new String[]{pfx + db + ":", db + ":"};
+                prefixes = new String[]{pfx + db + ":"};
             }
 
             for (String p : prefixes) {
                 Map<String, byte[]> scanned = engine.getStorageCore().scanPrefix(p);
                 for (Map.Entry<String, byte[]> e : scanned.entrySet()) {
                     String k = e.getKey();
-                    if (k.contains("@")) continue;
-                    if (!coll.isBlank() && !k.contains(":" + coll + ":") && !k.contains(":" + coll)) continue;
-                    recordsMap.put(k, new String(e.getValue(), StandardCharsets.UTF_8));
+                    if (k.contains("@") || k.contains(":v_") || k.endsWith(":init_01")) continue;
+                    byte[] rawVal = e.getValue();
+                    if (rawVal == null || rawVal.length == 0) continue;
+                    String valStr = new String(rawVal, StandardCharsets.UTF_8);
+                    if ("__TOMBSTONE__".equals(valStr)) continue;
+
+                    // Filter by collection/unit if specified
+                    if (!coll.isBlank() && !coll.equalsIgnoreCase("default") && !coll.equalsIgnoreCase("ALL")) {
+                        if (!k.contains(":" + coll + ":") && !k.endsWith(":" + coll)) {
+                            continue;
+                        }
+                    } else if ("default".equalsIgnoreCase(coll)) {
+                        String remainder = k.substring(p.length());
+                        String[] parts = remainder.split(":", 2);
+                        if (parts.length > 1 && !parts[0].equalsIgnoreCase("default")) {
+                            continue;
+                        }
+                    }
+
+                    recordsMap.put(k, valStr);
                 }
             }
 
