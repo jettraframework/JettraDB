@@ -349,10 +349,10 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
             //     Button.of(Icon.of("fas fa-database"), Text.of(" + DB"))
             //         .modifier(new Modifier().attribute("type", "button").attribute("title", "Create Database").attribute("onclick", "if(typeof showModal === 'function') showModal('createDbModal'); else location.href='" + JettraServer.resolvePath("/engines?tab=schema&engine=" + selectedEngine + "&target_db=" + targetDb) + "';").cssClass("btn-studio-primary"))
             // );
-//            rightItems.add(
-//                Button.of(Icon.of("fas fa-folder-plus"), Text.of(" + Unit"))
-//                    .modifier(new Modifier().attribute("type", "button").attribute("title", "Add Unit / Collection").attribute("onclick", "if(typeof showModal === 'function') showModal('createUnitModal'); else location.href='" + JettraServer.resolvePath("/engines?tab=schema&engine=" + selectedEngine + "&target_db=" + targetDb) + "';").cssClass("btn-studio-secondary"))
-//            );
+            rightItems.add(
+                Button.of(Icon.of("fas fa-folder-plus"), Text.of(" + Unit"))
+                    .modifier(new Modifier().attribute("type", "button").attribute("title", "Add Unit / Collection").attribute("onclick", "if(typeof showModal === 'function') showModal('createUnitModal'); else location.href='" + JettraServer.resolvePath("/engines?tab=schema&engine=" + selectedEngine + "&target_db=" + targetDb) + "';").cssClass("btn-studio-secondary"))
+            );
             rightItems.add(
                 Button.of(Icon.of("fas fa-download"), Text.of(" Backup"))
                     .modifier(new Modifier().attribute("type", "button").attribute("title", "Backup Database").attribute("onclick", "var db=getSelectedTopDatabase(); if(typeof openBackupDbModal === 'function') openBackupDbModal(db); else location.href='" + JettraServer.resolvePath("/engines?tab=backup&target_db=") + "' + encodeURIComponent(db);").cssClass("btn-studio-secondary").style("color:#16a34a; background:rgba(34,197,94,0.12); border-color:rgba(34,197,94,0.3);"))

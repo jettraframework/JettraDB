@@ -98,6 +98,7 @@ public class JettraServerOrchestrator {
         jettraServer.addHandler("/", dashboardPage);
         jettraServer.addHandler("/dashboard", dashboardPage);
         jettraServer.addHandler("/wui", dashboardPage);
+        jettraServer.addHandler("/database", databasesPage);
         jettraServer.addHandler("/databases", databasesPage);
         jettraServer.addHandler("/engine", enginesPage);
         jettraServer.addHandler("/engines", enginesPage);
@@ -121,6 +122,7 @@ public class JettraServerOrchestrator {
             jettraGuiServer.addHandler("/", dashboardPage);
             jettraGuiServer.addHandler("/dashboard", dashboardPage);
             jettraGuiServer.addHandler("/wui", dashboardPage);
+            jettraGuiServer.addHandler("/database", databasesPage);
             jettraGuiServer.addHandler("/databases", databasesPage);
             jettraGuiServer.addHandler("/api/databases/", databaseRestController);
             jettraGuiServer.addHandler("/engine", enginesPage);

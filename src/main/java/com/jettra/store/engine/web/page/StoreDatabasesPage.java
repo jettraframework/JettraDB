@@ -39,6 +39,9 @@ import com.jettra.store.engine.samples.lifecycle.SampleDatabaseDefinition;
 import com.jettra.store.engine.samples.lifecycle.SampleDatabaseService;
 import com.jettra.store.engine.samples.lifecycle.DatasetInstallInvoker;
 import com.jettra.store.engine.samples.lifecycle.InstallSingleDatasetCommand;
+import com.jettra.store.engine.migration.DatabaseCloneMigrationService;
+import com.jettra.store.engine.migration.DatabaseMigrationPlan;
+import com.jettra.store.engine.migration.DatabaseMigrationResult;
 import com.jettra.store.engine.web.RouteVisibilityGuard;
 import com.jettra.store.engine.web.RouteVisibilityGuard;
 import io.jettra.json.JettraJson;
@@ -87,6 +90,7 @@ public class StoreDatabasesPage extends StoreTemplatePage {
     private final UserValidationChain validationChain;
     private final UserValidationService validationService;
     private final DatabaseSecurityFilter securityFilter;
+    private final DatabaseCloneMigrationService migrationService;
     private boolean showActionButtons = false;
     private boolean showDatabaseSelector = false;
     public static final String DEFAULT_VIEW = "tree";
@@ -116,6 +120,11 @@ public class StoreDatabasesPage extends StoreTemplatePage {
         this.validationChain = UserValidationChain.defaultChain(this.systemUserRepo);
         this.validationService = new UserValidationService(this.systemUserRepo);
         this.securityFilter = new DatabaseSecurityFilter(this.systemUserRepo, this.userRepo);
+        this.migrationService = new DatabaseCloneMigrationService(this.engine, this.systemUserRepo, this.userRepo);
+    }
+
+    public DatabaseCloneMigrationService getMigrationService() {
+        return this.migrationService;
     }
 
     public DatabaseSecurityFilter getDatabaseSecurityFilter() {
@@ -524,9 +533,21 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                             alertMessage = "The system database 'system_db' is protected and cannot be renamed.";
                             alertType = "badge-raft";
                         } else {
-                            int migrated = renameDatabase(oldDb.trim(), newDb.trim());
-                            alertMessage = "Database '" + oldDb + "' renamed to '" + newDb + "' (" + migrated + " keys migrated).";
-                            alertType = "badge-active";
+                            DatabaseMigrationPlan plan = DatabaseMigrationPlan.builder()
+                                    .sourceDatabase(oldDb)
+                                    .targetDatabase(newDb)
+                                    .migrateMultiModelKeys(true)
+                                    .migrateUserAssignments(true)
+                                    .purgeSourceDatabase(true)
+                                    .build();
+                            DatabaseMigrationResult result = migrationService.executeMigration(plan);
+                            if (result.success()) {
+                                alertMessage = "Database '" + oldDb.trim() + "' renamed to '" + plan.cleanTargetDatabase() + "' (" + result.keysMigrated() + " keys migrated).";
+                                alertType = "badge-active";
+                            } else {
+                                alertMessage = result.message();
+                                alertType = "badge-raft";
+                            }
                         }
                     }
                 } else if ("drop_db".equalsIgnoreCase(action)) {
@@ -1406,35 +1427,14 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                 .id("assignUserModal")
                 .modifier(new Modifier().cssClass("store-card").style("position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); width:620px; max-width:94%; max-height:85vh; overflow-y:auto; box-sizing:border-box; background:#1e293b; border:1px solid rgba(56,189,248,0.3); box-shadow:0 20px 50px rgba(0,0,0,0.7); border-radius:14px; padding:22px 26px; margin:0;"));
 
-        // Modal 3: Rename Database
-        Widget renameDbHeader = Row.of(
-                Row.of(
-                        Icon.of("fas fa-pen").modifier(new Modifier().style("color:#38bdf8; margin-right:8px;")),
-                        Header.of(3, Text.of("Rename Database")).modifier(new Modifier().style("margin:0; font-size:17px; font-weight:700; color:#f8fafc;"))
-                ).modifier(new Modifier().style("display:flex; align-items:center;")),
-                Button.of(Icon.of("fas fa-times")).modifier(new Modifier().style("background:none; border:none; color:#94a3b8; font-size:18px; cursor:pointer; padding:4px 8px;").attribute("onclick", "document.getElementById('renameDbModal').close();"))
-        ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;"));
-
-        Widget renameDbForm = Form.of(
-                RawHtml.of("<input type='hidden' name='action' value='rename_db'/>"),
-                RawHtml.of("<input type='hidden' name='old_db' id='renameOldDbInput'/>"),
-                Div.of(
-                        RawHtml.of("<label style='display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;'>Current Database Name:</label>"),
-                        RawHtml.of("<input type='text' id='renameOldDbDisplay' disabled style='width:100%; padding:10px 12px; background:#1e293b; border:1px solid rgba(255,255,255,0.1); border-radius:8px; color:#94a3b8; font-size:14px; box-sizing:border-box;'/>")
-                ).modifier(new Modifier().style("margin-bottom:14px;")),
-                Div.of(
-                        RawHtml.of("<label style='display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;'>New Database Name:</label>"),
-                        RawHtml.of("<input type='text' name='new_db' placeholder='e.g. inventory_prod_db' required style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:8px; color:#f8fafc; font-size:14px; box-sizing:border-box;'/>")
-                ).modifier(new Modifier().style("margin-bottom:18px;")),
-                Div.of(
-                        Button.of(Text.of("Cancel")).modifier(new Modifier().cssClass("btn-action btn-secondary").attribute("type", "button").attribute("onclick", "document.getElementById('renameDbModal').close();")),
-                        Button.of(Icon.of("fas fa-save"), Text.of(" Rename Database")).modifier(new Modifier().cssClass("btn-action btn-primary").attribute("type", "submit"))
-                ).modifier(new Modifier().style("display:flex; justify-content:flex-end; gap:10px;"))
-        ).attribute("method", "POST").attribute("action", JettraServer.resolvePath("/databases"));
-
-        Widget renameDbModal = Dialog.of(renameDbHeader, renameDbForm)
-                .id("renameDbModal")
-                .modifier(new Modifier().cssClass("store-card").style("max-width:480px; width:90%; background:#0f172a; border:1px solid rgba(56,189,248,0.4); border-radius:14px; padding:24px; margin:auto;"));
+        // Modal 3: Rename Database (Native JettraFlux component with RENAME DATABASE action)
+        Widget renameDbModal = JettraRenameDatabaseModal.of("renameDbModal")
+                .title("Rename Database")
+                .confirmButtonText("RENAME DATABASE")
+                .formAction(JettraServer.resolvePath("/databases"))
+                .actionName("rename_db")
+                .oldDbParamName("old_db")
+                .newDbParamName("new_db");
 
         // Modal 4: Native JettraConfirmDialog for Destructive Database Drop Confirmation
         Widget dropDbModal = JettraConfirmDialog.of("dropDbConfirmDialog")
@@ -1499,9 +1499,15 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                 + "    }\n"
                 + "  }\n"
                 + "  function openRenameDbModal(oldDb) {\n"
-                + "    document.getElementById('renameOldDbInput').value = oldDb;\n"
-                + "    document.getElementById('renameOldDbDisplay').value = oldDb;\n"
-                + "    openModal('renameDbModal');\n"
+                + "    if (window.JettraRenameDatabaseModal) {\n"
+                + "      window.JettraRenameDatabaseModal.open('renameDbModal', oldDb);\n"
+                + "    } else {\n"
+                + "      var input = document.getElementById('renameDbModal_oldDbInput') || document.getElementById('renameOldDbInput');\n"
+                + "      var display = document.getElementById('renameDbModal_oldDbDisplay') || document.getElementById('renameOldDbDisplay');\n"
+                + "      if (input && oldDb) input.value = oldDb;\n"
+                + "      if (display && oldDb) display.value = oldDb;\n"
+                + "      openModal('renameDbModal');\n"
+                + "    }\n"
                 + "  }\n"
                 + "  function confirmDropDb(db) {\n"
                 + "    if (window.JettraConfirmDialog) {\n"
@@ -2025,22 +2031,15 @@ public class StoreDatabasesPage extends StoreTemplatePage {
         if (oldDb == null || newDb == null || oldDb.equalsIgnoreCase(newDb) || "system_db".equalsIgnoreCase(oldDb.trim())) {
             return 0;
         }
-        String cleanNewDb = newDb.trim().toLowerCase().replaceAll("[^a-z0-9_]", "_");
-        String[] prefixes = {"rec:", "doc:", "vec:", "graph:", "ts:", "col:", "kv:", "geo:", "obj:", ""};
-        int count = 0;
-        for (String p : prefixes) {
-            String dbPrefix = p + oldDb + ":";
-            Map<String, byte[]> keys = engine.getStorageCore().scanPrefix(dbPrefix);
-            for (Map.Entry<String, byte[]> e : keys.entrySet()) {
-                String oldKey = e.getKey();
-                String keyId = oldKey.substring(dbPrefix.length());
-                String newKey = p + cleanNewDb + ":" + keyId;
-                engine.getStorageCore().put(newKey, e.getValue(), System.currentTimeMillis());
-                engine.getStorageCore().delete(oldKey, System.currentTimeMillis());
-                count++;
-            }
-        }
-        return count;
+        DatabaseMigrationPlan plan = DatabaseMigrationPlan.builder()
+                .sourceDatabase(oldDb)
+                .targetDatabase(newDb)
+                .migrateMultiModelKeys(true)
+                .migrateUserAssignments(true)
+                .purgeSourceDatabase(true)
+                .build();
+        DatabaseMigrationResult result = migrationService.executeMigration(plan);
+        return result.keysMigrated();
     }
 
     private Map<String, DatabaseMetadata> discoverDatabases() {

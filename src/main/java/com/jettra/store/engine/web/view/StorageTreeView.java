@@ -244,32 +244,6 @@ public final class StorageTreeView {
 
         fluxTree.root(dbNode);
 
-        // Also add other discovered databases as roots to allow comprehensive multi-database exploration
-        if (hierarchyService != null) {
-            try {
-                Set<String> allDbs = hierarchyService.discoverAllDatabases();
-                for (String otherDb : allDbs) {
-                    if (!otherDb.equalsIgnoreCase(targetDb)) {
-                        FluxTreeNode<StorageHierarchyNodeData> otherDbNode = FluxTreeNode.of(
-                            "node_other_db_" + otherDb,
-                            otherDb,
-                            StorageHierarchyNodeData.forDatabase(selectedEngine, otherDb)
-                        ).icon("fas fa-database")
-                         .iconColor("var(--j-text-muted,#94a3b8)")
-                         .badge("DATABASE", "store-badge")
-                         .action(
-                             Button.of(Icon.of("fas fa-arrow-right"), Text.of(" Open"))
-                                 .modifier(new Modifier()
-                                     .attribute("type", "button")
-                                     .attribute("onclick", "location.href='" + actionUrl + "&target_db=" + escapeJs(otherDb) + "'")
-                                     .style("background:none; border:none; color:var(--j-primary,#38bdf8); font-size:9.5px; cursor:pointer; padding:1px 4px;"))
-                         );
-                        fluxTree.root(otherDbNode);
-                    }
-                }
-            } catch (Exception ignored) {}
-        }
-
         boolean isExpandedRequested = params != null &&
             ("true".equalsIgnoreCase(params.get("expand")) ||
              "expanded".equalsIgnoreCase(params.get("tree_state")));

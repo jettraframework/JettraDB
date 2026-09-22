@@ -168,7 +168,7 @@ public final class RouteVisibilityGuard {
         if (clean.startsWith("/engines")) {
             return RouteType.MANAGEMENT_EXPLORER;
         }
-        if (clean.startsWith("/databases")) {
+        if (clean.startsWith("/databases") || clean.startsWith("/database")) {
             return RouteType.DATABASES;
         }
         if (clean.startsWith("/users")) {
