@@ -177,6 +177,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
         if (action != null && (action.endsWith("_ajax") || "true".equalsIgnoreCase(params.get("is_ajax")) || isJsonClient
             || "install_sample_db".equalsIgnoreCase(action) || "uninstall_sample_db".equalsIgnoreCase(action) || "list_sample_dbs".equalsIgnoreCase(action)
+            || "upload_restore_file".equalsIgnoreCase(action)
             || "update_object".equalsIgnoreCase(action) || "edit_document".equalsIgnoreCase(action) || "edit_object".equalsIgnoreCase(action) || "edit_record".equalsIgnoreCase(action)
             || (isJsonClient && ("backup_database".equalsIgnoreCase(action) || "restore_database".equalsIgnoreCase(action) || "export_data".equalsIgnoreCase(action))))) {
             handleAjaxPost(exchange, params);
@@ -209,6 +210,34 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 resp.addProperty("outputFilePath", res.outputFilePath());
                 resp.addProperty("sizeBytes", res.sizeBytes());
                 sendJsonResponse(exchange, resp, res.success() ? 200 : 500);
+            } else if ("upload_restore_file".equalsIgnoreCase(action)) {
+                String restoreDb = params.getOrDefault("target_db", targetDb);
+                String fileName = params.getOrDefault("file_name", "uploaded_backup.zip");
+                String fileBase64 = params.get("file_base64");
+                if (fileBase64 == null || fileBase64.isBlank()) {
+                    JsonObject resp = new JsonObject();
+                    resp.addProperty("status", "ERROR");
+                    resp.addProperty("message", "No file payload received for external restore upload.");
+                    sendJsonResponse(exchange, resp, 400);
+                    return;
+                }
+                if (!fileName.toLowerCase().endsWith(".zip")) {
+                    fileName += ".zip";
+                }
+                byte[] zipBytes = Base64.getDecoder().decode(fileBase64.trim());
+                java.nio.file.Path targetDir = DatabaseBackupManager.getDefaultBackupDir(restoreDb);
+                java.nio.file.Files.createDirectories(targetDir);
+                java.nio.file.Path targetPath = targetDir.resolve(fileName);
+                java.nio.file.Files.write(targetPath, zipBytes);
+
+                JsonObject resp = new JsonObject();
+                resp.addProperty("status", "SUCCESS");
+                resp.addProperty("database", restoreDb);
+                resp.addProperty("fileName", fileName);
+                resp.addProperty("filePath", targetPath.toAbsolutePath().toString());
+                resp.addProperty("sizeBytes", zipBytes.length);
+                resp.addProperty("message", "External backup archive '" + fileName + "' staged successfully.");
+                sendJsonResponse(exchange, resp, 200);
             } else if ("restore_database".equalsIgnoreCase(action) || "restore_database_ajax".equalsIgnoreCase(action)) {
                 String restoreDb = params.getOrDefault("target_db", targetDb);
                 String restoreFilePath = params.get("restore_file_path");
@@ -225,7 +254,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 String expDb = params.getOrDefault("target_db", targetDb);
                 String expEng = params.getOrDefault("engine_type", params.getOrDefault("engine", "ALL"));
                 String expColl = params.getOrDefault("target_coll", params.getOrDefault("coll", ""));
-                String format = params.getOrDefault("format", "json");
+                String format = params.getOrDefault("format", params.getOrDefault("export_format", "json"));
                 com.jettra.store.engine.operations.EngineOperationTask task = com.jettra.store.engine.operations.EngineOperationTask.export(expDb, format)
                         .engineType(expEng)
                         .collection(expColl)
@@ -703,7 +732,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
         String db = params.getOrDefault("target_db", "system_db");
         String eng = params.getOrDefault("engine_type", params.getOrDefault("engine", "ALL")).toUpperCase();
         String coll = params.getOrDefault("target_coll", params.getOrDefault("coll", "")).trim();
-        String format = params.getOrDefault("format", "json").toLowerCase();
+        String format = params.getOrDefault("format", params.getOrDefault("export_format", "json")).toLowerCase();
 
         com.jettra.store.engine.operations.EngineOperationTask task = com.jettra.store.engine.operations.EngineOperationTask.export(db, format)
                 .engineType(eng)
@@ -3039,6 +3068,10 @@ public class StoreEnginesPage extends StoreTemplatePage {
         String defaultDir = DatabaseBackupManager.getDefaultBackupDir(targetDb).toAbsolutePath().toString();
         List<BackupFileInfo> availableBackups = DatabaseBackupManager.listBackups(targetDb, defaultDir);
 
+        FileUpload localFileSelector = FileUpload.file("external_backup_file", ".zip", "Select External Backup Archive from Local Disk (.ZIP):")
+            .inputId("externalBackupFileInput")
+            .onChange("onExternalBackupFileSelected(this)");
+
         List<Widget> formElements = new ArrayList<>();
         formElements.add(
             Inputs.of(
@@ -3046,6 +3079,15 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 createSelectOne("target_db_restore", "", "#a855f7", "restoreDbSelect", dbMap, targetDb)
                     .modifier(new Modifier().attribute("onchange", "onRestoreDbChange(this)"))
             ).modifier(new Modifier().style("margin-bottom:12px;"))
+        );
+        formElements.add(
+            localFileSelector.modifier(new Modifier().style("margin-bottom:8px;"))
+        );
+        formElements.add(
+            Div.of(
+                Span.of("").id("externalFileStatusBadge")
+                    .modifier(new Modifier().cssClass("store-badge").style("display:none; margin-bottom:10px; font-size:11px; padding:3px 8px;"))
+            ).modifier(new Modifier().style("margin-bottom:6px;"))
         );
         formElements.add(
             Inputs.of(
@@ -3056,7 +3098,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
         formElements.add(
             Inputs.of(
                 createLabel("Backup Archive File (.ZIP Path):"),
-                createTextInput("restore_file_path_input", "Select a backup below or enter path", availableBackups.isEmpty() ? "" : availableBackups.get(0).fullPath(), "#f8fafc").id("restoreFileInput")
+                createTextInput("restore_file_path_input", "Select a backup below or choose external file above", availableBackups.isEmpty() ? "" : availableBackups.get(0).fullPath(), "#f8fafc").id("restoreFileInput")
             ).modifier(new Modifier().style("margin-bottom:14px;"))
         );
 
@@ -3126,10 +3168,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
         }
         if (!dbMap.containsKey(targetDb)) dbMap.put(targetDb, targetDb);
 
-        Map<String, String> formats = new LinkedHashMap<>();
-        formats.put("json", "JSON (.json) - Full Multimodel Object Graph");
-        formats.put("csv", "CSV (.csv) - Comma-Separated Values Table");
-        formats.put("excel", "Excel (.xls) - Spreadsheet Workbook Table");
+        Map<String, String> formats = com.jettra.store.engine.operations.export.ExportStrategyRegistry.getAvailableFormats();
 
         Map<String, String> enginesMap = new LinkedHashMap<>();
         enginesMap.put("ALL", "All Engines (Full Database Dump)");
@@ -3143,25 +3182,33 @@ public class StoreEnginesPage extends StoreTemplatePage {
         enginesMap.put("OBJECT", "OBJECT");
         enginesMap.put("RECORDS", "RECORDS");
 
+        Widget exportActions = Div.of(
+            Button.of(Text.of("Cancel"))
+                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "hideModal('exportDataModal')").cssClass("btn-action btn-secondary")),
+            Button.of(Icon.of("fas fa-download"), Text.of(" Download Export File"))
+                .id("btnDownloadExportFile")
+                .modifier(new Modifier().attribute("type", "button").attribute("onclick", "downloadExportFile()").cssClass("btn-action btn-primary").style("background:#f59e0b; color:#0f172a; font-weight:700;"))
+        ).modifier(new Modifier().style("display:flex; justify-content:flex-end; gap:8px;"));
+
         Widget form = Form.of(
             InputHidden.of("action", "export_data"),
             Inputs.of(
                 createLabel("Export Format:"),
-                createSelectOne("format", "", "#f59e0b", "exportFormatSelect", formats, "json")
+                createSelectOne("format", "exportFormatSelect", "#f59e0b", "", formats, "json")
             ).modifier(new Modifier().style("margin-bottom:12px;")),
             Inputs.of(
                 createLabel("Target Database:"),
-                createSelectOne("target_db", "", "#38bdf8", "exportDbSelect", dbMap, targetDb)
+                createSelectOne("target_db", "exportDbSelect", "#38bdf8", "", dbMap, targetDb)
             ).modifier(new Modifier().style("margin-bottom:12px;")),
             Inputs.of(
                 createLabel("Engine Filter:"),
-                createSelectOne("engine_type", "", "#a855f7", "exportEngineSelect", enginesMap, selectedEngine)
+                createSelectOne("engine_type", "exportEngineSelect", "#a855f7", "", enginesMap, selectedEngine)
             ).modifier(new Modifier().style("margin-bottom:12px;")),
             Inputs.of(
                 createLabel("Unit / Collection Filter (optional):"),
                 createTextInput("target_coll", "Leave blank for all units", currentColl.equals("default") ? "" : currentColl, "#f8fafc").id("exportCollInput")
             ).modifier(new Modifier().style("margin-bottom:16px;")),
-            createModalFormActions("exportDataModal", "Download Export File", "fas fa-download", "#f59e0b; color:#0f172a")
+            exportActions
         ).method("GET").action(JettraServer.resolvePath("/engines"));
 
         return createModalOverlay("exportDataModal", "560px", "rgba(245,158,11,0.4)", header, form);
@@ -3898,7 +3945,88 @@ public class StoreEnginesPage extends StoreTemplatePage {
     var db = selectElem.value;
     var dirEl = document.getElementById('restoreDirInput');
     if (dirEl) dirEl.value = '~/data/backup/' + db;
+    var badge = document.getElementById('externalFileStatusBadge');
+    if (badge) {
+      badge.style.display = 'none';
+      badge.innerHTML = '';
+    }
   }
+
+  function onExternalBackupFileSelected(input) {
+    if (!input || !input.files || input.files.length === 0) return;
+    var file = input.files[0];
+    if (!file.name.toLowerCase().endsWith('.zip')) {
+      alert('Por favor seleccione un archivo de respaldo con extensión .ZIP');
+      input.value = '';
+      return;
+    }
+    var sel = document.getElementById('restoreDbSelect');
+    var db = sel ? sel.value : 'database';
+    var statusBadge = document.getElementById('externalFileStatusBadge');
+    if (statusBadge) {
+      statusBadge.className = 'store-badge';
+      statusBadge.style.display = 'inline-flex';
+      statusBadge.style.background = 'rgba(56,189,248,0.15)';
+      statusBadge.style.color = '#38bdf8';
+      statusBadge.style.border = '1px solid rgba(56,189,248,0.3)';
+      statusBadge.innerHTML = '<i class="fas fa-spinner fa-spin" style="margin-right:5px;"></i> Procesando ' + file.name + ' (' + Math.round(file.size / 1024) + ' KB)...';
+    }
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      var rawB64 = e.target.result;
+      var base64Data = (typeof rawB64 === 'string' && rawB64.indexOf(',') >= 0) ? rawB64.split(',')[1] : rawB64;
+      if (statusBadge) {
+        statusBadge.innerHTML = '<i class="fas fa-spinner fa-spin" style="margin-right:5px;"></i> Subiendo ' + file.name + ' al servidor...';
+      }
+      var base = window.location.pathname || '/engines';
+      if (base.indexOf('?') >= 0) base = base.split('?')[0];
+      var formData = new URLSearchParams();
+      formData.append('action', 'upload_restore_file');
+      formData.append('target_db', db);
+      formData.append('file_name', file.name);
+      formData.append('file_base64', base64Data);
+      formData.append('is_ajax', 'true');
+      fetch(base, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', 'X-Requested-With': 'XMLHttpRequest' },
+        body: formData.toString()
+      })
+      .then(function(res) { return res.json(); })
+      .then(function(data) {
+        if (data && data.status === 'SUCCESS') {
+          var pathInput = document.getElementById('restoreFileInput');
+          if (pathInput) pathInput.value = data.filePath;
+          if (statusBadge) {
+            statusBadge.className = 'store-badge badge-active';
+            statusBadge.style.display = 'inline-flex';
+            statusBadge.style.background = 'rgba(34,197,94,0.15)';
+            statusBadge.style.color = '#4ade80';
+            statusBadge.style.border = '1px solid rgba(34,197,94,0.3)';
+            statusBadge.innerHTML = '<i class="fas fa-check-circle" style="margin-right:5px;"></i> ' + file.name + ' cargado (' + Math.round((data.sizeBytes || file.size) / 1024) + ' KB)';
+          }
+        } else {
+          if (statusBadge) {
+            statusBadge.className = 'store-badge badge-records';
+            statusBadge.style.background = 'rgba(239,68,68,0.15)';
+            statusBadge.style.color = '#ef4444';
+            statusBadge.style.border = '1px solid rgba(239,68,68,0.3)';
+            statusBadge.innerHTML = '<i class="fas fa-exclamation-triangle" style="margin-right:5px;"></i> ' + (data ? data.message : 'Error al cargar respaldo');
+          }
+        }
+      })
+      .catch(function(err) {
+        if (statusBadge) {
+          statusBadge.className = 'store-badge badge-records';
+          statusBadge.style.background = 'rgba(239,68,68,0.15)';
+          statusBadge.style.color = '#ef4444';
+          statusBadge.style.border = '1px solid rgba(239,68,68,0.3)';
+          statusBadge.innerHTML = '<i class="fas fa-exclamation-triangle" style="margin-right:5px;"></i> Error de red: ' + err.message;
+        }
+      });
+    };
+    reader.readAsDataURL(file);
+  }
+  window.onExternalBackupFileSelected = onExternalBackupFileSelected;
 
   function openConfirmDbRestoreModal() {
     var sel = document.getElementById('restoreDbSelect');
@@ -3917,6 +4045,26 @@ public class StoreEnginesPage extends StoreTemplatePage {
     });
     showModal('confirmDbRestoreModal');
   }
+
+  function downloadExportFile() {
+    var fmtSelect = document.getElementById('exportFormatSelect');
+    var dbSelect = document.getElementById('exportDbSelect');
+    var engSelect = document.getElementById('exportEngineSelect');
+    var collInput = document.getElementById('exportCollInput');
+    var fmt = fmtSelect ? fmtSelect.value : 'json';
+    var db = dbSelect ? dbSelect.value : 'database';
+    var eng = engSelect ? engSelect.value : 'ALL';
+    var coll = collInput ? collInput.value : '';
+    var base = window.location.pathname || '/engines';
+    if (base.indexOf('?') >= 0) base = base.split('?')[0];
+    var dlUrl = base + '?action=export_data&format=' + encodeURIComponent(fmt) +
+      '&target_db=' + encodeURIComponent(db) +
+      '&engine_type=' + encodeURIComponent(eng) +
+      '&target_coll=' + encodeURIComponent(coll);
+    window.location.href = dlUrl;
+    hideModal('exportDataModal');
+  }
+  window.downloadExportFile = downloadExportFile;
 
   function openExportDataModal(engine, db, coll) {
     var engSel = document.getElementById('exportEngineSelect');
@@ -4354,6 +4502,10 @@ public class StoreEnginesPage extends StoreTemplatePage {
       }
     }
     if (!form) return false;
+    if (modalId === 'exportDataModal') {
+      downloadExportFile();
+      return false;
+    }
 
     var submitBtn = modal.querySelector('button[type="submit"], button.btn-primary, .espresso-button[data-state]');
     var origBtnHtml = submitBtn ? submitBtn.innerHTML : '';
@@ -5054,21 +5206,25 @@ public class StoreEnginesPage extends StoreTemplatePage {
     if (window.FluxTree && typeof window.FluxTree.expandAll === 'function') {
       window.FluxTree.expandAll('storage-hierarchy-tree');
     }
-    // Expand custom tree sub-nodes and units
-    var treeContainers = document.querySelectorAll('.tree-node-content, .db-subtree-container, [id^="children_"], [id^="db_content_"], [id^="unit_content_"]');
+    // Expand custom tree sub-nodes, flux tree groups, and containers
+    var treeContainers = document.querySelectorAll('.tree-node-content, .db-subtree-container, .flux-tree-group, .flux-tree-details-panel, [id^="children_"], [id^="db_content_"], [id^="unit_content_"]');
     for (var i = 0; i < treeContainers.length; i++) {
       treeContainers[i].style.display = 'block';
       treeContainers[i].setAttribute('aria-expanded', 'true');
+      if (treeContainers[i].hasAttribute('data-state')) treeContainers[i].setAttribute('data-state', 'expanded');
     }
-    var treeIcons = document.querySelectorAll('.tree-toggle-icon');
+    var treeIcons = document.querySelectorAll('.tree-toggle-icon, .flux-tree-toggle-icon');
     for (var j = 0; j < treeIcons.length; j++) {
-      if (treeIcons[j].classList.contains('fa-chevron-right')) {
-        treeIcons[j].classList.remove('fa-chevron-right');
-        treeIcons[j].classList.add('fa-chevron-down');
-      } else if (treeIcons[j].classList.contains('fa-caret-right')) {
-        treeIcons[j].classList.remove('fa-caret-right');
-        treeIcons[j].classList.add('fa-caret-down');
-      }
+      treeIcons[j].classList.remove('fa-chevron-right', 'fa-caret-right');
+      treeIcons[j].classList.add('fa-chevron-down');
+    }
+    var treeBtns = document.querySelectorAll('.flux-tree-toggle-btn, [id^="btn_toggle_"]');
+    for (var b = 0; b < treeBtns.length; b++) {
+      treeBtns[b].setAttribute('aria-expanded', 'true');
+    }
+    var treeNodes = document.querySelectorAll('.flux-tree-node, [role="treeitem"]');
+    for (var n = 0; n < treeNodes.length; n++) {
+      treeNodes[n].setAttribute('aria-expanded', 'true');
     }
     // 2. Expand Table View composite rows
     if (typeof expandAllTableRows === 'function') {
@@ -5078,25 +5234,27 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
   function collapseAllExplorerView() {
     // 1. Collapse Tree View hierarchy via FluxTree composite API
-    if (window.FluxTree && typeof window.FluxTree.collapseToRoot === 'function') {
-      window.FluxTree.collapseToRoot('storage-hierarchy-tree');
-    } else if (window.FluxTree && typeof window.FluxTree.collapseAll === 'function') {
-      window.FluxTree.collapseAll('storage-hierarchy-tree');
+    if (window.FluxTree && typeof window.FluxTree.collapseAll === 'function') {
+      window.FluxTree.collapseAll('storage-hierarchy-tree', false);
     }
-    var treeContainers = document.querySelectorAll('[id^="children_"], [id^="unit_content_"]');
+    var treeContainers = document.querySelectorAll('.flux-tree-group, .flux-tree-details-panel, [id^="children_"], [id^="unit_content_"]');
     for (var i = 0; i < treeContainers.length; i++) {
       treeContainers[i].style.display = 'none';
       treeContainers[i].setAttribute('aria-expanded', 'false');
+      if (treeContainers[i].hasAttribute('data-state')) treeContainers[i].setAttribute('data-state', 'collapsed');
     }
-    var treeIcons = document.querySelectorAll('.tree-toggle-icon');
+    var treeIcons = document.querySelectorAll('.tree-toggle-icon, .flux-tree-toggle-icon');
     for (var j = 0; j < treeIcons.length; j++) {
-      if (treeIcons[j].classList.contains('fa-chevron-down')) {
-        treeIcons[j].classList.remove('fa-chevron-down');
-        treeIcons[j].classList.add('fa-chevron-right');
-      } else if (treeIcons[j].classList.contains('fa-caret-down')) {
-        treeIcons[j].classList.remove('fa-caret-down');
-        treeIcons[j].classList.add('fa-caret-right');
-      }
+      treeIcons[j].classList.remove('fa-chevron-down', 'fa-caret-down');
+      treeIcons[j].classList.add('fa-chevron-right');
+    }
+    var treeBtns = document.querySelectorAll('.flux-tree-toggle-btn, [id^="btn_toggle_"]');
+    for (var b = 0; b < treeBtns.length; b++) {
+      treeBtns[b].setAttribute('aria-expanded', 'false');
+    }
+    var treeNodes = document.querySelectorAll('.flux-tree-node, [role="treeitem"]');
+    for (var n = 0; n < treeNodes.length; n++) {
+      treeNodes[n].setAttribute('aria-expanded', 'false');
     }
     // 2. Collapse Table View composite rows
     if (typeof collapseAllTableRows === 'function') {

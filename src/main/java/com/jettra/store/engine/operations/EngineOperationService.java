@@ -149,78 +149,11 @@ public class EngineOperationService {
                 }
             }
 
-            byte[] outputBytes;
-            String contentType;
-            String fileExt;
-
-            if ("csv".equalsIgnoreCase(format)) {
-                contentType = "text/csv; charset=UTF-8";
-                fileExt = "csv";
-                StringBuilder sb = new StringBuilder();
-                sb.append("Key,Database,Collection_Unit,ID,Payload\n");
-                for (Map.Entry<String, String> entry : recordsMap.entrySet()) {
-                    String k = entry.getKey();
-                    String val = entry.getValue().replace("\"", "\"\"");
-                    String[] parts = k.split(":");
-                    String unit = parts.length > 2 ? parts[2] : (parts.length > 1 ? parts[1] : "default");
-                    String id = parts.length > 0 ? parts[parts.length - 1] : k;
-                    sb.append("\"").append(k).append("\",")
-                      .append("\"").append(db).append("\",")
-                      .append("\"").append(unit).append("\",")
-                      .append("\"").append(id).append("\",")
-                      .append("\"").append(val).append("\"\n");
-                }
-                outputBytes = sb.toString().getBytes(StandardCharsets.UTF_8);
-            } else if ("excel".equalsIgnoreCase(format) || "xls".equalsIgnoreCase(format) || "xlsx".equalsIgnoreCase(format)) {
-                contentType = "application/vnd.ms-excel; charset=UTF-8";
-                fileExt = "xls";
-                StringBuilder sb = new StringBuilder();
-                sb.append("<html xmlns:o=\"urn:schemas-microsoft-com:office:office\" xmlns:x=\"urn:schemas-microsoft-com:office:excel\" xmlns=\"http://www.w3.org/TR/REC-html40\">");
-                sb.append("<head><meta charset=\"utf-8\"/><!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>Export</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]--></head>");
-                sb.append("<body><table border=\"1\" style=\"border-collapse:collapse; font-family:Arial,sans-serif; font-size:12px;\">");
-                sb.append("<tr style=\"background:#1e293b; color:#38bdf8; font-weight:bold; height:30px;\"><th>Storage Key</th><th>Database</th><th>Unit / Collection</th><th>Record ID</th><th>Payload JSON / Content</th></tr>");
-                for (Map.Entry<String, String> entry : recordsMap.entrySet()) {
-                    String k = entry.getKey();
-                    String val = entry.getValue();
-                    String[] parts = k.split(":");
-                    String unit = parts.length > 2 ? parts[2] : (parts.length > 1 ? parts[1] : "default");
-                    String id = parts.length > 0 ? parts[parts.length - 1] : k;
-                    sb.append("<tr>")
-                      .append("<td style=\"font-weight:bold; color:#0f172a;\">").append(k).append("</td>")
-                      .append("<td>").append(db).append("</td>")
-                      .append("<td>").append(unit).append("</td>")
-                      .append("<td style=\"font-family:monospace;\">").append(id).append("</td>")
-                      .append("<td style=\"font-family:monospace;\">").append(val.replace("<", "&lt;").replace(">", "&gt;")).append("</td>")
-                      .append("</tr>");
-                }
-                sb.append("</table></body></html>");
-                outputBytes = sb.toString().getBytes(StandardCharsets.UTF_8);
-            } else {
-                contentType = "application/json; charset=UTF-8";
-                fileExt = "json";
-                JsonObject root = new JsonObject();
-                root.addProperty("_database", db);
-                root.addProperty("_engineFilter", eng);
-                root.addProperty("_collectionFilter", coll.isBlank() ? "*" : coll);
-                root.addProperty("_exportedAt", System.currentTimeMillis());
-                root.addProperty("_totalRecords", recordsMap.size());
-
-                JsonObject recordsObj = new JsonObject();
-                for (Map.Entry<String, String> entry : recordsMap.entrySet()) {
-                    try {
-                        JsonObject obj = jsonParser.fromJson(entry.getValue(), JsonObject.class);
-                        if (obj != null) {
-                            recordsObj.add(entry.getKey(), obj);
-                        } else {
-                            recordsObj.addProperty(entry.getKey(), entry.getValue());
-                        }
-                    } catch (Exception ex) {
-                        recordsObj.addProperty(entry.getKey(), entry.getValue());
-                    }
-                }
-                root.add("records", recordsObj);
-                outputBytes = root.toString().getBytes(StandardCharsets.UTF_8);
-            }
+            com.jettra.store.engine.operations.export.ExportStrategy strategy =
+                    com.jettra.store.engine.operations.export.ExportStrategyRegistry.getStrategy(format);
+            byte[] outputBytes = strategy.export(db, eng, coll, recordsMap);
+            String contentType = strategy.mimeType();
+            String fileExt = strategy.fileExtension();
 
             long duration = System.currentTimeMillis() - start;
             String outFileName = db + (coll.isBlank() ? "" : "_" + coll) + "_export." + fileExt;
