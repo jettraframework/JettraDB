@@ -165,7 +165,7 @@ public final class RouteVisibilityGuard {
         if (clean.equals("/") || clean.equals("/dashboard") || clean.equals("/wui")) {
             return RouteType.DASHBOARD;
         }
-        if (clean.startsWith("/engines")) {
+        if (clean.startsWith("/engines") || clean.startsWith("/engine")) {
             return RouteType.MANAGEMENT_EXPLORER;
         }
         if (clean.startsWith("/databases") || clean.startsWith("/database")) {

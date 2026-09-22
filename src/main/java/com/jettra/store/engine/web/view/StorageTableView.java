@@ -70,6 +70,11 @@ public final class StorageTableView {
         int endIndex = Math.min(startIndex + pageSize, totalItems);
         List<FlatRecordItem> pageItems = totalItems > 0 ? flatItems.subList(startIndex, endIndex) : Collections.emptyList();
 
+        boolean defaultExpanded = params != null &&
+            ("true".equalsIgnoreCase(params.get("expand")) ||
+             "expanded".equalsIgnoreCase(params.get("table_state")) ||
+             "expanded".equalsIgnoreCase(params.get("tree_state")));
+
         // 1. Filter Bar
         Widget quickFilterInput = TextField.of("table_quick_filter", "Quick filter by Record ID, unit, engine, or payload content...")
             .id("tableExplorerQuickFilter")
@@ -123,8 +128,9 @@ public final class StorageTableView {
                 FlatRecordItem item = pageItems.get(i);
                 String rowDetailId = "tbl_row_detail_" + (i + 1);
 
+                String toggleIconClass = defaultExpanded ? "fas fa-chevron-down tree-toggle-icon" : "fas fa-chevron-right tree-toggle-icon";
                 Widget expandBtn = Button.of(
-                    Icon.of("fas fa-chevron-right").id("icon_" + rowDetailId).modifier(new Modifier().cssClass("tree-toggle-icon"))
+                    Icon.of(toggleIconClass).id("icon_" + rowDetailId).modifier(new Modifier().cssClass("tree-toggle-icon"))
                 ).modifier(new Modifier()
                     .attribute("type", "button")
                     .attribute("title", "Desplegar/Ocultar detalles del registro")
@@ -200,9 +206,10 @@ public final class StorageTableView {
 
                 Widget detailContent = renderItemDetailSummary(item, jsonParser);
 
+                String detailDisplay = defaultExpanded ? "display:block;" : "display:none;";
                 Widget detailRow = Div.of(detailContent)
                     .id(rowDetailId)
-                    .modifier(new Modifier().cssClass("explorer-table-detail-row").style("display:none; padding:10px 16px; background:var(--j-bg-subsurface); border-bottom:1px solid var(--j-border); border-left:3px solid " + item.color() + "; margin-left:32px; border-radius:0 0 6px 6px; box-shadow:inset 0 2px 8px rgba(0,0,0,0.05); margin-bottom:4px; font-size:7.5px;"));
+                    .modifier(new Modifier().cssClass("explorer-table-detail-row").style(detailDisplay + " padding:10px 16px; background:var(--j-bg-subsurface); border-bottom:1px solid var(--j-border); border-left:3px solid " + item.color() + "; margin-left:32px; border-radius:0 0 6px 6px; box-shadow:inset 0 2px 8px rgba(0,0,0,0.05); margin-bottom:4px; font-size:7.5px;"));
 
                 tableRows.add(row);
                 tableRows.add(detailRow);
@@ -249,6 +256,30 @@ public final class StorageTableView {
             "      } else {\n" +
             "        el.style.display = 'none';\n" +
             "        if (icon) icon.className = 'fas fa-chevron-right tree-toggle-icon';\n" +
+            "      }\n" +
+            "    };\n" +
+            "  }\n" +
+            "  if (typeof window.expandAllTableRows !== 'function') {\n" +
+            "    window.expandAllTableRows = function() {\n" +
+            "      var details = document.querySelectorAll('.explorer-table-detail-row');\n" +
+            "      for (var i = 0; i < details.length; i++) {\n" +
+            "        details[i].style.display = 'block';\n" +
+            "      }\n" +
+            "      var icons = document.querySelectorAll('.explorer-table-row .tree-toggle-icon');\n" +
+            "      for (var j = 0; j < icons.length; j++) {\n" +
+            "        icons[j].className = 'fas fa-chevron-down tree-toggle-icon';\n" +
+            "      }\n" +
+            "    };\n" +
+            "  }\n" +
+            "  if (typeof window.collapseAllTableRows !== 'function') {\n" +
+            "    window.collapseAllTableRows = function() {\n" +
+            "      var details = document.querySelectorAll('.explorer-table-detail-row');\n" +
+            "      for (var i = 0; i < details.length; i++) {\n" +
+            "        details[i].style.display = 'none';\n" +
+            "      }\n" +
+            "      var icons = document.querySelectorAll('.explorer-table-row .tree-toggle-icon');\n" +
+            "      for (var j = 0; j < icons.length; j++) {\n" +
+            "        icons[j].className = 'fas fa-chevron-right tree-toggle-icon';\n" +
             "      }\n" +
             "    };\n" +
             "  }\n" +

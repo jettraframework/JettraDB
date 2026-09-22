@@ -932,10 +932,13 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                 // Clean actions: system_db cannot be renamed nor deleted
                 List<Widget> actionButtons = new ArrayList<>();
 
-                actionButtons.add(Link.of(JettraServer.resolvePath("/engines?engine=RECORDS&db=" + dbName),
+                actionButtons.add(Link.of(JettraServer.resolvePath("/engines?target_db=" + dbName + "&db=" + dbName + "&engine=RECORDS"),
                         Icon.of("fas fa-eye"),
                         Text.of(" ")
-                ).modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:6px 12px; font-size:12px;")));
+                )
+                        .attribute("title", "Open Database " + dbName)
+                        .attribute("onclick", "selectDatabaseAndNavigate('" + dbName + "'); return false;")
+                        .modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:6px 12px; font-size:12px;")));
 //                actionButtons.add(Link.of(JettraServer.resolvePath("/engines?engine=RECORDS&db=" + dbName),
 //                    Icon.of("fas fa-search"),
 //                    Text.of(" ")
@@ -1070,11 +1073,12 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                         .badge(isSystemDb ? "SYSTEM CORE" : "ONLINE", isSystemDb ? "store-badge badge-records" : "store-badge badge-active");
 
                 // Tree Node Actions
-                dbNode.action(Link.of(JettraServer.resolvePath("/engines?engine=RECORDS&db=" + dbName),
+                dbNode.action(Link.of(JettraServer.resolvePath("/engines?target_db=" + dbName + "&db=" + dbName + "&engine=RECORDS"),
                         Icon.of("fas fa-folder-open"),
                         Text.of(" ")
                 )
-                        .attribute("title", "Open")
+                        .attribute("title", "Open Database " + dbName)
+                        .attribute("onclick", "selectDatabaseAndNavigate('" + dbName + "'); return false;")
                         .modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:3px 8px; font-size:11px; margin-right:2px;")));
 
                 if (!isSystemDb) {
@@ -1124,10 +1128,12 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                     engNode.icon(getIconForEngine(eng))
                             .iconColor("#c084fc")
                             .badge(cnt + " keys", "store-badge " + badgeClass)
-                            .action(Link.of(JettraServer.resolvePath("/engines?engine=" + eng + "&db=" + dbName),
+                            .action(Link.of(JettraServer.resolvePath("/engines?target_db=" + dbName + "&db=" + dbName + "&engine=" + eng),
                                     Icon.of("fas fa-search"),
                                     Text.of(" Inspect")
-                            ).modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:2px 6px; font-size:10px;")));
+                            )
+                                    .attribute("onclick", "selectDatabaseAndNavigate('" + dbName + "', '" + eng + "'); return false;")
+                                    .modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:2px 6px; font-size:10px;")));
 
                     enginesBranch.child(engNode);
                 }
@@ -1449,6 +1455,12 @@ public class StoreDatabasesPage extends StoreTemplatePage {
 
         Widget scriptsWidget = RawHtml.of(
                 "<script>\n"
+                + "  function selectDatabaseAndNavigate(dbName, engine) {\n"
+                + "    if (!dbName) return;\n"
+                + "    document.cookie = 'jettra_selected_db=' + encodeURIComponent(dbName) + '; path=/; SameSite=Lax';\n"
+                + "    var engParam = engine ? ('&engine=' + encodeURIComponent(engine)) : '&engine=RECORDS';\n"
+                + "    window.location.href = '" + JettraServer.resolvePath("/engines?target_db=") + "' + encodeURIComponent(dbName) + '&db=' + encodeURIComponent(dbName) + engParam;\n"
+                + "  }\n"
                 + "  function openModal(id) { document.getElementById(id).showModal(); }\n"
                 + "  function openCreateDbModal() { openModal('createDbModal'); }\n"
                 + "  function openAssignUserModal(db) {\n"
@@ -1822,6 +1834,21 @@ public class StoreDatabasesPage extends StoreTemplatePage {
 
     @Override
     protected boolean onGet(HttpExchange exchange, Map<String, String> params) throws IOException {
+        if (params != null && ("select_db".equalsIgnoreCase(params.get("action")) || "open_db".equalsIgnoreCase(params.get("action")))) {
+            String db = params.get("target_db");
+            if (db == null || db.isBlank()) db = params.get("db");
+            if (db != null && !db.isBlank()) {
+                String cleanDb = db.trim();
+                if (io.jettra.flux.core.FluxContext.getCurrent() != null) {
+                    io.jettra.flux.core.FluxContext.getCurrent().set(io.jettra.flux.core.FluxContext.Scope.SESSION, "current_database", cleanDb);
+                }
+                if (exchange != null && exchange.getResponseHeaders() != null) {
+                    exchange.getResponseHeaders().add("Set-Cookie", "jettra_selected_db=" + cleanDb + "; Path=/; SameSite=Lax");
+                }
+                redirect(exchange, "/engines?target_db=" + cleanDb + "&db=" + cleanDb);
+                return true;
+            }
+        }
         if (params != null && "list_sample_dbs".equalsIgnoreCase(params.get("action"))) {
             handleListSampleDatabases(exchange, params);
             return true;

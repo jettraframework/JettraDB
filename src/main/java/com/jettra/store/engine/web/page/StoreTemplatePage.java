@@ -10,6 +10,7 @@ import io.jettra.flux.widgets.*;
 import io.jettra.server.JettraServer;
 import com.jettra.store.engine.web.RouteVisibilityGuard.NavigationRouteConfig;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -41,6 +42,66 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
         return getAvailableDatabases();
     }
 
+    public String resolveTargetDatabase(HttpExchange exchange, Map<String, String> params, String loggedUser) {
+        String targetDb = null;
+        if (params != null) {
+            if (params.containsKey("target_db") && !params.get("target_db").isBlank()) {
+                targetDb = params.get("target_db").trim();
+            } else if (params.containsKey("db") && !params.get("db").isBlank()) {
+                targetDb = params.get("db").trim();
+            }
+        }
+
+        if (targetDb == null || targetDb.isBlank()) {
+            if (io.jettra.flux.core.FluxContext.getCurrent() != null) {
+                Object sessDb = io.jettra.flux.core.FluxContext.getCurrent().get(io.jettra.flux.core.FluxContext.Scope.SESSION, "current_database");
+                if (sessDb != null && !sessDb.toString().isBlank()) {
+                    targetDb = sessDb.toString().trim();
+                }
+            }
+        }
+
+        if ((targetDb == null || targetDb.isBlank()) && exchange != null) {
+            String cookieHeader = exchange.getRequestHeaders() != null ? exchange.getRequestHeaders().getFirst("Cookie") : null;
+            if (cookieHeader != null) {
+                for (String c : cookieHeader.split(";")) {
+                    String[] kv = c.trim().split("=", 2);
+                    if (kv.length == 2 && ("jettra_selected_db".equalsIgnoreCase(kv[0]) || "current_database".equalsIgnoreCase(kv[0]))) {
+                        try {
+                            targetDb = java.net.URLDecoder.decode(kv[1], StandardCharsets.UTF_8).trim();
+                        } catch (Exception e) {
+                            targetDb = kv[1].trim();
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (targetDb == null || targetDb.isBlank()) {
+            Set<String> databases = getAvailableDatabases(exchange, loggedUser);
+            if (databases != null && !databases.isEmpty()) {
+                if (databases.contains("system_db")) {
+                    targetDb = "system_db";
+                } else {
+                    targetDb = databases.iterator().next();
+                }
+            } else {
+                targetDb = "system_db";
+            }
+        }
+
+        // Persist to session and response cookie
+        if (io.jettra.flux.core.FluxContext.getCurrent() != null) {
+            io.jettra.flux.core.FluxContext.getCurrent().set(io.jettra.flux.core.FluxContext.Scope.SESSION, "current_database", targetDb);
+        }
+        if (exchange != null && exchange.getResponseHeaders() != null) {
+            exchange.getResponseHeaders().add("Set-Cookie", "jettra_selected_db=" + targetDb + "; Path=/; SameSite=Lax");
+        }
+
+        return targetDb;
+    }
+
     /**
      * Determines whether global action buttons (+ DB, + UNIT, BACKUP, RESTORE, EXPORT, BÚSQUEDA AVANZADA, SAMPLE DBS)
      * are rendered in the top bar. Defaults to true and can be overridden by subclasses (e.g. InformationPage).
@@ -60,7 +121,7 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
      * Determines navigation route visibility policy. Can be overridden by subclasses.
      */
     protected NavigationRouteConfig getRouteConfig(HttpExchange exchange, Map<String, String> params) {
-        return RouteVisibilityGuard.resolveConfig(exchange, params, getPageTitle());
+        return RouteVisibilityGuard.resolveConfig(exchange, params, getTitle());
     }
 
     @Override
@@ -75,7 +136,7 @@ public abstract class StoreTemplatePage extends FluxBaseHandler {
             } catch (Exception ignored) {}
         }
 
-        String targetDb = params != null && params.containsKey("target_db") ? params.get("target_db") : "system_db";
+        String targetDb = resolveTargetDatabase(exchange, params, loggedUser);
         String currentTab = params != null ? params.getOrDefault("tab", "schema").toLowerCase() : "schema";
         String activeModule = params != null ? params.getOrDefault("module", "database").toLowerCase() : "database";
         String selectedEngine = params != null ? params.getOrDefault("engine", "DOCUMENT").toUpperCase() : "DOCUMENT";

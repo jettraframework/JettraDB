@@ -96,6 +96,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
     private final EditActionHandler editActionHandler;
     private final io.jettra.server.autentification.repository.JUserRepository userRepo;
     private final DatabaseSecurityFilter securityFilter;
+    private final com.jettra.store.engine.operations.EngineOperationService engineOperationService;
 
     public StoreEnginesPage(JettraStorageEngine engine) {
         this(engine, new DatabaseSecurityFilter(new SystemUserRepositoryImpl(), new io.jettra.server.autentification.repository.JUserRepositoryImpl()));
@@ -110,6 +111,11 @@ public class StoreEnginesPage extends StoreTemplatePage {
         this.editActionHandler = new EditActionHandler(engine, hierarchyService);
         this.userRepo = new io.jettra.server.autentification.repository.JUserRepositoryImpl();
         this.securityFilter = securityFilter != null ? securityFilter : new DatabaseSecurityFilter(new SystemUserRepositoryImpl(), this.userRepo);
+        this.engineOperationService = new com.jettra.store.engine.operations.EngineOperationService(engine);
+    }
+
+    public com.jettra.store.engine.operations.EngineOperationService getEngineOperationService() {
+        return this.engineOperationService;
     }
 
     @Override
@@ -171,7 +177,8 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
         if (action != null && (action.endsWith("_ajax") || "true".equalsIgnoreCase(params.get("is_ajax")) || isJsonClient
             || "install_sample_db".equalsIgnoreCase(action) || "uninstall_sample_db".equalsIgnoreCase(action) || "list_sample_dbs".equalsIgnoreCase(action)
-            || "update_object".equalsIgnoreCase(action) || "edit_document".equalsIgnoreCase(action) || "edit_object".equalsIgnoreCase(action) || "edit_record".equalsIgnoreCase(action))) {
+            || "update_object".equalsIgnoreCase(action) || "edit_document".equalsIgnoreCase(action) || "edit_object".equalsIgnoreCase(action) || "edit_record".equalsIgnoreCase(action)
+            || (isJsonClient && ("backup_database".equalsIgnoreCase(action) || "restore_database".equalsIgnoreCase(action) || "export_data".equalsIgnoreCase(action))))) {
             handleAjaxPost(exchange, params);
             return true;
         }
@@ -182,10 +189,57 @@ public class StoreEnginesPage extends StoreTemplatePage {
         String action = params != null ? params.get("action") : "";
         String selectedEngine = params != null && params.containsKey("engine") ? params.get("engine").toUpperCase() : "DOCUMENT";
         if ("RECORD".equalsIgnoreCase(selectedEngine)) selectedEngine = "RECORDS";
-        String targetDb = params != null && params.containsKey("target_db") ? params.get("target_db") : getDefaultDbForEngine(selectedEngine);
+        String targetDb = resolveTargetDatabase(exchange, params, getLoggedUser(exchange));
 
         try {
-            if ("insert_object".equalsIgnoreCase(action) || "insert_object_ajax".equalsIgnoreCase(action) || "insert_record".equalsIgnoreCase(action) || "insert_record_ajax".equalsIgnoreCase(action)) {
+            if ("backup_database".equalsIgnoreCase(action) || "backup_database_ajax".equalsIgnoreCase(action)) {
+                String backupDb = params.getOrDefault("target_db", targetDb);
+                String backupDir = params.get("backup_dir");
+                String backupFilename = params.get("backup_filename");
+                com.jettra.store.engine.operations.EngineOperationTask task = com.jettra.store.engine.operations.EngineOperationTask.backup(backupDb)
+                        .destinationDirectory(backupDir)
+                        .fileName(backupFilename)
+                        .build();
+                com.jettra.store.engine.operations.EngineOperationResult res = engineOperationService.execute(task);
+                JsonObject resp = new JsonObject();
+                resp.addProperty("status", res.success() ? "SUCCESS" : "FAILURE");
+                resp.addProperty("database", res.database());
+                resp.addProperty("message", res.message());
+                resp.addProperty("recordCount", res.recordCount());
+                resp.addProperty("outputFilePath", res.outputFilePath());
+                resp.addProperty("sizeBytes", res.sizeBytes());
+                sendJsonResponse(exchange, resp, res.success() ? 200 : 500);
+            } else if ("restore_database".equalsIgnoreCase(action) || "restore_database_ajax".equalsIgnoreCase(action)) {
+                String restoreDb = params.getOrDefault("target_db", targetDb);
+                String restoreFilePath = params.get("restore_file_path");
+                com.jettra.store.engine.operations.EngineOperationTask task = com.jettra.store.engine.operations.EngineOperationTask.restore(restoreDb, restoreFilePath)
+                        .build();
+                com.jettra.store.engine.operations.EngineOperationResult res = engineOperationService.execute(task);
+                JsonObject resp = new JsonObject();
+                resp.addProperty("status", res.success() ? "SUCCESS" : "FAILURE");
+                resp.addProperty("database", res.database());
+                resp.addProperty("message", res.message());
+                resp.addProperty("recordCount", res.recordCount());
+                sendJsonResponse(exchange, resp, res.success() ? 200 : 500);
+            } else if ("export_data".equalsIgnoreCase(action) || "export_data_ajax".equalsIgnoreCase(action)) {
+                String expDb = params.getOrDefault("target_db", targetDb);
+                String expEng = params.getOrDefault("engine_type", params.getOrDefault("engine", "ALL"));
+                String expColl = params.getOrDefault("target_coll", params.getOrDefault("coll", ""));
+                String format = params.getOrDefault("format", "json");
+                com.jettra.store.engine.operations.EngineOperationTask task = com.jettra.store.engine.operations.EngineOperationTask.export(expDb, format)
+                        .engineType(expEng)
+                        .collection(expColl)
+                        .build();
+                com.jettra.store.engine.operations.EngineOperationResult res = engineOperationService.execute(task);
+                JsonObject resp = new JsonObject();
+                resp.addProperty("status", res.success() ? "SUCCESS" : "FAILURE");
+                resp.addProperty("database", res.database());
+                resp.addProperty("message", res.message());
+                resp.addProperty("recordCount", res.recordCount());
+                resp.addProperty("fileName", res.outputFilePath());
+                resp.addProperty("format", format);
+                sendJsonResponse(exchange, resp, res.success() ? 200 : 500);
+            } else if ("insert_object".equalsIgnoreCase(action) || "insert_object_ajax".equalsIgnoreCase(action) || "insert_record".equalsIgnoreCase(action) || "insert_record_ajax".equalsIgnoreCase(action)) {
                 com.jettra.store.engine.insertion.MultiModelInsertionRequest req = com.jettra.store.engine.insertion.MultiModelInsertionRequest.fromMap(params);
                 com.jettra.store.engine.insertion.InsertionResult res = com.jettra.store.engine.insertion.EngineInsertionFactory.executeInsertAsync(engine, req.engine(), req.targetDb(), req.properties()).join();
                 if (res.success()) {
@@ -651,90 +705,19 @@ public class StoreEnginesPage extends StoreTemplatePage {
         String coll = params.getOrDefault("target_coll", params.getOrDefault("coll", "")).trim();
         String format = params.getOrDefault("format", "json").toLowerCase();
 
-        Map<String, String> recordsMap = new LinkedHashMap<>();
-        String[] prefixes;
-        if ("ALL".equalsIgnoreCase(eng) || eng.isBlank()) {
-            prefixes = new String[]{"rec:" + db + ":", "doc:" + db + ":", "vec:" + db + ":", "graph:" + db + ":", "ts:" + db + ":", "col:" + db + ":", "kv:" + db + ":", "geo:" + db + ":", "obj:" + db + ":", db + ":"};
-        } else {
-            String pfx = getPrefixForEngine(eng);
-            prefixes = new String[]{pfx + db + ":", db + ":"};
+        com.jettra.store.engine.operations.EngineOperationTask task = com.jettra.store.engine.operations.EngineOperationTask.export(db, format)
+                .engineType(eng)
+                .collection(coll)
+                .build();
+        com.jettra.store.engine.operations.EngineOperationResult res = engineOperationService.execute(task);
+        if (!res.success()) {
+            sendJsonError(exchange, res.message());
+            return;
         }
 
-        for (String p : prefixes) {
-            Map<String, byte[]> scanned = engine.getStorageCore().scanPrefix(p);
-            for (Map.Entry<String, byte[]> e : scanned.entrySet()) {
-                String k = e.getKey();
-                if (k.contains("@")) continue;
-                if (!coll.isBlank() && !k.contains(":" + coll + ":") && !k.contains(":" + coll)) continue;
-                recordsMap.put(k, new String(e.getValue(), StandardCharsets.UTF_8));
-            }
-        }
-
-        byte[] outputBytes;
-        String contentType;
-        String fileExt;
-
-        if ("csv".equalsIgnoreCase(format)) {
-            contentType = "text/csv; charset=UTF-8";
-            fileExt = "csv";
-            StringBuilder sb = new StringBuilder();
-            sb.append("Key,Database,Collection_Unit,ID,Payload\n");
-            for (Map.Entry<String, String> entry : recordsMap.entrySet()) {
-                String k = entry.getKey();
-                String val = entry.getValue().replace("\"", "\"\"");
-                String[] parts = k.split(":");
-                String unit = parts.length > 2 ? parts[2] : (parts.length > 1 ? parts[1] : "default");
-                String id = parts.length > 0 ? parts[parts.length - 1] : k;
-                sb.append("\"").append(k).append("\",")
-                  .append("\"").append(db).append("\",")
-                  .append("\"").append(unit).append("\",")
-                  .append("\"").append(id).append("\",")
-                  .append("\"").append(val).append("\"\n");
-            }
-            outputBytes = sb.toString().getBytes(StandardCharsets.UTF_8);
-        } else if ("excel".equalsIgnoreCase(format) || "xls".equalsIgnoreCase(format) || "xlsx".equalsIgnoreCase(format)) {
-            contentType = "application/vnd.ms-excel; charset=UTF-8";
-            fileExt = "xls";
-            StringBuilder sb = new StringBuilder();
-            sb.append("<html xmlns:o=\"urn:schemas-microsoft-com:office:office\" xmlns:x=\"urn:schemas-microsoft-com:office:excel\" xmlns=\"http://www.w3.org/TR/REC-html40\">");
-            sb.append("<head><meta charset=\"utf-8\"/><!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>Export</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]--></head>");
-            sb.append("<body><table border=\"1\" style=\"border-collapse:collapse; font-family:Arial,sans-serif; font-size:12px;\">");
-            sb.append("<tr style=\"background:#1e293b; color:#38bdf8; font-weight:bold; height:30px;\"><th>Storage Key</th><th>Database</th><th>Unit / Collection</th><th>Record ID</th><th>Payload JSON / Content</th></tr>");
-            for (Map.Entry<String, String> entry : recordsMap.entrySet()) {
-                String k = entry.getKey();
-                String val = entry.getValue();
-                String[] parts = k.split(":");
-                String unit = parts.length > 2 ? parts[2] : (parts.length > 1 ? parts[1] : "default");
-                String id = parts.length > 0 ? parts[parts.length - 1] : k;
-                sb.append("<tr>")
-                  .append("<td style=\"font-weight:bold; color:#0f172a;\">").append(k).append("</td>")
-                  .append("<td>").append(db).append("</td>")
-                  .append("<td>").append(unit).append("</td>")
-                  .append("<td style=\"font-family:monospace;\">").append(id).append("</td>")
-                  .append("<td style=\"font-family:monospace;\">").append(val.replace("<", "&lt;").replace(">", "&gt;")).append("</td>")
-                  .append("</tr>");
-            }
-            sb.append("</table></body></html>");
-            outputBytes = sb.toString().getBytes(StandardCharsets.UTF_8);
-        } else {
-            contentType = "application/json; charset=UTF-8";
-            fileExt = "json";
-            JsonObject root = new JsonObject();
-            root.addProperty("database", db);
-            root.addProperty("engine", eng);
-            root.addProperty("exportedAt", System.currentTimeMillis());
-            root.addProperty("totalRecords", recordsMap.size());
-            JsonObject dataObj = new JsonObject();
-            for (Map.Entry<String, String> entry : recordsMap.entrySet()) {
-                dataObj.addProperty(entry.getKey(), entry.getValue());
-            }
-            root.add("records", dataObj);
-            outputBytes = jsonParser.toJson(root).getBytes(StandardCharsets.UTF_8);
-        }
-
-        String filename = db + "_" + (coll.isBlank() ? "all" : coll) + "_" + System.currentTimeMillis() + "." + fileExt;
-        exchange.getResponseHeaders().set("Content-Type", contentType);
-        exchange.getResponseHeaders().set("Content-Disposition", "attachment; filename=\"" + filename + "\"");
+        byte[] outputBytes = res.outputData();
+        exchange.getResponseHeaders().set("Content-Type", res.contentType());
+        exchange.getResponseHeaders().set("Content-Disposition", "attachment; filename=\"" + res.outputFilePath() + "\"");
         exchange.sendResponseHeaders(200, outputBytes.length);
         try (OutputStream os = exchange.getResponseBody()) {
             os.write(outputBytes);
@@ -748,8 +731,6 @@ public class StoreEnginesPage extends StoreTemplatePage {
         String alertMessage = "";
         String alertType = "badge-active";
         String queryResultDisplay = "";
-        String targetDb = params != null && params.containsKey("target_db") ? params.get("target_db") : getDefaultDbForEngine(selectedEngine);
-
         // Security Authorization Check: verify user is assigned to targetDb
         String loggedUser = "root";
         String loggedRole = "ADMIN";
@@ -761,6 +742,9 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 if (r != null && !r.isBlank()) loggedRole = r;
             } catch (Exception ignored) {}
         }
+
+        // Resolve targetDb checking query params, FluxContext SESSION, and cookie persistence
+        String targetDb = resolveTargetDatabase(exchange, params, loggedUser);
 
         SecurityPrincipal principal = securityFilter.resolvePrincipal(exchange, loggedUser, loggedRole, "");
 
@@ -791,6 +775,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
             try {
                 String action = params != null ? params.get("action") : null;
                 String targetId = params != null ? params.get("target_id") : "";
+                String currentCollection = params != null ? params.getOrDefault("coll", "default") : "default";
 
                 if ("create_db".equalsIgnoreCase(action)) {
                     String newDb = params.get("new_db_name");
@@ -903,23 +888,25 @@ public class StoreEnginesPage extends StoreTemplatePage {
                         }
                     }
                 } else if ("create_index".equalsIgnoreCase(action)) {
-                    String indexName = params.get("index_name");
+                    String idxName = params.get("index_name");
                     String fieldName = params.get("index_field");
-                    String indexType = params.getOrDefault("index_type", "BTREE");
+                    if (fieldName == null || fieldName.isBlank()) fieldName = params.getOrDefault("field_name", "id");
+                    String idxType = params.getOrDefault("index_type", "BTREE");
                     String engType = params.getOrDefault("engine_type", selectedEngine);
                     if ("RECORD".equalsIgnoreCase(engType)) engType = "RECORDS";
-                    String coll = params.getOrDefault("target_coll", params.getOrDefault("coll", "default"));
-                    if (indexName != null && !indexName.isBlank()) {
-                        JsonObject idxJson = new JsonObject();
-                        idxJson.addProperty("name", indexName.trim());
-                        idxJson.addProperty("field", fieldName != null && !fieldName.isBlank() ? fieldName.trim() : "id");
-                        idxJson.addProperty("type", indexType);
-                        idxJson.addProperty("engineType", engType);
-                        idxJson.addProperty("collection", coll);
-                        idxJson.addProperty("createdAt", System.currentTimeMillis());
-                        engine.getStorageCore().put("idx:" + targetDb + ":" + indexName.trim(), idxJson.toString().getBytes(StandardCharsets.UTF_8), System.currentTimeMillis());
-                        alertMessage = "Index '" + indexName + "' (" + indexType + ") on field '" + fieldName + "' for engine '" + engType + "' / unit '" + coll + "' created for database '" + targetDb + "'!";
-                        alertType = "badge-active";
+                    String idxColl = params.getOrDefault("target_coll", params.getOrDefault("index_coll", params.getOrDefault("coll", currentCollection)));
+                    if (idxName != null && !idxName.isBlank()) {
+                        JsonObject idxMeta = new JsonObject();
+                        idxMeta.addProperty("name", idxName.trim());
+                        idxMeta.addProperty("field", fieldName.trim());
+                        idxMeta.addProperty("type", idxType);
+                        idxMeta.addProperty("engineType", engType);
+                        idxMeta.addProperty("collection", idxColl);
+                        idxMeta.addProperty("createdAt", System.currentTimeMillis());
+                        String idxKey = "idx:" + targetDb + ":" + idxName.trim();
+                        engine.getStorageCore().put(idxKey, idxMeta.toString().getBytes(StandardCharsets.UTF_8), System.currentTimeMillis());
+                        alertMessage = "Index '" + idxName + "' (" + idxType + " on " + fieldName + ") created in database '" + targetDb + "'!";
+                        alertType = "badge-engine";
                     }
                 } else if ("delete_index".equalsIgnoreCase(action)) {
                     String indexName = params.get("index_name");
@@ -928,22 +915,23 @@ public class StoreEnginesPage extends StoreTemplatePage {
                         alertMessage = "Index '" + indexName + "' deleted from database '" + targetDb + "'!";
                         alertType = "badge-raft";
                     }
-                } else if ("save_schema".equalsIgnoreCase(action)) {
+                } else if ("create_schema".equalsIgnoreCase(action)) {
                     String schemaName = params.get("schema_name");
                     String schemaJson = params.get("schema_json");
                     if (schemaName != null && !schemaName.isBlank()) {
-                        JsonObject sc = new JsonObject();
-                        sc.addProperty("name", schemaName.trim());
-                        sc.addProperty("schema", schemaJson != null ? schemaJson : "{}");
-                        sc.addProperty("createdAt", System.currentTimeMillis());
-                        engine.getStorageCore().put("schema:" + targetDb + ":" + schemaName.trim(), sc.toString().getBytes(StandardCharsets.UTF_8), System.currentTimeMillis());
-                        alertMessage = "Schema definition '" + schemaName + "' registered and active for '" + targetDb + "'!";
-                        alertType = "badge-active";
+                        JsonObject scMeta = parseJsonOrWrap(schemaJson != null && !schemaJson.isBlank() ? schemaJson : "{}");
+                        scMeta.addProperty("name", schemaName.trim());
+                        scMeta.addProperty("updatedAt", System.currentTimeMillis());
+                        String scKey = "schema:" + targetDb + ":" + schemaName.trim();
+                        engine.getStorageCore().put(scKey, scMeta.toString().getBytes(StandardCharsets.UTF_8), System.currentTimeMillis());
+                        alertMessage = "Schema definition '" + schemaName + "' updated in database '" + targetDb + "'!";
+                        alertType = "badge-engine";
                     }
                 } else if ("delete_schema".equalsIgnoreCase(action)) {
                     String schemaName = params.get("schema_name");
-                    if (schemaName != null) {
-                        engine.getStorageCore().delete("schema:" + targetDb + ":" + schemaName, System.currentTimeMillis());
+                    if (schemaName != null && !schemaName.isBlank()) {
+                        String scKey = "schema:" + targetDb + ":" + schemaName.trim();
+                        engine.getStorageCore().delete(scKey, System.currentTimeMillis());
                         alertMessage = "Schema '" + schemaName + "' deleted from database '" + targetDb + "'!";
                         alertType = "badge-raft";
                     }
@@ -961,17 +949,41 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     String backupDb = params.getOrDefault("target_db", targetDb);
                     String backupDir = params.get("backup_dir");
                     String backupFilename = params.get("backup_filename");
-                    var res = DatabaseBackupManager.createDatabaseBackup(engine, backupDb, backupDir, backupFilename);
+                    com.jettra.store.engine.operations.EngineOperationTask task = com.jettra.store.engine.operations.EngineOperationTask.backup(backupDb)
+                            .destinationDirectory(backupDir)
+                            .fileName(backupFilename)
+                            .requestedBy(loggedUser)
+                            .build();
+                    com.jettra.store.engine.operations.EngineOperationResult res = engineOperationService.execute(task);
                     alertMessage = res.message();
                     alertType = res.success() ? "badge-active" : "badge-raft";
                     targetDb = backupDb;
                 } else if ("restore_database".equalsIgnoreCase(action)) {
                     String restoreDb = params.getOrDefault("target_db", targetDb);
                     String restoreFilePath = params.get("restore_file_path");
-                    var res = DatabaseBackupManager.restoreDatabaseBackup(engine, restoreDb, restoreFilePath);
+                    com.jettra.store.engine.operations.EngineOperationTask task = com.jettra.store.engine.operations.EngineOperationTask.restore(restoreDb)
+                            .filePath(restoreFilePath)
+                            .requestedBy(loggedUser)
+                            .build();
+                    com.jettra.store.engine.operations.EngineOperationResult res = engineOperationService.execute(task);
                     alertMessage = res.message();
                     alertType = res.success() ? "badge-active" : "badge-raft";
                     targetDb = restoreDb;
+                } else if ("export_data".equalsIgnoreCase(action)) {
+                    String exportDb = params.getOrDefault("target_db", targetDb);
+                    String exportEng = params.getOrDefault("engine_type", selectedEngine);
+                    String exportColl = params.getOrDefault("collection", params.getOrDefault("coll", "default"));
+                    String format = params.getOrDefault("export_format", "JSON");
+                    com.jettra.store.engine.operations.EngineOperationTask task = com.jettra.store.engine.operations.EngineOperationTask.export(exportDb)
+                            .engineType(exportEng)
+                            .collection(exportColl)
+                            .format(format)
+                            .requestedBy(loggedUser)
+                            .build();
+                    com.jettra.store.engine.operations.EngineOperationResult res = engineOperationService.execute(task);
+                    alertMessage = res.message();
+                    alertType = res.success() ? "badge-active" : "badge-raft";
+                    targetDb = exportDb;
                 } else if ("advanced_search".equalsIgnoreCase(action)) {
                     String searchMode = params.getOrDefault("search_mode", "UNIVERSAL");
                     String searchEng = params.getOrDefault("search_engine", selectedEngine);
@@ -2135,8 +2147,10 @@ public class StoreEnginesPage extends StoreTemplatePage {
                         .modifier(new Modifier().attribute("type", "button").attribute("onclick", "location.href='" + actionUrl + selectedEngine + "&target_db=" + escapeJs(targetDb) + "&coll=" + escapeJs(currentColl) + "&view_mode=table'").cssClass(isTableView ? "btn-action btn-primary" : "btn-action btn-secondary").style("padding:3px 8px; font-size:9.5px; margin-right:4px;")),
                        Button.of(Icon.of("fas fa-plus-circle"), Text.of(" Insertar Registro"))
                         .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openEngineInsertModal('" + selectedEngine + "', '" + escapeJs(currentColl) + "', '" + escapeJs(targetDb) + "')").cssClass("btn-action btn-primary").style("padding:3px 10px; font-size:9.5px; margin-left:12px; margin-right:4px; font-weight:700; background:linear-gradient(135deg, #38bdf8 0%, #0284c7 100%); color:#0f172a; border:none; box-shadow:0 1px 4px rgba(56,189,248,0.3);")),
-                    FluxTree.expandAllButton("storage-hierarchy-tree", "Expand All", "fas fa-expand-alt"),
-                    FluxTree.collapseToRootButton("storage-hierarchy-tree", "Collapse All", "fas fa-compress-alt")
+                    Button.of(Icon.of("fas fa-expand-alt"), Text.of(" Expand All"))
+                        .modifier(new Modifier().attribute("type", "button").attribute("title", "Expand All Nodes and Rows").attribute("onclick", "expandAllExplorerView()").cssClass("btn-action btn-secondary").style("padding:3px 8px; font-size:9.5px; margin-left:4px;")),
+                    Button.of(Icon.of("fas fa-compress-alt"), Text.of(" Collapse All"))
+                        .modifier(new Modifier().attribute("type", "button").attribute("title", "Collapse All Nodes and Rows").attribute("onclick", "collapseAllExplorerView()").cssClass("btn-action btn-secondary").style("padding:3px 8px; font-size:9.5px; margin-left:4px;"))
                 ).modifier(new Modifier().style("display:flex; align-items:center;"))
             ).modifier(new Modifier().style("display:flex; align-items:center; flex-wrap:wrap; gap:4px;"))
         ).modifier(new Modifier().style("justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:6px;"));
@@ -3748,7 +3762,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
         return createModalOverlay("createSchemaModal", "560px", "rgba(56,189,248,0.4)", header, form);
     }
 
-    private Widget buildModalsScript() {
+    public Widget buildModalsScript() {
         String js1 = """
   function showModal(id) {
     if (!id) return;
@@ -5035,18 +5049,67 @@ public class StoreEnginesPage extends StoreTemplatePage {
     }
   }
 
-  function expandAllTreeNodes() {
+  function expandAllExplorerView() {
+    // 1. Expand Tree View hierarchy via FluxTree composite API
     if (window.FluxTree && typeof window.FluxTree.expandAll === 'function') {
       window.FluxTree.expandAll('storage-hierarchy-tree');
     }
+    // Expand custom tree sub-nodes and units
+    var treeContainers = document.querySelectorAll('.tree-node-content, .db-subtree-container, [id^="children_"], [id^="db_content_"], [id^="unit_content_"]');
+    for (var i = 0; i < treeContainers.length; i++) {
+      treeContainers[i].style.display = 'block';
+      treeContainers[i].setAttribute('aria-expanded', 'true');
+    }
+    var treeIcons = document.querySelectorAll('.tree-toggle-icon');
+    for (var j = 0; j < treeIcons.length; j++) {
+      if (treeIcons[j].classList.contains('fa-chevron-right')) {
+        treeIcons[j].classList.remove('fa-chevron-right');
+        treeIcons[j].classList.add('fa-chevron-down');
+      } else if (treeIcons[j].classList.contains('fa-caret-right')) {
+        treeIcons[j].classList.remove('fa-caret-right');
+        treeIcons[j].classList.add('fa-caret-down');
+      }
+    }
+    // 2. Expand Table View composite rows
+    if (typeof expandAllTableRows === 'function') {
+      expandAllTableRows();
+    }
   }
 
-  function collapseAllTreeNodes() {
+  function collapseAllExplorerView() {
+    // 1. Collapse Tree View hierarchy via FluxTree composite API
     if (window.FluxTree && typeof window.FluxTree.collapseToRoot === 'function') {
       window.FluxTree.collapseToRoot('storage-hierarchy-tree');
     } else if (window.FluxTree && typeof window.FluxTree.collapseAll === 'function') {
       window.FluxTree.collapseAll('storage-hierarchy-tree');
     }
+    var treeContainers = document.querySelectorAll('[id^="children_"], [id^="unit_content_"]');
+    for (var i = 0; i < treeContainers.length; i++) {
+      treeContainers[i].style.display = 'none';
+      treeContainers[i].setAttribute('aria-expanded', 'false');
+    }
+    var treeIcons = document.querySelectorAll('.tree-toggle-icon');
+    for (var j = 0; j < treeIcons.length; j++) {
+      if (treeIcons[j].classList.contains('fa-chevron-down')) {
+        treeIcons[j].classList.remove('fa-chevron-down');
+        treeIcons[j].classList.add('fa-chevron-right');
+      } else if (treeIcons[j].classList.contains('fa-caret-down')) {
+        treeIcons[j].classList.remove('fa-caret-down');
+        treeIcons[j].classList.add('fa-caret-right');
+      }
+    }
+    // 2. Collapse Table View composite rows
+    if (typeof collapseAllTableRows === 'function') {
+      collapseAllTableRows();
+    }
+  }
+
+  function expandAllTreeNodes() {
+    expandAllExplorerView();
+  }
+
+  function collapseAllTreeNodes() {
+    collapseAllExplorerView();
   }
 """;
 
@@ -5962,6 +6025,23 @@ public class StoreEnginesPage extends StoreTemplatePage {
     }
     if (typeof treeStateManager !== 'undefined' && treeStateManager.restoreState) {
       treeStateManager.restoreState();
+    }
+    try {
+      var urlParams = new URLSearchParams(window.location.search);
+      var tab = urlParams.get('tab');
+      var modal = urlParams.get('modal');
+      var targetDb = urlParams.get('target_db') || (typeof getSelectedTopDatabase === 'function' ? getSelectedTopDatabase() : '');
+      if (tab === 'backup' || modal === 'backup' || modal === 'backupDbModal') {
+        openBackupDbModal(targetDb);
+      } else if (tab === 'restore' || modal === 'restore' || modal === 'restoreDbModal') {
+        openRestoreDbModal(targetDb);
+      } else if (tab === 'export' || modal === 'export' || modal === 'exportDataModal') {
+        var engine = urlParams.get('engine') || 'DOCUMENT';
+        var coll = urlParams.get('coll') || '';
+        openExportDataModal(engine, targetDb, coll);
+      }
+    } catch (e) {
+      console.warn('Modal URL opener error:', e);
     }
   });
 """;
