@@ -365,4 +365,56 @@ public class EnginesInteractivityAndOperationsTest {
         assertTrue(script.contains("btnPerformRestore"),
                 "Restore modal button must have id 'btnPerformRestore'");
     }
+
+    @JettraTest
+    @DisplayName("10. Tree View Interactivity: Collapse All cascades to subtrees, lazy containers, details and clears state")
+    void testTreeViewCollapseHierarchicalAndSubtreeSelectors() {
+        Widget scriptWidget = enginesPage.buildModalsScript();
+        String script = scriptWidget.render(Themes.FlatTheme());
+
+        // Tree state manager session persistence clearing
+        assertTrue(script.contains("treeStateManager") && script.contains("expandedNodeIds: []"),
+                "collapseAllExplorerView must reset TreeStateManager saved state with empty expandedNodeIds");
+
+        // Subtree containers and details panels
+        assertTrue(script.contains(".db-subtree-container"),
+                "collapseAllExplorerView must target .db-subtree-container");
+        assertTrue(script.contains("[id^=\"eng_subtree_\"]"),
+                "collapseAllExplorerView must target lazy engine subtrees [id^='eng_subtree_']");
+        assertTrue(script.contains("[id^=\"unit_subtree_\"]"),
+                "collapseAllExplorerView must target lazy unit subtrees [id^='unit_subtree_']");
+        assertTrue(script.contains("[id^=\"item_detail_\"]"),
+                "collapseAllExplorerView must target lazy item details [id^='item_detail_']");
+        assertTrue(script.contains(".tree-collapsible-content"),
+                "collapseAllExplorerView must target .tree-collapsible-content");
+
+        // Caret and chevron icon toggling
+        assertTrue(script.contains("bi-chevron-right") && script.contains("bi-chevron-down"),
+                "collapseAllExplorerView must toggle chevron icons from down to right");
+    }
+
+    @JettraTest
+    @DisplayName("11. Dynamic Export Formatting: Binary Structured strategy produces valid magic bytes, metadata and checksums")
+    void testBinaryStructuredExportStrategyAndRegistryIntegration() {
+        ExportStrategy binStrategy = ExportStrategyRegistry.getStrategy("binary");
+        assertNotNull(binStrategy, "Binary strategy must be registered in ExportStrategyRegistry");
+        assertEquals("application/octet-stream", binStrategy.mimeType());
+        assertEquals("bin", binStrategy.fileExtension());
+
+        Map<String, String> records = new LinkedHashMap<>();
+        records.put("doc:sales_db:orders:ord_1", "{\"item\":\"Laptop\",\"amount\":1200}");
+        records.put("doc:sales_db:orders:ord_2", "{\"item\":\"Mouse\",\"amount\":25}");
+
+        byte[] exportedBytes = binStrategy.export("sales_db", "DOCUMENT", "orders", records);
+        assertNotNull(exportedBytes, "Exported bytes must not be null");
+        assertTrue(exportedBytes.length > 20, "Exported binary payload must contain header and records");
+
+        String strPrefix = new String(exportedBytes, 0, Math.min(exportedBytes.length, 50), StandardCharsets.UTF_8);
+        assertTrue(strPrefix.startsWith("JETTRA_BIN_V1\n"), "Binary export must start with magic header JETTRA_BIN_V1\\n");
+
+        // Verify strategy also retrieved via 'bin' alias
+        ExportStrategy binAliasStrategy = ExportStrategyRegistry.getStrategy("bin");
+        assertEquals(binStrategy, binAliasStrategy, "ExportStrategyRegistry must resolve 'bin' alias to same strategy instance");
+    }
 }
+

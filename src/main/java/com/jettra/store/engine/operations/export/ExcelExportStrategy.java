@@ -44,7 +44,7 @@ public final class ExcelExportStrategy implements ExportStrategy {
                 String id = k;
                 if (parts.length >= 4) {
                     unit = parts[2];
-                    id = parts[3];
+                    id = k.substring(parts[0].length() + parts[1].length() + parts[2].length() + 3);
                 } else if (parts.length == 3) {
                     unit = "default";
                     id = parts[2];

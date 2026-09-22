@@ -141,7 +141,7 @@ public class EngineOperationService {
 
     private EngineOperationResult executeExport(EngineOperationTask task, long start) {
         try {
-            String db = task.database();
+            String db = resolveDatabaseName(task.database());
             String eng = task.engineType();
             String coll = task.collection() != null ? task.collection().trim() : "";
             String format = task.exportFormat();
@@ -156,7 +156,11 @@ public class EngineOperationService {
                 };
             } else {
                 String pfx = resolveEnginePrefix(eng);
-                prefixes = new String[]{pfx + db + ":"};
+                if ("DOCUMENT".equalsIgnoreCase(eng)) {
+                    prefixes = new String[]{pfx + db + ":", db + ":"};
+                } else {
+                    prefixes = new String[]{pfx + db + ":"};
+                }
             }
 
             for (String p : prefixes) {
@@ -164,6 +168,17 @@ public class EngineOperationService {
                 for (Map.Entry<String, byte[]> e : scanned.entrySet()) {
                     String k = e.getKey();
                     if (k.contains("@") || k.contains(":v_") || k.endsWith(":init_01")) continue;
+                    if (k.startsWith("meta:") || k.startsWith("schema:") || k.startsWith("rule:") || k.startsWith("idx:")) continue;
+
+                    // If scanning un-prefixed db + ":", ensure key does not belong to another engine
+                    if (p.equals(db + ":")) {
+                        if (k.startsWith("rec:") || k.startsWith("doc:") || k.startsWith("vec:")
+                                || k.startsWith("graph:") || k.startsWith("ts:") || k.startsWith("col:")
+                                || k.startsWith("kv:") || k.startsWith("geo:") || k.startsWith("obj:")) {
+                            continue;
+                        }
+                    }
+
                     byte[] rawVal = e.getValue();
                     if (rawVal == null || rawVal.length == 0) continue;
                     String valStr = new String(rawVal, StandardCharsets.UTF_8);
@@ -171,11 +186,15 @@ public class EngineOperationService {
 
                     // Filter by collection/unit if specified
                     if (!coll.isBlank() && !coll.equalsIgnoreCase("default") && !coll.equalsIgnoreCase("ALL")) {
-                        if (!k.contains(":" + coll + ":") && !k.endsWith(":" + coll)) {
+                        String remainder = k.startsWith(p) ? k.substring(p.length()) : k;
+                        String[] parts = remainder.split(":", 2);
+                        boolean matchesUnit = (parts.length > 1 && parts[0].equalsIgnoreCase(coll))
+                                || k.contains(":" + coll + ":") || k.endsWith(":" + coll);
+                        if (!matchesUnit) {
                             continue;
                         }
                     } else if ("default".equalsIgnoreCase(coll)) {
-                        String remainder = k.substring(p.length());
+                        String remainder = k.startsWith(p) ? k.substring(p.length()) : k;
                         String[] parts = remainder.split(":", 2);
                         if (parts.length > 1 && !parts[0].equalsIgnoreCase("default")) {
                             continue;
@@ -225,5 +244,27 @@ public class EngineOperationService {
             case "OBJECT" -> "obj:";
             default -> "doc:";
         };
+    }
+
+    private String resolveDatabaseName(String dbName) {
+        if (dbName == null || dbName.isBlank()) return "system_db";
+        Map<String, byte[]> all = engine.getStorageCore().scanPrefix("");
+        for (String k : all.keySet()) {
+            if (k.startsWith("meta:") || k.startsWith("schema:") || k.startsWith("rule:") || k.startsWith("idx:")) {
+                String[] p = k.split(":");
+                if (p.length > 1 && p[1].equalsIgnoreCase(dbName)) {
+                    return p[1];
+                }
+            } else {
+                String[] p = k.split(":");
+                if (p.length > 1 && p[1].equalsIgnoreCase(dbName)) {
+                    return p[1];
+                }
+                if (p.length > 0 && p[0].equalsIgnoreCase(dbName)) {
+                    return p[0];
+                }
+            }
+        }
+        return dbName;
     }
 }

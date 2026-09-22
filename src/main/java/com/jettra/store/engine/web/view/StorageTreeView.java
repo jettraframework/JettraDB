@@ -331,12 +331,8 @@ public final class StorageTreeView {
             "<script>\n" +
             "  window.lastActionUrl = '" + escapeJs(actionUrl) + "';\n" +
             "  window.lastSelectedEngine = '" + escapeJs(selectedEngine) + "';\n" +
-            "  if (!window.expandAllTreeNodes && window.FluxTree) {\n" +
-            "    window.expandAllTreeNodes = function() { window.FluxTree.expandAll('storage-hierarchy-tree'); };\n" +
-            "  }\n" +
-            "  if (!window.collapseAllTreeNodes && window.FluxTree) {\n" +
-            "    window.collapseAllTreeNodes = function() { window.FluxTree.collapseAll('storage-hierarchy-tree', false); };\n" +
-            "  }\n" +
+            "  window.expandAllTreeNodes = function() { if (typeof expandAllExplorerView === 'function') { expandAllExplorerView(); } else if (window.FluxTree) { window.FluxTree.expandAll('storage-hierarchy-tree'); } };\n" +
+            "  window.collapseAllTreeNodes = function() { if (typeof collapseAllExplorerView === 'function') { collapseAllExplorerView(); } else if (window.FluxTree) { window.FluxTree.collapseAll('storage-hierarchy-tree', false); } };\n" +
             "</script>\n"
         );
 

@@ -16,6 +16,7 @@ public final class ExportStrategyRegistry {
         register(new JsonExportStrategy());
         register(new CsvExportStrategy());
         register(new ExcelExportStrategy());
+        register(new BinaryStructuredExportStrategy());
     }
 
     private ExportStrategyRegistry() {}
@@ -27,6 +28,8 @@ public final class ExportStrategyRegistry {
             if ("excel".equalsIgnoreCase(fmt)) {
                 STRATEGIES.put("xls", strategy);
                 STRATEGIES.put("xlsx", strategy);
+            } else if ("binary".equalsIgnoreCase(fmt)) {
+                STRATEGIES.put("bin", strategy);
             }
         }
     }

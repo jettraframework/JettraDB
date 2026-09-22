@@ -3246,7 +3246,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 createTextInput("target_coll", "Leave blank for all units", currentColl.equals("default") ? "" : currentColl, "#f8fafc").id("exportCollInput")
             ).modifier(new Modifier().style("margin-bottom:16px;")),
             exportActions
-        ).method("GET").action(JettraServer.resolvePath("/engines"));
+        ).method("GET").action(JettraServer.resolvePath("/engines")).modifier(new Modifier().attribute("onsubmit", "downloadExportFile(); return false;"));
 
         return createModalOverlay("exportDataModal", "560px", "rgba(245,158,11,0.4)", header, form);
     }
@@ -4186,17 +4186,32 @@ public class StoreEnginesPage extends StoreTemplatePage {
     var engSelect = document.getElementById('exportEngineSelect');
     var collInput = document.getElementById('exportCollInput');
     var fmt = fmtSelect ? fmtSelect.value : 'json';
-    var db = dbSelect ? dbSelect.value : 'database';
+    var db = (dbSelect && dbSelect.value) ? dbSelect.value : (typeof getSelectedTopDatabase === 'function' ? getSelectedTopDatabase() : 'system_db');
     var eng = engSelect ? engSelect.value : 'ALL';
-    var coll = collInput ? collInput.value : '';
+    var coll = collInput ? collInput.value.trim() : '';
     var base = window.location.pathname || '/engines';
     if (base.indexOf('?') >= 0) base = base.split('?')[0];
     var dlUrl = base + '?action=export_data&format=' + encodeURIComponent(fmt) +
       '&target_db=' + encodeURIComponent(db) +
       '&engine_type=' + encodeURIComponent(eng) +
       '&target_coll=' + encodeURIComponent(coll);
-    window.location.href = dlUrl;
+
+    // Dynamic download via simulated link click
+    var downloadLink = document.createElement('a');
+    downloadLink.href = dlUrl;
+    var ext = (fmt === 'excel') ? 'xls' : ((fmt === 'binary') ? 'bin' : fmt);
+    downloadLink.download = db + (coll ? '_' + coll : '') + '_export.' + ext;
+    downloadLink.style.display = 'none';
+    document.body.appendChild(downloadLink);
+    downloadLink.click();
+    setTimeout(function() {
+      if (downloadLink.parentNode) downloadLink.parentNode.removeChild(downloadLink);
+    }, 1000);
+
     hideModal('exportDataModal');
+    if (typeof showTreeToast === 'function') {
+      showTreeToast('Exportación iniciada para base de datos [' + db + '] en formato ' + fmt.toUpperCase() + '.', 'info');
+    }
   }
   window.downloadExportFile = downloadExportFile;
 
@@ -5373,8 +5388,20 @@ public class StoreEnginesPage extends StoreTemplatePage {
     // 3. Update all chevron icons
     var treeIcons = document.querySelectorAll('.tree-toggle-icon, .flux-tree-toggle-icon, [id^="icon_"]');
     for (var j = 0; j < treeIcons.length; j++) {
-      treeIcons[j].classList.remove('fa-chevron-right', 'fa-caret-right');
-      treeIcons[j].classList.add('fa-chevron-down');
+      treeIcons[j].classList.remove('fa-chevron-right', 'fa-caret-right', 'bi-chevron-right', 'bi-caret-right');
+      if (treeIcons[j].className.indexOf('caret') >= 0) {
+        if (treeIcons[j].className.indexOf('bi-') >= 0) {
+          treeIcons[j].classList.add('bi-caret-down');
+        } else {
+          treeIcons[j].classList.add('fa-caret-down');
+        }
+      } else {
+        if (treeIcons[j].className.indexOf('bi-') >= 0) {
+          treeIcons[j].classList.add('bi-chevron-down');
+        } else {
+          treeIcons[j].classList.add('fa-chevron-down');
+        }
+      }
     }
     // 4. Update all toggle buttons
     var treeBtns = document.querySelectorAll('.flux-tree-toggle-btn, .flux-tree-details-toggle, [id^="btn_toggle_"]');
@@ -5395,7 +5422,16 @@ public class StoreEnginesPage extends StoreTemplatePage {
   }
 
   function collapseAllExplorerView() {
-    // 1. Collapse Tree View hierarchy via FluxTree composite API
+    // 1. Synchronize reactive tree state manager in sessionStorage
+    if (typeof treeStateManager !== 'undefined' && treeStateManager.getState) {
+      try {
+        var st = treeStateManager.getState();
+        st.expandedNodeIds = [];
+        treeStateManager.saveState(st);
+      } catch (err) {}
+    }
+
+    // 2. Collapse Tree View hierarchy via FluxTree composite API
     if (window.FluxTree && typeof window.FluxTree.collapseAll === 'function') {
       var allTrees = document.querySelectorAll('.jettra-flux-tree');
       if (allTrees && allTrees.length > 0) {
@@ -5406,32 +5442,49 @@ public class StoreEnginesPage extends StoreTemplatePage {
         window.FluxTree.collapseAll('storage-hierarchy-tree', false);
       }
     }
-    // 2. Collapse all database subtrees, groups and details
-    var treeContainers = document.querySelectorAll('.flux-tree-group, .flux-tree-details-panel, [id^="children_"], [id^="unit_content_"]');
+
+    // 3. Collapse all database subtrees, containers, groups and details
+    var treeContainers = document.querySelectorAll('.tree-collapsible-content, .db-subtree-container, .flux-tree-group, .flux-tree-details-panel, [id^="children_"], [id^="unit_content_"], [id^="eng_subtree_"], [id^="unit_subtree_"], [id^="item_detail_"], [id^="db_content_"]');
     for (var i = 0; i < treeContainers.length; i++) {
       treeContainers[i].style.display = 'none';
       treeContainers[i].setAttribute('aria-expanded', 'false');
       if (treeContainers[i].hasAttribute('data-state')) treeContainers[i].setAttribute('data-state', 'collapsed');
     }
-    // 3. Reset all chevron icons
+
+    // 4. Reset all chevron and caret icons
     var treeIcons = document.querySelectorAll('.tree-toggle-icon, .flux-tree-toggle-icon, [id^="icon_"]');
     for (var j = 0; j < treeIcons.length; j++) {
-      treeIcons[j].classList.remove('fa-chevron-down', 'fa-caret-down');
-      treeIcons[j].classList.add('fa-chevron-right');
+      treeIcons[j].classList.remove('fa-chevron-down', 'fa-caret-down', 'bi-chevron-down', 'bi-caret-down');
+      if (treeIcons[j].className.indexOf('caret') >= 0) {
+        if (treeIcons[j].className.indexOf('bi-') >= 0) {
+          treeIcons[j].classList.add('bi-caret-right');
+        } else {
+          treeIcons[j].classList.add('fa-caret-right');
+        }
+      } else {
+        if (treeIcons[j].className.indexOf('bi-') >= 0) {
+          treeIcons[j].classList.add('bi-chevron-right');
+        } else {
+          treeIcons[j].classList.add('fa-chevron-right');
+        }
+      }
     }
-    // 4. Reset toggle buttons
+
+    // 5. Reset toggle buttons
     var treeBtns = document.querySelectorAll('.flux-tree-toggle-btn, .flux-tree-details-toggle, [id^="btn_toggle_"]');
     for (var b = 0; b < treeBtns.length; b++) {
       treeBtns[b].setAttribute('aria-expanded', 'false');
       treeBtns[b].setAttribute('data-state', 'collapsed');
     }
-    // 5. Reset tree nodes
-    var treeNodes = document.querySelectorAll('.flux-tree-node, [role="treeitem"]');
+
+    // 6. Reset tree nodes and headers
+    var treeNodes = document.querySelectorAll('.flux-tree-node, [role="treeitem"], [id^="db_header_"]');
     for (var n = 0; n < treeNodes.length; n++) {
       treeNodes[n].setAttribute('aria-expanded', 'false');
       treeNodes[n].setAttribute('data-state', 'collapsed');
     }
-    // 6. Collapse Table View composite rows
+
+    // 7. Collapse Table View composite rows
     if (typeof collapseAllTableRows === 'function') {
       collapseAllTableRows();
     }
