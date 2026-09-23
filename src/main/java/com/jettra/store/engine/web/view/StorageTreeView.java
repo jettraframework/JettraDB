@@ -11,6 +11,7 @@ import io.jettra.flux.widgets.FluxTree;
 import io.jettra.flux.widgets.FluxTreeNode;
 import io.jettra.flux.widgets.JettraTreeNode;
 import io.jettra.flux.widgets.JettraCollapsible;
+import io.jettra.flux.widgets.tree.TreePaginationControl;
 import io.jettra.flux.widgets.Icon;
 import io.jettra.flux.widgets.RawHtml;
 import io.jettra.flux.widgets.Span;
@@ -161,21 +162,43 @@ public final class StorageTreeView {
                                  .style("background:none; border:none; color:" + engColor + "; font-size:9.5px; cursor:pointer; padding:1px 4px;"))
                      );
 
-                    int maxTreeItems = 50;
-                    int renderedCount = 0;
-                    for (String itemId : items) {
-                        if (renderedCount++ >= maxTreeItems) {
-                            int remaining = items.size() - maxTreeItems;
-                            FluxTreeNode<StorageHierarchyNodeData> moreNode = JettraTreeNode.of(
-                                "node_more_" + engName + "_" + uName,
-                                "... and " + String.format("%,d", remaining) + " more items (view all in Table View)",
-                                StorageHierarchyNodeData.forUnit(engName, targetDb, uName, remaining)
-                            ).icon("fas fa-ellipsis-h")
-                             .iconColor("var(--j-text-muted)")
-                             .badge(String.valueOf(remaining), "store-badge badge-raft");
-                            unitNode.child(moreNode);
-                            break;
-                        }
+                    // Use TreePaginationQuery (Builder Pattern) to slice items dynamically
+                    TreePaginationQuery paginationQuery = TreePaginationQuery.builder()
+                        .fromParams(params, engName, uName)
+                        .database(targetDb)
+                        .build();
+
+                    List<String> pageItems = paginationQuery.slice(items);
+                    int totalPages = paginationQuery.calculateTotalPages(items.size());
+                    int currentPage = Math.min(paginationQuery.getPage(), totalPages);
+
+                    String navBaseUrl = (actionUrl != null && !actionUrl.isEmpty())
+                        ? actionUrl
+                        : "/engines?engine=" + engName + "&database=" + targetDb;
+
+                    // If unit contains more items than page size, render interactive TreePaginationControl at the top
+                    if (items.size() > paginationQuery.getPageSize()) {
+                        TreePaginationControl topPaginator = TreePaginationControl.of(
+                            uName,
+                            currentPage,
+                            paginationQuery.getPageSize(),
+                            items.size()
+                        ).baseUrl(navBaseUrl);
+
+                        FluxTreeNode<StorageHierarchyNodeData> topPagiNode = JettraTreeNode.<StorageHierarchyNodeData>of(
+                            "node_pagi_top_" + engName + "_" + uName,
+                            "Paginación: Pág. " + currentPage + " de " + totalPages + " (" + items.size() + " " + pluralUnit + ")",
+                            null
+                        ).icon("fas fa-sliders-h")
+                         .iconColor("var(--j-primary, #38bdf8)")
+                         .badge("Pág. " + currentPage + "/" + totalPages, "store-badge badge-active")
+                         .withDetails(topPaginator)
+                         .detailsExpanded(true);
+
+                        unitNode.child(topPagiNode);
+                    }
+
+                    for (String itemId : pageItems) {
                         int vCount = 1;
                         String payload = "{}";
                         String versionsJson = "[]";
@@ -238,6 +261,28 @@ public final class StorageTreeView {
                          .withDetails(buildItemDetailPanel(engName, engColor, targetDb, uName, itemId, vCount, payload, pB64, vB64));
 
                         unitNode.child(itemNode);
+                    }
+
+                    // If multiple pages exist, add bottom pagination node for convenient navigation
+                    if (totalPages > 1) {
+                        TreePaginationControl bottomPaginator = TreePaginationControl.of(
+                            uName,
+                            currentPage,
+                            paginationQuery.getPageSize(),
+                            items.size()
+                        ).baseUrl(navBaseUrl);
+
+                        FluxTreeNode<StorageHierarchyNodeData> bottomPagiNode = JettraTreeNode.<StorageHierarchyNodeData>of(
+                            "node_pagi_bot_" + engName + "_" + uName,
+                            "Navegación: " + (currentPage < totalPages ? "Ir a pág. " + (currentPage + 1) + " ->" : "Primera pág. <-"),
+                            null
+                        ).icon("fas fa-angle-double-right")
+                         .iconColor("var(--j-primary, #38bdf8)")
+                         .badge("Pág. " + currentPage + "/" + totalPages, "store-badge badge-active")
+                         .withDetails(bottomPaginator)
+                         .detailsExpanded(true);
+
+                        unitNode.child(bottomPagiNode);
                     }
                     engNode.child(unitNode);
                 }

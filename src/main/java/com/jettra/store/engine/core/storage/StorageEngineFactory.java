@@ -1,10 +1,12 @@
 package com.jettra.store.engine.core.storage;
 
+import com.jettra.store.engine.core.storage.compression.RecordCompressionStrategy;
+
 import java.util.Objects;
 
 /**
- * Factory class (Factory Pattern) providing decoupled instantiation of storage repositories
- * and serialization strategies for the JettraDB engine.
+ * Factory class (Factory Pattern) providing decoupled instantiation of storage repositories,
+ * compression algorithms, and serialization strategies for the JettraDB engine.
  */
 public final class StorageEngineFactory {
 
@@ -17,6 +19,13 @@ public final class StorageEngineFactory {
      */
     public static void setDefaultStrategy(RecordSerializationStrategy strategy) {
         defaultStrategy = Objects.requireNonNull(strategy, "Strategy must not be null");
+    }
+
+    /**
+     * Configures the global default serialization strategy with the specified compression strategy.
+     */
+    public static void setDefaultCompressionStrategy(RecordCompressionStrategy compressionStrategy) {
+        defaultStrategy = new JettraEESerializationStrategy(compressionStrategy);
     }
 
     /**
@@ -39,5 +48,12 @@ public final class StorageEngineFactory {
      */
     public static StorageRecordRepository createRepository(RecordSerializationStrategy strategy) {
         return new FileSystemStorageRecordRepository(strategy != null ? strategy : defaultStrategy);
+    }
+
+    /**
+     * Creates a new {@link StorageRecordRepository} configured with a specified compression strategy.
+     */
+    public static StorageRecordRepository createRepository(RecordCompressionStrategy compressionStrategy) {
+        return new FileSystemStorageRecordRepository(new JettraEESerializationStrategy(compressionStrategy));
     }
 }
