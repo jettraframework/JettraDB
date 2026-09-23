@@ -204,14 +204,14 @@ public final class EngineRecordInspectDialog {
         <script>
         function switchInspectEngine(engineKey) {
             var raw = (engineKey || 'DOCUMENT').toUpperCase();
-            var eng = (raw === 'RECORD') ? 'RECORDS' : raw;
+            var eng = (raw === 'RECORD' || raw.indexOf('RECORD') !== -1 || raw === 'REC') ? 'RECORDS' : raw;
 
             // Show ONLY the active engine pill, hide all others
             document.querySelectorAll('[id^="inspect_engine_tab_btn_"]').forEach(function(pill) {
                 var pillEng = pill.getAttribute('data-engine');
                 var color = pill.getAttribute('data-color') || '#38bdf8';
                 var label = pill.querySelector('span');
-                var isSelected = (pillEng === eng || (pillEng === 'RECORDS' && raw === 'RECORD'));
+                var isSelected = (pillEng === eng || (pillEng === 'RECORDS' && (raw === 'RECORD' || raw.indexOf('RECORD') !== -1)));
                 if (isSelected) {
                     pill.style.display = 'inline-flex';
                     pill.style.border = '2px solid ' + color;
@@ -233,7 +233,7 @@ public final class EngineRecordInspectDialog {
             if (!container) return;
             var p = parsed || {};
             var raw = (engine || 'DOCUMENT').toUpperCase();
-            var eng = (raw === 'RECORD') ? 'RECORDS' : raw;
+            var eng = (raw === 'RECORD' || raw.indexOf('RECORD') !== -1 || raw === 'REC') ? 'RECORDS' : raw;
 
             var html = '';
             switch(eng) {

@@ -590,6 +590,22 @@ public final class EngineRecordEditDialog {
             if (direct) direct.value = str;
         }
 
+        function normalizeEditEngine(engineKey) {
+            if (!engineKey) return 'DOCUMENT';
+            var raw = String(engineKey).trim().toUpperCase();
+            if (raw === 'RECORD' || raw.indexOf('RECORD') !== -1 || raw === 'REC') {
+                return 'RECORDS';
+            }
+            if (raw === 'KEY_VALUE' || raw === 'KEY-VALUE' || raw === 'KV') return 'KEYVALUE';
+            if (raw === 'TIME_SERIES' || raw === 'TIMESERIE' || raw === 'TS') return 'TIMESERIES';
+            if (raw === 'GEO' || raw === 'SPATIAL') return 'GEOSPATIAL';
+            if (raw === 'WIDE_COLUMN' || raw === 'WIDECOLUMN' || raw === 'COL') return 'COLUMN';
+            if (raw === 'BLOB' || raw === 'OBJ') return 'OBJECT';
+            if (raw === 'VEC' || raw === 'EMBEDDINGS') return 'VECTOR';
+            if (raw === 'DOC' || raw === 'JSON') return 'DOCUMENT';
+            return raw;
+        }
+
         function submitUniversalEditRecord(e) {
             if (e) {
                 if (e.preventDefault) e.preventDefault();
@@ -606,10 +622,10 @@ public final class EngineRecordEditDialog {
             }
 
             var engInp = document.getElementById('universalEditEngineInput');
-            var eng = engInp ? engInp.value : 'DOCUMENT';
+            var eng = normalizeEditEngine(engInp ? engInp.value : 'DOCUMENT');
 
             // Sync Record Form if active
-            if ((eng === 'RECORDS' || eng === 'RECORD') && window.JettraFluxRecordForm) {
+            if (eng === 'RECORDS' && window.JettraFluxRecordForm) {
                 try {
                     window.JettraFluxRecordForm.updatePayload('edit_rec');
                 } catch(err) {
@@ -641,7 +657,7 @@ public final class EngineRecordEditDialog {
             var idInp = document.getElementById('universalEditIdInput');
             if (idInp && idInp.value) payloadObj['target_id'] = idInp.value;
 
-            if (eng === 'RECORDS' || eng === 'RECORD') {
+            if (eng === 'RECORDS') {
                 var recEl = document.getElementById('edit_rec_payload') || document.getElementById('editRecPayloadInput');
                 if (recEl && recEl.value) {
                     payloadObj['record_payload'] = recEl.value;
@@ -843,23 +859,33 @@ public final class EngineRecordEditDialog {
         }
 
         function populateRecordFieldsFromPayload(formId, p, prettyPayload) {
-            var recClass = p._recordClass || p._class || 'com.jettra.model.Record';
-            var classInp = document.getElementById(formId + '_class');
+            var pObj = p || {};
+            if (typeof pObj === 'string') {
+                try { pObj = JSON.parse(pObj); } catch(e) { pObj = {}; }
+            }
+            var recClass = pObj._recordClass || pObj._class || 'com.jettra.model.EmployeeProfileRecord';
+            var classInp = document.getElementById(formId + '_class') || document.getElementById('editRecClassInput');
             if (classInp) classInp.value = recClass;
 
-            var table = p._table || '';
-            var tableInp = document.getElementById(formId + '_table');
+            var table = pObj._table || '';
+            var tableInp = document.getElementById(formId + '_table') || document.getElementById('editRecCollInput');
             if (tableInp && table) tableInp.value = table;
 
-            var ta = document.getElementById(formId + '_payload');
+            var ta = document.getElementById(formId + '_payload') || document.getElementById('editRecPayloadInput');
             if (ta) ta.value = prettyPayload;
 
             var tbody = document.getElementById(formId + '_record_fields_tbody');
             if (!tbody) return;
             tbody.innerHTML = '';
 
-            var schema = p._schema || {};
-            var comps = p.components || p._components || p;
+            var schema = pObj._schema || {};
+            if (typeof schema === 'string') {
+                try { schema = JSON.parse(schema); } catch(e) { schema = {}; }
+            }
+            var comps = pObj.components || pObj._components || pObj;
+            if (typeof comps === 'string') {
+                try { comps = JSON.parse(comps); } catch(e) { comps = {}; }
+            }
 
             var fieldNames = [];
             var seen = {};
@@ -883,8 +909,8 @@ public final class EngineRecordEditDialog {
             for (var i = 0; i < fieldNames.length; i++) {
                 var k = fieldNames[i];
                 if (k === '_table' || k.startsWith('_record') || k === '_timestamp' || k === '_version' || k === '_schema' || k === 'components' || k === '_components' || k === '_class') continue;
-                var val = comps[k];
-                var type = schema[k] || (typeof val === 'number' ? (Number.isInteger(val) ? 'Integer' : 'Double') : (typeof val === 'boolean' ? 'Boolean' : 'String'));
+                var val = (comps && typeof comps === 'object') ? comps[k] : undefined;
+                var type = (schema && schema[k]) ? schema[k] : (typeof val === 'number' ? (Number.isInteger(val) ? 'Integer' : 'Double') : (typeof val === 'boolean' ? 'Boolean' : 'String'));
                 var strVal = (val !== undefined && val !== null) ? (typeof val === 'object' ? JSON.stringify(val) : String(val)) : '';
                 if (window.JettraFluxRecordForm && window.JettraFluxRecordForm.addField) {
                     window.JettraFluxRecordForm.addField(formId, k, type, strVal);
@@ -896,11 +922,7 @@ public final class EngineRecordEditDialog {
         }
 
         function openUniversalEditModal(engine, db, unit, id, payloadB64) {
-            var raw = (engine || 'DOCUMENT').toUpperCase();
-            var eng = (raw === 'RECORD') ? 'RECORDS' : raw;
-            if (eng === 'KEY_VALUE' || eng === 'KEY-VALUE') eng = 'KEYVALUE';
-            if (eng === 'TIME_SERIES' || eng === 'TIMESERIE') eng = 'TIMESERIES';
-            if (eng === 'GEO') eng = 'GEOSPATIAL';
+            var eng = normalizeEditEngine(engine);
 
             var payload = safeDecodePayload(payloadB64);
             var parsed = null;
@@ -956,9 +978,13 @@ public final class EngineRecordEditDialog {
             if (eng === 'RECORDS') {
                 populateRecordFieldsFromPayload('edit_rec', p, pretty);
                 var recClassInp = document.getElementById('editRecClassInput');
-                if (recClassInp) recClassInp.value = p._recordClass || p._class || 'com.jettra.model.Record';
+                if (recClassInp) recClassInp.value = p._recordClass || p._class || 'com.jettra.model.EmployeeProfileRecord';
                 var recCollInp = document.getElementById('editRecCollInput');
-                if (recCollInp) recCollInp.value = unit || 'default';
+                if (recCollInp) recCollInp.value = unit || p._table || 'default';
+                var recTableInp = document.getElementById('edit_rec_table');
+                if (recTableInp && (!recTableInp.value || recTableInp.value === 'employees')) {
+                    recTableInp.value = p._table || unit || 'default';
+                }
                 var recPayloadInp = document.getElementById('editRecPayloadInput');
                 if (recPayloadInp) recPayloadInp.value = pretty;
             } else if (eng === 'DOCUMENT') {
@@ -1089,15 +1115,15 @@ public final class EngineRecordEditDialog {
         }
 
         function switchEditEngine(engineKey) {
-            var raw = (engineKey || 'DOCUMENT').toUpperCase();
-            var eng = (raw === 'RECORD') ? 'RECORDS' : raw;
+            var eng = normalizeEditEngine(engineKey);
             var engineInput = document.getElementById('universalEditEngineInput');
             if (engineInput) engineInput.value = eng;
 
             // Show ONLY the active engine's section, hide and disable all others
             var sections = document.querySelectorAll('.universal-edit-engine-section');
             sections.forEach(function(sec) {
-                var isMatch = (sec.getAttribute('data-engine') === eng);
+                var secEng = normalizeEditEngine(sec.getAttribute('data-engine'));
+                var isMatch = (secEng === eng);
                 sec.style.display = isMatch ? 'block' : 'none';
                 var controls = sec.querySelectorAll('input, select, textarea');
                 controls.forEach(function(ctrl) { ctrl.disabled = !isMatch; });
@@ -1105,10 +1131,10 @@ public final class EngineRecordEditDialog {
 
             // Show ONLY the active engine's pill tab in edit mode
             document.querySelectorAll('[id^="edit_engine_tab_btn_"]').forEach(function(pill) {
-                var pillEng = pill.getAttribute('data-engine');
+                var pillEng = normalizeEditEngine(pill.getAttribute('data-engine'));
                 var color = pill.getAttribute('data-color') || '#fbbf24';
                 var label = pill.querySelector('span');
-                var isSelected = (pillEng === eng || (pillEng === 'RECORDS' && raw === 'RECORD'));
+                var isSelected = (pillEng === eng);
                 if (isSelected) {
                     pill.style.display = 'inline-flex';
                     pill.style.border = '2px solid ' + color;
@@ -1123,7 +1149,7 @@ public final class EngineRecordEditDialog {
             var submitBtn = document.getElementById('btnUniversalEditSubmit');
             if (submitBtn) {
                 var labelSpan = submitBtn.querySelector('span');
-                var displayTitle = (eng === 'RECORDS' || raw === 'RECORD') ? 'RECORD' : eng;
+                var displayTitle = (eng === 'RECORDS') ? 'RECORD' : eng;
                 if (labelSpan) labelSpan.textContent = 'Guardar Cambios en ' + displayTitle + ' (v+1)';
             }
         }

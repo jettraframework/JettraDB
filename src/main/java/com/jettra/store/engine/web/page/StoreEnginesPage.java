@@ -189,7 +189,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
     public void handleAjaxPost(HttpExchange exchange, Map<String, String> params) throws IOException {
         String action = params != null ? params.get("action") : "";
         String selectedEngine = params != null && params.containsKey("engine") ? params.get("engine").toUpperCase() : "DOCUMENT";
-        if ("RECORD".equalsIgnoreCase(selectedEngine)) selectedEngine = "RECORDS";
+        if (selectedEngine != null && selectedEngine.contains("RECORD")) selectedEngine = "RECORDS";
         String targetDb = resolveTargetDatabase(exchange, params, getLoggedUser(exchange));
 
         try {
@@ -372,7 +372,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 String id = params.get("target_id");
                 String coll = params.getOrDefault("target_coll", "default");
                 String engType = params.getOrDefault("engine_type", selectedEngine);
-                if ("RECORD".equalsIgnoreCase(engType)) engType = "RECORDS";
+                if (engType != null && engType.toUpperCase().contains("RECORD")) engType = "RECORDS";
                 if ("KEY_VALUE".equalsIgnoreCase(engType) || "KEY-VALUE".equalsIgnoreCase(engType)) engType = "KEYVALUE";
                 if ("TIME_SERIES".equalsIgnoreCase(engType) || "TIMESERIE".equalsIgnoreCase(engType)) engType = "TIMESERIES";
                 if ("GEO".equalsIgnoreCase(engType)) engType = "GEOSPATIAL";
@@ -955,8 +955,10 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     String fieldName = params.get("index_field");
                     if (fieldName == null || fieldName.isBlank()) fieldName = params.getOrDefault("field_name", "id");
                     String idxType = params.getOrDefault("index_type", "BTREE");
-                    String engType = params.getOrDefault("engine_type", selectedEngine);
-                    if ("RECORD".equalsIgnoreCase(engType)) engType = "RECORDS";
+                    String engType = params.getOrDefault("engine_type", params.getOrDefault("engine", selectedEngine));
+                    if (engType != null && (engType.toUpperCase().contains("RECORD") || engType.toUpperCase().contains("JAVA"))) {
+                        engType = "RECORDS";
+                    }
                     String idxColl = params.getOrDefault("target_coll", params.getOrDefault("index_coll", params.getOrDefault("coll", currentCollection)));
                     if (idxName != null && !idxName.isBlank()) {
                         JsonObject idxMeta = new JsonObject();
@@ -4276,7 +4278,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
     var p = parsed || {};
 
     var normEngine = (engine || 'DOCUMENT').toUpperCase();
-    if (normEngine === 'RECORD') normEngine = 'RECORDS';
+    if (normEngine === 'RECORD' || normEngine.indexOf('RECORD') !== -1 || normEngine === 'REC') normEngine = 'RECORDS';
     if (normEngine === 'KEY_VALUE' || normEngine === 'KEY-VALUE') normEngine = 'KEYVALUE';
     if (normEngine === 'TIME_SERIES' || normEngine === 'TIMESERIE') normEngine = 'TIMESERIES';
     if (normEngine === 'GEO') normEngine = 'GEOSPATIAL';
@@ -4424,7 +4426,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
 
   function openUniversalDeleteModal(engine, db, unit, id) {
     var normEngine = (engine || 'DOCUMENT').toUpperCase();
-    if (normEngine === 'RECORD') normEngine = 'RECORDS';
+    if (normEngine === 'RECORD' || normEngine.indexOf('RECORD') !== -1 || normEngine === 'REC') normEngine = 'RECORDS';
     if (normEngine === 'KEY_VALUE' || normEngine === 'KEY-VALUE') normEngine = 'KEYVALUE';
     if (normEngine === 'TIME_SERIES' || normEngine === 'TIMESERIE') normEngine = 'TIMESERIES';
     if (normEngine === 'GEO') normEngine = 'GEOSPATIAL';

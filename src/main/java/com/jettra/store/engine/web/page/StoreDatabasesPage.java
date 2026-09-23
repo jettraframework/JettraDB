@@ -4,6 +4,7 @@ import com.jettra.store.engine.auth.AuthManager;
 import com.jettra.store.engine.core.JettraStorageEngine;
 import com.jettra.store.engine.core.LsmBTreeHybrid;
 import com.jettra.store.engine.samples.SampleDatasetManager;
+import com.jettra.store.engine.samples.SampleDatabaseNamingPolicy;
 import com.sun.net.httpserver.HttpExchange;
 import jcf.annotation.PageWidgetAllow;
 import jcf.AppRole;
@@ -581,12 +582,13 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                         alertMessage = "Debe seleccionar una base de datos de ejemplo del catálogo para instalar.";
                         alertType = "badge-raft";
                     } else {
-                        HierarchyResult<Integer> res = sampleDbService.install(targetDb.trim());
+                        String canonicalTarget = SampleDatabaseNamingPolicy.canonicalize(targetDb.trim());
+                        HierarchyResult<Integer> res = sampleDbService.install(canonicalTarget);
                         if (res.isSuccess()) {
-                            alertMessage = "Base de datos de ejemplo '" + targetDb + "' instalada exitosamente (" + res.getOrNull() + " registros creados).";
+                            alertMessage = "Base de datos de ejemplo '" + canonicalTarget + "' instalada exitosamente (" + res.getOrNull() + " registros creados).";
                             alertType = "badge-active";
                         } else {
-                            alertMessage = "Error en la instalación de '" + targetDb + "': " + res.errorMessage();
+                            alertMessage = "Error en la instalación de '" + canonicalTarget + "': " + res.errorMessage();
                             alertType = "badge-raft";
                         }
                     }
@@ -1924,13 +1926,15 @@ public class StoreDatabasesPage extends StoreTemplatePage {
             sendJsonError(exchange, "Missing target_db parameter. Please select a sample database from the catalog to install.");
             return;
         }
-        HierarchyResult<Integer> res = sampleDbService.install(dbName.trim());
+        String canonicalDb = SampleDatabaseNamingPolicy.canonicalize(dbName.trim());
+        HierarchyResult<Integer> res = sampleDbService.install(canonicalDb);
         if (res.isSuccess()) {
             JsonObject resp = new JsonObject();
             resp.addProperty("status", "SUCCESS");
-            resp.addProperty("database", dbName);
+            resp.addProperty("database", dbName.trim());
+            resp.addProperty("canonicalDatabase", canonicalDb);
             resp.addProperty("installedRecords", res.getOrNull());
-            resp.addProperty("message", "Sample database '" + dbName + "' installed successfully (" + res.getOrNull() + " records created)!");
+            resp.addProperty("message", "Sample database '" + canonicalDb + "' installed successfully (" + res.getOrNull() + " records created)!");
             sendJsonResponse(exchange, resp, 200);
         } else {
             sendJsonError(exchange, res.errorMessage());

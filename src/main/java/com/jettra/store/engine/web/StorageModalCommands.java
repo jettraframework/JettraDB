@@ -330,9 +330,11 @@ public final class StorageModalCommands {
             "      try { parsed = JSON.parse(payload); } catch(e) {}\n" +
             "      var pretty = parsed ? JSON.stringify(parsed, null, 2) : (payload || '{}');\n" +
             "      var p = parsed || {};\n" +
+            "      var normEng = (engine || 'DOCUMENT').toUpperCase();\n" +
+            "      if (normEng === 'RECORD' || normEng.indexOf('RECORD') !== -1 || normEng === 'REC') normEng = 'RECORDS';\n" +
             "      window.setElementValues({\n" +
-            "        universalEditEngineInput: engine,\n" +
-            "        universalEditEngineDisplay: engine,\n" +
+            "        universalEditEngineInput: normEng,\n" +
+            "        universalEditEngineDisplay: normEng,\n" +
             "        universalEditDbInput: db,\n" +
             "        universalEditDbDisplay: db,\n" +
             "        universalEditCollInput: unit || 'default',\n" +
@@ -350,10 +352,10 @@ public final class StorageModalCommands {
             "        editRecPayloadInput: pretty\n" +
             "      });\n" +
             "      if (typeof window.setJsonEditorVal === 'function') window.setJsonEditorVal('editDocPayload', pretty);\n" +
-            "      if ((engine === 'RECORDS' || engine === 'RECORD') && typeof window.populateRecordFieldsFromPayload === 'function') {\n" +
+            "      if (normEng === 'RECORDS' && typeof window.populateRecordFieldsFromPayload === 'function') {\n" +
             "        window.populateRecordFieldsFromPayload('edit_rec', p, pretty);\n" +
             "      }\n" +
-            "      if (typeof window.switchEditEngine === 'function') window.switchEditEngine(engine);\n" +
+            "      if (typeof window.switchEditEngine === 'function') window.switchEditEngine(normEng);\n" +
             "      if (window.JettraFluxModal) { window.JettraFluxModal.open('universalEditModal'); } else { window.showModal('universalEditModal'); }\n" +
             "    };\n" +
             "  }\n" +

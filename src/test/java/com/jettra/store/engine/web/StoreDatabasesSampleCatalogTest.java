@@ -7,6 +7,7 @@ import com.jettra.store.engine.core.JettraStorageEngine;
 import com.jettra.store.engine.models.DocumentEngine;
 import com.jettra.store.engine.models.RecordsEngine;
 import com.jettra.store.engine.samples.SampleDatasetManager;
+import com.jettra.store.engine.samples.SampleDatabaseNamingPolicy;
 import com.jettra.store.engine.samples.lifecycle.DatasetInstallInvoker;
 import com.jettra.store.engine.samples.lifecycle.InstallSingleDatasetCommand;
 import com.jettra.store.engine.samples.lifecycle.InstallState;
@@ -327,7 +328,8 @@ public class StoreDatabasesSampleCatalogTest {
         assertEquals(200, formExchange.getResponseCode());
         String body = formExchange.getResponseBodyAsString();
         assertTrue(body.contains("instalada exitosamente"), "Page response must contain success message");
-        assertTrue(body.contains(targetDb), "Response must mention target database");
+        assertTrue(body.contains(targetDb) || body.contains(SampleDatabaseNamingPolicy.canonicalize(targetDb)),
+                "Response must mention target database or canonical name");
 
         // Verify target database is installed
         assertEquals(InstallState.INSTALLED, sampleService.getInstallState(targetDb));
@@ -384,6 +386,42 @@ public class StoreDatabasesSampleCatalogTest {
         assertEquals(InstallState.NOT_INSTALLED, sampleService.getInstallState("hr_enterprise_db"));
         assertEquals(InstallState.NOT_INSTALLED, sampleService.getInstallState("meteorology_iot_db"));
         assertEquals(InstallState.NOT_INSTALLED, sampleService.getInstallState("ecommerce_olap_db"));
+    }
+
+    @JettraTest
+    @DisplayName("11. Strict Example<Name> installation naming: ExampleEcommerceOlapDb and ExampleMeteorologyIotDb never create snake_case databases")
+    void testSampleDatabasesStrictNamingNoSnakeCase() {
+        // 1. Install ExampleEcommerceOlapDb
+        var olapRes = sampleService.install(SampleDatabaseNamingPolicy.EXAMPLE_ECOMMERCE_OLAP_DB);
+        assertTrue(olapRes.isSuccess(), "OLAP dataset install must succeed");
+        assertTrue(olapRes.getOrNull() > 0, "Must create records");
+
+        // Verify storage core has strictly ExampleEcommerceOlapDb and NOT ecommerce_olap_db
+        Set<String> dbsAfterOlap = engine.getStorageCore().getDatabaseNames();
+        assertTrue(dbsAfterOlap.contains(SampleDatabaseNamingPolicy.EXAMPLE_ECOMMERCE_OLAP_DB),
+                "StorageCore must contain canonical ExampleEcommerceOlapDb");
+        assertFalse(dbsAfterOlap.contains("ecommerce_olap_db"),
+                "StorageCore must NEVER contain legacy ecommerce_olap_db");
+        assertTrue(engine.getStorageCore().scanPrefix("col:ecommerce_olap_db:").isEmpty(),
+                "col:ecommerce_olap_db: prefix must be completely empty");
+
+        // 2. Install ExampleMeteorologyIotDb
+        var metRes = sampleService.install(SampleDatabaseNamingPolicy.EXAMPLE_METEOROLOGY_IOT_DB);
+        assertTrue(metRes.isSuccess(), "Meteorology dataset install must succeed");
+        assertTrue(metRes.getOrNull() > 0, "Must create records");
+
+        // Verify storage core has strictly ExampleMeteorologyIotDb and NOT meteorology_iot_db
+        Set<String> dbsAfterMet = engine.getStorageCore().getDatabaseNames();
+        assertTrue(dbsAfterMet.contains(SampleDatabaseNamingPolicy.EXAMPLE_METEOROLOGY_IOT_DB),
+                "StorageCore must contain canonical ExampleMeteorologyIotDb");
+        assertFalse(dbsAfterMet.contains("meteorology_iot_db"),
+                "StorageCore must NEVER contain legacy meteorology_iot_db");
+        assertTrue(engine.getStorageCore().scanPrefix("ts:meteorology_iot_db:").isEmpty(),
+                "ts:meteorology_iot_db: prefix must be completely empty");
+
+        // 3. Uninstall both cleanly
+        sampleService.uninstall(SampleDatabaseNamingPolicy.EXAMPLE_ECOMMERCE_OLAP_DB);
+        sampleService.uninstall(SampleDatabaseNamingPolicy.EXAMPLE_METEOROLOGY_IOT_DB);
     }
 
     private static class TestHttpExchange extends HttpExchange {

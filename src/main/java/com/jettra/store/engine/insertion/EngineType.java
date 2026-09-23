@@ -148,10 +148,12 @@ public sealed interface EngineType permits
     static EngineType fromKey(String key) {
         if (key == null || key.isBlank()) return new Document();
         String normalized = key.trim().toUpperCase().replace("-", "_");
+        if (normalized.contains("RECORD") || normalized.equals("REC") || normalized.equals("RELATIONAL") || normalized.equals("TABULAR")) {
+            return new RelationalRecords();
+        }
         return switch (normalized) {
             case "KEYVALUE", "KEY_VALUE", "KV" -> new KeyValue();
             case "DOCUMENT", "DOC", "JSON" -> new Document();
-            case "RECORD", "RECORDS", "RELATIONAL", "TABULAR", "REC" -> new RelationalRecords();
             case "GRAPH", "GRAPH_REFERENCES" -> new Graph();
             case "VECTOR", "EMBEDDINGS", "VEC" -> new Vector();
             case "TIMESERIES", "TIME_SERIES", "TS" -> new TimeSeries();

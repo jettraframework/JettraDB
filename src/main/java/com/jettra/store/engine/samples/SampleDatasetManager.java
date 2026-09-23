@@ -332,7 +332,6 @@ public class SampleDatasetManager {
             );
 
             engine.getStorageCore().put(db + ":" + taskId, payload.getBytes(StandardCharsets.UTF_8), now);
-            engine.getStorageCore().put("scrum_board_db:" + taskId, payload.getBytes(StandardCharsets.UTF_8), now);
             count++;
         }
         return count;
@@ -366,7 +365,6 @@ public class SampleDatasetManager {
             );
 
             engine.getStorageCore().put(tsKey, payload.getBytes(StandardCharsets.UTF_8), timestamp);
-            engine.getStorageCore().put("ts:meteorology_iot_db:" + sensor + "_" + timestamp, payload.getBytes(StandardCharsets.UTF_8), timestamp);
             count++;
         }
         return count;
@@ -406,7 +404,6 @@ public class SampleDatasetManager {
             );
 
             engine.getStorageCore().put(recKey, payload.getBytes(StandardCharsets.UTF_8), now);
-            engine.getStorageCore().put("rec:hr_enterprise_db:" + empId, payload.getBytes(StandardCharsets.UTF_8), now);
             count++;
         }
         return count;
@@ -440,7 +437,6 @@ public class SampleDatasetManager {
             );
 
             engine.getStorageCore().put(vecKey, payload.getBytes(StandardCharsets.UTF_8), now);
-            engine.getStorageCore().put("vec:ai_knowledge_db:" + vecId, payload.getBytes(StandardCharsets.UTF_8), now);
             count++;
         }
         return count;
@@ -469,7 +465,6 @@ public class SampleDatasetManager {
             );
 
             engine.getStorageCore().put(graphKey, payload.getBytes(StandardCharsets.UTF_8), now);
-            engine.getStorageCore().put("graph:social_network_db:" + nodeId, payload.getBytes(StandardCharsets.UTF_8), now);
             count++;
         }
         return count;
@@ -498,7 +493,6 @@ public class SampleDatasetManager {
             );
 
             engine.getStorageCore().put(geoKey, payload.getBytes(StandardCharsets.UTF_8), now);
-            engine.getStorageCore().put("geo:smart_city_gis_db:" + hubId, payload.getBytes(StandardCharsets.UTF_8), now);
             count++;
         }
         return count;
@@ -527,7 +521,6 @@ public class SampleDatasetManager {
             );
 
             engine.getStorageCore().put(colKey, payload.getBytes(StandardCharsets.UTF_8), now);
-            engine.getStorageCore().put("col:ecommerce_olap_db:" + rowId, payload.getBytes(StandardCharsets.UTF_8), now);
             count++;
         }
         return count;
@@ -545,7 +538,6 @@ public class SampleDatasetManager {
             String val = "{\"token\":\"jwt_sha256_" + UUID.randomUUID() + "\",\"userRef\":\"jref://RECORDS:ExampleHrEnterpriseDb/emp_" + ((i % 200) + 100) + "\",\"ttl\":3600,\"authenticated\":true}";
 
             engine.getStorageCore().put(kvKey, val.getBytes(StandardCharsets.UTF_8), now);
-            engine.getStorageCore().put("kv:distributed_cache_db:" + key, val.getBytes(StandardCharsets.UTF_8), now);
             count++;
         }
         return count;
@@ -571,7 +563,6 @@ public class SampleDatasetManager {
             );
 
             engine.getStorageCore().put(objKey, payload.getBytes(StandardCharsets.UTF_8), now);
-            engine.getStorageCore().put("obj:digital_assets_db:" + assetId, payload.getBytes(StandardCharsets.UTF_8), now);
             count++;
         }
         return count;

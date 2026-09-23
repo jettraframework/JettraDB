@@ -156,7 +156,7 @@ public enum StorageEngineType {
         return Arrays.stream(values())
                 .filter(t -> t.name().equals(normalized) 
                         || t.engineName.equalsIgnoreCase(raw.trim())
-                        || (t == RELATIONAL_RECORDS && "RECORD".equalsIgnoreCase(raw.trim())))
+                        || (t == RELATIONAL_RECORDS && (normalized.contains("RECORD") || "REC".equals(normalized))))
                 .findFirst();
     }
 

@@ -364,8 +364,11 @@ public class AdaptiveMultiModelRecordDialogsTest {
         int hrCount = sampleManager.loadHrEnterpriseDataset();
         assertTrue(hrCount > 0, "Must load HR enterprise records");
 
-        byte[] emp100Bytes = engine.getStorageCore().get("rec:hr_enterprise_db:emp_100");
-        assertNotNull(emp100Bytes, "Employee 100 record must be stored in rec:hr_enterprise_db:emp_100");
+        byte[] emp100Bytes = engine.getStorageCore().get("rec:" + com.jettra.store.engine.samples.SampleDatabaseNamingPolicy.EXAMPLE_HR_ENTERPRISE_DB + ":emp_100");
+        if (emp100Bytes == null) {
+            emp100Bytes = engine.getStorageCore().get("rec:hr_enterprise_db:emp_100");
+        }
+        assertNotNull(emp100Bytes, "Employee 100 record must be stored in rec:" + com.jettra.store.engine.samples.SampleDatabaseNamingPolicy.EXAMPLE_HR_ENTERPRISE_DB + ":emp_100");
         String emp100Json = new String(emp100Bytes, java.nio.charset.StandardCharsets.UTF_8);
 
         // Verify Java 25 Record typed schema and components structure
@@ -648,6 +651,38 @@ public class AdaptiveMultiModelRecordDialogsTest {
         String dialogHtml = dialogWidget.render(Themes.FlatTheme());
         assertTrue(dialogHtml.contains("window.universalRecordEditor = openUniversalEditModal"), "Dialog must export universalRecordEditor");
         assertTrue(dialogHtml.contains("action=get_record_payload"), "Dialog must implement dynamic auto-fetch fallback if payload is empty");
+    }
+
+    @JettraTest
+    @DisplayName("Test 11: RECORD (JAVA) engine normalization and dynamic record edit form synchronization")
+    public void testRecordJavaEngineNormalizationAndEditDialog() {
+        // 1. Verify EngineType.fromKey and StorageEngineType.fromString support "RECORD (JAVA)"
+        EngineType et = EngineType.fromKey("RECORD (JAVA)");
+        assertTrue(et instanceof EngineType.RelationalRecords, "Must resolve to RelationalRecords");
+        assertEquals("RECORDS", et.key());
+
+        var optSet = com.jettra.store.engine.hierarchy.StorageEngineType.fromString("RECORD (JAVA)");
+        assertTrue(optSet.isPresent(), "StorageEngineType must recognize RECORD (JAVA)");
+        assertEquals(com.jettra.store.engine.hierarchy.StorageEngineType.RELATIONAL_RECORDS, optSet.get());
+
+        var optSet2 = com.jettra.store.engine.hierarchy.StorageEngineType.fromString("Record (Java 25)");
+        assertTrue(optSet2.isPresent(), "StorageEngineType must recognize Record (Java 25)");
+        assertEquals(com.jettra.store.engine.hierarchy.StorageEngineType.RELATIONAL_RECORDS, optSet2.get());
+
+        // 2. Verify EngineRecordEditDialog script contains normalizeEditEngine and handles RECORD
+        Widget dialogWidget = EngineRecordEditDialog.build("/engines");
+        String dialogHtml = dialogWidget.render(Themes.FlatTheme());
+        assertTrue(dialogHtml.contains("normalizeEditEngine"), "Dialog script must define normalizeEditEngine");
+        assertTrue(dialogHtml.contains("populateRecordFieldsFromPayload"), "Dialog script must define populateRecordFieldsFromPayload");
+        assertTrue(dialogHtml.contains("edit_rec_record_fields_tbody"), "Dialog must contain record fields table body");
+        assertTrue(dialogHtml.contains("edit_rec_table"), "Dialog must contain table input");
+        assertTrue(dialogHtml.contains("edit_rec_class"), "Dialog must contain class input");
+
+        // 3. Verify EngineRecordInspectDialog script handles RECORD (JAVA)
+        Widget inspectDialog = EngineRecordInspectDialog.build();
+        String inspectHtml = inspectDialog.render(Themes.FlatTheme());
+        assertTrue(inspectHtml.contains("switchInspectEngine"), "Inspect dialog must define switchInspectEngine");
+        assertTrue(inspectHtml.contains("renderAdaptiveInspectModelView"), "Inspect dialog must define renderAdaptiveInspectModelView");
     }
 
     private static class TestHttpExchange extends com.sun.net.httpserver.HttpExchange {
