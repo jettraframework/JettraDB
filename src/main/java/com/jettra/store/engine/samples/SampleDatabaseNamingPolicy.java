@@ -13,11 +13,12 @@ public final class SampleDatabaseNamingPolicy {
 
     public static final String PREFIX = "Example";
 
-    // 4 Primary On-Demand Catalog Databases
+    // 5 Primary On-Demand Catalog Databases
     public static final String EXAMPLE_DB_REFERENCES = "ExampleDBReferences";
     public static final String EXAMPLE_HR_ENTERPRISE_DB = "ExampleHrEnterpriseDb";
     public static final String EXAMPLE_METEOROLOGY_IOT_DB = "ExampleMeteorologyIotDb";
     public static final String EXAMPLE_ECOMMERCE_OLAP_DB = "ExampleEcommerceOlapDb";
+    public static final String EXAMPLE_FACTURA = "ExampleFactura";
 
     // Additional Multi-Engine Sample Databases
     public static final String EXAMPLE_SCRUM_BOARD_DB = "ExampleScrumBoardDb";
@@ -31,7 +32,8 @@ public final class SampleDatabaseNamingPolicy {
         EXAMPLE_DB_REFERENCES,
         EXAMPLE_HR_ENTERPRISE_DB,
         EXAMPLE_METEOROLOGY_IOT_DB,
-        EXAMPLE_ECOMMERCE_OLAP_DB
+        EXAMPLE_ECOMMERCE_OLAP_DB,
+        EXAMPLE_FACTURA
     );
 
     private static final Set<String> ALL_CANONICAL = Set.of(
@@ -39,6 +41,7 @@ public final class SampleDatabaseNamingPolicy {
         EXAMPLE_HR_ENTERPRISE_DB,
         EXAMPLE_METEOROLOGY_IOT_DB,
         EXAMPLE_ECOMMERCE_OLAP_DB,
+        EXAMPLE_FACTURA,
         EXAMPLE_SCRUM_BOARD_DB,
         EXAMPLE_SMART_CITY_GIS_DB,
         EXAMPLE_AI_KNOWLEDGE_DB,
@@ -59,6 +62,10 @@ public final class SampleDatabaseNamingPolicy {
         registerAlias("hr_enterprise_db", EXAMPLE_HR_ENTERPRISE_DB);
         registerAlias("meteorology_iot_db", EXAMPLE_METEOROLOGY_IOT_DB);
         registerAlias("ecommerce_olap_db", EXAMPLE_ECOMMERCE_OLAP_DB);
+        registerAlias("factura", EXAMPLE_FACTURA);
+        registerAlias("example_factura", EXAMPLE_FACTURA);
+        registerAlias("factura_db", EXAMPLE_FACTURA);
+        registerAlias("billing", EXAMPLE_FACTURA);
         registerAlias("scrum_board_db", EXAMPLE_SCRUM_BOARD_DB);
         registerAlias("smart_city_gis_db", EXAMPLE_SMART_CITY_GIS_DB);
         registerAlias("ai_knowledge_db", EXAMPLE_AI_KNOWLEDGE_DB);

@@ -249,6 +249,66 @@ public class LsmBTreeHybrid {
             return results;
         }
 
+        public synchronized void putBatch(List<Map.Entry<String, byte[]>> entries, long timestamp) {
+            if (entries == null || entries.isEmpty()) return;
+            try {
+                if (!Files.exists(dbDirectory)) {
+                    Files.createDirectories(dbDirectory);
+                }
+                try (java.io.DataOutputStream dos = new java.io.DataOutputStream(
+                        new java.io.BufferedOutputStream(new java.io.FileOutputStream(journalFile.toFile(), true), 131072))) {
+                    for (Map.Entry<String, byte[]> entry : entries) {
+                        String key = entry.getKey();
+                        byte[] data = entry.getValue();
+                        if (key == null || data == null) continue;
+
+                        dos.writeUTF(key);
+                        dos.writeLong(timestamp);
+                        dos.writeInt(data.length);
+                        if (data.length > 0) {
+                            dos.write(data);
+                        }
+
+                        if (fileManager != null) {
+                            long offset = fileManager.append(data, false);
+                            diskIndex.put(key, offset);
+                        }
+                    }
+                    dos.flush();
+                }
+                if (fileManager != null) {
+                    fileManager.force();
+                }
+            } catch (IOException e) {
+                System.err.println("Error in putBatch for database [" + dbName + "]: " + e.getMessage());
+            }
+        }
+
+        public Set<String> scanPrefixKeys(String prefix) {
+            Set<String> results = new java.util.LinkedHashSet<>();
+            for (String k : memTable.keySet()) {
+                if (k.startsWith(prefix)) {
+                    String baseKey = k.contains("@") ? k.substring(0, k.lastIndexOf('@')) : k;
+                    results.add(baseKey);
+                }
+            }
+            for (String baseKey : diskIndex.keySet()) {
+                if (baseKey.startsWith(prefix)) {
+                    results.add(baseKey);
+                }
+            }
+            return results;
+        }
+
+        public int getTotalRecordCount() {
+            Set<String> allKeys = new java.util.HashSet<>(diskIndex.keySet());
+            for (String k : memTable.keySet()) {
+                String baseKey = k.contains("@") ? k.substring(0, k.lastIndexOf('@')) : k;
+                allKeys.add(baseKey);
+            }
+            return allKeys.size();
+        }
+
         public List<RecordVersion> getVersionHistory(String key) {
             List<RecordVersion> versions = new java.util.ArrayList<>();
             String prefix = key + "@";
@@ -721,6 +781,54 @@ public class LsmBTreeHybrid {
             }
         }
         return results;
+    }
+
+    public void putBatch(String dbName, List<Map.Entry<String, byte[]>> entries, long timestamp) {
+        if (dbName == null || entries == null || entries.isEmpty()) return;
+        getPartition(dbName).putBatch(entries, timestamp);
+    }
+
+    public void putBatch(List<Map.Entry<String, byte[]>> entries, long timestamp) {
+        if (entries == null || entries.isEmpty()) return;
+        Map<String, List<Map.Entry<String, byte[]>>> byDb = new java.util.HashMap<>();
+        for (Map.Entry<String, byte[]> entry : entries) {
+            String db = extractDatabaseFromKey(entry.getKey());
+            byDb.computeIfAbsent(db, k -> new java.util.ArrayList<>()).add(entry);
+        }
+        for (Map.Entry<String, List<Map.Entry<String, byte[]>>> dbEntries : byDb.entrySet()) {
+            getPartition(dbEntries.getKey()).putBatch(dbEntries.getValue(), timestamp);
+        }
+    }
+
+    public Set<String> scanPrefixKeys(String prefix) {
+        if (prefix == null || prefix.isEmpty()) {
+            Set<String> allKeys = new LinkedHashSet<>();
+            for (DatabasePartition partition : partitions.values()) {
+                allKeys.addAll(partition.scanPrefixKeys(""));
+            }
+            return allKeys;
+        }
+
+        String db = extractDatabaseFromKey(prefix);
+        if (!"_system".equals(db)) {
+            DatabasePartition partition = findPartition(db);
+            if (partition != null) {
+                return partition.scanPrefixKeys(prefix);
+            }
+        } else {
+            Set<String> allKeys = new LinkedHashSet<>();
+            for (DatabasePartition partition : partitions.values()) {
+                allKeys.addAll(partition.scanPrefixKeys(prefix));
+            }
+            return allKeys;
+        }
+        return Collections.emptySet();
+    }
+
+    public int getDatabaseRecordCount(String dbName) {
+        if (dbName == null || dbName.isBlank()) return 0;
+        DatabasePartition partition = findPartition(dbName);
+        return partition != null ? partition.getTotalRecordCount() : 0;
     }
 
     public List<RecordVersion> getVersionHistory(String key) {

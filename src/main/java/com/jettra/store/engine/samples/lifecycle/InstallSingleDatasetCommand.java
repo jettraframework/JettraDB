@@ -20,7 +20,8 @@ public final class InstallSingleDatasetCommand implements DatasetInstallCommand 
         SampleDatabaseNamingPolicy.EXAMPLE_DB_REFERENCES,
         SampleDatabaseNamingPolicy.EXAMPLE_HR_ENTERPRISE_DB,
         SampleDatabaseNamingPolicy.EXAMPLE_METEOROLOGY_IOT_DB,
-        SampleDatabaseNamingPolicy.EXAMPLE_ECOMMERCE_OLAP_DB
+        SampleDatabaseNamingPolicy.EXAMPLE_ECOMMERCE_OLAP_DB,
+        SampleDatabaseNamingPolicy.EXAMPLE_FACTURA
     );
 
     private final SampleDatasetManager datasetManager;

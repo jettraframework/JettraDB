@@ -67,7 +67,7 @@ public class HierarchyExplorerAndSampleServiceTest {
 
         List<SampleDatabaseDefinition> catalog = sampleService.getCatalog();
         assertNotNull(catalog);
-        assertEquals(4, catalog.size(), "Catalog must list exactly the 4 authorized sample datasets.");
+        assertEquals(5, catalog.size(), "Catalog must list exactly the 5 authorized sample datasets.");
 
         for (SampleDatabaseDefinition def : catalog) {
             InstallState state = sampleService.getInstallState(def.id());

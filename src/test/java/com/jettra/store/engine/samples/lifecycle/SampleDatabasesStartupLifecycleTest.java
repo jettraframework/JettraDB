@@ -50,7 +50,8 @@ public class SampleDatabasesStartupLifecycleTest {
         com.jettra.store.engine.samples.SampleDatabaseNamingPolicy.EXAMPLE_DB_REFERENCES,
         com.jettra.store.engine.samples.SampleDatabaseNamingPolicy.EXAMPLE_HR_ENTERPRISE_DB,
         com.jettra.store.engine.samples.SampleDatabaseNamingPolicy.EXAMPLE_METEOROLOGY_IOT_DB,
-        com.jettra.store.engine.samples.SampleDatabaseNamingPolicy.EXAMPLE_ECOMMERCE_OLAP_DB
+        com.jettra.store.engine.samples.SampleDatabaseNamingPolicy.EXAMPLE_ECOMMERCE_OLAP_DB,
+        com.jettra.store.engine.samples.SampleDatabaseNamingPolicy.EXAMPLE_FACTURA
     );
 
     private Path tempDir;
@@ -104,7 +105,7 @@ public class SampleDatabasesStartupLifecycleTest {
     @DisplayName("2. Passive Catalog Query: Catalog inspection does not trigger physical directory creation on disk")
     void testPassiveCatalogQueryDoesNotCreateDirectoriesOnDisk() {
         List<SampleDatabaseDefinition> catalog = sampleService.getCatalog();
-        assertEquals(4, catalog.size(), "Catalog must contain exactly the 4 authorized sample databases");
+        assertEquals(5, catalog.size(), "Catalog must contain exactly the 5 authorized sample databases");
 
         for (SampleDatabaseDefinition def : catalog) {
             String dbName = def.databaseName();

@@ -69,6 +69,8 @@ public class SampleDatabaseNamingPolicyTest {
         assertEquals("ExampleScrumBoardDb", SampleDatabaseNamingPolicy.canonicalize("scrum_board_db"));
         assertEquals("ExampleSmartCityGisDb", SampleDatabaseNamingPolicy.canonicalize("smart_city_gis_db"));
         assertEquals("ExampleDBReferences", SampleDatabaseNamingPolicy.canonicalize("ExampleDBReferences"));
+        assertEquals("ExampleFactura", SampleDatabaseNamingPolicy.canonicalize("factura"));
+        assertEquals("ExampleFactura", SampleDatabaseNamingPolicy.canonicalize("example_factura"));
     }
 
     @JettraTest
@@ -76,9 +78,11 @@ public class SampleDatabaseNamingPolicyTest {
     void testIsSampleDatabaseDetection() {
         assertTrue(SampleDatabaseNamingPolicy.isSampleDatabase("ExampleDBReferences"));
         assertTrue(SampleDatabaseNamingPolicy.isSampleDatabase("ExampleHrEnterpriseDb"));
+        assertTrue(SampleDatabaseNamingPolicy.isSampleDatabase("ExampleFactura"));
         assertTrue(SampleDatabaseNamingPolicy.isSampleDatabase("ExampleCustomDb"));
         assertTrue(SampleDatabaseNamingPolicy.isSampleDatabase("hr_enterprise_db"));
         assertTrue(SampleDatabaseNamingPolicy.isSampleDatabase("meteorology_iot_db"));
+        assertTrue(SampleDatabaseNamingPolicy.isSampleDatabase("factura"));
         assertFalse(SampleDatabaseNamingPolicy.isSampleDatabase("production_orders_db"));
         assertFalse(SampleDatabaseNamingPolicy.isSampleDatabase(""));
         assertFalse(SampleDatabaseNamingPolicy.isSampleDatabase(null));

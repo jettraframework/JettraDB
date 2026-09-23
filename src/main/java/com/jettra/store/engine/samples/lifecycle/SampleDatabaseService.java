@@ -59,6 +59,16 @@ public class SampleDatabaseService {
             1000,
             "fas fa-table",
             List.of("Column", "OLAP", "Analytics", "Wide-Table")
+        ),
+        new SampleDatabaseDefinition(
+            SampleDatabaseNamingPolicy.EXAMPLE_FACTURA,
+            "MULTI-MODEL",
+            SampleDatabaseNamingPolicy.EXAMPLE_FACTURA,
+            "Enterprise Invoicing & Billing (Multi-Engine)",
+            "High-volume enterprise invoicing and billing suite with 1,000,000 customers (Document), 500,000 products (Records), inventories (TimeSeries), invoices & details (Column), branches (Geospatial), categories (Graph), and salespersons (KeyValue).",
+            1566175,
+            "fas fa-file-invoice-dollar",
+            List.of("Billing", "Invoicing", "Multi-Engine", "Large-Scale", "Stress-Test")
         )
     );
 
@@ -104,7 +114,7 @@ public class SampleDatabaseService {
         for (String target : List.of(cleanDb, dbName.trim())) {
             for (String pfx : prefixes) {
                 String scanKey = pfx + target + ":";
-                Map<String, byte[]> keys = engine.getStorageCore().scanPrefix(scanKey);
+                Set<String> keys = engine.getStorageCore().scanPrefixKeys(scanKey);
                 if (!keys.isEmpty()) {
                     return true;
                 }
@@ -122,8 +132,8 @@ public class SampleDatabaseService {
             if (engine.getStorageCore().getDatabaseNames().contains(target)) {
                 for (String pfx : prefixes) {
                     String scanKey = pfx + target + ":";
-                    Map<String, byte[]> keys = engine.getStorageCore().scanPrefix(scanKey);
-                    uniqueIds.addAll(keys.keySet());
+                    Set<String> keys = engine.getStorageCore().scanPrefixKeys(scanKey);
+                    uniqueIds.addAll(keys);
                 }
             }
         }
@@ -200,8 +210,8 @@ public class SampleDatabaseService {
             if (!pfx.startsWith("meta:") && !pfx.startsWith("schema:") && !pfx.startsWith("rule:") && !pfx.startsWith("idx:") && !pfx.equals(cleanDb + ":")) {
                 scanKey = pfx + cleanDb + ":";
             }
-            Map<String, byte[]> scan = engine.getStorageCore().scanPrefix(scanKey);
-            keysToDelete.addAll(scan.keySet());
+            Set<String> scan = engine.getStorageCore().scanPrefixKeys(scanKey);
+            keysToDelete.addAll(scan);
         }
 
         for (String k : keysToDelete) {

@@ -115,17 +115,18 @@ public class StoreDatabasesSampleCatalogTest {
     }
 
     @JettraTest
-    @DisplayName("1. Catalog is strictly restricted to exactly 4 authorized sample databases")
-    void testCatalogContainsStrictlyAuthorizedFourDatabases() {
+    @DisplayName("1. Catalog is strictly restricted to exactly 5 authorized sample databases")
+    void testCatalogContainsStrictlyAuthorizedFiveDatabases() {
         List<SampleDatabaseDefinition> catalog = sampleService.getCatalog();
         assertNotNull(catalog);
-        assertEquals(4, catalog.size(), "Catalog must contain exactly 4 authorized sample databases");
+        assertEquals(5, catalog.size(), "Catalog must contain exactly 5 authorized sample databases");
 
         List<String> dbNames = catalog.stream().map(SampleDatabaseDefinition::databaseName).toList();
         assertTrue(dbNames.contains("ExampleDBReferences"), "Must include ExampleDBReferences");
         assertTrue(dbNames.contains("ExampleHrEnterpriseDb"), "Must include ExampleHrEnterpriseDb");
         assertTrue(dbNames.contains("ExampleMeteorologyIotDb"), "Must include ExampleMeteorologyIotDb");
         assertTrue(dbNames.contains("ExampleEcommerceOlapDb"), "Must include ExampleEcommerceOlapDb");
+        assertTrue(dbNames.contains("ExampleFactura"), "Must include ExampleFactura");
 
         // Verify deprecated/removed databases are strictly excluded
         assertFalse(dbNames.contains("social_network_db"), "social_network_db must be excluded");
@@ -139,7 +140,7 @@ public class StoreDatabasesSampleCatalogTest {
         List<String> availableDatasets = SampleDatasetManager.AVAILABLE_DATASETS.stream()
                 .map(SampleDatasetManager.DatasetInfo::databaseName)
                 .toList();
-        assertEquals(4, availableDatasets.size(), "Available datasets must equal 4");
+        assertEquals(5, availableDatasets.size(), "Available datasets must equal 5");
         assertTrue(availableDatasets.containsAll(dbNames));
     }
 
@@ -177,6 +178,7 @@ public class StoreDatabasesSampleCatalogTest {
         assertTrue(body.contains("radio_sample_ExampleHrEnterpriseDb"), "Must render radio for ExampleHrEnterpriseDb");
         assertTrue(body.contains("radio_sample_ExampleMeteorologyIotDb"), "Must render radio for ExampleMeteorologyIotDb");
         assertTrue(body.contains("radio_sample_ExampleEcommerceOlapDb"), "Must render radio for ExampleEcommerceOlapDb");
+        assertTrue(body.contains("radio_sample_ExampleFactura"), "Must render radio for ExampleFactura");
     }
 
     @JettraTest
@@ -247,7 +249,7 @@ public class StoreDatabasesSampleCatalogTest {
     }
 
     @JettraTest
-    @DisplayName("6. GET /databases?action=list_sample_dbs returns JSON catalog of the 4 authorized databases")
+    @DisplayName("6. GET /databases?action=list_sample_dbs returns JSON catalog of the 5 authorized databases")
     void testDatabasesAjaxListSampleDatabasesEndpoint() throws IOException {
         TestHttpExchange exchange = new TestHttpExchange("GET", "/databases?action=list_sample_dbs");
         exchange.getRequestHeaders().set("Cookie", "username=admin; role=ADMIN");
@@ -265,7 +267,7 @@ public class StoreDatabasesSampleCatalogTest {
         assertTrue(obj.has("databases"));
 
         JsonArray arr = obj.getAsJsonArray("databases");
-        assertEquals(4, arr.size(), "AJAX list must contain exactly 4 sample databases");
+        assertEquals(5, arr.size(), "AJAX list must contain exactly 5 sample databases");
 
         for (int i = 0; i < arr.size(); i++) {
             JsonObject dbObj = arr.getAsJsonObject(i);
@@ -422,6 +424,78 @@ public class StoreDatabasesSampleCatalogTest {
         // 3. Uninstall both cleanly
         sampleService.uninstall(SampleDatabaseNamingPolicy.EXAMPLE_ECOMMERCE_OLAP_DB);
         sampleService.uninstall(SampleDatabaseNamingPolicy.EXAMPLE_METEOROLOGY_IOT_DB);
+    }
+
+    @JettraTest
+    @DisplayName("12. ExampleFactura multi-model lifecycle: install and uninstall via AJAX across all engines")
+    void testExampleFacturaInstallationAndRemovalLifecycle() throws IOException {
+        String targetDb = SampleDatabaseNamingPolicy.EXAMPLE_FACTURA;
+        assertEquals(InstallState.NOT_INSTALLED, sampleService.getInstallState(targetDb));
+
+        // Use test scale for rapid unit testing
+        System.setProperty("jettra.factura.products", "100");
+        System.setProperty("jettra.factura.customers", "200");
+        System.setProperty("jettra.factura.inventory", "50");
+        System.setProperty("jettra.factura.invoices", "50");
+        System.setProperty("jettra.factura.invoice_details", "100");
+
+        try {
+            // 1. Install ExampleFactura via AJAX
+            TestHttpExchange installExchange = new TestHttpExchange("POST", "/databases");
+            installExchange.getRequestHeaders().set("Cookie", "username=admin; role=ADMIN");
+            installExchange.setRequestBody("action=install_sample_db_ajax&target_db=" + targetDb);
+            installExchange.getRequestHeaders().set("X-Requested-With", "XMLHttpRequest");
+
+            databasesPage.handle(installExchange);
+
+            assertEquals(200, installExchange.getResponseCode());
+            String installJson = installExchange.getResponseBodyAsString();
+            JsonObject installObj = json.fromJson(installJson, JsonObject.class);
+            assertEquals("SUCCESS", installObj.getAsString("status"));
+            assertEquals(targetDb, installObj.getAsString("database"));
+            assertTrue(installObj.has("installedRecords"));
+            assertTrue(installObj.getAsInt("installedRecords") > 0);
+
+            // Verify state is INSTALLED and storage core has keys across multi-model engines
+            assertEquals(InstallState.INSTALLED, sampleService.getInstallState(targetDb));
+            assertTrue(sampleService.getInstalledRecordCount(targetDb) > 0);
+
+            assertNotNull(engine.getStorageCore().get("rec:" + targetDb + ":comp_1"), "Company record must exist");
+            assertNotNull(engine.getStorageCore().get("geo:" + targetDb + ":sucursal_1"), "Branch geospatial record must exist");
+            assertNotNull(engine.getStorageCore().get("graph:" + targetDb + ":group_1"), "Product group graph record must exist");
+            assertNotNull(engine.getStorageCore().get("rec:" + targetDb + ":seller_1"), "Seller record must exist");
+            assertNotNull(engine.getStorageCore().get("rec:" + targetDb + ":prod_1"), "Product record must exist");
+            assertNotNull(engine.getStorageCore().get("doc:" + targetDb + ":cust_1"), "Customer document must exist");
+            assertNotNull(engine.getStorageCore().get("ts:" + targetDb + ":inv_metric_1"), "Inventory timeseries record must exist");
+            assertNotNull(engine.getStorageCore().get("col:" + targetDb + ":fac_1"), "Invoice column record must exist");
+            assertNotNull(engine.getStorageCore().get("col:" + targetDb + ":det_1"), "Invoice detail record must exist");
+            assertNotNull(engine.getStorageCore().get("obj:" + targetDb + ":fac_1.pdf"), "Fiscal PDF object must exist");
+            assertNotNull(engine.getStorageCore().get("vec:" + targetDb + ":vec_prod_1"), "Product vector embedding must exist");
+
+            // 2. Uninstall ExampleFactura via AJAX
+            TestHttpExchange uninstallExchange = new TestHttpExchange("POST", "/databases");
+            uninstallExchange.getRequestHeaders().set("Cookie", "username=admin; role=ADMIN");
+            uninstallExchange.setRequestBody("action=uninstall_sample_db_ajax&target_db=" + targetDb);
+            uninstallExchange.getRequestHeaders().set("X-Requested-With", "XMLHttpRequest");
+
+            databasesPage.handle(uninstallExchange);
+
+            assertEquals(200, uninstallExchange.getResponseCode());
+            String uninstallJson = uninstallExchange.getResponseBodyAsString();
+            JsonObject uninstallObj = json.fromJson(uninstallJson, JsonObject.class);
+            assertEquals("SUCCESS", uninstallObj.getAsString("status"));
+            assertEquals(targetDb, uninstallObj.getAsString("database"));
+
+            // Verify state returns to NOT_INSTALLED and database is purged
+            assertEquals(InstallState.NOT_INSTALLED, sampleService.getInstallState(targetDb));
+            assertFalse(sampleService.isDatabasePresent(targetDb));
+        } finally {
+            System.clearProperty("jettra.factura.products");
+            System.clearProperty("jettra.factura.customers");
+            System.clearProperty("jettra.factura.inventory");
+            System.clearProperty("jettra.factura.invoices");
+            System.clearProperty("jettra.factura.invoice_details");
+        }
     }
 
     private static class TestHttpExchange extends HttpExchange {
