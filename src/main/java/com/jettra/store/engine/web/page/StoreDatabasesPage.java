@@ -1767,11 +1767,11 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                 Button.of(Text.of("Close"))
                         .modifier(new Modifier().cssClass("btn-action btn-secondary").style("padding:8px 16px; margin-right:10px;")
                                 .attribute("type", "button")
-                                .attribute("onclick", "document.getElementById('sampleDatabasesModal').close();")),
-                Button.of(Icon.of("fas fa-download"), Text.of(" Install DataSet"))
-                        .id("btnInstallSampleDataSet")
-                        .modifier(new Modifier().cssClass("btn-action btn-primary").style("padding:8px 18px;"))
-                        .attribute("type", "submit")
+                                .attribute("onclick", "document.getElementById('sampleDatabasesModal').close();"))
+//                Button.of(Icon.of("fas fa-download"), Text.of(" Install DataSet"))
+//                        .id("btnInstallSampleDataSet")
+//                        .modifier(new Modifier().cssClass("btn-action btn-primary").style("padding:8px 18px;"))
+//                        .attribute("type", "submit")
         ).modifier(new Modifier().style("display:flex; justify-content:flex-end; align-items:center; margin-top:16px; border-top:1px solid rgba(255,255,255,0.08); padding-top:14px;"));
 
         Widget catalogForm = Form.of(
