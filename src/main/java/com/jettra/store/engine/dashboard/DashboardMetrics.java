@@ -83,8 +83,26 @@ public final class DashboardMetrics {
         long totalDiskMb,
         String uptime,
         int activeTransactions,
-        String raftStatus
-    ) {}
+        String raftStatus,
+        String gcName,
+        boolean compactHeadersActive,
+        String serializationStrategy
+    ) {
+        public SystemHealthStatus(
+            String nodeStatus,
+            long usedHeapMb,
+            long maxHeapMb,
+            int heapPercent,
+            long usedDiskMb,
+            long totalDiskMb,
+            String uptime,
+            int activeTransactions,
+            String raftStatus
+        ) {
+            this(nodeStatus, usedHeapMb, maxHeapMb, heapPercent, usedDiskMb, totalDiskMb, uptime, activeTransactions, raftStatus,
+                 "ZGC (Low-Latency)", true, "JettraSerialization (JettraEE Native)");
+        }
+    }
 
     /**
      * Comprehensive immutable snapshot of all dashboard analytics.

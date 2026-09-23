@@ -253,15 +253,10 @@ public class HierarchyExplorerService {
         String queryDb = resolveExistingDatabaseName(db);
         String prefix = getPrefixForEngine(engineKey);
         String dbPrefix = prefix + queryDb + ":";
-        Map<String, byte[]> entries = engine.getStorageCore().scanPrefix(dbPrefix);
+        Set<String> keys = engine.getStorageCore().scanPrefixKeys(dbPrefix);
 
-        for (Map.Entry<String, byte[]> e : entries.entrySet()) {
-            String k = e.getKey();
+        for (String k : keys) {
             if (k.contains("@")) continue; // Ignore versioned entries
-            byte[] val = e.getValue();
-            if (val == null || val.length == 0) continue;
-            String valStr = new String(val, StandardCharsets.UTF_8).trim();
-            if (valStr.isEmpty() || "__TOMBSTONE__".equals(valStr)) continue;
 
             String remainder = k.substring(dbPrefix.length());
             String[] parts = remainder.split(":", 2);
@@ -290,14 +285,9 @@ public class HierarchyExplorerService {
         // Also check un-prefixed partition keys for DOCUMENT engine or direct keys
         if ("DOCUMENT".equalsIgnoreCase(engineKey)) {
             String docPrefix = queryDb + ":";
-            Map<String, byte[]> simpleEntries = engine.getStorageCore().scanPrefix(docPrefix);
-            for (Map.Entry<String, byte[]> e : simpleEntries.entrySet()) {
-                String k = e.getKey();
+            Set<String> simpleKeys = engine.getStorageCore().scanPrefixKeys(docPrefix);
+            for (String k : simpleKeys) {
                 if (k.contains("@")) continue;
-                byte[] val = e.getValue();
-                if (val == null || val.length == 0) continue;
-                String valStr = new String(val, StandardCharsets.UTF_8).trim();
-                if (valStr.isEmpty() || "__TOMBSTONE__".equals(valStr)) continue;
 
                 String remainder = k.substring(docPrefix.length());
                 String[] parts = remainder.split(":", 2);
@@ -555,40 +545,19 @@ public class HierarchyExplorerService {
         Set<String> databases = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
         if (engine == null || engine.getStorageCore() == null) return databases;
 
-        Map<String, byte[]> allKeys = engine.getStorageCore().scanPrefix("");
-        for (String key : allKeys.keySet()) {
-            if (key.startsWith("meta:") || key.startsWith("schema:") || key.startsWith("rule:") || key.startsWith("idx:")) {
-                String[] parts = key.split(":");
-                if (parts.length > 1 && !parts[1].isBlank() && !LsmBTreeHybrid.isReservedDatabaseName(parts[1])) {
-                    databases.add(parts[1]);
-                }
-                continue;
-            }
-
-            boolean prefixMatched = false;
-            for (String[] spec : ENGINE_SPECS) {
-                String pfx = getPrefixForEngine(spec[0]);
-                if (key.startsWith(pfx)) {
-                    prefixMatched = true;
-                    String sub = key.substring(pfx.length());
-                    String[] parts = sub.split(":");
-                    if (parts.length > 0 && !parts[0].isBlank() && !LsmBTreeHybrid.isReservedDatabaseName(parts[0])) {
-                        databases.add(parts[0]);
+        try {
+            Set<String> phys = engine.getStorageCore().getDatabaseNames();
+            if (phys != null) {
+                for (String d : phys) {
+                    if (d != null && !d.isBlank() && !"_system".equalsIgnoreCase(d) && !"system_db".equalsIgnoreCase(d) && !LsmBTreeHybrid.isReservedDatabaseName(d)) {
+                        databases.add(d.trim());
                     }
-                    break;
                 }
             }
+        } catch (Exception ignored) {}
 
-            if (prefixMatched) {
-                continue;
-            }
-
-            String[] parts = key.split(":");
-            if (parts.length >= 2 && !parts[0].isBlank() && !parts[0].contains("/") && !LsmBTreeHybrid.isReservedDatabaseName(parts[0])) {
-                databases.add(parts[0]);
-            }
-        }
         databases.removeIf(LsmBTreeHybrid::isReservedDatabaseName);
+        databases.removeIf("system_db"::equalsIgnoreCase);
         return databases;
     }
 

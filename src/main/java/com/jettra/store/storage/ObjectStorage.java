@@ -40,6 +40,8 @@ public class ObjectStorage {
         return dir;
     }
 
+    public record StoredObjectEntry(CompactRecordHeader header, Serializable entity) implements Serializable {}
+
     public <T extends Serializable> void save(String id, T entity) {
         Class<?> clazz = entity.getClass();
         ReentrantReadWriteLock.WriteLock writeLock = getLock(clazz).writeLock();
@@ -49,14 +51,16 @@ public class ObjectStorage {
             File dir = getCollectionDir(clazz);
             File file = new File(dir, id + ".jdb");
             
+            byte[] binary = io.jettra.ee.serialization.JettraSerialization.serializeObject(
+                new StoredObjectEntry(new CompactRecordHeader(id), entity)
+            );
+
             try (FileOutputStream fos = new FileOutputStream(file);
                  FileChannel channel = fos.getChannel();
                  FileLock fileLock = channel.lock()) { // Process-wide lock
                  
-                ObjectOutputStream oos = new ObjectOutputStream(fos);
-                oos.writeObject(new CompactRecordHeader(id));
-                oos.writeObject(entity);
-                oos.flush();
+                fos.write(binary);
+                fos.flush();
             }
         } catch (IOException e) {
             throw new RuntimeException("Error saving object to JettraStore ObjectStorage", e);
@@ -80,16 +84,27 @@ public class ObjectStorage {
                  FileChannel channel = fis.getChannel();
                  FileLock fileLock = channel.lock(0L, Long.MAX_VALUE, true)) { // Process-wide shared lock
                  
-                ObjectInputStream ois = new ObjectInputStream(fis);
-                CompactRecordHeader header = (CompactRecordHeader) ois.readObject();
-                
-                if (header.deleted()) {
-                    return Optional.empty();
+                byte[] bytes = fis.readAllBytes();
+                if (io.jettra.ee.serialization.JettraSerialization.isJettraBinary(bytes)) {
+                    StoredObjectEntry entry = io.jettra.ee.serialization.JettraSerialization.deserializeObject(bytes, StoredObjectEntry.class);
+                    if (entry == null || entry.header().deleted()) {
+                        return Optional.empty();
+                    }
+                    @SuppressWarnings("unchecked")
+                    T entity = (T) entry.entity();
+                    return Optional.ofNullable(entity);
+                } else {
+                    // Legacy fallback
+                    try (ObjectInputStream ois = new ObjectInputStream(new ByteArrayInputStream(bytes))) {
+                        CompactRecordHeader header = (CompactRecordHeader) ois.readObject();
+                        if (header.deleted()) {
+                            return Optional.empty();
+                        }
+                        @SuppressWarnings("unchecked")
+                        T entity = (T) ois.readObject();
+                        return Optional.of(entity);
+                    }
                 }
-
-                @SuppressWarnings("unchecked")
-                T entity = (T) ois.readObject();
-                return Optional.of(entity);
             }
         } catch (IOException | ClassNotFoundException e) {
             throw new RuntimeException("Error reading object from JettraStore ObjectStorage", e);
@@ -112,12 +127,23 @@ public class ObjectStorage {
                          FileChannel channel = fis.getChannel();
                          FileLock fileLock = channel.lock(0L, Long.MAX_VALUE, true)) {
                          
-                        ObjectInputStream ois = new ObjectInputStream(fis);
-                        CompactRecordHeader header = (CompactRecordHeader) ois.readObject();
-                        if (!header.deleted()) {
-                            @SuppressWarnings("unchecked")
-                            T entity = (T) ois.readObject();
-                            results.add(entity);
+                        byte[] bytes = fis.readAllBytes();
+                        if (io.jettra.ee.serialization.JettraSerialization.isJettraBinary(bytes)) {
+                            StoredObjectEntry entry = io.jettra.ee.serialization.JettraSerialization.deserializeObject(bytes, StoredObjectEntry.class);
+                            if (entry != null && !entry.header().deleted()) {
+                                @SuppressWarnings("unchecked")
+                                T entity = (T) entry.entity();
+                                results.add(entity);
+                            }
+                        } else {
+                            try (ObjectInputStream ois = new ObjectInputStream(new ByteArrayInputStream(bytes))) {
+                                CompactRecordHeader header = (CompactRecordHeader) ois.readObject();
+                                if (!header.deleted()) {
+                                    @SuppressWarnings("unchecked")
+                                    T entity = (T) ois.readObject();
+                                    results.add(entity);
+                                }
+                            }
                         }
                     } catch (IOException | ClassNotFoundException ignored) {
                         // Ignore concurrently deleted/corrupted files

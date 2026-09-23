@@ -5,7 +5,11 @@ set -e
 
 echo "Starting JettraStoreEngine in the background..."
 rm -rf data
-NODE_ID="127.0.0.1" RAFT_PEERS="127.0.0.1:50051" java -jar target/JettraStoreEngine-1.0-SNAPSHOT.jar > engine.log 2>&1 &
+JAR_FILE="target/JettraDB-1.0-SNAPSHOT.jar"
+if [ ! -f "$JAR_FILE" ]; then
+    JAR_FILE="target/JettraStoreEngine-1.0-SNAPSHOT.jar"
+fi
+NODE_ID="127.0.0.1" RAFT_PEERS="127.0.0.1:50051" java -XX:+UseZGC -XX:+UseCompactObjectHeaders --enable-preview -jar "$JAR_FILE" > engine.log 2>&1 &
 ENGINE_PID=$!
 
 echo "Waiting for Engine to initialize (5s)..."

@@ -2221,7 +2221,24 @@ public class StoreEnginesPage extends StoreTemplatePage {
         ).modifier(new Modifier().style("justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:6px;"));
 
         if (isTableView) {
-            List<StorageTableView.FlatRecordItem> flatItems = new ArrayList<>();
+            int pageSize = 15;
+            try {
+                if (params != null && params.containsKey("table_size")) {
+                    pageSize = Math.max(5, Integer.parseInt(params.get("table_size")));
+                }
+            } catch (Exception ignored) {}
+
+            int currentPage = 1;
+            try {
+                if (params != null && params.containsKey("table_page")) {
+                    currentPage = Math.max(1, Integer.parseInt(params.get("table_page")));
+                }
+            } catch (Exception ignored) {}
+
+            // Pre-count total items and stream only the page slice
+            record ItemRef(String engName, String engColor, String engIcon, String uName, String itemId) {}
+            List<ItemRef> allItemRefs = new ArrayList<>();
+
             for (String[] spec : allEngSpecs) {
                 String engName = spec[0];
                 String engColor = spec[1];
@@ -2230,16 +2247,35 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 for (Map.Entry<String, List<String>> entry : unitsAndItems.entrySet()) {
                     String uName = entry.getKey();
                     for (String itemId : entry.getValue()) {
-                        int vCount = getItemVersionCount(engName, targetDb, uName, itemId);
-                        String itemPayload = getItemPayload(engName, targetDb, uName, itemId);
-                        String itemVersions = getVersionsJson(engName, targetDb, uName, itemId);
-                        String payloadB64 = Base64.getEncoder().encodeToString(itemPayload.getBytes(StandardCharsets.UTF_8));
-                        String versionsB64 = Base64.getEncoder().encodeToString(itemVersions.getBytes(StandardCharsets.UTF_8));
-                        flatItems.add(new StorageTableView.FlatRecordItem(engName, engColor, engIcon, targetDb, uName, itemId, vCount, itemPayload, payloadB64, versionsB64));
+                        allItemRefs.add(new ItemRef(engName, engColor, engIcon, uName, itemId));
                     }
                 }
             }
-            Widget tableBody = StorageTableView.build(selectedEngine, targetDb, currentColl, actionUrl, flatItems, params, jsonParser);
+
+            int totalItems = allItemRefs.size();
+            int totalPages = Math.max(1, (int) Math.ceil((double) totalItems / pageSize));
+            if (currentPage > totalPages) currentPage = totalPages;
+
+            int startIndex = (currentPage - 1) * pageSize;
+            int endIndex = Math.min(startIndex + pageSize, totalItems);
+
+            List<StorageTableView.FlatRecordItem> pageItems = new ArrayList<>();
+            for (int i = startIndex; i < endIndex; i++) {
+                ItemRef ref = allItemRefs.get(i);
+                int vCount = getItemVersionCount(ref.engName(), targetDb, ref.uName(), ref.itemId());
+                String itemPayload = getItemPayload(ref.engName(), targetDb, ref.uName(), ref.itemId());
+                String itemVersions = getVersionsJson(ref.engName(), targetDb, ref.uName(), ref.itemId());
+                String payloadB64 = Base64.getEncoder().encodeToString(itemPayload.getBytes(StandardCharsets.UTF_8));
+                String versionsB64 = Base64.getEncoder().encodeToString(itemVersions.getBytes(StandardCharsets.UTF_8));
+                pageItems.add(new StorageTableView.FlatRecordItem(
+                    ref.engName(), ref.engColor(), ref.engIcon(), targetDb, ref.uName(), ref.itemId(),
+                    vCount, itemPayload, payloadB64, versionsB64
+                ));
+            }
+
+            Widget tableBody = StorageTableView.buildPaged(
+                selectedEngine, targetDb, currentColl, actionUrl, totalItems, currentPage, pageSize, pageItems, params, jsonParser
+            );
             return Div.of(treeHeader, tableBody)
                 .modifier(new Modifier().cssClass("store-card").style("margin-bottom:20px; border: 1px solid var(--j-border); background:var(--j-bg-surface); color:var(--j-text-primary); padding:16px; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.05);"));
         }

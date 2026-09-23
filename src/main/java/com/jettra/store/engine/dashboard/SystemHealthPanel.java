@@ -17,6 +17,15 @@ public final class SystemHealthPanel {
     private SystemHealthPanel() {}
 
     public static Widget build(SystemHealthStatus health) {
+        // Header right badges (Uptime, GC, Compact Headers)
+        Widget headerRight = Row.of(
+            Span.of(health.gcName())
+                .modifier(new Modifier().cssClass("store-badge").style("font-size:10px; background:rgba(6,182,212,0.15); color:#06b6d4; border:1px solid #06b6d4; margin-right:8px;")),
+            Span.of(health.compactHeadersActive() ? "Compact Headers: ON" : "Headers: Standard")
+                .modifier(new Modifier().cssClass("store-badge").style("font-size:10px; background:rgba(168,85,247,0.15); color:#a855f7; border:1px solid #a855f7; margin-right:8px;")),
+            Span.of("Uptime: " + health.uptime()).modifier(new Modifier().style("font-size:11px; color:var(--j-text-muted); font-family:monospace;"))
+        ).modifier(new Modifier().style("display:flex; align-items:center; flex-wrap:wrap; gap:6px;"));
+
         Widget header = Div.of(
             Div.of(
                 Icon.of("fas fa-heartbeat").modifier(new Modifier().style("color:#ef4444; font-size:16px; margin-right:8px;")),
@@ -25,7 +34,7 @@ public final class SystemHealthPanel {
                 Span.of(health.nodeStatus())
                     .modifier(new Modifier().cssClass("store-badge badge-active").style("font-size:10px; margin-left:8px; background:rgba(16,185,129,0.15); color:#10b981; border:1px solid #10b981;"))
             ).modifier(new Modifier().style("display:flex; align-items:center;")),
-            Span.of("Uptime: " + health.uptime()).modifier(new Modifier().style("font-size:11px; color:var(--j-text-muted); font-family:monospace;"))
+            headerRight
         ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:8px;"));
 
         List<Widget> gridItems = new ArrayList<>();
@@ -36,7 +45,7 @@ public final class SystemHealthPanel {
             "#3b82f6",
             "JVM HEAP ALLOCATION",
             health.usedHeapMb() + " MB / " + health.maxHeapMb() + " MB",
-            health.heapPercent() + "% utilized (G1GC Virtual Threads)",
+            health.heapPercent() + "% utilized (" + health.gcName() + " • Virtual Threads)",
             health.heapPercent() > 85 ? "#ef4444" : "#3b82f6",
             health.heapPercent()
         );
@@ -55,7 +64,31 @@ public final class SystemHealthPanel {
         );
         gridItems.add(diskItem);
 
-        // 3. Active Transactions & Lock Concurrency
+        // 3. JVM Runtime & Compact Object Headers
+        Widget jvmConfigItem = createHealthMetricCard(
+            "fas fa-microchip",
+            "#06b6d4",
+            "JVM RUNTIME & HEADERS",
+            health.gcName(),
+            health.compactHeadersActive() ? "Compact Object Headers Active (-XX:+UseCompactObjectHeaders)" : "Standard Object Headers",
+            "LOW LATENCY",
+            "badge-active"
+        );
+        gridItems.add(jvmConfigItem);
+
+        // 4. Persistence & Serialization Engine
+        Widget serializationItem = createHealthMetricCard(
+            "fas fa-bolt",
+            "#ec4899",
+            "SERIALIZATION ENGINE",
+            health.serializationStrategy(),
+            "Zero-Copy Payload Binary Persistence (.dat / .jdb)",
+            "NATIVE EE",
+            "badge-active"
+        );
+        gridItems.add(serializationItem);
+
+        // 5. Active Transactions & Lock Concurrency
         Widget txItem = createHealthMetricCard(
             "fas fa-sync",
             "#f59e0b",
@@ -67,7 +100,7 @@ public final class SystemHealthPanel {
         );
         gridItems.add(txItem);
 
-        // 4. Cluster & Raft Topology
+        // 6. Cluster & Raft Topology
         Widget raftItem = createHealthMetricCard(
             "fas fa-network-wired",
             "#8b5cf6",

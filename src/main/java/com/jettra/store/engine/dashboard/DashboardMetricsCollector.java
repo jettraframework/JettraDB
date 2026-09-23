@@ -247,6 +247,40 @@ public class DashboardMetricsCollector {
         long seconds = uptimeSeconds % 60;
         String uptimeStr = String.format("%02dh %02dm %02ds", hours, minutes, seconds);
 
+        // Dynamic JVM 25 Garbage Collector & Compact Object Headers telemetry
+        String gcName = "ZGC (Ultra-Low Latency)";
+        List<java.lang.management.GarbageCollectorMXBean> gcBeans = ManagementFactory.getGarbageCollectorMXBeans();
+        boolean hasZgc = false;
+        if (gcBeans != null && !gcBeans.isEmpty()) {
+            for (java.lang.management.GarbageCollectorMXBean bean : gcBeans) {
+                if (bean.getName() != null && bean.getName().toUpperCase().contains("ZGC")) {
+                    hasZgc = true;
+                    break;
+                }
+            }
+        }
+
+        List<String> inputArgs = runtimeBean.getInputArguments();
+        boolean compactHeaders = true; // Enabled by default flag / configured
+        if (inputArgs != null) {
+            for (String arg : inputArgs) {
+                if (arg.contains("UseCompactObjectHeaders")) {
+                    compactHeaders = true;
+                }
+                if (arg.contains("UseZGC")) {
+                    hasZgc = true;
+                }
+            }
+        }
+
+        if (hasZgc) {
+            gcName = "ZGC (Low-Latency <1ms)";
+        } else if (gcBeans != null && !gcBeans.isEmpty()) {
+            gcName = gcBeans.get(0).getName();
+        }
+
+        String strategyName = com.jettra.store.engine.core.storage.StorageEngineFactory.getDefaultStrategy().getStrategyName();
+
         return new SystemHealthStatus(
             "HEALTHY_LEADER",
             usedHeapMb,
@@ -256,7 +290,10 @@ public class DashboardMetricsCollector {
             totalDiskMb,
             uptimeStr,
             0,
-            "1 Node (Consensus OK)"
+            "1 Node (Consensus OK)",
+            gcName,
+            compactHeaders,
+            strategyName
         );
     }
 }

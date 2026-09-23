@@ -161,7 +161,21 @@ public final class StorageTreeView {
                                  .style("background:none; border:none; color:" + engColor + "; font-size:9.5px; cursor:pointer; padding:1px 4px;"))
                      );
 
+                    int maxTreeItems = 50;
+                    int renderedCount = 0;
                     for (String itemId : items) {
+                        if (renderedCount++ >= maxTreeItems) {
+                            int remaining = items.size() - maxTreeItems;
+                            FluxTreeNode<StorageHierarchyNodeData> moreNode = JettraTreeNode.of(
+                                "node_more_" + engName + "_" + uName,
+                                "... and " + String.format("%,d", remaining) + " more items (view all in Table View)",
+                                StorageHierarchyNodeData.forUnit(engName, targetDb, uName, remaining)
+                            ).icon("fas fa-ellipsis-h")
+                             .iconColor("var(--j-text-muted)")
+                             .badge(String.valueOf(remaining), "store-badge badge-raft");
+                            unitNode.child(moreNode);
+                            break;
+                        }
                         int vCount = 1;
                         String payload = "{}";
                         String versionsJson = "[]";

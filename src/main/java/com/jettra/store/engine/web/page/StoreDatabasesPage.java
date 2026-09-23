@@ -958,7 +958,7 @@ public class StoreDatabasesPage extends StoreTemplatePage {
 
                 if (!isSystemDb) {
                     actionButtons.add(Button.of(Icon.of("fas fa-trash-alt"), Text.of(" Delete"))
-                            .attribute("onclick", "JettraConfirmDialog.open('dropDbConfirmDialog', '" + dbName + "', '" + dbName + "')")
+                            .attribute("onclick", "confirmDropDb('" + dbName + "')")
                             .attribute("title", "Delete Database")
                             .modifier(new Modifier().cssClass("btn-action btn-danger").style("padding:6px 12px; font-size:12px;")));
                 } else {
@@ -1097,7 +1097,7 @@ public class StoreDatabasesPage extends StoreTemplatePage {
 
                 if (!isSystemDb) {
                     dbNode.action(Button.of(Icon.of("fas fa-trash-alt"), Text.of(" "))
-                            .attribute("onclick", "JettraConfirmDialog.open('dropDbConfirmDialog', '" + dbName + "', '" + dbName + "')")
+                            .attribute("onclick", "confirmDropDb('" + dbName + "')")
                            .attribute("title", "Delete")
                             .modifier(new Modifier().cssClass("btn-action btn-danger").style("padding:3px 8px; font-size:11px;")));
                 } else {
@@ -1238,11 +1238,11 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                 RawHtml.of("<input type='hidden' name='action' value='create_db'/>"),
                 Div.of(
                         RawHtml.of("<label style='display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;'>Database Namespace Name:</label>"),
-                        RawHtml.of("<input type='text' name='db_name' required placeholder='e.g. enterprise_store' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:8px; color:#f8fafc; font-size:14px; box-sizing:border-box;'/>")
+                        RawHtml.of("<input type='text' id='create_db_name' name='db_name' required placeholder='e.g. enterprise_store' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:8px; color:#f8fafc; font-size:14px; box-sizing:border-box;' onkeydown='if(event.key===\"Enter\"){event.preventDefault();submitCreateDatabaseForm();}'/>")
                 ).modifier(new Modifier().style("margin-bottom:14px;")),
                 Div.of(
                         RawHtml.of("<label style='display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;'>Initial Engine Component:</label>"),
-                        RawHtml.of("<select name='initial_engine' onchange='updatePayloadTemplate(this.value, \"createPayload\")' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:8px; color:#f8fafc; font-size:14px; box-sizing:border-box;'>\n"
+                        RawHtml.of("<select id='create_initial_engine' name='initial_engine' onchange='updatePayloadTemplate(this.value, \"createPayload\")' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:8px; color:#f8fafc; font-size:14px; box-sizing:border-box;'>\n"
                                 + "          <option value='RECORDS' selected>RECORDS (Java 25 Immutable Records)</option>\n"
                                 + "          <option value='DOCUMENT'>DOCUMENT (NoSQL JSON Documents)</option>\n"
                                 + "          <option value='VECTOR'>VECTOR (AI ANN Cosine Embeddings)</option>\n"
@@ -1256,7 +1256,7 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                 ).modifier(new Modifier().style("margin-bottom:14px;")),
                 Div.of(
                         RawHtml.of("<label style='display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;'>Initial Entity ID / Key:</label>"),
-                        RawHtml.of("<input type='text' name='initial_key' value='entity_01' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:8px; color:#f8fafc; font-size:14px; box-sizing:border-box;'/>")
+                        RawHtml.of("<input type='text' id='create_initial_key' name='initial_key' value='entity_01' style='width:100%; padding:10px 12px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); border-radius:8px; color:#f8fafc; font-size:14px; box-sizing:border-box;'/>")
                 ).modifier(new Modifier().style("margin-bottom:14px;")),
                 Div.of(
                         RawHtml.of("<label style='display:block; font-size:13px; font-weight:600; color:#cbd5e1; margin-bottom:6px;'>Initial Payload JSON:</label>"),
@@ -1264,9 +1264,11 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                 ).modifier(new Modifier().style("margin-bottom:20px;")),
                 Div.of(
                         Button.of(Text.of("Cancel")).modifier(new Modifier().cssClass("btn-action btn-secondary").attribute("type", "button").attribute("onclick", "document.getElementById('createDbModal').close();")),
-                        Button.of(Icon.of("fas fa-check"), Text.of(" Create Database")).modifier(new Modifier().cssClass("btn-action btn-primary").attribute("type", "submit"))
+                        Button.of(Icon.of("fas fa-check"), Text.of(" Create Database"))
+                                .id("btnSubmitCreateDb")
+                                .modifier(new Modifier().cssClass("btn-action btn-primary").attribute("type", "button").attribute("onclick", "submitCreateDatabaseForm();"))
                 ).modifier(new Modifier().style("display:flex; justify-content:flex-end; gap:10px;"))
-        ).attribute("method", "POST").attribute("action", JettraServer.resolvePath("/databases"));
+        ).action(JettraServer.resolvePath("/databases")).method("POST").id("createDbForm");
 
         Widget createDbModal = Dialog.of(createDbHeader, createDbForm)
                 .id("createDbModal")
@@ -1463,8 +1465,17 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                 + "    var engParam = engine ? ('&engine=' + encodeURIComponent(engine)) : '&engine=RECORDS';\n"
                 + "    window.location.href = '" + JettraServer.resolvePath("/engines?target_db=") + "' + encodeURIComponent(dbName) + '&db=' + encodeURIComponent(dbName) + engParam;\n"
                 + "  }\n"
-                + "  function openModal(id) { document.getElementById(id).showModal(); }\n"
-                + "  function openCreateDbModal() { openModal('createDbModal'); }\n"
+                + "  function openModal(id) {\n"
+                + "    var m = document.getElementById(id);\n"
+                + "    if (m) {\n"
+                + "      if (typeof m.showModal === 'function') { m.showModal(); }\n"
+                + "      else { m.setAttribute('open', ''); m.style.display = 'block'; }\n"
+                + "    }\n"
+                + "  }\n"
+                + "  function openCreateDbModal() {\n"
+                + "    openModal('createDbModal');\n"
+                + "    setTimeout(function() { var inp = document.getElementById('create_db_name'); if (inp) inp.focus(); }, 60);\n"
+                + "  }\n"
                 + "  function openAssignUserModal(db) {\n"
                 + "    var dbInp = document.getElementById('assignUserDbInput');\n"
                 + "    if (dbInp) dbInp.value = db;\n"
@@ -1524,9 +1535,36 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                 + "    }\n"
                 + "  }\n"
                 + "  function confirmDropDb(db) {\n"
+                + "    if (!db) return;\n"
                 + "    if (window.JettraConfirmDialog) {\n"
                 + "      window.JettraConfirmDialog.open('dropDbConfirmDialog', db, db);\n"
+                + "    } else {\n"
+                + "      var modal = document.getElementById('dropDbConfirmDialog');\n"
+                + "      if (modal) {\n"
+                + "        var input = document.getElementById('dropDbConfirmDialog_targetInput');\n"
+                + "        var display = document.getElementById('dropDbConfirmDialog_targetDisplay');\n"
+                + "        if (input) input.value = db;\n"
+                + "        if (display) display.innerText = db;\n"
+                + "        modal.style.display = 'flex';\n"
+                + "        document.body.style.overflow = 'hidden';\n"
+                + "      }\n"
                 + "    }\n"
+                + "  }\n"
+                + "  function submitCreateDatabaseForm() {\n"
+                + "    var form = document.getElementById('createDbForm');\n"
+                + "    if (!form) return;\n"
+                + "    var nameInp = document.getElementById('create_db_name') || form.querySelector('input[name=\"db_name\"]');\n"
+                + "    if (!nameInp || !nameInp.value.trim()) {\n"
+                + "      alert('Please enter a database namespace name.');\n"
+                + "      if (nameInp) nameInp.focus();\n"
+                + "      return;\n"
+                + "    }\n"
+                + "    var btn = document.getElementById('btnSubmitCreateDb');\n"
+                + "    if (btn) {\n"
+                + "      btn.disabled = true;\n"
+                + "      btn.innerHTML = '<i class=\"fas fa-spinner fa-spin\"></i> Provisioning...';\n"
+                + "    }\n"
+                + "    form.submit();\n"
                 + "  }\n"
                 + "  function updatePayloadTemplate(engine, targetId) {\n"
                 + "    var t = document.getElementById(targetId);\n"
@@ -2076,14 +2114,21 @@ public class StoreDatabasesPage extends StoreTemplatePage {
     private Map<String, DatabaseMetadata> discoverDatabases() {
         Map<String, DatabaseMetadata> databases = new LinkedHashMap<>();
 
-        // Discover physical databases from disk (/data/node1/databases) and in-memory partitions
+        // Fast discovery from physical database directories and active in-memory partitions
         if (engine != null && engine.getStorageCore() != null) {
             try {
                 Set<String> physDbs = engine.getStorageCore().getDatabaseNames();
                 if (physDbs != null) {
                     for (String db : physDbs) {
                         if (db != null && !db.isBlank() && !"_system".equalsIgnoreCase(db) && !LsmBTreeHybrid.isReservedDatabaseName(db)) {
-                            databases.computeIfAbsent(db.trim(), DatabaseMetadata::new);
+                            String cleanDb = db.trim();
+                            DatabaseMetadata meta = databases.computeIfAbsent(cleanDb, DatabaseMetadata::new);
+                            Map<String, Integer> counts = engine.getStorageCore().getDatabaseEngineCounts(cleanDb);
+                            if (counts != null) {
+                                for (Map.Entry<String, Integer> entry : counts.entrySet()) {
+                                    meta.addComponent(entry.getKey(), entry.getValue());
+                                }
+                            }
                         }
                     }
                 }
@@ -2091,23 +2136,6 @@ public class StoreDatabasesPage extends StoreTemplatePage {
             }
         }
 
-        String[] prefixes = {"rec:", "doc:", "vec:", "graph:", "ts:", "col:", "kv:", "geo:", "obj:"};
-        for (String p : prefixes) {
-            Map<String, byte[]> keys = engine.getStorageCore().scanPrefix(p);
-            String engineName = getEngineNameForPrefix(p);
-
-            for (String k : keys.keySet()) {
-                String rest = k.substring(p.length());
-                int colonIdx = rest.indexOf(':');
-                if (colonIdx > 0) {
-                    String dbName = rest.substring(0, colonIdx).trim();
-                    if (!dbName.isBlank() && !"_system".equalsIgnoreCase(dbName) && !LsmBTreeHybrid.isReservedDatabaseName(dbName)) {
-                        DatabaseMetadata meta = databases.computeIfAbsent(dbName, DatabaseMetadata::new);
-                        meta.incrementEngine(engineName);
-                    }
-                }
-            }
-        }
         databases.keySet().removeIf(LsmBTreeHybrid::isReservedDatabaseName);
         return databases;
     }
@@ -2120,8 +2148,8 @@ public class StoreDatabasesPage extends StoreTemplatePage {
         String[] prefixes = {"rec:", "doc:", "vec:", "graph:", "ts:", "col:", "kv:", "geo:", "obj:", ""};
         for (String p : prefixes) {
             String dbPrefix = p + targetDb + ":";
-            Map<String, byte[]> keys = engine.getStorageCore().scanPrefix(dbPrefix);
-            for (String k : keys.keySet()) {
+            Set<String> keys = engine.getStorageCore().scanPrefixKeys(dbPrefix);
+            for (String k : keys) {
                 engine.getStorageCore().delete(k, System.currentTimeMillis());
                 count++;
             }

@@ -48,7 +48,7 @@ public final class StorageTableView {
         Map<String, String> params,
         JettraJson jsonParser
     ) {
-        int totalItems = flatItems.size();
+        int totalItems = flatItems != null ? flatItems.size() : 0;
         int pageSize = 15;
         try {
             if (params != null && params.containsKey("table_size")) {
@@ -68,14 +68,36 @@ public final class StorageTableView {
 
         int startIndex = (currentPage - 1) * pageSize;
         int endIndex = Math.min(startIndex + pageSize, totalItems);
-        List<FlatRecordItem> pageItems = totalItems > 0 ? flatItems.subList(startIndex, endIndex) : Collections.emptyList();
+        List<FlatRecordItem> pageItems = (totalItems > 0 && flatItems != null)
+            ? (flatItems.size() <= pageSize ? flatItems : flatItems.subList(startIndex, endIndex))
+            : Collections.emptyList();
+
+        return buildPaged(selectedEngine, targetDb, currentColl, actionUrl, totalItems, currentPage, pageSize, pageItems, params, jsonParser);
+    }
+
+    public static Widget buildPaged(
+        String selectedEngine,
+        String targetDb,
+        String currentColl,
+        String actionUrl,
+        int totalItems,
+        int currentPage,
+        int pageSize,
+        List<FlatRecordItem> pageItems,
+        Map<String, String> params,
+        JettraJson jsonParser
+    ) {
+        int totalPages = Math.max(1, (int) Math.ceil((double) totalItems / pageSize));
+        if (currentPage > totalPages) currentPage = totalPages;
+        int startIndex = (currentPage - 1) * pageSize;
+        int endIndex = Math.min(startIndex + (pageItems != null ? pageItems.size() : 0), totalItems);
 
         boolean defaultExpanded = params != null &&
             ("true".equalsIgnoreCase(params.get("expand")) ||
              "expanded".equalsIgnoreCase(params.get("table_state")) ||
              "expanded".equalsIgnoreCase(params.get("tree_state")));
 
-        // 1. Filter Bar
+        // 1. Filter Bar with pure JettraFlux components
         Widget quickFilterInput = TextField.of("table_quick_filter", "Quick filter by Record ID, unit, engine, or payload content...")
             .id("tableExplorerQuickFilter")
             .modifier(new Modifier()
@@ -83,10 +105,14 @@ public final class StorageTableView {
                 .style("flex:1; min-width:220px; padding:6px 12px; background:var(--j-bg-surface); border:1px solid var(--j-border); border-radius:6px; color:var(--j-text-primary); font-size:12px;"));
 
         Widget resolveRefCheckbox = Label.of(
-            RawHtml.of("<input type=\"checkbox\" id=\"chkAutoResolveRefsGlobal\" checked onchange=\"toggleGlobalReferenceResolution(this.checked)\" style=\"accent-color:var(--j-primary); width:14px; height:14px; cursor:pointer; margin-right:4px;\" />"),
-            Icon.of("fas fa-link").modifier(new Modifier().style("color:var(--j-primary); margin-right:4px; font-size:11px;")),
-            Span.of("Cargar Objetos Referenciados (Auto-Resolve Jref)").modifier(new Modifier().style("color:var(--j-text-secondary); font-size:11px; font-weight:600;"))
-        ).modifier(new Modifier().style("display:inline-flex; align-items:cursor:pointer; background:var(--j-primary-light); border:1px solid var(--j-border); padding:4px 8px; border-radius:6px;"));
+            Checkbox.of("chkAutoResolveRefsGlobal", "Cargar Objetos Referenciados (Auto-Resolve Jref)")
+                .id("chkAutoResolveRefsGlobal")
+                .modifier(new Modifier()
+                    .attribute("checked", "checked")
+                    .attribute("onchange", "toggleGlobalReferenceResolution(this.checked)")
+                    .style("accent-color:var(--j-primary); width:14px; height:14px; cursor:pointer; margin-right:4px; font-size:11px; font-weight:600; color:var(--j-text-secondary);")),
+            Icon.of("fas fa-link").modifier(new Modifier().style("color:var(--j-primary); margin-left:4px; font-size:11px;"))
+        ).modifier(new Modifier().style("display:inline-flex; align-items:center; cursor:pointer; background:var(--j-primary-light); border:1px solid var(--j-border); padding:4px 8px; border-radius:6px;"));
 
         Widget totalCountBadge = Span.of(totalItems + " Total Records").id("tableFilterVisibleCount")
             .modifier(new Modifier().cssClass("store-badge badge-active").style("font-size:11px; padding:4px 8px;"));
@@ -113,7 +139,7 @@ public final class StorageTableView {
 
         tableRows.add(tableHeaderRow);
 
-        if (pageItems.isEmpty()) {
+        if (pageItems == null || pageItems.isEmpty()) {
             tableRows.add(
                 Div.of(
                     Icon.of("fas fa-database").modifier(new Modifier().style("color:var(--j-text-muted); font-size:28px; margin-bottom:8px; display:block;")),
@@ -126,7 +152,7 @@ public final class StorageTableView {
         } else {
             for (int i = 0; i < pageItems.size(); i++) {
                 FlatRecordItem item = pageItems.get(i);
-                String rowDetailId = "tbl_row_detail_" + (i + 1);
+                String rowDetailId = "tbl_row_detail_" + (startIndex + i + 1);
 
                 String toggleIconClass = defaultExpanded ? "fas fa-chevron-down tree-toggle-icon" : "fas fa-chevron-right tree-toggle-icon";
                 Widget expandBtn = Button.of(
@@ -220,7 +246,7 @@ public final class StorageTableView {
             .id("tableExplorerContainer")
             .modifier(new Modifier().style("border:1px solid var(--j-border); border-radius:6px; overflow-x:auto; margin-bottom:12px; position:relative;"));
 
-        // 3. Pagination Controls
+        // 3. Pagination Controls (pure JettraFlux widgets)
         String baseTableUrl = actionUrl + selectedEngine + "&target_db=" + targetDb + "&coll=" + currentColl + "&view_mode=table&table_size=" + pageSize;
 
         List<Widget> pageButtons = new ArrayList<>();
@@ -242,8 +268,7 @@ public final class StorageTableView {
             Div.of(pageButtons.toArray(new Widget[0])).modifier(new Modifier().style("display:flex; align-items:center; gap:2px;"))
         ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; padding:6px 4px;"));
 
-        Widget tableInitScript = RawHtml.of(
-            "<script>\n" +
+        Widget tableInitScript = RawScript.of(
             "  if (typeof window.toggleTableRowDetail !== 'function') {\n" +
             "    window.toggleTableRowDetail = function(detailId) {\n" +
             "      var el = document.getElementById(detailId);\n" +
@@ -309,8 +334,7 @@ public final class StorageTableView {
             "      var counter = document.getElementById('tableFilterVisibleCount');\n" +
             "      if (counter) counter.innerText = visibleCount + ' Total Records';\n" +
             "    };\n" +
-            "  }\n" +
-            "</script>\n"
+            "  }\n"
         );
 
         return Div.of(

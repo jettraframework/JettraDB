@@ -143,6 +143,8 @@
                             <mainClass>${mainClass}</mainClass>
                             <executable>java</executable>
                             <arguments>
+                                <argument>-XX:+UseZGC</argument>
+                                <argument>-XX:+UseCompactObjectHeaders</argument>
                                 <argument>--enable-preview</argument>
                                 <argument>-classpath</argument>
                                 <classpath/>

@@ -75,9 +75,9 @@ public class DatabaseSecurityFilter {
         try {
             String[] prefixes = {"rec:", "doc:", "vec:", "graph:", "ts:", "col:", "kv:", "geo:", "obj:"};
             for (String p : prefixes) {
-                Map<String, byte[]> keys = engine.getStorageCore().scanPrefix(p);
+                Set<String> keys = engine.getStorageCore().scanPrefixKeys(p);
                 if (keys != null) {
-                    for (String k : keys.keySet()) {
+                    for (String k : keys) {
                         String rest = k.substring(p.length());
                         int colonIdx = rest.indexOf(':');
                         String dbName = colonIdx > 0 ? rest.substring(0, colonIdx) : "";

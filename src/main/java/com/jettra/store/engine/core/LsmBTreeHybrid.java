@@ -1,5 +1,7 @@
 package com.jettra.store.engine.core;
 
+import com.jettra.store.engine.core.storage.*;
+
 import java.io.IOException;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
@@ -44,15 +46,18 @@ public class LsmBTreeHybrid {
      */
     public static class DatabasePartition {
         private final String dbName;
+        private final Path rootStorageDir;
         private final Path dbDirectory;
         private final Path journalFile;
         private final ConcurrentSkipListMap<String, byte[]> memTable;
         private final Map<String, Long> diskIndex;
         private final ConcurrentHashMap<String, ConcurrentSkipListMap<Long, byte[]>> versionHistory;
         private JettraFileManager fileManager;
+        private final StorageRecordRepository recordRepository;
         private final int FLUSH_THRESHOLD = 1000;
 
         public DatabasePartition(Path rootStorageDir, String dbName) {
+            this.rootStorageDir = rootStorageDir;
             this.dbName = (dbName != null && !dbName.isBlank()) ? dbName.trim() : "_system";
             if ("_system".equalsIgnoreCase(this.dbName)) {
                 this.dbDirectory = rootStorageDir.resolve("system");
@@ -70,6 +75,7 @@ public class LsmBTreeHybrid {
             this.memTable = new ConcurrentSkipListMap<>();
             this.diskIndex = new ConcurrentHashMap<>();
             this.versionHistory = new ConcurrentHashMap<>();
+            this.recordRepository = com.jettra.store.engine.core.storage.StorageEngineFactory.createRepository();
 
             try {
                 if (!Files.exists(this.dbDirectory)) {
@@ -81,6 +87,43 @@ public class LsmBTreeHybrid {
             }
 
             loadFromWal();
+            loadFromDiskHierarchy();
+        }
+
+        private void loadFromDiskHierarchy() {
+            if (!Files.exists(this.dbDirectory)) return;
+            try (DirectoryStream<Path> engineDirs = Files.newDirectoryStream(this.dbDirectory)) {
+                for (Path engineDir : engineDirs) {
+                    if (!Files.isDirectory(engineDir)) continue;
+                    String engineName = engineDir.getFileName().toString();
+                    if (engineName.equals("data_0.jettra") || engineName.equals("wal.jettra")) continue;
+                    StorageEngineStrategy strategy = EngineStorageStrategyRegistry.resolve(engineName);
+                    String prefix = strategy.getPrefix();
+
+                    try (DirectoryStream<Path> unitDirs = Files.newDirectoryStream(engineDir)) {
+                        for (Path unitDir : unitDirs) {
+                            if (!Files.isDirectory(unitDir)) continue;
+                            String unitName = unitDir.getFileName().toString();
+                            try (DirectoryStream<Path> files = Files.newDirectoryStream(unitDir, "*.dat")) {
+                                for (Path file : files) {
+                                    String fname = file.getFileName().toString();
+                                    String recId = fname.substring(0, fname.length() - 4);
+                                    String primaryKey;
+                                    if ("default".equalsIgnoreCase(unitName)) {
+                                        primaryKey = prefix + dbName + ":" + recId;
+                                    } else {
+                                        primaryKey = prefix + dbName + ":" + unitName + ":" + recId;
+                                    }
+                                    diskIndex.put(primaryKey, 0L);
+                                    if ("records".equalsIgnoreCase(engineName)) {
+                                        diskIndex.put(dbName + ":" + recId, 0L);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (IOException ignored) {}
         }
 
         public String getDbName() {
@@ -177,6 +220,14 @@ public class LsmBTreeHybrid {
             memTable.put(versionedKey, data);
             appendWal(key, effectiveTs, data);
 
+            try {
+                StorageRecordPath path = StoragePathBuilder.fromKey(rootStorageDir, key, data);
+                recordRepository.save(path, data, effectiveTs, 1);
+                diskIndex.put(key, 0L);
+            } catch (IOException e) {
+                System.err.println("Warning saving individual record for key [" + key + "]: " + e.getMessage());
+            }
+
             if (memTable.size() >= FLUSH_THRESHOLD) {
                 flushToBTree();
             }
@@ -195,8 +246,16 @@ public class LsmBTreeHybrid {
                 return (val != null && val.length > 0) ? val : null;
             }
 
+            try {
+                StorageRecordPath path = StoragePathBuilder.fromKey(rootStorageDir, key, null);
+                byte[] payload = recordRepository.readPayload(path);
+                if (payload != null && payload.length > 0) {
+                    return payload;
+                }
+            } catch (Exception ignored) {}
+
             Long offset = diskIndex.get(key);
-            if (offset != null && fileManager != null) {
+            if (offset != null && offset > 0 && fileManager != null) {
                 try {
                     byte[] val = fileManager.read(offset);
                     return (val != null && val.length > 0) ? val : null;
@@ -223,6 +282,11 @@ public class LsmBTreeHybrid {
             memTable.put(versionedKey, new byte[0]);
             appendWal(key, timestamp, new byte[0]);
             diskIndex.remove(key);
+
+            try {
+                StorageRecordPath path = StoragePathBuilder.fromKey(rootStorageDir, key, null);
+                recordRepository.delete(path);
+            } catch (Exception ignored) {}
         }
 
         public Map<String, byte[]> scanPrefix(String prefix) {
@@ -272,10 +336,25 @@ public class LsmBTreeHybrid {
                         if (fileManager != null) {
                             long offset = fileManager.append(data, false);
                             diskIndex.put(key, offset);
+                        } else {
+                            diskIndex.put(key, 0L);
                         }
                     }
                     dos.flush();
                 }
+
+                // Concurrent virtual thread persistence of individual record files (.dat)
+                List<StorageRecordRepository.RecordWriteTask> tasks = new java.util.ArrayList<>(entries.size());
+                for (Map.Entry<String, byte[]> entry : entries) {
+                    String key = entry.getKey();
+                    byte[] data = entry.getValue();
+                    if (key == null || data == null) continue;
+                    StorageRecordPath path = StoragePathBuilder.fromKey(rootStorageDir, key, data);
+                    tasks.add(new StorageRecordRepository.RecordWriteTask(path, data, timestamp, 1));
+                    diskIndex.put(key, 0L);
+                }
+                recordRepository.saveBatch(tasks);
+
                 if (fileManager != null) {
                     fileManager.force();
                 }
@@ -307,6 +386,45 @@ public class LsmBTreeHybrid {
                 allKeys.add(baseKey);
             }
             return allKeys.size();
+        }
+
+        public Map<String, Integer> getEngineCounts() {
+            Map<String, Integer> counts = new LinkedHashMap<>();
+            Set<String> seen = new java.util.HashSet<>();
+            for (String baseKey : diskIndex.keySet()) {
+                if (seen.add(baseKey)) {
+                    String eng = resolveEngineFromKey(baseKey);
+                    if (eng != null) {
+                        counts.put(eng, counts.getOrDefault(eng, 0) + 1);
+                    }
+                }
+            }
+            for (String k : memTable.keySet()) {
+                String baseKey = k.contains("@") ? k.substring(0, k.lastIndexOf('@')) : k;
+                if (seen.add(baseKey)) {
+                    String eng = resolveEngineFromKey(baseKey);
+                    if (eng != null) {
+                        counts.put(eng, counts.getOrDefault(eng, 0) + 1);
+                    }
+                }
+            }
+            return counts;
+        }
+
+        private String resolveEngineFromKey(String key) {
+            if (key == null || key.isBlank() || key.startsWith("meta:") || key.startsWith("schema:") || key.startsWith("rule:") || key.startsWith("idx:")) {
+                return null;
+            }
+            if (key.startsWith("rec:")) return "RECORDS";
+            if (key.startsWith("doc:")) return "DOCUMENT";
+            if (key.startsWith("vec:")) return "VECTOR";
+            if (key.startsWith("graph:")) return "GRAPH";
+            if (key.startsWith("ts:")) return "TIMESERIES";
+            if (key.startsWith("col:")) return "COLUMN";
+            if (key.startsWith("kv:")) return "KEYVALUE";
+            if (key.startsWith("geo:")) return "GEOSPATIAL";
+            if (key.startsWith("obj:")) return "OBJECT";
+            return "DOCUMENT";
         }
 
         public List<RecordVersion> getVersionHistory(String key) {
@@ -404,19 +522,36 @@ public class LsmBTreeHybrid {
         }
 
         public synchronized void flushToBTree() {
-            if (fileManager == null || memTable.isEmpty()) return;
+            if (memTable.isEmpty()) return;
             try {
+                List<StorageRecordRepository.RecordWriteTask> flushTasks = new java.util.ArrayList<>(memTable.size());
                 for (Map.Entry<String, byte[]> entry : memTable.entrySet()) {
-                    long offset = fileManager.append(entry.getValue(), false);
+                    long offset = (fileManager != null) ? fileManager.append(entry.getValue(), false) : 0L;
                     String k = entry.getKey();
                     String baseKey = k.contains("@") ? k.substring(0, k.lastIndexOf('@')) : k;
                     diskIndex.put(baseKey, offset);
+                    byte[] val = entry.getValue();
+                    if (val != null && val.length > 0) {
+                        StorageRecordPath path = StoragePathBuilder.fromKey(rootStorageDir, baseKey, val);
+                        flushTasks.add(new StorageRecordRepository.RecordWriteTask(path, val, System.currentTimeMillis(), 1));
+                    }
                 }
-                fileManager.force();
+                recordRepository.saveBatch(flushTasks);
+                if (fileManager != null) {
+                    fileManager.force();
+                }
                 memTable.clear();
             } catch (IOException e) {
                 System.err.println("Error flushing MemTable for database [" + dbName + "]: " + e.getMessage());
             }
+        }
+
+        public StorageRecordRepository getRecordRepository() {
+            return recordRepository;
+        }
+
+        public Path getRootStorageDir() {
+            return rootStorageDir;
         }
 
         public void drop() {
@@ -829,6 +964,15 @@ public class LsmBTreeHybrid {
         if (dbName == null || dbName.isBlank()) return 0;
         DatabasePartition partition = findPartition(dbName);
         return partition != null ? partition.getTotalRecordCount() : 0;
+    }
+
+    public Map<String, Integer> getDatabaseEngineCounts(String dbName) {
+        if (dbName == null || dbName.isBlank()) return Collections.emptyMap();
+        DatabasePartition partition = findPartition(dbName);
+        if (partition == null) {
+            partition = getPartition(dbName);
+        }
+        return partition != null ? partition.getEngineCounts() : Collections.emptyMap();
     }
 
     public List<RecordVersion> getVersionHistory(String key) {
