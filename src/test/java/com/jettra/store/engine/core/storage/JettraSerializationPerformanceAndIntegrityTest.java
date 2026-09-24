@@ -30,11 +30,13 @@ public class JettraSerializationPerformanceAndIntegrityTest {
 
     @BeforeEach
     void setUp() throws IOException {
+        StorageEngineFactory.setDefaultStorageType(StorageEngineFactory.StorageType.INDIVIDUAL_FILE);
         tempDir = Files.createTempDirectory("jettra_serialization_test_");
     }
 
     @AfterEach
     void tearDown() throws IOException {
+        StorageEngineFactory.setDefaultStorageType(StorageEngineFactory.StorageType.SLOTTED_PAGE);
         if (tempDir != null && Files.exists(tempDir)) {
             Files.walk(tempDir)
                     .sorted(Comparator.reverseOrder())

@@ -116,8 +116,11 @@ public class HierarchyExplorerService {
             String uName = uEntry.getKey();
             List<String> items = uEntry.getValue();
             List<HierarchyNode.RecordNode> recordNodes = new ArrayList<>();
+            int totalUnitItems = items.size();
+            final int MAX_PREVIEW_ITEMS = 50;
+            List<String> previewItems = totalUnitItems > MAX_PREVIEW_ITEMS ? items.subList(0, MAX_PREVIEW_ITEMS) : items;
 
-            for (String itemId : items) {
+            for (String itemId : previewItems) {
                 int vCount = getItemVersionCount(engName, db, uName, itemId);
                 String itemPayload = getItemPayload(engName, db, uName, itemId);
                 String itemVersions = getVersionsJson(engName, db, uName, itemId);
@@ -142,10 +145,10 @@ public class HierarchyExplorerService {
             unitNodes.add(new HierarchyNode.UnitNode(
                 "unit_" + engName + "_" + db + "_" + uName,
                 uName,
-                recordNodes.size(),
+                totalUnitItems,
                 recordNodes
             ));
-            totalEngItems += recordNodes.size();
+            totalEngItems += totalUnitItems;
         }
 
         return new HierarchyNode.EngineNode(
@@ -431,20 +434,19 @@ public class HierarchyExplorerService {
             }
         }
 
-        // Fallback: scan prefix for matching suffix
+        // Fast targeted fallbacks without scanning the entire partition
         if (db != null && !db.isBlank()) {
-            String scanPfx = prefix + db + ":";
-            Map<String, byte[]> scanned = engine.getStorageCore().scanPrefix(scanPfx);
-            for (Map.Entry<String, byte[]> entry : scanned.entrySet()) {
-                String key = entry.getKey();
-                if (key.contains("@")) continue;
-                if (key.endsWith(":" + id) || key.equals(scanPfx + id)) {
-                    byte[] b = entry.getValue();
-                    if (b != null && b.length > 0) {
-                        return new String(b, StandardCharsets.UTF_8);
-                    }
-                }
-            }
+            String direct1 = prefix + db + ":" + id;
+            byte[] b = engine.getStorageCore().get(direct1);
+            if (b != null && b.length > 0) return new String(b, StandardCharsets.UTF_8);
+
+            String direct2 = db + ":" + id;
+            b = engine.getStorageCore().get(direct2);
+            if (b != null && b.length > 0) return new String(b, StandardCharsets.UTF_8);
+
+            String direct3 = prefix + id;
+            b = engine.getStorageCore().get(direct3);
+            if (b != null && b.length > 0) return new String(b, StandardCharsets.UTF_8);
         }
 
         return "{}";

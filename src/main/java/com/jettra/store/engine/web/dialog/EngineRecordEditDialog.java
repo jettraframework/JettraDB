@@ -569,6 +569,7 @@ public final class EngineRecordEditDialog {
                           <span id="edit_rec_json_status" style="font-size:9.5px; font-weight:700; padding:1px 6px; border-radius:10px; background:rgba(16,185,129,0.15); color:#10b981; border:1px solid rgba(16,185,129,0.3);">SYNCED</span>
                         </div>
                       </div>
+                      <textarea id="edit_rec_json_raw" oninput="syncRecordJsonToFields()" style="width:100%; min-height:160px; font-family:monospace; font-size:11.5px; background:var(--j-bg-body, #0a0f1d); border:1px solid var(--j-border, rgba(255,255,255,0.1)); border-radius:0 0 6px 6px; color:#38bdf8; padding:8px 10px; box-sizing:border-box; resize:vertical;"></textarea>
                     </div>
                     """)
                 ).modifier(new Modifier().style("overflow-x:auto; margin-top:8px;"))
@@ -906,7 +907,69 @@ public final class EngineRecordEditDialog {
             return false;
         }
 
-        function addRecordEditField(name, type, val) {
+        function toggleEditRecJsonMode() {
+            var tbl = document.querySelector('#edit_rec_record_editor_container table');
+            var jsonCont = document.getElementById('edit_rec_record_json_container');
+            var btn = document.getElementById('edit_rec_btn_mode_toggle');
+            if (!jsonCont) return;
+            var isJsonVisible = (jsonCont.style.display === 'flex' || jsonCont.style.display === 'block');
+            if (!isJsonVisible) {
+                if (tbl) tbl.style.display = 'none';
+                jsonCont.style.display = 'flex';
+                if (btn) {
+                    btn.innerHTML = '<i class="fas fa-table"></i> Vista Estructurada';
+                    btn.style.color = '#38bdf8';
+                }
+                var rawTa = document.getElementById('edit_rec_json_raw');
+                var pInp = document.getElementById('edit_rec_payload');
+                if (rawTa && pInp) rawTa.value = pInp.value;
+            } else {
+                if (tbl) tbl.style.display = 'table';
+                jsonCont.style.display = 'none';
+                if (btn) {
+                    btn.innerHTML = '<i class="fas fa-code"></i> JSON Canónico';
+                    btn.style.color = 'var(--j-text-primary)';
+                }
+            }
+        }
+
+        function syncRecordJsonToFields() {
+            var rawTa = document.getElementById('edit_rec_json_raw');
+            if (!rawTa) return;
+            var text = rawTa.value.trim();
+            var statusEl = document.getElementById('edit_rec_json_status');
+            try {
+                var parsed = JSON.parse(text);
+                if (statusEl) {
+                    statusEl.innerText = 'VALID JSON';
+                    statusEl.style.color = '#10b981';
+                    statusEl.style.borderColor = 'rgba(16,185,129,0.3)';
+                }
+                var p1 = document.getElementById('edit_rec_payload');
+                if (p1) p1.value = text;
+                var p2 = document.getElementById('editRecPayloadInput');
+                if (p2) p2.value = text;
+                var p3 = document.getElementById('universalEditPayloadInput');
+                if (p3) p3.value = text;
+
+                if (parsed._recordClass) {
+                    var clsInp = document.getElementById('edit_rec_class');
+                    if (clsInp) clsInp.value = parsed._recordClass;
+                }
+                if (parsed._table) {
+                    var tblInp = document.getElementById('edit_rec_table');
+                    if (tblInp) tblInp.value = parsed._table;
+                }
+            } catch (e) {
+                if (statusEl) {
+                    statusEl.innerText = 'INVALID JSON';
+                    statusEl.style.color = '#ef4444';
+                    statusEl.style.borderColor = 'rgba(239,68,68,0.3)';
+                }
+            }
+        }
+
+        function addRecordEditField(name, type, val, skipSync) {
             var tbody = document.getElementById('edit_rec_record_fields_tbody');
             if (!tbody) return;
             var fName = name || '';
@@ -942,12 +1005,14 @@ public final class EngineRecordEditDialog {
                 '</td>';
 
             tbody.appendChild(tr);
-            syncRecordEditPayload();
+            if (!skipSync) {
+                syncRecordEditPayload();
+            }
         }
 
         function syncRecordEditPayload() {
             var recClassInp = document.getElementById('edit_rec_class');
-            var recClass = recClassInp ? recClassInp.value.trim() : 'com.jettra.model.EmployeeProfileRecord';
+            var recClass = recClassInp ? recClassInp.value.trim() : 'com.jettra.model.Record';
             var recTableInp = document.getElementById('edit_rec_table');
             var recTable = recTableInp ? recTableInp.value.trim() : 'default';
 
@@ -994,6 +1059,12 @@ public final class EngineRecordEditDialog {
                 components: components
             };
 
+            for (var prop in components) {
+                if (components.hasOwnProperty(prop)) {
+                    payload[prop] = components[prop];
+                }
+            }
+
             if (window.currentEditRecordParsed) {
                 if (window.currentEditRecordParsed._id) payload._id = window.currentEditRecordParsed._id;
                 if (window.currentEditRecordParsed.id) payload.id = window.currentEditRecordParsed.id;
@@ -1008,6 +1079,8 @@ public final class EngineRecordEditDialog {
             if (p2) p2.value = jsonStr;
             var p3 = document.getElementById('universalEditPayloadInput');
             if (p3) p3.value = jsonStr;
+            var rawTa = document.getElementById('edit_rec_json_raw');
+            if (rawTa && document.activeElement !== rawTa) rawTa.value = jsonStr;
         }
 
         function populateRecordFieldsFromPayload(formId, p, prettyPayload) {
@@ -1017,20 +1090,22 @@ public final class EngineRecordEditDialog {
             }
             window.currentEditRecordParsed = pObj;
 
-            var recClass = pObj._recordClass || pObj._class || 'com.jettra.model.EmployeeProfileRecord';
-            var classInp = document.getElementById('edit_rec_class') || document.getElementById('editRecClassInput');
+            var recClass = pObj._recordClass || pObj._class || 'com.jettra.model.Record';
+            var classInp = document.getElementById('edit_rec_class');
             if (classInp) classInp.value = recClass;
             var legacyClass = document.getElementById('editRecClassInput');
             if (legacyClass) legacyClass.value = recClass;
 
             var table = pObj._table || '';
-            var tableInp = document.getElementById('edit_rec_table') || document.getElementById('editRecCollInput');
+            var tableInp = document.getElementById('edit_rec_table');
             if (tableInp && table) tableInp.value = table;
             var legacyColl = document.getElementById('editRecCollInput');
             if (legacyColl && table) legacyColl.value = table;
 
-            var ta = document.getElementById('edit_rec_payload') || document.getElementById('editRecPayloadInput');
+            var ta = document.getElementById('edit_rec_payload');
             if (ta) ta.value = prettyPayload;
+            var rawTa = document.getElementById('edit_rec_json_raw');
+            if (rawTa) rawTa.value = prettyPayload;
 
             var tbody = document.getElementById('edit_rec_record_fields_tbody');
             if (!tbody) return;
@@ -1040,10 +1115,12 @@ public final class EngineRecordEditDialog {
             if (typeof schema === 'string') {
                 try { schema = JSON.parse(schema); } catch(e) { schema = {}; }
             }
-            var comps = pObj.components || pObj._components || pObj;
+            var comps = pObj.components || pObj._components || null;
             if (typeof comps === 'string') {
-                try { comps = JSON.parse(comps); } catch(e) { comps = {}; }
+                try { comps = JSON.parse(comps); } catch(e) { comps = null; }
             }
+
+            var sourceProps = (comps && typeof comps === 'object') ? comps : pObj;
 
             var fieldNames = [];
             var seen = {};
@@ -1055,23 +1132,30 @@ public final class EngineRecordEditDialog {
                     }
                 }
             }
-            if (comps && typeof comps === 'object') {
-                for (var ck in comps) {
-                    if (comps.hasOwnProperty(ck) && !seen[ck]) {
+            if (sourceProps && typeof sourceProps === 'object') {
+                for (var ck in sourceProps) {
+                    if (sourceProps.hasOwnProperty(ck) && !seen[ck]) {
                         seen[ck] = true;
                         fieldNames.push(ck);
                     }
                 }
             }
 
+            var addedCount = 0;
             for (var i = 0; i < fieldNames.length; i++) {
                 var k = fieldNames[i];
-                if (k === '_table' || k.startsWith('_record') || k === '_timestamp' || k === '_version' || k === '_schema' || k === 'components' || k === '_components' || k === '_class' || k === '_id' || k === 'id') continue;
-                var val = (comps && typeof comps === 'object') ? comps[k] : undefined;
+                if (k === '_table' || k.startsWith('_record') || k === '_timestamp' || k === '_version' || k === '_schema' || k === 'components' || k === '_components' || k === '_class') continue;
+                var val = sourceProps[k];
                 var type = (schema && schema[k]) ? schema[k] : (typeof val === 'number' ? (Number.isInteger(val) ? 'Integer' : 'Double') : (typeof val === 'boolean' ? 'Boolean' : 'String'));
                 var strVal = (val !== undefined && val !== null) ? (typeof val === 'object' ? JSON.stringify(val) : String(val)) : '';
-                addRecordEditField(k, type, strVal);
+                addRecordEditField(k, type, strVal, true);
+                addedCount++;
             }
+
+            if (addedCount === 0) {
+                addRecordEditField('field1', 'String', '', true);
+            }
+
             syncRecordEditPayload();
         }
 
@@ -1315,6 +1399,8 @@ public final class EngineRecordEditDialog {
         window.populateRecordFieldsFromPayload = populateRecordFieldsFromPayload;
         window.safeDecodePayload = safeDecodePayload;
         window.setJsonEditorVal = setJsonEditorVal;
+        window.toggleEditRecJsonMode = toggleEditRecJsonMode;
+        window.syncRecordJsonToFields = syncRecordJsonToFields;
         </script>
         """);
     }

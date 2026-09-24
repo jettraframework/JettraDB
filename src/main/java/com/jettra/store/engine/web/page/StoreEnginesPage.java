@@ -67,6 +67,7 @@ import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.Collections;
 import java.util.HashMap;
@@ -151,6 +152,10 @@ public class StoreEnginesPage extends StoreTemplatePage {
         }
         if (params != null && "uninstall_sample_db".equalsIgnoreCase(params.get("action"))) {
             handleUninstallSampleDatabase(exchange, params);
+            return true;
+        }
+        if (params != null && "load_version_history_table".equalsIgnoreCase(params.get("action"))) {
+            handleLoadVersionHistoryTable(exchange, params);
             return true;
         }
         return false;
@@ -488,19 +493,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 resp.addProperty("message", result.message());
                 sendJsonResponse(exchange, resp, 200);
             } else if ("load_version_history_table".equalsIgnoreCase(action)) {
-                String engType = params.getOrDefault("engine", selectedEngine);
-                String rDb = params.getOrDefault("target_db", targetDb);
-                String coll = params.getOrDefault("target_coll", "default");
-                String id = params.getOrDefault("target_id", "");
-
-                List<RecordVersionSnapshot> snapshots = hierarchyService.getVersionSnapshots(engType, rDb, coll, id);
-                Widget tableWidget = HistoricalVersionsDialog.renderVersionTable(engType, rDb, coll, id, snapshots);
-                String html = tableWidget.render(io.jettra.flux.theme.Themes.FlatTheme());
-
-                JsonObject resp = new JsonObject();
-                resp.addProperty("status", "SUCCESS");
-                resp.addProperty("html", html);
-                sendJsonResponse(exchange, resp, 200);
+                handleLoadVersionHistoryTable(exchange, params);
             } else if ("delete_object".equalsIgnoreCase(action) || "delete_record".equalsIgnoreCase(action)) {
                 String id = params.get("target_id");
                 String coll = params.getOrDefault("target_coll", "default");
@@ -523,6 +516,22 @@ public class StoreEnginesPage extends StoreTemplatePage {
             String path = exchange != null && exchange.getRequestURI() != null ? exchange.getRequestURI().getPath() : "/engines";
             ExceptionMapper.handleException(t, exchange, path);
         }
+    }
+
+    public void handleLoadVersionHistoryTable(HttpExchange exchange, Map<String, String> params) throws IOException {
+        String engType = params != null ? params.getOrDefault("engine", "DOCUMENT") : "DOCUMENT";
+        String rDb = params != null ? params.getOrDefault("target_db", "system_db") : "system_db";
+        String coll = params != null ? params.getOrDefault("target_coll", "default") : "default";
+        String id = params != null ? params.getOrDefault("target_id", "") : "";
+
+        List<RecordVersionSnapshot> snapshots = hierarchyService.getVersionSnapshots(engType, rDb, coll, id);
+        Widget tableWidget = HistoricalVersionsDialog.renderVersionTable(engType, rDb, coll, id, snapshots);
+        String html = tableWidget.render(io.jettra.flux.theme.Themes.FlatTheme());
+
+        JsonObject resp = new JsonObject();
+        resp.addProperty("status", "SUCCESS");
+        resp.addProperty("html", html);
+        sendJsonResponse(exchange, resp, 200);
     }
 
     public void handleListSampleDatabases(HttpExchange exchange, Map<String, String> params) throws IOException {
@@ -2278,33 +2287,100 @@ public class StoreEnginesPage extends StoreTemplatePage {
                 }
             } catch (Exception ignored) {}
 
-            // Pre-count total items and stream only the page slice
-            record ItemRef(String engName, String engColor, String engIcon, String uName, String itemId) {}
-            List<ItemRef> allItemRefs = new ArrayList<>();
-
+            // Determine target engine(s) to query (aggregates across all engines by default for multi-engine table view)
+            String tableEngineFilter = params != null ? params.get("table_engine") : null;
+            boolean filterByEngine = tableEngineFilter != null && !"ALL".equalsIgnoreCase(tableEngineFilter);
+            List<String[]> targetEngSpecs = new ArrayList<>();
             for (String[] spec : allEngSpecs) {
-                String engName = spec[0];
-                String engColor = spec[1];
-                String engIcon = spec[2];
-                Map<String, List<String>> unitsAndItems = discoverUnitsAndItems(engName, targetDb);
-                for (Map.Entry<String, List<String>> entry : unitsAndItems.entrySet()) {
-                    String uName = entry.getKey();
-                    for (String itemId : entry.getValue()) {
-                        allItemRefs.add(new ItemRef(engName, engColor, engIcon, uName, itemId));
-                    }
+                if (!filterByEngine || spec[0].equalsIgnoreCase(tableEngineFilter)) {
+                    targetEngSpecs.add(spec);
                 }
             }
+            if (targetEngSpecs.isEmpty()) {
+                targetEngSpecs.addAll(Arrays.asList(allEngSpecs));
+            }
 
-            int totalItems = allItemRefs.size();
+            // Get total count efficiently without materializing all database objects
+            Map<String, Integer> engineCounts = engine.getStorageCore().getDatabaseEngineCounts(targetDb);
+            int totalItems = 0;
+            for (String[] spec : targetEngSpecs) {
+                totalItems += engineCounts.getOrDefault(spec[0], 0);
+            }
+            if (totalItems == 0) {
+                totalItems = engine.getStorageCore().getDatabaseRecordCount(targetDb);
+            }
+
             int totalPages = Math.max(1, (int) Math.ceil((double) totalItems / pageSize));
             if (currentPage > totalPages) currentPage = totalPages;
 
-            int startIndex = (currentPage - 1) * pageSize;
-            int endIndex = Math.min(startIndex + pageSize, totalItems);
+            int targetOffset = (currentPage - 1) * pageSize;
+            int remainingLimit = pageSize;
 
+            record ItemRef(String engName, String engColor, String engIcon, String uName, String itemId) {}
+            List<ItemRef> pageItemRefs = new ArrayList<>();
+
+            // Stream ONLY the page slice across the target engines
+            int accumulatedOffset = 0;
+            for (String[] spec : targetEngSpecs) {
+                if (remainingLimit <= 0) break;
+                String engName = spec[0];
+                String engColor = spec[1];
+                String engIcon = spec[2];
+                String prefix = getPrefixForEngine(engName) + targetDb + ":";
+                int engCount = engineCounts.getOrDefault(engName, 0);
+
+                if (engCount > 0 && accumulatedOffset + engCount <= targetOffset) {
+                    accumulatedOffset += engCount;
+                    continue;
+                }
+
+                int localOffset = Math.max(0, targetOffset - accumulatedOffset);
+                List<String> pagedKeys = engine.getStorageCore().scanPrefixKeysPaged(prefix, localOffset, remainingLimit);
+
+                if ("DOCUMENT".equalsIgnoreCase(engName) && pagedKeys.size() < remainingLimit) {
+                    String docPrefix = targetDb + ":";
+                    int docRemaining = remainingLimit - pagedKeys.size();
+                    List<String> simpleKeys = engine.getStorageCore().scanPrefixKeysPaged(docPrefix, localOffset, docRemaining);
+                    for (String sk : simpleKeys) {
+                        if (!pagedKeys.contains(sk)) {
+                            pagedKeys.add(sk);
+                            if (pagedKeys.size() >= remainingLimit) break;
+                        }
+                    }
+                }
+
+                for (String k : pagedKeys) {
+                    String rem = k.startsWith(prefix) ? k.substring(prefix.length()) : (k.startsWith(targetDb + ":") ? k.substring((targetDb + ":").length()) : k);
+                    String[] parts = rem.split(":", 2);
+                    String uName = parts.length == 2 ? parts[0] : (currentColl != null && !currentColl.isBlank() ? currentColl : "default");
+                    String itemId = parts.length == 2 ? parts[1] : parts[0];
+                    if (!itemId.startsWith("meta_") && !itemId.startsWith("__") && !itemId.contains(":v_") && !itemId.equals("init_01")) {
+                        pageItemRefs.add(new ItemRef(engName, engColor, engIcon, uName, itemId));
+                    }
+                }
+
+                accumulatedOffset += (engCount > 0 ? engCount : pagedKeys.size());
+                remainingLimit = pageSize - pageItemRefs.size();
+            }
+
+            // Fallback if paged scan found nothing (e.g. uncounted keys)
+            if (pageItemRefs.isEmpty() && totalItems > 0 && targetOffset == 0) {
+                for (String[] spec : targetEngSpecs) {
+                    Map<String, List<String>> unitsAndItems = discoverUnitsAndItems(spec[0], targetDb);
+                    for (Map.Entry<String, List<String>> entry : unitsAndItems.entrySet()) {
+                        for (String itemId : entry.getValue()) {
+                            pageItemRefs.add(new ItemRef(spec[0], spec[1], spec[2], entry.getKey(), itemId));
+                            if (pageItemRefs.size() >= pageSize) break;
+                        }
+                        if (pageItemRefs.size() >= pageSize) break;
+                    }
+                    if (pageItemRefs.size() >= pageSize) break;
+                }
+            }
+
+            // Populate payload and version info ONLY for the ~15 page items!
             List<StorageTableView.FlatRecordItem> pageItems = new ArrayList<>();
-            for (int i = startIndex; i < endIndex; i++) {
-                ItemRef ref = allItemRefs.get(i);
+            for (ItemRef ref : pageItemRefs) {
                 int vCount = getItemVersionCount(ref.engName(), targetDb, ref.uName(), ref.itemId());
                 String itemPayload = getItemPayload(ref.engName(), targetDb, ref.uName(), ref.itemId());
                 String itemVersions = getVersionsJson(ref.engName(), targetDb, ref.uName(), ref.itemId());
@@ -2314,6 +2390,10 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     ref.engName(), ref.engColor(), ref.engIcon(), targetDb, ref.uName(), ref.itemId(),
                     vCount, itemPayload, payloadB64, versionsB64
                 ));
+            }
+
+            if (totalItems == 0 && !pageItems.isEmpty()) {
+                totalItems = pageItems.size();
             }
 
             Widget tableBody = StorageTableView.buildPaged(

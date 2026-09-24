@@ -29,6 +29,7 @@ public class HierarchicalStorageEngineTest {
 
     @BeforeEach
     void setUp() throws IOException {
+        StorageEngineFactory.setDefaultStorageType(StorageEngineFactory.StorageType.INDIVIDUAL_FILE);
         tempDir = Files.createTempDirectory("jettra_hierarchical_storage_test_");
         storage = new LsmBTreeHybrid(tempDir);
     }
@@ -39,6 +40,7 @@ public class HierarchicalStorageEngineTest {
             storage.close();
         }
         deleteRecursively(tempDir);
+        StorageEngineFactory.setDefaultStorageType(StorageEngineFactory.StorageType.SLOTTED_PAGE);
     }
 
     private void deleteRecursively(Path dir) throws IOException {

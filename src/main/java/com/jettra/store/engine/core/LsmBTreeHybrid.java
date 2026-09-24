@@ -8,6 +8,7 @@ import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -152,21 +153,19 @@ public class LsmBTreeHybrid {
                             if (!Files.isDirectory(unitDir)) continue;
                             if (totalKnown > MAX_STARTUP_INDEX_KEYS && indexedCount >= effectiveLimit) break;
                             String unitName = unitDir.getFileName().toString();
-                            try (DirectoryStream<Path> files = Files.newDirectoryStream(unitDir, "*.dat")) {
-                                for (Path file : files) {
-                                    count++;
-                                    if (indexedCount < effectiveLimit) {
-                                        String fname = file.getFileName().toString();
-                                        String recId = fname.substring(0, fname.length() - 4);
-                                        String primaryKey = "default".equalsIgnoreCase(unitName)
-                                            ? prefix + dbName + ":" + recId
-                                            : prefix + dbName + ":" + unitName + ":" + recId;
-                                        diskIndex.put(primaryKey, 0L);
-                                        if ("records".equalsIgnoreCase(engineName)) {
-                                            diskIndex.put(dbName + ":" + recId, 0L);
-                                        }
-                                        indexedCount++;
+                            List<com.jettra.store.engine.core.storage.StorageRecordPath> recPaths = recordRepository.listRecords(rootStorageDir, dbName, engineName, unitName);
+                            for (com.jettra.store.engine.core.storage.StorageRecordPath srp : recPaths) {
+                                count++;
+                                if (indexedCount < effectiveLimit) {
+                                    String recId = srp.recordId();
+                                    String primaryKey = "default".equalsIgnoreCase(unitName)
+                                        ? prefix + dbName + ":" + recId
+                                        : prefix + dbName + ":" + unitName + ":" + recId;
+                                    diskIndex.put(primaryKey, 0L);
+                                    if ("records".equalsIgnoreCase(engineName)) {
+                                        diskIndex.put(dbName + ":" + recId, 0L);
                                     }
+                                    indexedCount++;
                                 }
                             }
                         }
@@ -282,6 +281,14 @@ public class LsmBTreeHybrid {
             if (key == null || data == null) return;
 
             ConcurrentSkipListMap<Long, byte[]> history = versionHistory.computeIfAbsent(key, k -> new ConcurrentSkipListMap<>());
+            if (history.isEmpty()) {
+                byte[] existing = get(key);
+                if (existing != null && existing.length > 0 && !Arrays.equals(existing, data)) {
+                    long baselineTs = timestamp > 1 ? timestamp - 1 : System.currentTimeMillis() - 1;
+                    history.put(baselineTs, existing);
+                    memTable.put(key + "@" + baselineTs, existing);
+                }
+            }
             long effectiveTs = timestamp;
             if (!history.isEmpty() && history.lastKey() >= effectiveTs) {
                 effectiveTs = history.lastKey() + 1;
@@ -396,14 +403,30 @@ public class LsmBTreeHybrid {
 
         public Map<String, byte[]> scanPrefix(String prefix) {
             Map<String, byte[]> results = new LinkedHashMap<>();
-            for (String k : memTable.keySet()) {
-                if (k.startsWith(prefix)) {
+            if (prefix == null || prefix.isEmpty()) {
+                for (String k : memTable.keySet()) {
                     String baseKey = k.contains("@") ? k.substring(0, k.lastIndexOf('@')) : k;
                     if (!results.containsKey(baseKey)) {
                         byte[] val = get(baseKey);
-                        if (val != null && val.length > 0) {
-                            results.put(baseKey, val);
-                        }
+                        if (val != null && val.length > 0) results.put(baseKey, val);
+                    }
+                }
+                for (String baseKey : diskIndex.keySet()) {
+                    if (!results.containsKey(baseKey)) {
+                        byte[] val = get(baseKey);
+                        if (val != null && val.length > 0) results.put(baseKey, val);
+                    }
+                }
+                return results;
+            }
+
+            for (String k : memTable.tailMap(prefix).keySet()) {
+                if (!k.startsWith(prefix)) break;
+                String baseKey = k.contains("@") ? k.substring(0, k.lastIndexOf('@')) : k;
+                if (!results.containsKey(baseKey)) {
+                    byte[] val = get(baseKey);
+                    if (val != null && val.length > 0) {
+                        results.put(baseKey, val);
                     }
                 }
             }
@@ -485,15 +508,64 @@ public class LsmBTreeHybrid {
 
         public Set<String> scanPrefixKeys(String prefix) {
             Set<String> results = new java.util.LinkedHashSet<>();
-            for (String k : memTable.keySet()) {
-                if (k.startsWith(prefix)) {
+            if (prefix == null || prefix.isEmpty()) {
+                for (String k : memTable.keySet()) {
                     String baseKey = k.contains("@") ? k.substring(0, k.lastIndexOf('@')) : k;
                     results.add(baseKey);
                 }
+                for (String baseKey : diskIndex.keySet()) {
+                    results.add(baseKey);
+                }
+                return results;
+            }
+
+            for (String k : memTable.tailMap(prefix).keySet()) {
+                if (!k.startsWith(prefix)) break;
+                String baseKey = k.contains("@") ? k.substring(0, k.lastIndexOf('@')) : k;
+                results.add(baseKey);
             }
             for (String baseKey : diskIndex.keySet()) {
                 if (baseKey.startsWith(prefix)) {
                     results.add(baseKey);
+                }
+            }
+            return results;
+        }
+
+        public List<String> scanPrefixKeysPaged(String prefix, int offset, int limit) {
+            List<String> results = new java.util.ArrayList<>(Math.max(1, limit));
+            if (prefix == null) prefix = "";
+            int skipped = 0;
+            Set<String> seen = new java.util.HashSet<>();
+
+            for (String k : memTable.tailMap(prefix).keySet()) {
+                if (!prefix.isEmpty() && !k.startsWith(prefix)) break;
+                if (k.contains("@")) continue;
+                String baseKey = k;
+                if (seen.add(baseKey)) {
+                    if (skipped < offset) {
+                        skipped++;
+                    } else {
+                        results.add(baseKey);
+                        if (results.size() >= limit) {
+                            return results;
+                        }
+                    }
+                }
+            }
+
+            for (String baseKey : diskIndex.keySet()) {
+                if (prefix.isEmpty() || baseKey.startsWith(prefix)) {
+                    if (seen.add(baseKey)) {
+                        if (skipped < offset) {
+                            skipped++;
+                        } else {
+                            results.add(baseKey);
+                            if (results.size() >= limit) {
+                                return results;
+                            }
+                        }
+                    }
                 }
             }
             return results;
@@ -619,14 +691,13 @@ public class LsmBTreeHybrid {
             }
             String prefix = key + "@";
             int count = 0;
-            for (String k : memTable.keySet()) {
-                if (k.startsWith(prefix)) {
-                    byte[] v = memTable.get(k);
-                    if (v != null && v.length > 0) count++;
-                }
+            for (String k : memTable.tailMap(prefix).keySet()) {
+                if (!k.startsWith(prefix)) break;
+                byte[] v = memTable.get(k);
+                if (v != null && v.length > 0) count++;
             }
             if (count == 0 && get(key) != null) count = 1;
-            return Math.max(1, count);
+            return count;
         }
 
         public byte[] getVersion(String key, long timestamp) {
@@ -694,6 +765,12 @@ public class LsmBTreeHybrid {
             memTable.clear();
             diskIndex.clear();
             versionHistory.clear();
+            if (recordRepository instanceof AutoCloseable ac) {
+                try {
+                    ac.close();
+                } catch (Exception ignored) {}
+            }
+            recordRepository.dropDatabase(rootStorageDir, dbName);
             deleteDirectoryRecursively(dbDirectory);
         }
 
@@ -705,7 +782,10 @@ public class LsmBTreeHybrid {
                 if (fileManager != null) {
                     fileManager.close();
                 }
-            } catch (IOException e) {
+                if (recordRepository instanceof AutoCloseable ac) {
+                    ac.close();
+                }
+            } catch (Exception e) {
                 System.err.println("Error closing database partition [" + dbName + "]: " + e.getMessage());
             }
         }
@@ -1121,6 +1201,42 @@ public class LsmBTreeHybrid {
         return Collections.emptySet();
     }
 
+    public List<String> scanPrefixKeysPaged(String prefix, int offset, int limit) {
+        if (prefix == null) prefix = "";
+        String db = extractDatabaseFromKey(prefix);
+        if (db != null && !"_system".equals(db)) {
+            DatabasePartition partition = findPartition(db);
+            if (partition != null) {
+                return partition.scanPrefixKeysPaged(prefix, offset, limit);
+            }
+        }
+        List<String> allKeys = new ArrayList<>(Math.max(1, limit));
+        int currentOffset = offset;
+        for (DatabasePartition partition : partitions.values()) {
+            List<String> partKeys = partition.scanPrefixKeysPaged(prefix, currentOffset, limit - allKeys.size());
+            allKeys.addAll(partKeys);
+            if (allKeys.size() >= limit) break;
+            currentOffset = Math.max(0, currentOffset - partition.getTotalRecordCount());
+        }
+        return allKeys;
+    }
+
+    public int getEngineRecordCount(String dbName, String engineName) {
+        if (dbName == null || dbName.isBlank()) return 0;
+        DatabasePartition partition = findPartition(dbName);
+        if (partition != null) {
+            Map<String, Integer> counts = partition.getEngineCounts();
+            if (counts != null && engineName != null) {
+                Integer c = counts.get(engineName.toUpperCase());
+                if (c != null && c > 0) return c;
+            }
+            if ("ALL".equalsIgnoreCase(engineName) || engineName == null) {
+                return partition.getTotalRecordCount();
+            }
+        }
+        return 0;
+    }
+
     public int getDatabaseRecordCount(String dbName) {
         if (dbName == null || dbName.isBlank()) return 0;
         DatabasePartition partition = findPartition(dbName);
@@ -1144,10 +1260,10 @@ public class LsmBTreeHybrid {
     }
 
     public int getVersionCount(String key) {
-        if (key == null) return 1;
+        if (key == null) return 0;
         String db = extractDatabaseFromKey(key);
         DatabasePartition partition = findPartition(db);
-        return partition != null ? partition.getVersionCount(key) : 1;
+        return partition != null ? partition.getVersionCount(key) : 0;
     }
 
     public byte[] getVersion(String key, long timestamp) {
