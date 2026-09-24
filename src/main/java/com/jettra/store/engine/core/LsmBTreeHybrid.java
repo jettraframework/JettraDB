@@ -1,12 +1,15 @@
 package com.jettra.store.engine.core;
 
+import com.jettra.store.engine.core.generational.*;
 import com.jettra.store.engine.core.storage.*;
 
 import java.io.IOException;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -14,6 +17,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * LsmBTreeHybrid: A multi-partition hybrid storage structure combining the write-optimized 
@@ -55,6 +59,13 @@ public class LsmBTreeHybrid {
         private JettraFileManager fileManager;
         private final StorageRecordRepository recordRepository;
         private final int FLUSH_THRESHOLD = 1000;
+        private final YoungArea youngArea;
+        private final OldArea oldArea;
+        private final InternalCompactor internalCompactor;
+        private final Map<String, AtomicLong> engineRecordCounts = new ConcurrentHashMap<>();
+        private final Map<String, Integer> cachedEngineCounts = new ConcurrentHashMap<>();
+        private volatile long lastEngineCountCalc = 0L;
+        private static final long ENGINE_COUNT_CACHE_TTL_MS = 1500L;
 
         public DatabasePartition(Path rootStorageDir, String dbName) {
             this.rootStorageDir = rootStorageDir;
@@ -76,6 +87,9 @@ public class LsmBTreeHybrid {
             this.diskIndex = new ConcurrentHashMap<>();
             this.versionHistory = new ConcurrentHashMap<>();
             this.recordRepository = com.jettra.store.engine.core.storage.StorageEngineFactory.createRepository();
+            this.youngArea = new YoungArea(this.dbName);
+            this.oldArea = new OldArea(this.dbName, this.diskIndex);
+            this.internalCompactor = new InternalCompactor();
 
             try {
                 if (!Files.exists(this.dbDirectory)) {
@@ -92,36 +106,88 @@ public class LsmBTreeHybrid {
 
         private void loadFromDiskHierarchy() {
             if (!Files.exists(this.dbDirectory)) return;
+
+            // 1. Fast path: load persisted engine counts metadata if present
+            Path countsFile = this.dbDirectory.resolve(".engine_counts");
+            if (Files.exists(countsFile)) {
+                try (java.io.BufferedReader reader = Files.newBufferedReader(countsFile, java.nio.charset.StandardCharsets.UTF_8)) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        String[] parts = line.split("=");
+                        if (parts.length == 2) {
+                            try {
+                                long c = Long.parseLong(parts[1].trim());
+                                engineRecordCounts.put(parts[0].trim().toUpperCase(), new AtomicLong(c));
+                            } catch (NumberFormatException ignored) {}
+                        }
+                    }
+                } catch (IOException ignored) {}
+            }
+
+            // 2. Count on-disk records and warm up index up to MAX_STARTUP_INDEX_KEYS (50,000)
+            // This prevents OutOfMemoryError: Java heap space on databases with millions of objects.
+            int indexedCount = 0;
+            final int MAX_STARTUP_INDEX_KEYS = 50_000;
+            boolean countNeedsPersist = engineRecordCounts.isEmpty();
+            long totalKnown = 0;
+            for (AtomicLong val : engineRecordCounts.values()) {
+                totalKnown += val.get();
+            }
+
+            // If millions of records are already known, warm up index with a lightweight sample without exhaustive directory walking
+            final int effectiveLimit = (totalKnown > MAX_STARTUP_INDEX_KEYS) ? 10_000 : MAX_STARTUP_INDEX_KEYS;
+
             try (DirectoryStream<Path> engineDirs = Files.newDirectoryStream(this.dbDirectory)) {
                 for (Path engineDir : engineDirs) {
                     if (!Files.isDirectory(engineDir)) continue;
+                    if (totalKnown > MAX_STARTUP_INDEX_KEYS && indexedCount >= effectiveLimit) break;
                     String engineName = engineDir.getFileName().toString();
-                    if (engineName.equals("data_0.jettra") || engineName.equals("wal.jettra")) continue;
+                    if (engineName.equals("data_0.jettra") || engineName.equals("wal.jettra") || engineName.startsWith(".")) continue;
                     StorageEngineStrategy strategy = EngineStorageStrategyRegistry.resolve(engineName);
                     String prefix = strategy.getPrefix();
 
+                    long count = 0;
                     try (DirectoryStream<Path> unitDirs = Files.newDirectoryStream(engineDir)) {
                         for (Path unitDir : unitDirs) {
                             if (!Files.isDirectory(unitDir)) continue;
+                            if (totalKnown > MAX_STARTUP_INDEX_KEYS && indexedCount >= effectiveLimit) break;
                             String unitName = unitDir.getFileName().toString();
                             try (DirectoryStream<Path> files = Files.newDirectoryStream(unitDir, "*.dat")) {
                                 for (Path file : files) {
-                                    String fname = file.getFileName().toString();
-                                    String recId = fname.substring(0, fname.length() - 4);
-                                    String primaryKey;
-                                    if ("default".equalsIgnoreCase(unitName)) {
-                                        primaryKey = prefix + dbName + ":" + recId;
-                                    } else {
-                                        primaryKey = prefix + dbName + ":" + unitName + ":" + recId;
-                                    }
-                                    diskIndex.put(primaryKey, 0L);
-                                    if ("records".equalsIgnoreCase(engineName)) {
-                                        diskIndex.put(dbName + ":" + recId, 0L);
+                                    count++;
+                                    if (indexedCount < effectiveLimit) {
+                                        String fname = file.getFileName().toString();
+                                        String recId = fname.substring(0, fname.length() - 4);
+                                        String primaryKey = "default".equalsIgnoreCase(unitName)
+                                            ? prefix + dbName + ":" + recId
+                                            : prefix + dbName + ":" + unitName + ":" + recId;
+                                        diskIndex.put(primaryKey, 0L);
+                                        if ("records".equalsIgnoreCase(engineName)) {
+                                            diskIndex.put(dbName + ":" + recId, 0L);
+                                        }
+                                        indexedCount++;
                                     }
                                 }
                             }
                         }
                     }
+                    if (countNeedsPersist && count > 0) {
+                        engineRecordCounts.put(engineName.toUpperCase(), new AtomicLong(count));
+                    }
+                }
+            } catch (IOException ignored) {}
+
+            if (countNeedsPersist) {
+                persistEngineCounts();
+            }
+        }
+
+        private void persistEngineCounts() {
+            if (!Files.exists(this.dbDirectory)) return;
+            Path countsFile = this.dbDirectory.resolve(".engine_counts");
+            try (java.io.BufferedWriter writer = Files.newBufferedWriter(countsFile, java.nio.charset.StandardCharsets.UTF_8)) {
+                for (Map.Entry<String, AtomicLong> entry : engineRecordCounts.entrySet()) {
+                    writer.write(entry.getKey() + "=" + entry.getValue().get() + "\n");
                 }
             } catch (IOException ignored) {}
         }
@@ -144,6 +210,8 @@ public class LsmBTreeHybrid {
             history.put(effectiveTs, data);
             String versionedKey = key + "@" + effectiveTs;
             memTable.put(versionedKey, data);
+            youngArea.put(key, data, effectiveTs, 1);
+            oldArea.getDiskIndex().put(key, 0L);
         }
 
         private void loadFromWal() {
@@ -166,6 +234,8 @@ public class LsmBTreeHybrid {
                         dis.readFully(data);
                         memTable.put(key + "@" + ts, data);
                         versionHistory.computeIfAbsent(key, k -> new ConcurrentSkipListMap<>()).put(ts, data);
+                        youngArea.put(key, data, ts, 1);
+                        oldArea.getDiskIndex().put(key, 0L);
                     } else {
                         // Tombstone deletion: purge prior entries for this key
                         List<String> toRemove = new java.util.ArrayList<>();
@@ -179,6 +249,8 @@ public class LsmBTreeHybrid {
                         }
                         versionHistory.remove(key);
                         memTable.put(key + "@" + ts, new byte[0]);
+                        youngArea.delete(key, ts);
+                        oldArea.delete(key, recordRepository, rootStorageDir);
                     }
                 }
             } catch (IOException e) {
@@ -220,20 +292,36 @@ public class LsmBTreeHybrid {
             memTable.put(versionedKey, data);
             appendWal(key, effectiveTs, data);
 
+            // Generational Young Area write with off-heap Panama Arena
+            youngArea.put(key, data, effectiveTs, 1);
+
+            String eng = resolveEngineFromKey(key);
+            if (eng != null) {
+                engineRecordCounts.computeIfAbsent(eng, k -> new AtomicLong(0)).incrementAndGet();
+            }
+
             try {
                 StorageRecordPath path = StoragePathBuilder.fromKey(rootStorageDir, key, data);
                 recordRepository.save(path, data, effectiveTs, 1);
-                diskIndex.put(key, 0L);
             } catch (IOException e) {
                 System.err.println("Warning saving individual record for key [" + key + "]: " + e.getMessage());
             }
 
-            if (memTable.size() >= FLUSH_THRESHOLD) {
-                flushToBTree();
+            if (youngArea.isThresholdReached() || memTable.size() >= FLUSH_THRESHOLD) {
+                performMinorCompaction();
             }
         }
 
         public byte[] get(String key) {
+            // 1. Fast-path check in Young Area (Off-Heap Panama Arena)
+            if (youngArea.isTombstone(key)) {
+                return null;
+            }
+            byte[] youngVal = youngArea.get(key);
+            if (youngVal != null && youngVal.length > 0) {
+                return youngVal;
+            }
+
             ConcurrentSkipListMap<Long, byte[]> hist = versionHistory.get(key);
             if (hist != null && !hist.isEmpty()) {
                 byte[] val = hist.lastEntry().getValue();
@@ -244,6 +332,12 @@ public class LsmBTreeHybrid {
             if (latestKey != null && latestKey.startsWith(key + "@")) {
                 byte[] val = memTable.get(latestKey);
                 return (val != null && val.length > 0) ? val : null;
+            }
+
+            // 2. Fast-path check in Old Generation Area (warm cache, data_0.jettra, repository)
+            byte[] oldVal = oldArea.get(key, fileManager, recordRepository, rootStorageDir);
+            if (oldVal != null && oldVal.length > 0) {
+                return oldVal;
             }
 
             try {
@@ -268,6 +362,9 @@ public class LsmBTreeHybrid {
 
         public void delete(String key, long timestamp) {
             if (key == null) return;
+            youngArea.delete(key, timestamp);
+            oldArea.delete(key, recordRepository, rootStorageDir);
+
             List<String> toRemove = new java.util.ArrayList<>();
             for (String k : memTable.keySet()) {
                 if (k.equals(key) || k.startsWith(key + "@")) {
@@ -282,6 +379,14 @@ public class LsmBTreeHybrid {
             memTable.put(versionedKey, new byte[0]);
             appendWal(key, timestamp, new byte[0]);
             diskIndex.remove(key);
+
+            String eng = resolveEngineFromKey(key);
+            if (eng != null) {
+                AtomicLong c = engineRecordCounts.get(eng);
+                if (c != null && c.get() > 0) {
+                    c.decrementAndGet();
+                }
+            }
 
             try {
                 StorageRecordPath path = StoragePathBuilder.fromKey(rootStorageDir, key, null);
@@ -335,12 +440,28 @@ public class LsmBTreeHybrid {
 
                         if (fileManager != null) {
                             long offset = fileManager.append(data, false);
-                            diskIndex.put(key, offset);
-                        } else {
-                            diskIndex.put(key, 0L);
+                            if (offset > 0) {
+                                diskIndex.put(key, offset);
+                            }
                         }
+                        youngArea.put(key, data, timestamp, 1);
                     }
                     dos.flush();
+                }
+
+                // Batch update engine counts in memory
+                Map<String, Integer> deltas = new HashMap<>();
+                for (Map.Entry<String, byte[]> entry : entries) {
+                    String key = entry.getKey();
+                    if (key != null) {
+                        String eng = resolveEngineFromKey(key);
+                        if (eng != null) {
+                            deltas.merge(eng, 1, Integer::sum);
+                        }
+                    }
+                }
+                for (Map.Entry<String, Integer> d : deltas.entrySet()) {
+                    engineRecordCounts.computeIfAbsent(d.getKey(), k -> new AtomicLong(0)).addAndGet(d.getValue());
                 }
 
                 // Concurrent virtual thread persistence of individual record files (.dat)
@@ -351,7 +472,6 @@ public class LsmBTreeHybrid {
                     if (key == null || data == null) continue;
                     StorageRecordPath path = StoragePathBuilder.fromKey(rootStorageDir, key, data);
                     tasks.add(new StorageRecordRepository.RecordWriteTask(path, data, timestamp, 1));
-                    diskIndex.put(key, 0L);
                 }
                 recordRepository.saveBatch(tasks);
 
@@ -380,34 +500,42 @@ public class LsmBTreeHybrid {
         }
 
         public int getTotalRecordCount() {
-            Set<String> allKeys = new java.util.HashSet<>(diskIndex.keySet());
-            for (String k : memTable.keySet()) {
-                String baseKey = k.contains("@") ? k.substring(0, k.lastIndexOf('@')) : k;
-                allKeys.add(baseKey);
+            long total = 0;
+            for (AtomicLong count : engineRecordCounts.values()) {
+                total += count.get();
             }
-            return allKeys.size();
+            if (total == 0) {
+                total = diskIndex.size();
+            }
+            return (int) Math.min(total, Integer.MAX_VALUE);
         }
 
         public Map<String, Integer> getEngineCounts() {
+            long now = System.currentTimeMillis();
+            if (now - lastEngineCountCalc < ENGINE_COUNT_CACHE_TTL_MS && !cachedEngineCounts.isEmpty()) {
+                return new LinkedHashMap<>(cachedEngineCounts);
+            }
+
             Map<String, Integer> counts = new LinkedHashMap<>();
-            Set<String> seen = new java.util.HashSet<>();
-            for (String baseKey : diskIndex.keySet()) {
-                if (seen.add(baseKey)) {
+            for (Map.Entry<String, AtomicLong> entry : engineRecordCounts.entrySet()) {
+                long c = entry.getValue().get();
+                if (c > 0) {
+                    counts.put(entry.getKey(), (int) Math.min(c, Integer.MAX_VALUE));
+                }
+            }
+
+            if (counts.isEmpty() && !diskIndex.isEmpty()) {
+                for (String baseKey : diskIndex.keySet()) {
                     String eng = resolveEngineFromKey(baseKey);
                     if (eng != null) {
-                        counts.put(eng, counts.getOrDefault(eng, 0) + 1);
+                        counts.merge(eng, 1, Integer::sum);
                     }
                 }
             }
-            for (String k : memTable.keySet()) {
-                String baseKey = k.contains("@") ? k.substring(0, k.lastIndexOf('@')) : k;
-                if (seen.add(baseKey)) {
-                    String eng = resolveEngineFromKey(baseKey);
-                    if (eng != null) {
-                        counts.put(eng, counts.getOrDefault(eng, 0) + 1);
-                    }
-                }
-            }
+
+            cachedEngineCounts.clear();
+            cachedEngineCounts.putAll(counts);
+            lastEngineCountCalc = now;
             return counts;
         }
 
@@ -424,6 +552,7 @@ public class LsmBTreeHybrid {
             if (key.startsWith("kv:")) return "KEYVALUE";
             if (key.startsWith("geo:")) return "GEOSPATIAL";
             if (key.startsWith("obj:")) return "OBJECT";
+            if (key.startsWith("user:") || key.startsWith("role:")) return "RECORDS";
             return "DOCUMENT";
         }
 
@@ -560,6 +689,8 @@ public class LsmBTreeHybrid {
                     fileManager.close();
                 }
             } catch (IOException ignored) {}
+            youngArea.close();
+            oldArea.close();
             memTable.clear();
             diskIndex.clear();
             versionHistory.clear();
@@ -569,12 +700,42 @@ public class LsmBTreeHybrid {
         public void close() {
             try {
                 flushToBTree();
+                youngArea.close();
+                oldArea.close();
                 if (fileManager != null) {
                     fileManager.close();
                 }
             } catch (IOException e) {
                 System.err.println("Error closing database partition [" + dbName + "]: " + e.getMessage());
             }
+        }
+
+        public InternalCompactor.CompactionReport performMinorCompaction() {
+            flushToBTree();
+            return internalCompactor.performMinorCompaction(youngArea, oldArea, fileManager, recordRepository, rootStorageDir);
+        }
+
+        public InternalCompactor.CompactionReport performMajorCompaction() {
+            flushToBTree();
+            JettraFileManager[] holder = new JettraFileManager[]{fileManager};
+            InternalCompactor.CompactionReport report = internalCompactor.performMajorCompaction(
+                    youngArea, oldArea, holder, recordRepository, rootStorageDir, dbDirectory, journalFile);
+            this.fileManager = holder[0];
+            this.diskIndex.clear();
+            this.diskIndex.putAll(oldArea.getDiskIndex());
+            return report;
+        }
+
+        public YoungArea getYoungArea() {
+            return youngArea;
+        }
+
+        public OldArea getOldArea() {
+            return oldArea;
+        }
+
+        public InternalCompactor getInternalCompactor() {
+            return internalCompactor;
         }
 
         private static void deleteDirectoryRecursively(Path dir) {
@@ -1001,6 +1162,26 @@ public class LsmBTreeHybrid {
         String db = extractDatabaseFromKey(key);
         DatabasePartition partition = findPartition(db);
         return partition != null && partition.restoreVersion(key, timestamp);
+    }
+
+    public InternalCompactor.CompactionReport compactDatabase(String dbName, boolean major) {
+        DatabasePartition partition = findPartition(dbName);
+        if (partition != null) {
+            return major ? partition.performMajorCompaction() : partition.performMinorCompaction();
+        }
+        return null;
+    }
+
+    public List<InternalCompactor.CompactionReport> compactAll(boolean major) {
+        List<InternalCompactor.CompactionReport> reports = new java.util.ArrayList<>();
+        for (DatabasePartition partition : partitions.values()) {
+            reports.add(major ? partition.performMajorCompaction() : partition.performMinorCompaction());
+        }
+        return reports;
+    }
+
+    public Map<String, DatabasePartition> getPartitions() {
+        return Collections.unmodifiableMap(partitions);
     }
 
     public void close() {

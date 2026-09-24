@@ -105,6 +105,23 @@ public final class DashboardMetrics {
     }
 
     /**
+     * Telemetry for Young, Old, Off-Heap Panama Arena, Compaction, and 3-Node Cluster.
+     */
+    public record GenerationalStorageMetrics(
+        int youngRecordsCount,
+        long youngArenaAllocatedBytes,
+        double youngArenaUtilization,
+        int oldRecordsCount,
+        long promotionsCount,
+        long youngReadHits,
+        long oldReadHits,
+        int compactionRuns,
+        long bytesReclaimed,
+        String clusterNodeRole,
+        String clusterTopology
+    ) {}
+
+    /**
      * Comprehensive immutable snapshot of all dashboard analytics.
      */
     public record ComprehensiveDashboardSnapshot(
@@ -112,6 +129,18 @@ public final class DashboardMetrics {
         MultiModelDistribution distribution,
         ThroughputTelemetry telemetry,
         DatabaseStorageHierarchy hierarchy,
-        SystemHealthStatus health
-    ) {}
+        SystemHealthStatus health,
+        GenerationalStorageMetrics generational
+    ) {
+        public ComprehensiveDashboardSnapshot(
+            KpiSummary kpi,
+            MultiModelDistribution distribution,
+            ThroughputTelemetry telemetry,
+            DatabaseStorageHierarchy hierarchy,
+            SystemHealthStatus health
+        ) {
+            this(kpi, distribution, telemetry, hierarchy, health,
+                 new GenerationalStorageMetrics(0, 0L, 0.0, 0, 0L, 0L, 0L, 0, 0L, "PRIMARY", "3 Nodes (1 Primary, 2 Secondaries)"));
+        }
+    }
 }

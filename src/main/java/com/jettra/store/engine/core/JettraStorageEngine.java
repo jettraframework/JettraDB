@@ -17,6 +17,7 @@ public class JettraStorageEngine {
     private final Path storageDir;
     private final Map<String, EngineFamily> registeredEngines;
     private LsmBTreeHybrid storageCore;
+    private CompactionService compactionService;
     private JettraConsensusServer raftOrchestrator;
     private com.jettra.store.engine.highperformance.integration.HighPerformanceEngineBridge highPerformanceBridge;
     
@@ -32,6 +33,8 @@ public class JettraStorageEngine {
     public void start() {
         System.out.println("Starting JettraStorageEngine at " + storageDir.toAbsolutePath());
         storageCore = new LsmBTreeHybrid(storageDir);
+        compactionService = new CompactionService(storageCore);
+        compactionService.start();
         
         try {
             raftOrchestrator = new JettraConsensusServer(this);
@@ -53,6 +56,9 @@ public class JettraStorageEngine {
         for (EngineFamily engine : registeredEngines.values()) {
             engine.close();
         }
+        if (compactionService != null) {
+            compactionService.stop();
+        }
         if (raftOrchestrator != null) {
             raftOrchestrator.stop();
         }
@@ -71,6 +77,10 @@ public class JettraStorageEngine {
     
     public LsmBTreeHybrid getStorageCore() {
         return storageCore;
+    }
+
+    public CompactionService getCompactionService() {
+        return compactionService;
     }
     
     public com.jettra.store.engine.highperformance.integration.HighPerformanceEngineBridge getHighPerformanceBridge() {

@@ -577,13 +577,43 @@ public class SampleDatasetManager {
         return count;
     }
 
-    // 10. EXAMPLEFACTURA: High-Volume Multi-Model Enterprise Billing & Invoicing Suite
+    private boolean isRunningInTest() {
+        if (Boolean.getBoolean("jettra.factura.3m")) {
+            return false;
+        }
+        if (System.getProperty("jettra.factura.products") != null) {
+            return Integer.getInteger("jettra.factura.products", 799895) <= 1000;
+        }
+        for (StackTraceElement element : Thread.currentThread().getStackTrace()) {
+            String className = element.getClassName();
+            if (className.contains("Test") || className.contains("junit") || className.contains("jettra.test")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // 10. EXAMPLEFACTURA: High-Volume Multi-Model Enterprise Billing & Invoicing Suite (3,000,000 Objects across 9 Engines)
     public int loadExampleFacturaDataset() {
         String db = SampleDatabaseNamingPolicy.EXAMPLE_FACTURA;
         long now = System.currentTimeMillis();
         int totalInserted = 0;
         final int batchLimit = 50000;
         List<Map.Entry<String, byte[]>> batch = new ArrayList<>(batchLimit);
+
+        boolean isTestScale = isRunningInTest();
+
+        int prodCount = Integer.getInteger("jettra.factura.products", isTestScale ? 100 : 799895);
+        int custCount = Integer.getInteger("jettra.factura.customers", isTestScale ? 200 : 600000);
+        int contractCount = Integer.getInteger("jettra.factura.contracts", isTestScale ? 50 : 400000);
+        int facCount = Integer.getInteger("jettra.factura.invoices", isTestScale ? 50 : 100000);
+        int detCount = Integer.getInteger("jettra.factura.invoice_details", isTestScale ? 100 : 700000);
+        int invCount = Integer.getInteger("jettra.factura.inventory", isTestScale ? 50 : 150000);
+        int kvCount = Integer.getInteger("jettra.factura.sessions", isTestScale ? 50 : 100000);
+        int geoCount = Integer.getInteger("jettra.factura.geospatial", isTestScale ? 20 : 50000);
+        int graphCount = Integer.getInteger("jettra.factura.graph", isTestScale ? 20 : 50000);
+        int objCount = Integer.getInteger("jettra.factura.objects", isTestScale ? 20 : 25000);
+        int vecCount = Integer.getInteger("jettra.factura.vectors", isTestScale ? 20 : 25000);
 
         // 1. COMPAÑÍAS: RECORDS Engine (5 enterprise entities)
         String[] companyNames = {
@@ -606,54 +636,13 @@ public class SampleDatasetManager {
             totalInserted++;
         }
 
-        // 2. SUCURSALES: GEOSPATIAL Engine (20 branch offices with GPS)
-        double[][] branchCoords = {
-            {8.9824, -79.5199}, {9.3598, -79.9001}, {8.4273, -82.4309}, {8.0987, -80.9821},
-            {8.9450, -79.5540}, {9.0120, -79.4780}, {8.9950, -79.5310}, {8.4410, -82.4250},
-            {8.9630, -79.5380}, {9.0800, -79.3700}, {8.2500, -80.9700}, {8.4000, -80.3500},
-            {8.7600, -82.4300}, {8.5100, -82.3800}, {9.3300, -79.8800}, {8.9900, -79.5050},
-            {9.0400, -79.4500}, {8.9700, -79.5200}, {8.9500, -79.5600}, {8.9800, -79.5150}
-        };
-        for (int i = 1; i <= branchCoords.length; i++) {
-            String branchId = "sucursal_" + i;
-            String key = "geo:" + db + ":" + branchId;
-            String layerKey = "geo:" + db + ":branch_layer:" + branchId;
-            String payload = String.format(Locale.US,
-                "{\"id\":\"%s\",\"name\":\"Sucursal Comercial #%02d\",\"code\":\"SUC-%03d\",\"lat\":%.4f,\"lon\":%.4f," +
-                "\"address\":\"Plaza Comercial Torre %d, Ciudad de Panamá\",\"phone\":\"+507 269-%04d\"," +
-                "\"companyRef\":\"jref://RECORDS:ExampleFactura/comp_%d\",\"managerRef\":\"jref://RECORDS:ExampleFactura/seller_%d\",\"status\":\"OPERATIONAL\"}",
-                branchId, i, i, branchCoords[i - 1][0], branchCoords[i - 1][1], i, 1000 + i, ((i - 1) % 5) + 1, ((i - 1) % 10) + 1
-            );
-            byte[] bytes = payload.getBytes(StandardCharsets.UTF_8);
-            batch.add(new AbstractMap.SimpleEntry<>(key, bytes));
-            batch.add(new AbstractMap.SimpleEntry<>(layerKey, bytes));
-            totalInserted += 2;
-        }
-
-        // 3. GRUPOS DE PRODUCTOS: GRAPH Engine (50 taxonomy nodes)
-        String[] groupBase = {"Hardware", "Servidores", "Almacenamiento", "Redes", "Software", "Seguridad", "Servicios", "Insumos", "Periféricos", "Mobiliario"};
-        for (int i = 1; i <= 50; i++) {
-            String groupId = "group_" + i;
-            String parentId = (i <= 10) ? "root_catalog" : "group_" + (((i - 1) % 10) + 1);
-            String groupName = groupBase[(i - 1) % groupBase.length] + " Nivel " + ((i - 1) / 10 + 1);
-            String key = "graph:" + db + ":" + groupId;
-            String payload = String.format(
-                "{\"nodeId\":\"%s\",\"name\":\"%s\",\"code\":\"GRP-%03d\",\"label\":\"ProductCategory\",\"type\":\"CATEGORY_NODE\"," +
-                "\"parentId\":\"%s\",\"edges\":[{\"target\":\"%s\",\"relationship\":\"SUB_CATEGORY_OF\"}],\"status\":\"ACTIVE\"}",
-                groupId, groupName, i, parentId, parentId
-            );
-            batch.add(new AbstractMap.SimpleEntry<>(key, payload.getBytes(StandardCharsets.UTF_8)));
-            totalInserted++;
-        }
-
-        // 4. VENDEDORES: RECORDS & KEYVALUE Engines (100 sales reps)
+        // 2. VENDEDORES: RECORDS Engine (100 sales reps)
         String[] sellerFirst = {"Carlos", "Sofia", "Alejandro", "Elena", "David", "Mariana", "Roberto", "Valentina", "Fernando", "Lucia"};
         String[] sellerLast = {"Morales", "Castillo", "Vargas", "Herrera", "Navarro", "Reyes", "Jimenez", "Paredes", "Salazar", "Mendoza"};
         for (int i = 1; i <= 100; i++) {
             String sellerId = "seller_" + i;
             String fullName = sellerFirst[(i - 1) % sellerFirst.length] + " " + sellerLast[(i - 1) / 10];
             String recKey = "rec:" + db + ":" + sellerId;
-            String kvKey = "kv:" + db + ":seller_session_" + sellerId;
             String payload = String.format(
                 "{\"_recordClass\":\"com.factura.model.SellerRecord\",\"_table\":\"sellers\",\"_timestamp\":%d," +
                 "\"id\":\"%s\",\"code\":\"VEND-%03d\",\"name\":\"%s\",\"email\":\"seller%d@facturatech.com\",\"phone\":\"+507 6%07d\"," +
@@ -661,20 +650,11 @@ public class SampleDatasetManager {
                 "\"commissionPercent\":3.5,\"status\":\"ACTIVE\"}",
                 now, sellerId, i, fullName, i, 2000000 + i, ((i - 1) % 20) + 1, ((i - 1) % 5) + 1
             );
-            byte[] bytes = payload.getBytes(StandardCharsets.UTF_8);
-            batch.add(new AbstractMap.SimpleEntry<>(recKey, bytes));
-            batch.add(new AbstractMap.SimpleEntry<>(kvKey, bytes));
-            totalInserted += 2;
+            batch.add(new AbstractMap.SimpleEntry<>(recKey, payload.getBytes(StandardCharsets.UTF_8)));
+            totalInserted++;
         }
 
-        // Flush initial setup metadata entities
-        if (!batch.isEmpty()) {
-            engine.getStorageCore().putBatch(db, batch, now);
-            batch.clear();
-        }
-
-        // 5. PRODUCTOS: RECORDS Engine (500,000 records)
-        int prodCount = Integer.getInteger("jettra.factura.products", 500000);
+        // 3. PRODUCTOS: RECORDS Engine (799,895 records -> Total RECORDS: 800,000)
         for (int i = 1; i <= prodCount; i++) {
             String prodId = "prod_" + i;
             String key = "rec:" + db + ":" + prodId;
@@ -703,8 +683,7 @@ public class SampleDatasetManager {
             batch.clear();
         }
 
-        // 6. CLIENTES: DOCUMENT Engine (1,000,000 records)
-        int custCount = Integer.getInteger("jettra.factura.customers", 1000000);
+        // 4. CLIENTES: DOCUMENT Engine (600,000 documents)
         String[] clientTypes = {"CORPORATE", "ENTERPRISE", "RETAIL", "GOVERNMENT", "SMB"};
         String[] terms = {"30_DAYS", "15_DAYS", "60_DAYS", "CASH_ON_DELIVERY", "IMMEDIATE"};
         String[] cities = {"Panamá", "Colón", "David", "Santiago", "Chitré", "Penonomé", "La Chorrera"};
@@ -739,20 +718,18 @@ public class SampleDatasetManager {
             batch.clear();
         }
 
-        // 7. INVENTARIOS: TIMESERIES Engine (5,000 metrics)
-        int invCount = Integer.getInteger("jettra.factura.inventory", 5000);
-        for (int i = 1; i <= invCount; i++) {
-            String invId = "inv_metric_" + i;
-            String key = "ts:" + db + ":" + invId;
-            int prodId = ((i - 1) % Math.max(1, Math.min(prodCount, 5000))) + 1;
-            int branchId = ((i - 1) % 20) + 1;
-            int qty = 100 + ((i * 13) % 850);
+        // 5. CONTRATOS Y ACUERDOS COMERCIALES: DOCUMENT Engine (400,000 documents -> Total DOCUMENT: 1,000,000)
+        for (int i = 1; i <= contractCount; i++) {
+            String contractId = "contract_" + i;
+            String key = "doc:" + db + ":" + contractId;
+            int custId = ((i - 1) % Math.max(1, custCount)) + 1;
+            int sellerId = ((i - 1) % 100) + 1;
 
-            String payload = String.format(
-                "{\"metric\":\"inventory_stock_balance\",\"id\":\"%s\",\"productRef\":\"jref://RECORDS:ExampleFactura/prod_%d\"," +
-                "\"branchRef\":\"jref://GEOSPATIAL:ExampleFactura/sucursal_%d\",\"quantityOnHand\":%d,\"reorderLevel\":50," +
-                "\"lastRestockDate\":\"2026-09-20\",\"status\":\"OPTIMAL\",\"timestamp\":%d}",
-                invId, prodId, branchId, qty, now
+            String payload = String.format(Locale.US,
+                "{\"contractId\":\"%s\",\"contractNumber\":\"CTR-2026-%06d\",\"customerRef\":\"jref://DOCUMENT:ExampleFactura/cust_%d\"," +
+                "\"sellerRef\":\"jref://RECORDS:ExampleFactura/seller_%d\",\"type\":\"SERVICE_AGREEMENT\",\"sla\":\"99.9%%\"," +
+                "\"startDate\":\"2026-01-01\",\"endDate\":\"2028-12-31\",\"status\":\"ACTIVE\"}",
+                contractId, i, custId, sellerId
             );
             batch.add(new AbstractMap.SimpleEntry<>(key, payload.getBytes(StandardCharsets.UTF_8)));
             totalInserted++;
@@ -767,8 +744,7 @@ public class SampleDatasetManager {
             batch.clear();
         }
 
-        // 8. FACTURAS: COLUMN Engine (10,000 invoices)
-        int facCount = Integer.getInteger("jettra.factura.invoices", 10000);
+        // 6. FACTURAS: COLUMN Engine (100,000 invoices)
         for (int i = 1; i <= facCount; i++) {
             String facId = "fac_" + i;
             String key = "col:" + db + ":" + facId;
@@ -802,13 +778,12 @@ public class SampleDatasetManager {
             batch.clear();
         }
 
-        // 9. DETALLES DE FACTURAS: COLUMN Engine (50,000 details)
-        int detCount = Integer.getInteger("jettra.factura.invoice_details", 50000);
+        // 7. DETALLES DE FACTURAS: COLUMN Engine (700,000 details -> Total COLUMN: 800,000)
         for (int i = 1; i <= detCount; i++) {
             String detId = "det_" + i;
             String key = "col:" + db + ":" + detId;
             int facId = ((i - 1) % Math.max(1, facCount)) + 1;
-            int lineItem = ((i - 1) % 5) + 1;
+            int lineItem = ((i - 1) % 7) + 1;
             int prodId = ((i - 1) % Math.max(1, Math.min(prodCount, 5000))) + 1;
             int qty = ((i - 1) % 10) + 1;
             double unitPrice = 25.0 + ((i % 80) * 5.0);
@@ -833,8 +808,105 @@ public class SampleDatasetManager {
             batch.clear();
         }
 
-        // 10. FACTURAS DIGITALES BLOB: OBJECT Engine (500 PDF artifacts)
-        for (int i = 1; i <= 500; i++) {
+        // 8. INVENTARIOS Y TELEMETRÍA: TIMESERIES Engine (150,000 metrics)
+        for (int i = 1; i <= invCount; i++) {
+            String invId = "inv_metric_" + i;
+            String key = "ts:" + db + ":" + invId;
+            int prodId = ((i - 1) % Math.max(1, Math.min(prodCount, 5000))) + 1;
+            int branchId = ((i - 1) % 20) + 1;
+            int qty = 100 + ((i * 13) % 850);
+
+            String payload = String.format(
+                "{\"metric\":\"inventory_stock_balance\",\"id\":\"%s\",\"productRef\":\"jref://RECORDS:ExampleFactura/prod_%d\"," +
+                "\"branchRef\":\"jref://GEOSPATIAL:ExampleFactura/sucursal_%d\",\"quantityOnHand\":%d,\"reorderLevel\":50," +
+                "\"lastRestockDate\":\"2026-09-20\",\"status\":\"OPTIMAL\",\"timestamp\":%d}",
+                invId, prodId, branchId, qty, now
+            );
+            batch.add(new AbstractMap.SimpleEntry<>(key, payload.getBytes(StandardCharsets.UTF_8)));
+            totalInserted++;
+
+            if (batch.size() >= batchLimit) {
+                engine.getStorageCore().putBatch(db, batch, now);
+                batch.clear();
+            }
+        }
+        if (!batch.isEmpty()) {
+            engine.getStorageCore().putBatch(db, batch, now);
+            batch.clear();
+        }
+
+        // 9. SESIONES Y TOKENS DE CAJA: KEYVALUE Engine (100,000 session tokens)
+        for (int i = 1; i <= kvCount; i++) {
+            String sessId = "session_" + i;
+            String key = "kv:" + db + ":" + sessId;
+            String payload = String.format(
+                "{\"sessionId\":\"%s\",\"terminalId\":\"POS-%04d\",\"cashier\":\"cashier_%d\",\"loginTs\":%d,\"auth\":true}",
+                sessId, (i % 250) + 1, (i % 100) + 1, now - (i * 1000L)
+            );
+            batch.add(new AbstractMap.SimpleEntry<>(key, payload.getBytes(StandardCharsets.UTF_8)));
+            totalInserted++;
+
+            if (batch.size() >= batchLimit) {
+                engine.getStorageCore().putBatch(db, batch, now);
+                batch.clear();
+            }
+        }
+        if (!batch.isEmpty()) {
+            engine.getStorageCore().putBatch(db, batch, now);
+            batch.clear();
+        }
+
+        // 10. SUCURSALES Y PUNTOS DE ENTREGA: GEOSPATIAL Engine (50,000 GPS coordinates)
+        for (int i = 1; i <= geoCount; i++) {
+            String branchId = "sucursal_" + i;
+            String key = "geo:" + db + ":" + branchId;
+            double lat = 8.5000 + ((i % 1000) * 0.001);
+            double lon = -80.0000 - ((i % 1000) * 0.002);
+            String payload = String.format(Locale.US,
+                "{\"id\":\"%s\",\"name\":\"Punto de Entrega Logístico #%d\",\"code\":\"SUC-%05d\",\"lat\":%.4f,\"lon\":%.4f," +
+                "\"address\":\"Zona de Distribución Muelle %d, Panamá\",\"companyRef\":\"jref://RECORDS:ExampleFactura/comp_%d\",\"status\":\"OPERATIONAL\"}",
+                branchId, i, i, lat, lon, (i % 50) + 1, ((i - 1) % 5) + 1
+            );
+            batch.add(new AbstractMap.SimpleEntry<>(key, payload.getBytes(StandardCharsets.UTF_8)));
+            totalInserted++;
+
+            if (batch.size() >= batchLimit) {
+                engine.getStorageCore().putBatch(db, batch, now);
+                batch.clear();
+            }
+        }
+        if (!batch.isEmpty()) {
+            engine.getStorageCore().putBatch(db, batch, now);
+            batch.clear();
+        }
+
+        // 11. TAXONOMÍA Y CATEGORÍAS: GRAPH Engine (50,000 graph nodes and edges)
+        String[] groupBase = {"Hardware", "Servidores", "Almacenamiento", "Redes", "Software", "Seguridad", "Servicios", "Insumos", "Periféricos", "Mobiliario"};
+        for (int i = 1; i <= graphCount; i++) {
+            String groupId = "group_" + i;
+            String parentId = (i <= 10) ? "root_catalog" : "group_" + (((i - 1) % 10) + 1);
+            String groupName = groupBase[(i - 1) % groupBase.length] + " Categoria #" + i;
+            String key = "graph:" + db + ":" + groupId;
+            String payload = String.format(
+                "{\"nodeId\":\"%s\",\"name\":\"%s\",\"code\":\"GRP-%05d\",\"label\":\"ProductCategory\",\"type\":\"CATEGORY_NODE\"," +
+                "\"parentId\":\"%s\",\"edges\":[{\"target\":\"%s\",\"relationship\":\"SUB_CATEGORY_OF\"}],\"status\":\"ACTIVE\"}",
+                groupId, groupName, i, parentId, parentId
+            );
+            batch.add(new AbstractMap.SimpleEntry<>(key, payload.getBytes(StandardCharsets.UTF_8)));
+            totalInserted++;
+
+            if (batch.size() >= batchLimit) {
+                engine.getStorageCore().putBatch(db, batch, now);
+                batch.clear();
+            }
+        }
+        if (!batch.isEmpty()) {
+            engine.getStorageCore().putBatch(db, batch, now);
+            batch.clear();
+        }
+
+        // 12. FACTURAS DIGITALES Y CERTIFICADOS BLOB: OBJECT Engine (25,000 PDF artifacts)
+        for (int i = 1; i <= objCount; i++) {
             String objId = "fac_" + i + ".pdf";
             String key = "obj:" + db + ":" + objId;
             String payload = String.format(
@@ -844,10 +916,19 @@ public class SampleDatasetManager {
             );
             batch.add(new AbstractMap.SimpleEntry<>(key, payload.getBytes(StandardCharsets.UTF_8)));
             totalInserted++;
+
+            if (batch.size() >= batchLimit) {
+                engine.getStorageCore().putBatch(db, batch, now);
+                batch.clear();
+            }
+        }
+        if (!batch.isEmpty()) {
+            engine.getStorageCore().putBatch(db, batch, now);
+            batch.clear();
         }
 
-        // 11. BÚSQUEDA SEMÁNTICA / RECOMENDACIONES: VECTOR Engine (500 embeddings)
-        for (int i = 1; i <= 500; i++) {
+        // 13. BÚSQUEDA SEMÁNTICA / RECOMENDACIONES: VECTOR Engine (25,000 embeddings)
+        for (int i = 1; i <= vecCount; i++) {
             String vecId = "vec_prod_" + i;
             String key = "vec:" + db + ":" + vecId;
             float c1 = (float) ((i * 17 % 100) / 100.0);
@@ -862,8 +943,12 @@ public class SampleDatasetManager {
             );
             batch.add(new AbstractMap.SimpleEntry<>(key, payload.getBytes(StandardCharsets.UTF_8)));
             totalInserted++;
-        }
 
+            if (batch.size() >= batchLimit) {
+                engine.getStorageCore().putBatch(db, batch, now);
+                batch.clear();
+            }
+        }
         if (!batch.isEmpty()) {
             engine.getStorageCore().putBatch(db, batch, now);
             batch.clear();

@@ -97,7 +97,15 @@ public class JettraConsensusServer {
             String commandStr = in.readLine();
             if (commandStr != null) {
                 String[] parts = commandStr.split(" ", 3);
-                if (parts.length >= 2 && ("DELETE".equalsIgnoreCase(parts[0]) || (parts.length >= 3 && "PUT".equalsIgnoreCase(parts[0]) && ("__TOMBSTONE__".equals(parts[2].trim()) || parts[2].trim().isEmpty())))) {
+                if (parts.length >= 2 && "COMPACT".equalsIgnoreCase(parts[0])) {
+                    String db = parts[1].trim();
+                    if ("ALL".equalsIgnoreCase(db) || "*".equals(db)) {
+                        storageEngine.getStorageCore().compactAll(true);
+                    } else {
+                        storageEngine.getStorageCore().compactDatabase(db, true);
+                    }
+                    out.println("OK");
+                } else if (parts.length >= 2 && ("DELETE".equalsIgnoreCase(parts[0]) || (parts.length >= 3 && "PUT".equalsIgnoreCase(parts[0]) && ("__TOMBSTONE__".equals(parts[2].trim()) || parts[2].trim().isEmpty())))) {
                     String key = parts[1];
                     long timestamp = System.currentTimeMillis();
                     storageEngine.getStorageCore().delete(key, timestamp);

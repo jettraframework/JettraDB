@@ -84,16 +84,22 @@ public class ClusterNodeRegistry {
             }
         }
 
-        // 2. Register standard virtual / distributed cluster topology seeds & local aliases
+        // 2. Register standard 3-node distributed cloud-native topology seeds & local aliases
+        registerNode(new ClusterNodeInfo("node1", "cluster-primary", "127.0.0.1", 50051, 50050, NodeStatus.ACTIVE, System.currentTimeMillis(), Map.of("role", "primary", "tier", "leader")));
+        registerNode(new ClusterNodeInfo("node2", "cluster-secondary-02", "127.0.0.1", 50053, 50052, NodeStatus.ACTIVE, System.currentTimeMillis(), Map.of("role", "secondary", "tier", "follower-1")));
+        registerNode(new ClusterNodeInfo("node3", "cluster-secondary-03", "127.0.0.1", 50055, 50054, NodeStatus.ACTIVE, System.currentTimeMillis(), Map.of("role", "secondary", "tier", "follower-2")));
         registerNode(new ClusterNodeInfo("node-local", "node-local", "127.0.0.1", 50051, 50050, NodeStatus.ACTIVE, System.currentTimeMillis(), Map.of("role", "primary")));
         registerNode(new ClusterNodeInfo("local cluster (primary)", "node-local", "127.0.0.1", 50051, 50050, NodeStatus.ACTIVE, System.currentTimeMillis(), Map.of("role", "primary")));
         registerNode(new ClusterNodeInfo("primary-node", "node-local", "127.0.0.1", 50051, 50050, NodeStatus.ACTIVE, System.currentTimeMillis(), Map.of("role", "primary")));
-        registerNode(new ClusterNodeInfo("cluster-secondary-02", "cluster-secondary-02", "127.0.0.1", 50053, 50052, NodeStatus.ACTIVE, System.currentTimeMillis(), Map.of("region", "us-east", "tier", "secondary")));
-        registerNode(new ClusterNodeInfo("cluster-east-01", "cluster-east-01", "127.0.0.1", 50051, 50050, NodeStatus.ACTIVE, System.currentTimeMillis(), Map.of("region", "us-east", "tier", "primary")));
-        registerNode(new ClusterNodeInfo("node-cloud-west", "node-cloud-west", "127.0.0.1", 50055, 50054, NodeStatus.ACTIVE, System.currentTimeMillis(), Map.of("region", "us-west", "type", "vector-ai")));
-        registerNode(new ClusterNodeInfo("cluster-europe-03", "cluster-europe-03", "127.0.0.1", 50057, 50056, NodeStatus.ACTIVE, System.currentTimeMillis(), Map.of("region", "eu-central", "tier", "audit")));
+        registerNode(new ClusterNodeInfo("cluster-secondary-02", "cluster-secondary-02", "127.0.0.1", 50053, 50052, NodeStatus.ACTIVE, System.currentTimeMillis(), Map.of("region", "us-east", "tier", "secondary", "role", "secondary")));
+        registerNode(new ClusterNodeInfo("cluster-east-01", "cluster-east-01", "127.0.0.1", 50051, 50050, NodeStatus.ACTIVE, System.currentTimeMillis(), Map.of("region", "us-east", "tier", "primary", "role", "primary")));
+        registerNode(new ClusterNodeInfo("node-cloud-west", "node-cloud-west", "127.0.0.1", 50055, 50054, NodeStatus.ACTIVE, System.currentTimeMillis(), Map.of("region", "us-west", "type", "vector-ai", "role", "secondary")));
+        registerNode(new ClusterNodeInfo("cluster-europe-03", "cluster-europe-03", "127.0.0.1", 50057, 50056, NodeStatus.ACTIVE, System.currentTimeMillis(), Map.of("region", "eu-central", "tier", "audit", "role", "secondary")));
 
-        // 3. Register default failover routes for high availability
+        // 3. Register default failover routes for 3-node high availability
+        registerFailover("node1", "node2", "node3");
+        registerFailover("node2", "node1", "node3");
+        registerFailover("node3", "node1", "node2");
         registerFailover("cluster-secondary-02", "cluster-east-01", "node-local");
         registerFailover("cluster-east-01", "cluster-secondary-02", "node-local");
         registerFailover("node-cloud-west", "cluster-secondary-02", "node-local");

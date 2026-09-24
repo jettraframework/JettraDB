@@ -98,6 +98,8 @@ public class StoreDatabasesPage extends StoreTemplatePage {
     public static final String VIEW_TREE = "tree";
     public static final String VIEW_LIST = "list";
     private String defaultView = DEFAULT_VIEW;
+    private Map<String, DatabaseMetadata> cachedDiscoveredDatabases;
+    private long lastDiscoveredTimestamp = 0L;
 
     public StoreDatabasesPage(JettraStorageEngine engine, AuthManager authManager) {
         this(engine, authManager, (authManager != null && authManager.getSystemUserRepository() != null)
@@ -186,7 +188,10 @@ public class StoreDatabasesPage extends StoreTemplatePage {
                 ? selectedUsernames.stream().map(String::trim).collect(Collectors.toSet())
                 : Collections.emptySet();
 
-        Set<String> allKnownDbs = new TreeSet<>(discoverDatabases().keySet());
+        Set<String> allKnownDbs = new TreeSet<>();
+        if (engine != null && engine.getStorageCore() != null) {
+            allKnownDbs.addAll(engine.getStorageCore().getDatabaseNames());
+        }
         allKnownDbs.add("system_db");
         allKnownDbs.add(cleanDb);
 
@@ -2112,6 +2117,11 @@ public class StoreDatabasesPage extends StoreTemplatePage {
     }
 
     private Map<String, DatabaseMetadata> discoverDatabases() {
+        long now = System.currentTimeMillis();
+        if (cachedDiscoveredDatabases != null && (now - lastDiscoveredTimestamp) < 1500L) {
+            return new LinkedHashMap<>(cachedDiscoveredDatabases);
+        }
+
         Map<String, DatabaseMetadata> databases = new LinkedHashMap<>();
 
         // Fast discovery from physical database directories and active in-memory partitions
@@ -2137,10 +2147,13 @@ public class StoreDatabasesPage extends StoreTemplatePage {
         }
 
         databases.keySet().removeIf(LsmBTreeHybrid::isReservedDatabaseName);
+        this.cachedDiscoveredDatabases = new LinkedHashMap<>(databases);
+        this.lastDiscoveredTimestamp = now;
         return databases;
     }
 
     private int purgeDatabase(String targetDb) {
+        this.cachedDiscoveredDatabases = null;
         if (targetDb == null || "system_db".equalsIgnoreCase(targetDb.trim())) {
             return 0;
         }

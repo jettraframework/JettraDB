@@ -56,24 +56,28 @@ public class FileSystemStorageRecordRepository implements StorageRecordRepositor
     public void saveBatch(List<RecordWriteTask> tasks) throws IOException {
         if (tasks == null || tasks.isEmpty()) return;
 
-        // Execute batch writes concurrently across Java 25 Virtual Threads
-        try (ExecutorService vThreadExecutor = Executors.newVirtualThreadPerTaskExecutor()) {
-            List<Callable<Void>> callables = new ArrayList<>(tasks.size());
-            for (RecordWriteTask task : tasks) {
-                callables.add(() -> {
-                    save(task.path(), task.payload(), task.timestamp(), task.version());
-                    return null;
-                });
+        final int chunkSize = 2000;
+        int total = tasks.size();
+        for (int i = 0; i < total; i += chunkSize) {
+            List<RecordWriteTask> subList = tasks.subList(i, Math.min(total, i + chunkSize));
+            try (ExecutorService vThreadExecutor = Executors.newVirtualThreadPerTaskExecutor()) {
+                List<Callable<Void>> callables = new ArrayList<>(subList.size());
+                for (RecordWriteTask task : subList) {
+                    callables.add(() -> {
+                        save(task.path(), task.payload(), task.timestamp(), task.version());
+                        return null;
+                    });
+                }
+                List<Future<Void>> futures = vThreadExecutor.invokeAll(callables);
+                for (Future<Void> future : futures) {
+                    future.get();
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IOException("Batch write interrupted during virtual thread execution", e);
+            } catch (Exception e) {
+                throw new IOException("Error during concurrent virtual thread batch write: " + e.getMessage(), e);
             }
-            List<Future<Void>> futures = vThreadExecutor.invokeAll(callables);
-            for (Future<Void> future : futures) {
-                future.get();
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IOException("Batch write interrupted during virtual thread execution", e);
-        } catch (Exception e) {
-            throw new IOException("Error during concurrent virtual thread batch write: " + e.getMessage(), e);
         }
     }
 
@@ -193,7 +197,30 @@ public class FileSystemStorageRecordRepository implements StorageRecordRepositor
 
     @Override
     public long countRecords(Path rootDir, String database, String engine, String unit) {
-        return listRecords(rootDir, database, engine, unit).size();
+        if (rootDir == null || database == null) return 0L;
+        Path dbBase = "_system".equalsIgnoreCase(database)
+            ? rootDir.resolve("system")
+            : rootDir.resolve("databases").resolve(database);
+
+        Path unitDir = dbBase;
+        if (engine != null && !engine.isBlank()) {
+            unitDir = unitDir.resolve(engine.toLowerCase());
+            if (unit != null && !unit.isBlank()) {
+                unitDir = unitDir.resolve(unit.toLowerCase());
+            }
+        }
+
+        if (!Files.exists(unitDir) || !Files.isDirectory(unitDir)) {
+            return 0L;
+        }
+
+        long count = 0;
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(unitDir, "*.dat")) {
+            for (Path ignored : stream) {
+                count++;
+            }
+        } catch (IOException ignored) {}
+        return count;
     }
 
     @Override

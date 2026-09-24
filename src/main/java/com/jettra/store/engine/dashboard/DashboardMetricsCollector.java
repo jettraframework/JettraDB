@@ -148,12 +148,56 @@ public class DashboardMetricsCollector {
                 health.heapPercent()
             );
 
+            int youngRecs = 0;
+            long arenaBytes = 0L;
+            int oldRecs = 0;
+            long promotions = 0L;
+            long youngHits = 0L;
+            long oldHits = 0L;
+            if (engine.getStorageCore() != null) {
+                for (com.jettra.store.engine.core.LsmBTreeHybrid.DatabasePartition p : engine.getStorageCore().getPartitions().values()) {
+                    if (p.getYoungArea() != null) {
+                        youngRecs += p.getYoungArea().size();
+                        arenaBytes += p.getYoungArea().getArena().getAllocatedBytes();
+                        youngHits += p.getYoungArea().getYoungReadHits();
+                    }
+                    if (p.getOldArea() != null) {
+                        oldRecs += p.getOldArea().size();
+                        promotions += p.getOldArea().getPromotionsCount();
+                        oldHits += p.getOldArea().getOldReadHits();
+                    }
+                }
+            }
+            int compRuns = engine.getCompactionService() != null ? engine.getCompactionService().getTotalCompactionRuns() : 0;
+            long bytesReclaimed = engine.getCompactionService() != null ? engine.getCompactionService().getTotalBytesReclaimed() : 0L;
+
+            String nodeRole = "PRIMARY";
+            String nodeId = System.getProperty("jettra.node.id", System.getenv().getOrDefault("JETTRA_NODE_ID", "node1"));
+            if (nodeId.equalsIgnoreCase("node2") || nodeId.equalsIgnoreCase("node3") || nodeId.contains("secondary")) {
+                nodeRole = "SECONDARY";
+            }
+
+            GenerationalStorageMetrics genMetrics = new GenerationalStorageMetrics(
+                youngRecs,
+                arenaBytes,
+                arenaBytes > 0 ? (arenaBytes * 100.0) / (16.0 * 1024 * 1024) : 0.0,
+                oldRecs,
+                promotions,
+                youngHits,
+                oldHits,
+                compRuns,
+                bytesReclaimed,
+                nodeRole,
+                "3 Nodes (1 Primary, 2 Secondaries)"
+            );
+
             ComprehensiveDashboardSnapshot snapshot = new ComprehensiveDashboardSnapshot(
                 kpi,
                 distribution,
                 telemetry,
                 hierarchy,
-                health
+                health,
+                genMetrics
             );
 
             // Notify reactive observers
@@ -180,29 +224,16 @@ public class DashboardMetricsCollector {
             if (physDbs != null) {
                 for (String db : physDbs) {
                     if (db != null && !db.isBlank() && !"_system".equalsIgnoreCase(db)) {
-                        dbMap.computeIfAbsent(db.trim(), d -> new LinkedHashMap<>()).putIfAbsent("DOCUMENT", 0);
-                    }
-                }
-            }
-        } catch (Exception ignored) {}
-
-        for (String[] mapping : PREFIX_MAPPINGS) {
-            String prefix = mapping[0];
-            String engineName = categorizePrefix(prefix);
-            Set<String> keys = engine.getStorageCore().scanPrefixKeys(prefix);
-            if (keys != null) {
-                for (String k : keys) {
-                    String rest = k.substring(prefix.length());
-                    int colonIdx = rest.indexOf(':');
-                    if (colonIdx > 0) {
-                        String dbName = rest.substring(0, colonIdx).trim();
-                        if (!dbName.isBlank() && !"_system".equalsIgnoreCase(dbName)) {
-                            dbMap.computeIfAbsent(dbName, d -> new LinkedHashMap<>()).merge(engineName, 1, Integer::sum);
+                        Map<String, Integer> counts = engine.getStorageCore().getDatabaseEngineCounts(db);
+                        if (counts != null && !counts.isEmpty()) {
+                            dbMap.put(db.trim(), new LinkedHashMap<>(counts));
+                        } else {
+                            dbMap.computeIfAbsent(db.trim(), d -> new LinkedHashMap<>()).putIfAbsent("DOCUMENT", 0);
                         }
                     }
                 }
             }
-        }
+        } catch (Exception ignored) {}
 
         if (dbMap.isEmpty()) {
             dbMap.computeIfAbsent("system_db", d -> new LinkedHashMap<>()).put("DOCUMENT", 0);

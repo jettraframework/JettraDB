@@ -48,6 +48,7 @@ public class DatabaseRestController implements HttpHandler {
             switch (method.toUpperCase()) {
                 case "GET" -> handleGet(exchange, dbNameFromPath);
                 case "POST" -> handlePost(exchange, dbNameFromPath);
+                case "PUT" -> handlePut(exchange, dbNameFromPath);
                 case "DELETE" -> handleDelete(exchange, dbNameFromPath);
                 default -> sendResponse(exchange, 405, "{\"error\":\"Method Not Allowed\"}");
             }
@@ -111,6 +112,65 @@ public class DatabaseRestController implements HttpHandler {
         storageEngine.getStorageCore().put(initKey, initPayload.getBytes(StandardCharsets.UTF_8), System.currentTimeMillis());
 
         sendResponse(exchange, 201, "{\"status\":\"CREATED\",\"database\":\"" + cleanDb + "\",\"message\":\"Database initialized successfully\"}");
+    }
+
+    private void handlePut(HttpExchange exchange, String dbNameFromPath) throws IOException {
+        String oldDb = dbNameFromPath;
+        if (oldDb != null && oldDb.endsWith("/rename")) {
+            oldDb = oldDb.substring(0, oldDb.length() - 7);
+        }
+        if (oldDb == null || oldDb.isBlank()) {
+            sendResponse(exchange, 400, "{\"error\":\"Source database name is required in URI path /api/databases/{name}/rename\"}");
+            return;
+        }
+
+        String newDb = null;
+        try (InputStream is = exchange.getRequestBody()) {
+            String body = new String(is.readAllBytes(), StandardCharsets.UTF_8).trim();
+            if (!body.isBlank()) {
+                JsonObject json = gson.fromJson(body, JsonObject.class);
+                if (json != null) {
+                    if (json.has("new_name")) newDb = json.getAsString("new_name");
+                    else if (json.has("newName")) newDb = json.getAsString("newName");
+                    else if (json.has("name")) newDb = json.getAsString("name");
+                    else if (json.has("targetDatabase")) newDb = json.getAsString("targetDatabase");
+                }
+            }
+        }
+
+        if (newDb == null || newDb.isBlank()) {
+            sendResponse(exchange, 400, "{\"error\":\"Target database name 'new_name' is required in JSON body\"}");
+            return;
+        }
+
+        oldDb = oldDb.trim();
+        newDb = newDb.trim().replaceAll("[^a-zA-Z0-9_]", "_");
+
+        if ("system_db".equalsIgnoreCase(oldDb) || "_system".equalsIgnoreCase(oldDb)) {
+            sendResponse(exchange, 400, "{\"error\":\"The system database '" + oldDb + "' cannot be renamed.\"}");
+            return;
+        }
+
+        try {
+            com.jettra.store.engine.migration.DatabaseCloneMigrationService migService =
+                new com.jettra.store.engine.migration.DatabaseCloneMigrationService(storageEngine, authManager.getSystemUserRepository());
+            com.jettra.store.engine.migration.DatabaseMigrationPlan plan =
+                com.jettra.store.engine.migration.DatabaseMigrationPlan.builder()
+                    .sourceDatabase(oldDb)
+                    .targetDatabase(newDb)
+                    .migrateMultiModelKeys(true)
+                    .migrateUserAssignments(true)
+                    .purgeSourceDatabase(true)
+                    .build();
+            com.jettra.store.engine.migration.DatabaseMigrationResult result = migService.executeMigration(plan);
+            if (result.success()) {
+                sendResponse(exchange, 200, "{\"status\":\"SUCCESS\",\"old_name\":\"" + oldDb + "\",\"new_name\":\"" + newDb + "\",\"keys_migrated\":" + result.keysMigrated() + "}");
+            } else {
+                sendResponse(exchange, 400, "{\"status\":\"ERROR\",\"error\":\"" + result.message() + "\"}");
+            }
+        } catch (Exception e) {
+            sendResponse(exchange, 500, "{\"error\":\"Rename failed: " + e.getMessage() + "\"}");
+        }
     }
 
     private void handleDelete(HttpExchange exchange, String dbName) throws IOException {
