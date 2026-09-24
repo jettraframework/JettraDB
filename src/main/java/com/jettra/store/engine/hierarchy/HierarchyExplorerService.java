@@ -182,7 +182,7 @@ public class HierarchyExplorerService {
         return summary;
     }
 
-    private List<HierarchyNode.IndexNode> resolveIndexes(String db) {
+    public List<HierarchyNode.IndexNode> resolveIndexes(String db) {
         Map<String, HierarchyNode.IndexNode> map = new LinkedHashMap<>();
 
         // 1. Scan "idx:<db>:"

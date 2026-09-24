@@ -17,12 +17,20 @@ public class DocumentPayloadBuilder {
 
     private String engineType = "DOCUMENT";
     private String collection = "default";
+    private int version = 1;
     private String recordId = "";
     private String rawPayload = "{}";
     private Map<String, String> params = Collections.emptyMap();
 
     public static DocumentPayloadBuilder builder() {
         return new DocumentPayloadBuilder();
+    }
+
+    public DocumentPayloadBuilder version(int version) {
+        if (version > 0) {
+            this.version = version;
+        }
+        return this;
     }
 
     public DocumentPayloadBuilder engineType(String engineType) {
@@ -95,6 +103,14 @@ public class DocumentPayloadBuilder {
                 if (docClass != null && !docClass.isBlank()) {
                     doc.addProperty("_class", docClass.trim());
                 }
+                int targetVer = this.version > 0 ? this.version : 2;
+                if (p.containsKey("version")) {
+                    try { targetVer = Integer.parseInt(p.get("version")); } catch (Exception ignored) {}
+                }
+                doc.addProperty("_version", targetVer);
+                if (doc.has("version")) {
+                    doc.addProperty("version", targetVer);
+                }
                 yield jsonParser.toJson(doc);
             }
             case "KEYVALUE" -> p.getOrDefault("kv_value", payload);
@@ -162,6 +178,11 @@ public class DocumentPayloadBuilder {
                 JsonObject recObj = parseJsonOrWrap(recPayload);
                 recObj.addProperty("_table", this.collection != null ? this.collection : "default");
                 recObj.addProperty("_recordClass", recClass);
+                int targetVer = this.version > 0 ? this.version : 2;
+                if (p.containsKey("version")) {
+                    try { targetVer = Integer.parseInt(p.get("version")); } catch (Exception ignored) {}
+                }
+                recObj.addProperty("_version", targetVer);
                 yield jsonParser.toJson(recObj);
             }
             default -> (payload != null && !payload.isBlank()) ? payload : "{}";

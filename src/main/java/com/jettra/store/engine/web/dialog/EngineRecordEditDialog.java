@@ -521,14 +521,62 @@ public final class EngineRecordEditDialog {
         ).modifier(new Modifier().cssClass("universal-edit-engine-section").attribute("data-engine", "OBJECT").style("display:none;"));
     }
 
-    // 9. RECORDS (Java 25) Section: Identical to EngineRecordInsertionDialog with JettraFluxRecordForm
+    // 9. RECORDS (Java 25) Section: Adaptive viewer similar to Inspect view, but fully editable
     private static Widget buildRecordsSection() {
         return Div.of(
-            // Visual, reactive record builder with fields table, typed dropdowns, and canonical sync
-            JettraFluxRecordForm.of("edit_rec", "com.jettra.model.EmployeeRecord", "employees")
-                .sampleEmployeeRecord(),
+            Div.of(
+                // Header row styled like Inspect dialog
+                Div.of(
+                    Div.of(
+                        Span.of(Icon.of("fas fa-microchip"), Text.of(" Record Class:")).modifier(new Modifier().style("font-size:11.5px; font-weight:700; color:#f43f5e; margin-right:6px; display:inline-flex; align-items:center; gap:4px;")),
+                        TextField.of("rec_class").id("edit_rec_class").value("com.jettra.model.EmployeeProfileRecord")
+                            .modifier(new Modifier().attribute("oninput", "syncRecordEditPayload()").style("background:rgba(244,63,94,0.12); color:#fb7185; border:1px solid rgba(244,63,94,0.3); padding:3px 8px; border-radius:4px; font-size:12px; font-weight:700; font-family:monospace; min-width:240px;")),
+                        Span.of(Icon.of("fas fa-table"), Text.of(" Tabla:")).modifier(new Modifier().style("font-size:11px; font-weight:600; color:var(--j-text-muted); margin-left:10px; margin-right:6px; display:inline-flex; align-items:center; gap:4px; color:#10b981;")),
+                        TextField.of("target_coll").id("edit_rec_table").value("default")
+                            .modifier(new Modifier().attribute("oninput", "syncRecordEditPayload()").style("background:rgba(16,185,129,0.1); color:#10b981; border:1px solid rgba(16,185,129,0.3); padding:3px 8px; border-radius:4px; font-size:11.5px; font-weight:700; min-width:130px;"))
+                    ).modifier(new Modifier().style("display:flex; align-items:center; gap:6px; flex-wrap:wrap;")),
+                    Div.of(
+                        Span.of(Icon.of("fas fa-shield-halved"), Text.of(" IMMUTABLE TYPED SCHEMA"))
+                            .modifier(new Modifier().style("font-size:9.5px; font-weight:800; background:rgba(16,185,129,0.2); color:#10b981; border:1px solid rgba(16,185,129,0.4); padding:2px 8px; border-radius:12px; margin-right:8px; display:inline-flex; align-items:center; gap:4px;")),
+                        Button.of(Icon.of("fas fa-code"), Text.of(" JSON Canónico"))
+                            .id("edit_rec_btn_mode_toggle")
+                            .modifier(new Modifier().attribute("type", "button").attribute("onclick", "toggleEditRecJsonMode()").style("background:rgba(255,255,255,0.08); color:var(--j-text-primary); border:1px solid var(--j-border); padding:4px 8px; border-radius:5px; font-size:11px; font-weight:600; cursor:pointer; margin-right:6px; display:inline-flex; align-items:center; gap:4px;")),
+                        Button.of(Icon.of("fas fa-plus"), Text.of(" Agregar Campo"))
+                            .modifier(new Modifier().attribute("type", "button").attribute("onclick", "addRecordEditField('', 'String', '')").style("background:#f43f5e; color:#fff; border:none; padding:4px 10px; border-radius:5px; font-size:11px; font-weight:700; cursor:pointer; display:inline-flex; align-items:center; gap:4px;"))
+                    ).modifier(new Modifier().style("display:flex; align-items:center; gap:6px; flex-wrap:wrap;"))
+                ).modifier(new Modifier().style("display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;")),
 
-            // Legacy compatibility inputs
+                // Structured table of fields, schema types, and editable component values
+                Div.of(
+                    RawHtml.of("""
+                    <table style="width:100%; border-collapse:collapse; font-size:11.5px;">
+                      <thead>
+                        <tr style="background:var(--j-bg-body); border-bottom:1px solid var(--j-border); text-align:left; color:var(--j-text-secondary);">
+                          <th style="padding:7px 10px; width:28%; font-weight:700; text-transform:uppercase; letter-spacing:0.5px;"><i class="fas fa-cube" style="color:#f43f5e; margin-right:5px;"></i> Nombre de Campo (_schema)</th>
+                          <th style="padding:7px 10px; width:28%; font-weight:700; text-transform:uppercase; letter-spacing:0.5px;"><i class="fas fa-tag" style="color:#38bdf8; margin-right:5px;"></i> Tipo de Dato (_schema)</th>
+                          <th style="padding:7px 10px; width:38%; font-weight:700; text-transform:uppercase; letter-spacing:0.5px;"><i class="fas fa-database" style="color:#4ade80; margin-right:5px;"></i> Valor Componente (components)</th>
+                          <th style="padding:7px 10px; width:6%; text-align:center;"></th>
+                        </tr>
+                      </thead>
+                      <tbody id="edit_rec_record_fields_tbody">
+                      </tbody>
+                    </table>
+                    <div id="edit_rec_record_json_container" style="display:none; flex-direction:column; gap:6px; margin-top:12px;">
+                      <div style="display:flex; justify-content:space-between; align-items:center; background:var(--j-bg-body); padding:6px 10px; border-radius:6px 6px 0 0; border:1px solid var(--j-border); border-bottom:none;">
+                        <div style="display:flex; align-items:center; gap:6px;">
+                          <i class="fas fa-file-invoice" style="color:#10b981; font-size:12px;"></i>
+                          <span style="font-size:11px; font-weight:700; color:var(--j-text-secondary); text-transform:uppercase;">Canonical Record Payload Serialization</span>
+                          <span id="edit_rec_json_status" style="font-size:9.5px; font-weight:700; padding:1px 6px; border-radius:10px; background:rgba(16,185,129,0.15); color:#10b981; border:1px solid rgba(16,185,129,0.3);">SYNCED</span>
+                        </div>
+                      </div>
+                    </div>
+                    """)
+                ).modifier(new Modifier().style("overflow-x:auto; margin-top:8px;"))
+            ).id("edit_rec_record_editor_container").modifier(new Modifier().style("background:var(--j-bg-subsurface); border:1px solid rgba(244,63,94,0.35); border-radius:8px; padding:14px 16px; margin-bottom:12px;")),
+
+            // Legacy compatibility inputs and serialized payload textarea
+            TextArea.create().name("rec_payload").id("edit_rec_payload")
+                .modifier(new Modifier().style("display:none;")),
             TextField.of().id("editRecCollInput").binding("rec_coll_compat").value("")
                 .modifier(new Modifier().style("display:none;")),
             TextField.of().id("editRecClassInput").binding("rec_class_compat").value("")
@@ -625,13 +673,13 @@ public final class EngineRecordEditDialog {
             var eng = normalizeEditEngine(engInp ? engInp.value : 'DOCUMENT');
 
             // Sync Record Form if active
-            if (eng === 'RECORDS' && window.JettraFluxRecordForm) {
+            if (eng === 'RECORDS') {
                 try {
-                    window.JettraFluxRecordForm.updatePayload('edit_rec');
+                    syncRecordEditPayload();
                 } catch(err) {
                     console.warn('RecordForm payload sync warning', err);
                 }
-                var recPayloadEl = document.getElementById('edit_rec_payload');
+                var recPayloadEl = document.getElementById('edit_rec_payload') || document.getElementById('editRecPayloadInput');
                 var uniPayload = document.getElementById('universalEditPayloadInput');
                 if (recPayloadEl && uniPayload) {
                     uniPayload.value = recPayloadEl.value;
@@ -858,23 +906,133 @@ public final class EngineRecordEditDialog {
             return false;
         }
 
+        function addRecordEditField(name, type, val) {
+            var tbody = document.getElementById('edit_rec_record_fields_tbody');
+            if (!tbody) return;
+            var fName = name || '';
+            var fType = type || 'String';
+            var fVal = (val !== undefined && val !== null) ? (typeof val === 'object' ? JSON.stringify(val) : String(val)) : '';
+
+            var tr = document.createElement('tr');
+            tr.style.borderBottom = '1px solid var(--j-border, rgba(255,255,255,0.08))';
+            tr.style.background = 'transparent';
+            tr.className = 'rec-edit-field-row';
+
+            var types = ['String', 'Integer', 'Long', 'Double', 'Boolean', 'BigDecimal', 'LocalDate', 'LocalDateTime', 'Instant', 'UUID', 'List', 'Map', 'Object'];
+            var optionsHtml = '';
+            for (var i = 0; i < types.length; i++) {
+                var sel = (types[i].toLowerCase() === fType.toLowerCase()) ? ' selected' : '';
+                optionsHtml += '<option value="' + types[i] + '"' + sel + '>' + types[i] + '</option>';
+            }
+
+            tr.innerHTML = 
+                '<td style="padding:6px 10px;">' +
+                '  <input type="text" class="rec-edit-name" value="' + fName.replace(/"/g, '&quot;') + '" oninput="syncRecordEditPayload()" placeholder="nombre_campo" style="width:100%; padding:5px 8px; background:var(--j-bg-body, #0a0f1d); border:1px solid var(--j-border, rgba(255,255,255,0.1)); border-radius:4px; color:var(--j-text-primary, #f8fafc); font-size:12px; font-weight:600; box-sizing:border-box;" />' +
+                '</td>' +
+                '<td style="padding:6px 10px;">' +
+                '  <select class="rec-edit-type" onchange="syncRecordEditPayload()" style="width:100%; padding:5px 8px; background:var(--j-bg-body, #0a0f1d); border:1px solid var(--j-border, rgba(255,255,255,0.1)); border-radius:4px; color:#38bdf8; font-size:12px; font-weight:600; box-sizing:border-box;">' +
+                     optionsHtml +
+                '  </select>' +
+                '</td>' +
+                '<td style="padding:6px 10px;">' +
+                '  <input type="text" class="rec-edit-value" value="' + fVal.replace(/"/g, '&quot;') + '" oninput="syncRecordEditPayload()" placeholder="valor" style="width:100%; padding:5px 8px; background:var(--j-bg-body, #0a0f1d); border:1px solid var(--j-border, rgba(255,255,255,0.1)); border-radius:4px; color:#10b981; font-size:12px; font-weight:600; box-sizing:border-box;" />' +
+                '</td>' +
+                '<td style="padding:6px 10px; text-align:center;">' +
+                '  <button type="button" onclick="this.closest(\\'tr\\').remove(); syncRecordEditPayload();" style="background:none; border:none; color:#ef4444; cursor:pointer; font-size:12px;" title="Eliminar Campo"><i class="fas fa-trash-alt"></i></button>' +
+                '</td>';
+
+            tbody.appendChild(tr);
+            syncRecordEditPayload();
+        }
+
+        function syncRecordEditPayload() {
+            var recClassInp = document.getElementById('edit_rec_class');
+            var recClass = recClassInp ? recClassInp.value.trim() : 'com.jettra.model.EmployeeProfileRecord';
+            var recTableInp = document.getElementById('edit_rec_table');
+            var recTable = recTableInp ? recTableInp.value.trim() : 'default';
+
+            var legacyClass = document.getElementById('editRecClassInput');
+            if (legacyClass) legacyClass.value = recClass;
+            var legacyColl = document.getElementById('editRecCollInput');
+            if (legacyColl) legacyColl.value = recTable;
+
+            var schema = {};
+            var components = {};
+
+            var rows = document.querySelectorAll('#edit_rec_record_fields_tbody tr.rec-edit-field-row');
+            rows.forEach(function(row) {
+                var nameInp = row.querySelector('.rec-edit-name');
+                var typeInp = row.querySelector('.rec-edit-type');
+                var valInp = row.querySelector('.rec-edit-value');
+                if (nameInp) {
+                    var k = nameInp.value.trim();
+                    if (k) {
+                        var t = typeInp ? typeInp.value : 'String';
+                        var v = valInp ? valInp.value : '';
+                        schema[k] = t;
+                        var parsedVal = v;
+                        if (t === 'Integer' || t === 'Long') {
+                            var n = parseInt(v, 10);
+                            if (!isNaN(n)) parsedVal = n;
+                        } else if (t === 'Double' || t === 'BigDecimal') {
+                            var d = parseFloat(v);
+                            if (!isNaN(d)) parsedVal = d;
+                        } else if (t === 'Boolean') {
+                            parsedVal = (v.toLowerCase() === 'true' || v === '1');
+                        } else if (t === 'List' || t === 'Map' || t === 'Object') {
+                            try { parsedVal = JSON.parse(v); } catch(e) { parsedVal = v; }
+                        }
+                        components[k] = parsedVal;
+                    }
+                }
+            });
+
+            var payload = {
+                _recordClass: recClass,
+                _table: recTable,
+                _schema: schema,
+                components: components
+            };
+
+            if (window.currentEditRecordParsed) {
+                if (window.currentEditRecordParsed._id) payload._id = window.currentEditRecordParsed._id;
+                if (window.currentEditRecordParsed.id) payload.id = window.currentEditRecordParsed.id;
+                if (window.currentEditRecordParsed._version !== undefined) payload._version = window.currentEditRecordParsed._version;
+                if (window.currentEditRecordParsed._timestamp !== undefined) payload._timestamp = window.currentEditRecordParsed._timestamp;
+            }
+
+            var jsonStr = JSON.stringify(payload, null, 2);
+            var p1 = document.getElementById('edit_rec_payload');
+            if (p1) p1.value = jsonStr;
+            var p2 = document.getElementById('editRecPayloadInput');
+            if (p2) p2.value = jsonStr;
+            var p3 = document.getElementById('universalEditPayloadInput');
+            if (p3) p3.value = jsonStr;
+        }
+
         function populateRecordFieldsFromPayload(formId, p, prettyPayload) {
             var pObj = p || {};
             if (typeof pObj === 'string') {
                 try { pObj = JSON.parse(pObj); } catch(e) { pObj = {}; }
             }
+            window.currentEditRecordParsed = pObj;
+
             var recClass = pObj._recordClass || pObj._class || 'com.jettra.model.EmployeeProfileRecord';
-            var classInp = document.getElementById(formId + '_class') || document.getElementById('editRecClassInput');
+            var classInp = document.getElementById('edit_rec_class') || document.getElementById('editRecClassInput');
             if (classInp) classInp.value = recClass;
+            var legacyClass = document.getElementById('editRecClassInput');
+            if (legacyClass) legacyClass.value = recClass;
 
             var table = pObj._table || '';
-            var tableInp = document.getElementById(formId + '_table') || document.getElementById('editRecCollInput');
+            var tableInp = document.getElementById('edit_rec_table') || document.getElementById('editRecCollInput');
             if (tableInp && table) tableInp.value = table;
+            var legacyColl = document.getElementById('editRecCollInput');
+            if (legacyColl && table) legacyColl.value = table;
 
-            var ta = document.getElementById(formId + '_payload') || document.getElementById('editRecPayloadInput');
+            var ta = document.getElementById('edit_rec_payload') || document.getElementById('editRecPayloadInput');
             if (ta) ta.value = prettyPayload;
 
-            var tbody = document.getElementById(formId + '_record_fields_tbody');
+            var tbody = document.getElementById('edit_rec_record_fields_tbody');
             if (!tbody) return;
             tbody.innerHTML = '';
 
@@ -908,17 +1066,13 @@ public final class EngineRecordEditDialog {
 
             for (var i = 0; i < fieldNames.length; i++) {
                 var k = fieldNames[i];
-                if (k === '_table' || k.startsWith('_record') || k === '_timestamp' || k === '_version' || k === '_schema' || k === 'components' || k === '_components' || k === '_class') continue;
+                if (k === '_table' || k.startsWith('_record') || k === '_timestamp' || k === '_version' || k === '_schema' || k === 'components' || k === '_components' || k === '_class' || k === '_id' || k === 'id') continue;
                 var val = (comps && typeof comps === 'object') ? comps[k] : undefined;
                 var type = (schema && schema[k]) ? schema[k] : (typeof val === 'number' ? (Number.isInteger(val) ? 'Integer' : 'Double') : (typeof val === 'boolean' ? 'Boolean' : 'String'));
                 var strVal = (val !== undefined && val !== null) ? (typeof val === 'object' ? JSON.stringify(val) : String(val)) : '';
-                if (window.JettraFluxRecordForm && window.JettraFluxRecordForm.addField) {
-                    window.JettraFluxRecordForm.addField(formId, k, type, strVal);
-                }
+                addRecordEditField(k, type, strVal);
             }
-            if (window.JettraFluxRecordForm && window.JettraFluxRecordForm.updatePayload) {
-                window.JettraFluxRecordForm.updatePayload(formId);
-            }
+            syncRecordEditPayload();
         }
 
         function openUniversalEditModal(engine, db, unit, id, payloadB64) {

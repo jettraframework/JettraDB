@@ -290,6 +290,62 @@ public final class StorageTreeView {
             }
         }
 
+        // Secondary Indexes branch
+        if (hierarchyService != null) {
+            List<com.jettra.store.engine.hierarchy.HierarchyNode.IndexNode> indexes = hierarchyService.resolveIndexes(targetDb);
+            int idxCount = indexes != null ? indexes.size() : 0;
+            FluxTreeNode<StorageHierarchyNodeData> indexesNode = JettraTreeNode.<StorageHierarchyNodeData>of(
+                "node_indexes_" + targetDb,
+                "Índices Secundarios (" + idxCount + ")",
+                null
+            ).icon("fas fa-bolt")
+             .iconColor("#eab308")
+             .badge(String.valueOf(idxCount), "store-badge")
+             .action(
+                 Button.of(Icon.of("fas fa-plus"))
+                     .modifier(new Modifier()
+                         .attribute("type", "button")
+                         .attribute("title", "Crear Nuevo Índice en " + targetDb)
+                         .attribute("onclick", "if(typeof openAddIndexModal==='function') openAddIndexModal('" + escapeJs(targetDb) + "', '" + escapeJs(selectedEngine) + "', '" + escapeJs(currentColl) + "'); else if(document.getElementById('createIndexModal')) showModal('createIndexModal');")
+                         .style("background:none; border:none; color:#eab308; font-size:9.5px; cursor:pointer; padding:1px 4px;"))
+             );
+
+            if (indexes != null && !indexes.isEmpty()) {
+                for (com.jettra.store.engine.hierarchy.HierarchyNode.IndexNode idx : indexes) {
+                    String idxLabel = idx.name() + " (" + idx.type() + ") -> " + idx.targetUnit() + "." + idx.fieldPath();
+                    FluxTreeNode<StorageHierarchyNodeData> idxItemNode = JettraTreeNode.<StorageHierarchyNodeData>of(
+                        "node_idx_" + idx.id(),
+                        idxLabel,
+                        null
+                    ).icon("fas fa-key")
+                     .iconColor("#38bdf8")
+                     .badge(idx.entryCount() + " entries", "store-badge badge-secondary");
+
+                    if (!"idx_primary_id".equalsIgnoreCase(idx.name())) {
+                        idxItemNode.action(
+                            Button.of(Icon.of("fas fa-trash-alt"))
+                                .modifier(new Modifier()
+                                    .attribute("type", "button")
+                                    .attribute("title", "Eliminar Índice " + idx.name())
+                                    .attribute("onclick", "if(typeof openDeleteIndexModal==='function') openDeleteIndexModal('" + escapeJs(targetDb) + "', '" + escapeJs(idx.name()) + "');")
+                                    .style("background:none; border:none; color:#ef4444; font-size:8.5px; cursor:pointer; padding:1px 4px;"))
+                        );
+                    }
+                    indexesNode.child(idxItemNode);
+                }
+            } else {
+                indexesNode.child(
+                    JettraTreeNode.<StorageHierarchyNodeData>of(
+                        "node_idx_empty_" + targetDb,
+                        "(Sin índices secundarios configurados)",
+                        null
+                    ).icon("fas fa-info-circle")
+                     .iconColor("var(--j-text-muted,#94a3b8)")
+                );
+            }
+            dbNode.child(indexesNode);
+        }
+
         if (!hasAnyItems) {
             dbNode.child(
                 FluxTreeNode.<StorageHierarchyNodeData>of(
@@ -362,6 +418,14 @@ public final class StorageTreeView {
 
         List<Widget> dbRightWidgets = new ArrayList<>();
         dbRightWidgets.add(Span.of("ACTIVE").modifier(new Modifier().cssClass("store-badge badge-active").style("font-size:8px; padding:1px 5px; margin-left:4px;")));
+        dbRightWidgets.add(
+            Button.of(Icon.of("fas fa-bolt"), Text.of(" Índices"))
+                .modifier(new Modifier()
+                    .attribute("type", "button")
+                    .attribute("title", "Administrar Índices en " + targetDb)
+                    .attribute("onclick", "event.stopPropagation(); if(typeof openAddIndexModal==='function') openAddIndexModal('" + escapeJs(targetDb) + "', '" + escapeJs(selectedEngine) + "', '" + escapeJs(currentColl) + "'); else if(document.getElementById('createIndexModal')) showModal('createIndexModal');")
+                    .style("background:none; border:1px solid rgba(234,179,8,0.5); color:#eab308; font-size:8.5px; padding:1px 5px; border-radius:3px; cursor:pointer; margin-left:4px; display:inline-flex; align-items:center; gap:2px;"))
+        );
         dbRightWidgets.add(
             Button.of(Icon.of("fas fa-sync-alt"))
                 .modifier(new Modifier().attribute("type", "button").attribute("title", "Refresh database hierarchy").attribute("onclick", "event.stopPropagation(); refreshLazyDbSubtree(event, '" + dbContainerId + "', '" + escapeJs(targetDb) + "', '" + escapeJs(selectedEngine) + "', '" + escapeJs(actionUrl) + "', " + dbIdx + ")").style("background:none; border:none; color:var(--j-text-muted); font-size:9px; cursor:pointer; padding:1px 4px; margin-right:2px;"))

@@ -54,7 +54,8 @@ public abstract class DocumentSaveWorkflow {
             ResolvedKeys keys = resolveTargetKeys(cmd, engType, db, coll, id);
 
             // 3. Payload Construction Step (via Builder Pattern)
-            DocumentPayloadBuilder.BuiltPayload built = buildPayload(cmd, engType, coll, id);
+            int targetVersion = Math.max(keys.initialVersionCount() + 1, 2);
+            DocumentPayloadBuilder.BuiltPayload built = buildPayload(cmd, engType, coll, id, targetVersion);
 
             // 4. Atomic Persistence & Mirroring Step
             persistAtomic(keys, built.payloadBytes(), now);
@@ -92,12 +93,17 @@ public abstract class DocumentSaveWorkflow {
     protected abstract ResolvedKeys resolveTargetKeys(EditDocumentCommand cmd, String engType, String db, String coll, String id);
 
     protected DocumentPayloadBuilder.BuiltPayload buildPayload(EditDocumentCommand cmd, String engType, String coll, String id) {
+        return buildPayload(cmd, engType, coll, id, 2);
+    }
+
+    protected DocumentPayloadBuilder.BuiltPayload buildPayload(EditDocumentCommand cmd, String engType, String coll, String id, int targetVersion) {
         return DocumentPayloadBuilder.builder()
                 .engineType(engType)
                 .collection(coll)
                 .recordId(id)
                 .rawPayload(cmd.payload())
                 .params(cmd.extraParams())
+                .version(targetVersion)
                 .build();
     }
 

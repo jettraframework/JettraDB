@@ -30,7 +30,11 @@ Autonomous, high-density, multi-model storage engine engineered natively in **Ja
 ### Build & Run
 ```bash
 mvn clean package -DskipTests
-java --enable-preview -jar target/JettraStoreEngine-1.0-SNAPSHOT.jar
+java --enable-preview -jar target/JettraDB-1.0-SNAPSHOT.jar
+
+java -XX:+UseZGC -XX:+UseCompactObjectHeaders -jar target/JettraDB-1.0-SNAPSHOT.jar
+
+
 ```
 
 - **REST API Port**: `8086` (`http://localhost:8086`)
@@ -119,3 +123,6 @@ Comprehensive architectural book and guides:
 - [Java Driver Guide](file:///home/avbravo/NetBeansProjects/jettrastack_local/JettraWorkspace/JettraStoreDriverJava/README.md)
 - [Go Driver Guide](file:///home/avbravo/NetBeansProjects/jettrastack_local/JettraWorkspace/JettraStoreDriverGo/README.md)
 - [Python Driver Guide](file:///home/avbravo/NetBeansProjects/jettrastack_local/JettraWorkspace/JettraStoreDriverPython/README.md)
+
+
+

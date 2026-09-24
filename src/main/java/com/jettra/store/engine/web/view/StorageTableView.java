@@ -117,8 +117,20 @@ public final class StorageTableView {
         Widget totalCountBadge = Span.of(totalItems + " Total Records").id("tableFilterVisibleCount")
             .modifier(new Modifier().cssClass("store-badge badge-active").style("font-size:11px; padding:4px 8px;"));
 
+        Widget manageIndexesBtn = Button.of(
+            Icon.of("fas fa-bolt").modifier(new Modifier().style("margin-right:4px; color:#fbbf24;")),
+            Text.of(" Administrar Índices")
+        ).id("tableManageIndexesBtn")
+        .modifier(new Modifier()
+            .attribute("type", "button")
+            .attribute("onclick", "if(typeof openAddIndexModal==='function') openAddIndexModal('" + targetDb + "', '" + selectedEngine + "', '" + currentColl + "'); else if(document.getElementById('createIndexModal')) showModal('createIndexModal');")
+            .attribute("title", "Administrar y Crear Índices Secundarios")
+            .cssClass("btn-action btn-secondary")
+            .style("font-size:11px; padding:4px 10px; cursor:pointer; display:inline-flex; align-items:center; color:#fbbf24; border-color:rgba(251,191,36,0.4);"));
+
         Widget tableFilterBar = Div.of(
             resolveRefCheckbox,
+            manageIndexesBtn,
             quickFilterInput,
             totalCountBadge
         ).modifier(new Modifier().style("display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px; background:var(--j-bg-subsurface); padding:8px 12px; border-radius:6px; border:1px solid var(--j-border);"));

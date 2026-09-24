@@ -93,8 +93,9 @@ public class StandardDocumentSaveWorkflow extends DocumentSaveWorkflow {
             mirrors.add(simpleDirectKey);
         }
 
+        int effectiveInitialVersion = existingKeys.isEmpty() ? 0 : Math.max(maxVersion, 1);
         mirrors.remove(bestKey);
-        return new ResolvedKeys(bestKey, new ArrayList<>(mirrors), Math.max(maxVersion, 0));
+        return new ResolvedKeys(bestKey, new ArrayList<>(mirrors), effectiveInitialVersion);
     }
 
     @Override
@@ -104,6 +105,11 @@ public class StandardDocumentSaveWorkflow extends DocumentSaveWorkflow {
 
         // Mirror to counterpart keys for cross-model explorer and DocumentEngine compatibility
         for (String mirrorKey : keys.mirrorKeys()) {
+            int currentMirrorVersions = engine.getStorageCore().getVersionCount(mirrorKey);
+            while (currentMirrorVersions < keys.initialVersionCount()) {
+                engine.getStorageCore().put(mirrorKey, payloadBytes, timestamp - (keys.initialVersionCount() - currentMirrorVersions));
+                currentMirrorVersions = engine.getStorageCore().getVersionCount(mirrorKey);
+            }
             engine.getStorageCore().put(mirrorKey, payloadBytes, timestamp);
         }
     }
@@ -115,7 +121,7 @@ public class StandardDocumentSaveWorkflow extends DocumentSaveWorkflow {
             int coreCount = engine.getStorageCore().getVersionCount(keys.primaryKey());
             vCount = Math.max(keys.initialVersionCount() + 1, coreCount);
         }
-        return Math.max(vCount, 1);
+        return Math.max(vCount, 2);
     }
 
     @Override

@@ -179,6 +179,7 @@ public class StoreEnginesPage extends StoreTemplatePage {
             || "install_sample_db".equalsIgnoreCase(action) || "uninstall_sample_db".equalsIgnoreCase(action) || "list_sample_dbs".equalsIgnoreCase(action)
             || "upload_restore_file".equalsIgnoreCase(action)
             || "update_object".equalsIgnoreCase(action) || "edit_document".equalsIgnoreCase(action) || "edit_object".equalsIgnoreCase(action) || "edit_record".equalsIgnoreCase(action)
+            || "create_index".equalsIgnoreCase(action) || "delete_index".equalsIgnoreCase(action)
             || (isJsonClient && ("backup_database".equalsIgnoreCase(action) || "restore_database".equalsIgnoreCase(action) || "export_data".equalsIgnoreCase(action))))) {
             handleAjaxPost(exchange, params);
             return true;
@@ -367,6 +368,46 @@ public class StoreEnginesPage extends StoreTemplatePage {
                     sendJsonResponse(exchange, resp, 200);
                 } else {
                     sendJsonError(exchange, "Database name cannot be empty");
+                }
+            } else if ("delete_index".equalsIgnoreCase(action) || "delete_index_ajax".equalsIgnoreCase(action)) {
+                String indexName = params.get("index_name");
+                String db = params.getOrDefault("target_db", targetDb);
+                if (indexName != null && !indexName.isBlank()) {
+                    engine.getStorageCore().delete("idx:" + db + ":" + indexName.trim(), System.currentTimeMillis());
+                    JsonObject resp = new JsonObject();
+                    resp.addProperty("status", "SUCCESS");
+                    resp.addProperty("database", db);
+                    resp.addProperty("indexName", indexName);
+                    resp.addProperty("message", "Index '" + indexName + "' deleted from database '" + db + "'!");
+                    sendJsonResponse(exchange, resp, 200);
+                } else {
+                    sendJsonError(exchange, "Index name cannot be empty");
+                }
+            } else if ("create_index".equalsIgnoreCase(action) || "create_index_ajax".equalsIgnoreCase(action)) {
+                String idxName = params.get("index_name");
+                String fieldName = params.get("index_field");
+                String idxType = params.getOrDefault("index_type", "BTREE");
+                String coll = params.getOrDefault("target_coll", "default");
+                String eng = params.getOrDefault("engine_type", selectedEngine);
+                String db = params.getOrDefault("target_db", targetDb);
+                if (idxName != null && !idxName.isBlank() && fieldName != null && !fieldName.isBlank()) {
+                    JsonObject idxMeta = new JsonObject();
+                    idxMeta.addProperty("name", idxName.trim());
+                    idxMeta.addProperty("field", fieldName.trim());
+                    idxMeta.addProperty("type", idxType);
+                    idxMeta.addProperty("collection", coll);
+                    idxMeta.addProperty("engineType", eng);
+                    idxMeta.addProperty("createdAt", System.currentTimeMillis());
+                    String idxKey = "idx:" + db + ":" + idxName.trim();
+                    engine.getStorageCore().put(idxKey, idxMeta.toString().getBytes(StandardCharsets.UTF_8), System.currentTimeMillis());
+                    JsonObject resp = new JsonObject();
+                    resp.addProperty("status", "SUCCESS");
+                    resp.addProperty("database", db);
+                    resp.addProperty("indexName", idxName);
+                    resp.addProperty("message", "Index '" + idxName + "' created in database '" + db + "'!");
+                    sendJsonResponse(exchange, resp, 200);
+                } else {
+                    sendJsonError(exchange, "Index name and field cannot be empty");
                 }
             } else if ("edit_document".equalsIgnoreCase(action) || "edit_object".equalsIgnoreCase(action) || "edit_record".equalsIgnoreCase(action) || "update_object".equalsIgnoreCase(action)) {
                 String id = params.get("target_id");
@@ -2212,6 +2253,8 @@ public class StoreEnginesPage extends StoreTemplatePage {
                         .modifier(new Modifier().attribute("type", "button").attribute("onclick", "location.href='" + actionUrl + selectedEngine + "&target_db=" + escapeJs(targetDb) + "&coll=" + escapeJs(currentColl) + "&view_mode=table'").cssClass(isTableView ? "btn-action btn-primary" : "btn-action btn-secondary").style("padding:3px 8px; font-size:9.5px; margin-right:4px;")),
                        Button.of(Icon.of("fas fa-plus-circle"), Text.of(" Insertar Registro"))
                         .modifier(new Modifier().attribute("type", "button").attribute("onclick", "openEngineInsertModal('" + selectedEngine + "', '" + escapeJs(currentColl) + "', '" + escapeJs(targetDb) + "')").cssClass("btn-action btn-primary").style("padding:3px 10px; font-size:9.5px; margin-left:12px; margin-right:4px; font-weight:700; background:linear-gradient(135deg, #38bdf8 0%, #0284c7 100%); color:#0f172a; border:none; box-shadow:0 1px 4px rgba(56,189,248,0.3);")),
+                    Button.of(Icon.of("fas fa-bolt"), Text.of(" Administrar Índices"))
+                        .modifier(new Modifier().attribute("type", "button").attribute("title", "Administrar y Crear Índices Secundarios").attribute("onclick", "if(typeof openAddIndexModal==='function') openAddIndexModal('" + escapeJs(targetDb) + "', '" + escapeJs(selectedEngine) + "', '" + escapeJs(currentColl) + "'); else if(document.getElementById('createIndexModal')) showModal('createIndexModal');").cssClass("btn-action btn-secondary").style("padding:3px 8px; font-size:9.5px; margin-left:4px; color:#fbbf24; border-color:rgba(251,191,36,0.4);")),
                     Button.of(Icon.of("fas fa-expand-alt"), Text.of(" Expand All"))
                         .modifier(new Modifier().attribute("type", "button").attribute("title", "Expand All Nodes and Rows").attribute("onclick", "expandAllExplorerView()").cssClass("btn-action btn-secondary").style("padding:3px 8px; font-size:9.5px; margin-left:4px;")),
                     Button.of(Icon.of("fas fa-compress-alt"), Text.of(" Collapse All"))
@@ -3945,6 +3988,27 @@ public class StoreEnginesPage extends StoreTemplatePage {
     });
     showModal('createIndexModal');
   }
+
+  function openDeleteIndexModal(db, idxName) {
+    if (confirm('¿Desea eliminar el índice secundario \\'' + idxName + '\\' de la base de datos \\'' + db + '\\'?')) {
+      var formData = new FormData();
+      formData.append('action', 'delete_index');
+      formData.append('target_db', db);
+      formData.append('index_name', idxName);
+      formData.append('is_ajax', 'true');
+      fetch(window.location.pathname + window.location.search, {
+        method: 'POST',
+        body: formData
+      }).then(function(res) {
+        window.location.reload();
+      }).catch(function(err) {
+        window.location.reload();
+      });
+    }
+  }
+
+  window.openAddIndexModal = openAddIndexModal;
+  window.openDeleteIndexModal = openDeleteIndexModal;
 
   function openAddSchemaModal(db) {
     setElementValues({ createSchemaDbInput: db, createSchemaDbDisplay: db });
