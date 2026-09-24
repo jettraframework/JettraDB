@@ -189,9 +189,9 @@ public class DashboardMetricsCollector {
         for (String[] mapping : PREFIX_MAPPINGS) {
             String prefix = mapping[0];
             String engineName = categorizePrefix(prefix);
-            Map<String, byte[]> keys = engine.getStorageCore().scanPrefix(prefix);
+            Set<String> keys = engine.getStorageCore().scanPrefixKeys(prefix);
             if (keys != null) {
-                for (String k : keys.keySet()) {
+                for (String k : keys) {
                     String rest = k.substring(prefix.length());
                     int colonIdx = rest.indexOf(':');
                     if (colonIdx > 0) {
