@@ -23,6 +23,7 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Comparator;
 
 import static io.jettra.test.core.JettraAssert.*;
@@ -141,6 +142,44 @@ public class DeclarativeSecurityAccessControlTest {
         assertTrue(body.contains("Sign In - JettraStoreEngine Console"), "Login UI must render");
     }
 
+    @JettraTest
+    @DisplayName("6. Full login flow: POST /login sets session cookies, redirects to /dashboard, which renders successfully")
+    void testFullLoginFlowRedirectsToDashboard() throws IOException {
+        TestHttpExchange loginExchange = new TestHttpExchange("POST", "/login");
+        loginExchange.setRequestBody("username=admin&password=admin");
+
+        loginPage.handle(loginExchange);
+
+        assertEquals(302, loginExchange.getResponseCode(), "Login must return 302 Found");
+        String location = loginExchange.getResponseHeaders().getFirst("Location");
+        assertNotNull(location);
+        assertTrue(location.endsWith("/dashboard"), "Must redirect to /dashboard");
+
+        List<String> setCookies = loginExchange.getResponseHeaders().get("Set-Cookie");
+        System.out.println("DEBUG SET-COOKIES: " + setCookies);
+        assertNotNull(setCookies, "Set-Cookie headers must be present");
+        assertFalse(setCookies.isEmpty(), "At least one Set-Cookie header must be present");
+
+        StringBuilder cookieHeader = new StringBuilder();
+        for (String sc : setCookies) {
+            String cookieVal = sc.split(";")[0];
+            if (cookieHeader.length() > 0) cookieHeader.append("; ");
+            cookieHeader.append(cookieVal);
+        }
+        System.out.println("DEBUG COOKIE HEADER TO DASHBOARD: " + cookieHeader);
+
+        TestHttpExchange dashExchange = new TestHttpExchange("GET", "/dashboard");
+        dashExchange.getRequestHeaders().set("Cookie", cookieHeader.toString());
+
+        dashboardPage.handle(dashExchange);
+
+        System.out.println("DEBUG DASHBOARD STATUS: " + dashExchange.getResponseCode());
+        if (dashExchange.getResponseCode() == 302) {
+            System.out.println("DEBUG DASHBOARD REDIRECT LOCATION: " + dashExchange.getResponseHeaders().getFirst("Location"));
+        }
+        assertEquals(200, dashExchange.getResponseCode(), "Dashboard must return 200 OK after successful login");
+    }
+
     /**
      * In-memory test implementation of HttpExchange.
      */
@@ -150,12 +189,17 @@ public class DeclarativeSecurityAccessControlTest {
         private final Headers requestHeaders = new Headers();
         private final Headers responseHeaders = new Headers();
         private final ByteArrayOutputStream responseBody = new ByteArrayOutputStream();
-        private final ByteArrayInputStream requestBody = new ByteArrayInputStream(new byte[0]);
+        private ByteArrayInputStream requestBody = new ByteArrayInputStream(new byte[0]);
         private int responseCode = -1;
 
         TestHttpExchange(String method, String path) {
             this.method = method;
             this.uri = URI.create(path);
+        }
+
+        void setRequestBody(String body) {
+            this.requestBody = new ByteArrayInputStream(body.getBytes(StandardCharsets.UTF_8));
+            this.requestHeaders.set("Content-Type", "application/x-www-form-urlencoded");
         }
 
         @Override
