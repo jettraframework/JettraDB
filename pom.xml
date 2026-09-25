@@ -1,91 +1,100 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" 
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
+
     <groupId>com.jettra</groupId>
     <artifactId>JettraDB</artifactId>
     <version>1.0-SNAPSHOT</version>
     <packaging>jar</packaging>
     <name>JettraDB</name>
+
     <properties>
         <maven.compiler.source>25</maven.compiler.source>
         <maven.compiler.target>25</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <skipTests>true</skipTests>
-        <jettra.annotation.version>1.0.0</jettra.annotation.version>
-        <jettra.jwt.version>1.0.0</jettra.jwt.version>
-        <jettra.gprc.version>1.0.0</jettra.gprc.version>
-        <jettra.rules.version>1.0.0</jettra.rules.version>
-        <jettra.ee.version>1.0.0-SNAPSHOT</jettra.ee.version>
-        <jettra.flux.version>1.0.0</jettra.flux.version>
-        <jettra.report.version>1.0.0</jettra.report.version>
-        <jettra.rest.version>1.0.0-SNAPSHOT</jettra.rest.version>
-        <jettra.json.version>1.0.0</jettra.json.version>
-        <jettra.test.version>1.0.0</jettra.test.version>
         <mainClass>com.jettra.store.engine.App</mainClass>
         <exec.mainClass>com.jettra.store.engine.App</exec.mainClass>
         <exec.executable>java</exec.executable>
         <maven.compiler.compilerArgs>--enable-preview</maven.compiler.compilerArgs>
     </properties>
+
+    <!-- 1. Importación del BOM local de JettraFrameworks -->
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>io.jettra</groupId>
+                <artifactId>jettraframeworks</artifactId>
+                <version>1.0.0-SNAPSHOT</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <!-- 2. Dependencias sin declarar <version> (las gestiona el BOM) -->
     <dependencies>
-        <!-- JSON parsing -->
         <dependency>
-            <groupId>com.github.jettraframework</groupId>
+            <groupId>io.jettra</groupId>
             <artifactId>JettraJSON</artifactId>
-            <version>${jettra.json.version}</version>
- 
         </dependency>
-        <!-- Servidor backend JettraEE (MicroProfile, Jakarta EE, Project Loom) -->
         <dependency>
             <groupId>io.jettra</groupId>
             <artifactId>JettraEE</artifactId>
-            <version>${jettra.ee.version}</version>
         </dependency>
-        
+        <dependency>
+            <groupId>io.jettra</groupId>
+            <artifactId>JettraCDI</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.jettra</groupId>
+            <artifactId>JettraRest</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.jettra</groupId>
+            <artifactId>JettraJWT</artifactId>
+        </dependency>
         <dependency>
             <groupId>io.jettra</groupId>
             <artifactId>JettraFlux</artifactId>
-            <version>${jettra.flux.version}</version>
         </dependency>
         <dependency>
-            <groupId>com.github.jettraframework</groupId>
+            <groupId>io.jettra</groupId>
             <artifactId>JettraReport</artifactId>
-            <version>${jettra.report.version}</version>
         </dependency>
         <dependency>
-            <groupId>com.github.jettraframework</groupId>
+            <groupId>io.jettra</groupId>
             <artifactId>JettraRules</artifactId>
-            <version>${jettra.rules.version}</version>
         </dependency>
-
         <dependency>
-            <groupId>com.github.jettraframework</groupId>
+            <groupId>io.jettra</groupId>
             <artifactId>JettraAnnotation</artifactId>
-            <version>${jettra.annotation.version}</version>
         </dependency>
         <dependency>
-            <groupId>com.github.jettraframework</groupId>
+            <groupId>io.jettra</groupId>
             <artifactId>JettraTest</artifactId>
-            <version>${jettra.test.version}</version>
         </dependency>
-       
-        
-        <!-- Vector Search -->
-
     </dependencies>
+
     <build>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.11.0</version>
+                <version>3.13.0</version>
                 <configuration>
                     <source>${maven.compiler.source}</source>
                     <target>${maven.compiler.target}</target>
+                    <compilerArgs>
+                        <arg>--enable-preview</arg>
+                    </compilerArgs>
                     <annotationProcessorPaths>
                         <path>
                             <groupId>io.jettra</groupId>
                             <artifactId>JettraAnnotation</artifactId>
-                            <version>${jettra.annotation.version}</version>
+                            <version>1.0.0-SNAPSHOT</version>
                         </path>
                     </annotationProcessorPaths>
                 </configuration>
@@ -98,12 +107,12 @@
                 <configuration>
                     <archive>
                         <manifest>
-                            <mainClass>com.jettra.store.engine.App</mainClass>
+                            <mainClass>${mainClass}</mainClass>
                         </manifest>
                     </archive>
                 </configuration>
             </plugin>
-            <!-- Plugin para empaquetar todas las dependencias en un solo JAR (Fat JAR) -->
+
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
@@ -118,7 +127,7 @@
                             <createDependencyReducedPom>false</createDependencyReducedPom>
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>com.jettra.store.engine.App</mainClass>
+                                    <mainClass>${mainClass}</mainClass>
                                 </transformer>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
                                     <resource>META-INF/jettra/discovered.classes</resource>
@@ -172,6 +181,7 @@
                     </execution>
                 </executions>
             </plugin>
+
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
@@ -182,13 +192,4 @@
             </plugin>
         </plugins>
     </build>
-
-    
-    
-    <repositories>
-        <repository>
-            <id>jitpack.io</id>
-            <url>https://jitpack.io</url>
-        </repository>
-    </repositories>
 </project>
